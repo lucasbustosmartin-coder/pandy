@@ -1,0 +1,64 @@
+---
+description: Actualizar bitácora Excel (Log, Resumen, Ref Git y Vercel, Versiones, Tecnología) al completar tareas; flujo de despliegue y versionado
+alwaysApply: true
+---
+
+# Bitácora de tareas – Pandi
+
+## Tecnología e infraestructura (referencia)
+
+- **Datos:** Supabase (PostgreSQL). Tablas según la app. Scripts SQL en `sql/` se ejecutan en Supabase SQL Editor.
+- **Hosting:** Vercel (cuando esté configurado). Despliegue con `vercel --prod` tras push a `main`.
+- **Repositorio:** Git/GitHub (rama `main`). Estructura: `sql/`, `scripts/`, `docs/`, `Base/` (ver regla estructura-proyecto).
+- **Bitácora:** Node.js + SheetJS (xlsx). Script `scripts/crear-bitacora-excel.js` genera `Bitacora_tareas.xlsx` (en raíz) con las solapas **Log**, **Resumen**, **Ref Git y Vercel**, **Versiones**, **Tecnología**.
+
+---
+
+**Por defecto:** siempre actualizar la bitácora al completar una tarea. **Actualizar todas las solapas que correspondan** en cada caso (ver abajo); no saltear ninguna salvo que el usuario lo indique explícitamente (ej.: "esto no agregarlo a la bitácora", "no lo registres"). Después de cada cambio en `scripts/crear-bitacora-excel.js`, ejecutar `node scripts/crear-bitacora-excel.js` (desde la raíz del proyecto) para regenerar el Excel con **todas** las solapas al día.
+
+Al completar una tarea relevante en este proyecto, revisar **cada** solapa y actualizar las que correspondan:
+
+1. **Solapa Log**  
+   Agregar una fila en el array `datosLog` de `crear-bitacora-excel.js` con: Fecha, Hora, titulo_tarea, desc_tarea, etapa.  
+   **Fecha y hora:** usar siempre la **fecha y hora actual en Argentina** (timezone America/Argentina/Buenos_Aires). Al agregar la entrada, usar los placeholders `__HOY__` y `__AHORA__` (el script los reemplaza por la fecha/hora en Argentina al ejecutar).  
+   **Cuándo:** siempre que la tarea sea un trabajo realizado (cambio, feature, corrección, script SQL, regla, doc, etc.).
+
+2. **Solapa Resumen**  
+   Si la tarea agrega o cambia una **funcionalidad**, agregar o actualizar la fila correspondiente en el array `funcionalidades` con: Funcionalidad, Descripción.
+
+3. **Solapa Ref Git y Vercel**  
+   Solo si cambian URLs o datos de referencia del repo/Vercel; en general se mantiene estable.
+
+4. **Solapa Versiones**  
+   Solo se actualiza en el **flujo de despliegue** (cuando el usuario pide desplegar); no en tareas intermedias.
+
+5. **Regenerar Excel**  
+   Después de **cualquier** edición en `crear-bitacora-excel.js`, ejecutar `node scripts/crear-bitacora-excel.js`. Eso genera `Bitacora_tareas.xlsx` con todas las solapas.
+
+Archivo a editar: `scripts/crear-bitacora-excel.js`.  
+Salida: `Bitacora_tareas.xlsx` (en la raíz del proyecto).
+
+---
+
+# Flujo cuando el usuario indique desplegar (versionado y despliegue)
+
+Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK desplegar"), aplicar **siempre** los siguientes pasos en este orden:
+
+1. **Incrementar versión en la app**  
+   En `index.html`, actualizar la versión que se muestra: buscar el elemento con id `sidebar-version` (ej. `<div class="sidebar-version" id="sidebar-version" ...>v1.0</div>`) y cambiar el texto al **siguiente número de versión** (ej. v1.0 → v1.1).
+
+2. **Actualizar todas las solapas de la bitácora que correspondan** en `scripts/crear-bitacora-excel.js` (revisar cada una y no omitir las que apliquen):
+   - **Versiones:** siempre en despliegue. Agregar una fila en el array `versiones` con (Versión, Fecha, Descripción del despliegue). Usar la misma versión que la del sidebar (ej. 1.1 sin la "v"). **Fecha:** usar `__HOY__` (el script la reemplaza por la fecha en Argentina al generar el Excel). Incluir los cambios principales.
+   - **Log:** si hubo tareas en la sesión, agregar las entradas en `datosLog` (Fecha, Hora, titulo_tarea, desc_tarea, etapa).
+   - **Resumen:** si los cambios agregan o modifican funcionalidad de la app, agregar o actualizar las filas en `funcionalidades`.
+
+3. **Regenerar Excel**  
+   Ejecutar `node scripts/crear-bitacora-excel.js` (desde la raíz del proyecto) para actualizar `Bitacora_tareas.xlsx`.
+
+4. **Commit y push**  
+   Incluir en el commit: `index.html` (con la versión actualizada), `scripts/crear-bitacora-excel.js`, `Bitacora_tareas.xlsx` (y cualquier otro archivo modificado en la sesión). Mensaje de commit: `vX.Y: descripción breve`. Ejecutar `git add`, `git commit`, `git push origin main`. Si el push falla por credenciales, indicar al usuario que ejecute `git push origin main` en su máquina.
+
+5. **Desplegar a producción**  
+   Ejecutar `vercel --prod` (o el comando equivalente) para que la versión desplegada sea la de producción (p. ej. pandi.vercel.app cuando esté conectado el proyecto).
+
+No hacer push ni desplegar hasta que el usuario lo indique explícitamente.

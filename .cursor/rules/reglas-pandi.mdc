@@ -1,0 +1,30 @@
+---
+description: Contexto del proyecto Pandi: Supabase como backend, misma infraestructura que el repo compartido
+alwaysApply: true
+---
+
+# Reglas de trabajo – Pandi
+
+## Contexto del proyecto
+
+- **Backend:** Supabase (PostgreSQL). Tablas y esquema se definirán según la app. Scripts SQL en `sql/` se ejecutan en Supabase SQL Editor.
+- **Frontend:** App en la raíz (`index.html`, `main.js`). Se irá construyendo sobre esta base.
+- **Estructura del repo:** `sql/` (DDL y scripts SQL), `scripts/` (Python/Node), `docs/` (guías), `Base/` (Excel si aplica). Ver regla **estructura-proyecto**.
+
+## Al modificar esquema o datos
+
+- Si se agregan o cambian tablas en Supabase: actualizar `sql/` con los DDL correspondientes, el código que las use y la documentación en `docs/` si aplica.
+
+## Responsive / móvil
+
+- **Desde ahora en más:** al agregar o modificar vistas, formularios, tablas o modales en la app, tener **siempre en cuenta la responsividad en móviles**. Incluir o ajustar estilos para pantallas pequeñas: breakpoints típicos 768px (tablet/móvil grande) y 480px (móvil chico), touch targets mínimos 44px, padding y fuentes reducidos, scroll horizontal con `-webkit-overflow-scrolling: touch` donde haga falta, y `viewport-fit=cover` si aplica. No dejar que nuevos componentes rompan el layout en celulares.
+
+## Despliegue
+
+- Cuando el usuario pida desplegar (ej. "desplegar", "ok desplegar"), aplicar **siempre** el flujo completo en este orden: 1) Incrementar versión en `index.html` (id `sidebar-version`), 2) Actualizar bitácora en `scripts/crear-bitacora-excel.js` (Versiones, Log, Resumen según corresponda), 3) Regenerar Excel (`node scripts/crear-bitacora-excel.js`), 4) Commit y push a `main` con mensaje `vX.Y: descripción`, 5) `vercel --prod`. Detalle en la regla **bitacora-tareas**.
+
+## Documentación de referencia
+
+- Crear y usar proyecto Supabase: `docs/SUPABASE_REQUISITOS.md`.
+- Git y Vercel (repo, push, deploy): `docs/GIT_Y_VERCEL.md`.
+- Fechas en Argentina (timezone para manejo de fechas): `docs/FECHAS_ARGENTINA.md`.

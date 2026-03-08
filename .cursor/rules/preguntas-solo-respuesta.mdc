@@ -1,0 +1,13 @@
+---
+description: En mensajes que son solo preguntas, responder solo con texto; no escribir ni modificar código salvo que pidan implementación.
+alwaysApply: true
+---
+
+# Preguntas: solo respuesta, sin código
+
+Cuando el mensaje del usuario sea **claramente una pregunta** (por ejemplo termina en signo de interrogación, o pide una explicación, aclaración u opinión):
+
+- **Respondé solo con texto**: explicación, aclaración o respuesta directa.
+- **No empecés a escribir ni modificar código** ni a proponer cambios en archivos, a menos que en el mismo mensaje pidan explícitamente implementación, código o cambios ("agregá...", "implementá...", "cambiar...", etc.).
+
+Si después de tu respuesta el usuario pide que sí hagas cambios o código, ahí sí aplicá las herramientas y edits con normalidad.

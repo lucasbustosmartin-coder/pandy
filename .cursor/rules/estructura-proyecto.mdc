@@ -1,0 +1,32 @@
+---
+description: Mantener estructura ordenada del repo: sql/, scripts/, docs/, Base/; dónde colocar archivos nuevos y cómo referenciar rutas
+alwaysApply: true
+---
+
+# Estructura del proyecto – regla de trabajo (Pandi)
+
+Mantener siempre esta organización para que sea **simple y eficiente** encontrar archivos.
+
+## Carpetas
+
+| Carpeta | Contenido | Ejemplos |
+|---------|-----------|----------|
+| **`sql/`** | Todo lo SQL (Supabase): tablas, RLS, migraciones, scripts de datos. | `supabase_*.sql` |
+| **`scripts/`** | Scripts de utilidad: **Python** (migración, análisis) y **Node.js** (bitácora, build). | `crear-bitacora-excel.js`, `build-config.js` |
+| **`docs/`** | Documentación en Markdown: requisitos Supabase, guías de uso, README de features. | `SUPABASE_REQUISITOS.md`, `GIT_Y_VERCEL.md` |
+| **`Base/`** | Archivo(s) Excel de origen si la app los usa. No modificar estructura sin actualizar script y documentación. | (opcional) |
+| **Raíz** | Config (`package.json`, `config.example.js`), `.gitignore`, `index.html`, `main.js`. | |
+
+## Al agregar archivos nuevos
+
+- **Nuevo script SQL** → siempre en `sql/` (nombre descriptivo, ej. `supabase_*` si es para Supabase).
+- **Nuevo script Python o Node.js** de utilidad → en `scripts/`. Si lee/escribe archivos en la raíz o en `Base/`, usar rutas relativas al proyecto: `Path(__file__).resolve().parent.parent` (Python) o `path.join(__dirname, '..', '...')` (Node).
+- **Nueva documentación** (.md de guías, requisitos) → en `docs/`.
+- **Referencias en docs o en código** a archivos: usar rutas relativas a la raíz (`sql/...`, `scripts/...`, `docs/...`, `Base/...`).
+
+## Comandos y rutas
+
+- Scripts se invocan desde la raíz: `node scripts/crear-bitacora-excel.js`, `python scripts/...`.
+- En documentación, indicar rutas como `sql/archivo.sql` y `scripts/archivo.js`, no como si estuvieran en la raíz.
+
+Respetar esta estructura en cada cambio (nuevos archivos, refactors, documentación) para mantener el repo ordenado y fácil de navegar.
