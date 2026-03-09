@@ -139,42 +139,50 @@ function loadSeguridad() {
   const loadingEl = document.getElementById('seguridad-loading');
   const wrapEl = document.getElementById('seguridad-tabla-wrap');
   const tbody = document.getElementById('seguridad-tbody');
+  const permisosWrap = document.getElementById('seguridad-permisos-wrap');
+  const permisosGrid = document.getElementById('seguridad-permisos-grid');
   if (!loadingEl || !wrapEl || !tbody) return;
 
   if (!userPermissions.includes('assign_roles')) {
     loadingEl.style.display = 'none';
     wrapEl.style.display = 'block';
     tbody.innerHTML = '<tr><td colspan="3">No tenés permiso para gestionar usuarios y roles. Solo un Admin puede asignar roles.</td></tr>';
+    if (permisosWrap) permisosWrap.style.display = 'none';
     return;
   }
 
   loadingEl.style.display = 'block';
   wrapEl.style.display = 'none';
   tbody.innerHTML = '';
+  if (permisosWrap) permisosWrap.style.display = 'none';
+  if (permisosGrid) permisosGrid.innerHTML = '';
 
-  client
-    .rpc('get_users_for_admin')
-    .then((res) => {
-      loadingEl.style.display = 'none';
-      if (res.error || !res.data || res.data.length === 0) {
-        if (res.error) tbody.innerHTML = '<tr><td colspan="3">Error: ' + (res.error.message || '') + '</td></tr>';
-        else tbody.innerHTML = '<tr><td colspan="3">No hay usuarios.</td></tr>';
-        wrapEl.style.display = 'block';
-        return;
-      }
+  Promise.all([
+    client.rpc('get_users_for_admin'),
+    client.from('app_role').select('role, label').order('role'),
+    client.from('app_permission').select('permission, description').order('permission'),
+    client.from('app_role_permission').select('role, permission'),
+  ]).then(([rUsers, rRoles, rPerms, rRolePerms]) => {
+    loadingEl.style.display = 'none';
+
+    const users = rUsers.data || [];
+    const roles = (rRoles.data || []).slice();
+
+    if (rUsers.error || users.length === 0) {
+      if (rUsers.error) tbody.innerHTML = '<tr><td colspan="3">Error: ' + (rUsers.error.message || '') + '</td></tr>';
+      else tbody.innerHTML = '<tr><td colspan="3">No hay usuarios.</td></tr>';
+      wrapEl.style.display = 'block';
+    } else {
       const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'));
-      tbody.innerHTML = res.data
+      tbody.innerHTML = users
         .map((u) => {
           const uid = u.user_id;
           const email = esc(u.email || '');
           const role = u.role || 'visor';
+          const optionsWithSelected = roles.map((r) => `<option value="${escapeHtml(r.role)}" ${role === r.role ? ' selected' : ''}>${escapeHtml(r.label || r.role)}</option>`).join('');
           return `<tr data-user-id="${uid}">
             <td>${email}</td>
-            <td><select class="seguridad-rol" data-user-id="${uid}">
-              <option value="admin" ${role === 'admin' ? ' selected' : ''}>Admin</option>
-              <option value="encargado" ${role === 'encargado' ? ' selected' : ''}>Encargado</option>
-              <option value="visor" ${role === 'visor' ? ' selected' : ''}>Visor</option>
-            </select></td>
+            <td><select class="seguridad-rol" data-user-id="${uid}">${optionsWithSelected}</select></td>
             <td><button type="button" class="btn-guardar-rol btn-primary" data-user-id="${uid}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button></td>
           </tr>`;
         })
@@ -194,7 +202,59 @@ function loadSeguridad() {
         });
       });
       wrapEl.style.display = 'block';
-    });
+    }
+
+    const permissions = (rPerms.data || []).slice();
+    const rolePermList = rRolePerms.data || [];
+    const rolePermSet = new Set(rolePermList.map((r) => r.role + '|' + r.permission));
+
+    if (permisosGrid && roles.length > 0 && permissions.length > 0) {
+      permisosGrid.innerHTML = roles
+        .map((r) => {
+          const roleKey = r.role;
+          const label = escapeHtml(r.label || roleKey);
+          const rows = permissions
+            .map((p) => {
+              const permKey = p.permission;
+              const desc = escapeHtml(p.description || permKey);
+              const checked = rolePermSet.has(roleKey + '|' + permKey);
+              const id = 'perm-' + roleKey + '-' + permKey.replace(/_/g, '-');
+              return `<div class="seguridad-perm-row">
+                <label for="${id}" style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;width:100%;cursor:pointer;">
+                  <span>${desc}</span>
+                  <span class="toggle-switch">
+                    <input type="checkbox" id="${id}" class="seguridad-perm-toggle" data-role="${roleKey}" data-permission="${permKey}" ${checked ? ' checked' : ''} />
+                    <span class="slider"></span>
+                  </span>
+                </label>
+              </div>`;
+            })
+            .join('');
+          return `<div class="seguridad-permisos-rol" data-role="${roleKey}"><h4>${label}</h4>${rows}</div>`;
+        })
+        .join('');
+
+      permisosGrid.querySelectorAll('.seguridad-perm-toggle').forEach((chk) => {
+        chk.addEventListener('change', function () {
+          const role = this.getAttribute('data-role');
+          const permission = this.getAttribute('data-permission');
+          const enable = this.checked;
+          const prom = enable
+            ? client.from('app_role_permission').insert({ role, permission })
+            : client.from('app_role_permission').delete().eq('role', role).eq('permission', permission);
+          prom.then((res) => {
+            if (res.error) {
+              showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+              this.checked = !enable;
+            } else {
+              showToast(enable ? 'Permiso activado.' : 'Permiso desactivado.', 'success');
+            }
+          });
+        });
+      });
+      if (permisosWrap) permisosWrap.style.display = 'block';
+    }
+  });
 }
 
 // --- Cajas ---
@@ -338,6 +398,9 @@ function openModalOrdenesPendientes() {
   wrapEl.style.display = 'none';
   tbody.innerHTML = '';
   const canAbm = userPermissions.includes('abm_ordenes');
+  const canEditarOrden = canAbm || userPermissions.includes('editar_orden');
+  const canCambiarEstado = canAbm || userPermissions.includes('cambiar_estado_transaccion');
+  const canVerAccionesOrden = canEditarOrden || canCambiarEstado;
   client
     .from('ordenes')
     .select('id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones')
@@ -386,7 +449,7 @@ function openModalOrdenesPendientes() {
             <td>${estadoHtml}</td>
             <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
             <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
-            <td>${canAbm ? `<button type="button" class="btn-editar btn-editar-orden-pendiente" data-id="${o.id}" title="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> <button type="button" class="btn-secondary btn-transacciones-pendiente" data-id="${o.id}" title="Transacciones"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>` : ''}</td>
+            <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden-pendiente" data-id="${o.id}" title="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones-pendiente" data-id="${o.id}" title="Transacciones"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>` : ''}</td>
           </tr>`;
         }).join('');
         tbody.querySelectorAll('.btn-editar-orden-pendiente').forEach((btn) => {
@@ -498,6 +561,8 @@ function renderTransaccionesPendientesTabla() {
   const selIntermediario = document.getElementById('transacciones-pendientes-filtro-intermediario');
   const chkPandy = document.getElementById('transacciones-pendientes-filtro-pandy');
   if (!tbody) return;
+  const canAbm = userPermissions.includes('abm_ordenes');
+  const canCambiarEstado = canAbm || userPermissions.includes('cambiar_estado_transaccion');
   const clienteId = selCliente && selCliente.value ? selCliente.value : '';
   const intermediarioId = selIntermediario && selIntermediario.value ? selIntermediario.value : '';
   const soloPandy = chkPandy && chkPandy.checked;
@@ -514,6 +579,7 @@ function renderTransaccionesPendientesTabla() {
     const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente';
     return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" data-instrumentacion-id="${t.instrumentacion_id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`;
   };
+  const estadoTexto = (t) => (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente');
   tbody.innerHTML = list.map((t) => {
     const orden = ordenesMap[t.orden_id];
     const ordenLabel = orden ? (orden.fecha || '').toString().slice(0, 10) + (orden.cliente_id ? ' · ' + (clientesMap[orden.cliente_id] || '–') : '') : '–';
@@ -526,10 +592,11 @@ function renderTransaccionesPendientesTabla() {
       <td>${formatMonto(t.monto)}</td>
       <td>${ownerL(t.cobrador)}</td>
       <td>${ownerL(t.pagador)}</td>
-      <td>${estadoTrxCombo(t)}</td>
-      <td><button type="button" class="btn-editar btn-editar-transaccion-pendiente" data-id="${t.id}" data-instrumentacion-id="${t.instrumentacion_id}" title="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button></td>
+      <td>${canCambiarEstado ? estadoTrxCombo(t) : estadoTexto(t)}</td>
+      <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-pendiente" data-id="${t.id}" data-instrumentacion-id="${t.instrumentacion_id}" title="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button>` : ''}</td>
     </tr>`;
   }).join('');
+  if (canCambiarEstado) {
   tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
     sel.addEventListener('change', function() {
       const transaccionId = this.getAttribute('data-id');
@@ -556,6 +623,7 @@ function renderTransaccionesPendientesTabla() {
       if (row) openModalTransaccion(row, instId);
     });
   });
+  }
 }
 
 function setupPanelControl() {
@@ -1367,6 +1435,9 @@ function loadOrdenes() {
   if (!loadingEl || !wrapEl || !tbody) return Promise.resolve();
 
   const canAbm = userPermissions.includes('abm_ordenes');
+  const canEditarOrden = canAbm || userPermissions.includes('editar_orden');
+  const canCambiarEstado = canAbm || userPermissions.includes('cambiar_estado_transaccion');
+  const canVerAccionesOrden = canEditarOrden || canCambiarEstado;
   if (btnNuevo) btnNuevo.style.display = canAbm ? '' : 'none';
 
   loadingEl.style.display = 'block';
@@ -1422,7 +1493,7 @@ function loadOrdenes() {
                 <td>${estadoHtml}</td>
                 <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
                 <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
-                <td>${canAbm ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> <button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>` : ''}</td>
+                <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>` : ''}</td>
               </tr>
               <tr class="orden-detalle-tr" id="orden-detalle-${o.id}" data-orden-id="${o.id}" style="display:none;">
                 <td colspan="8" class="orden-detalle-cell">
@@ -1570,7 +1641,11 @@ function openModalOrden(registro) {
           ordenWizardInstrumentacionIdActual = instId;
           showOrdenWizardStep('instrumentacion');
           renderOrdenWizardInstrumentacion(instId);
-          if (btnNuevaTr) btnNuevaTr.onclick = () => openModalTransaccion(null, instId);
+          if (btnNuevaTr) {
+            const canAbm = userPermissions.includes('abm_ordenes');
+            btnNuevaTr.style.display = canAbm ? '' : 'none';
+            btnNuevaTr.onclick = () => openModalTransaccion(null, instId);
+          }
         });
       });
     };
@@ -2004,7 +2079,10 @@ function renderOrdenWizardInstrumentacion(instId) {
         const ownerL = (o) => ({ pandy: 'Pandy', cliente: 'Cliente', intermediario: 'Intermediario' }[o] || o);
         const cobradorL = (t) => ownerL(t.cobrador || (t.tipo === 'ingreso' ? t.owner : 'pandy'));
         const pagadorL = (t) => ownerL(t.pagador || (t.tipo === 'egreso' ? t.owner : 'pandy'));
+        const canAbm = userPermissions.includes('abm_ordenes');
+        const canCambiarEstado = canAbm || userPermissions.includes('cambiar_estado_transaccion');
         const estadoTrxCombo = (t) => { const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente'; return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`; };
+        const estadoTexto = (t) => (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente');
         if (lista.length === 0) {
           tbody.innerHTML = '<tr><td colspan="8">Todavía no hay transacciones.</td></tr>';
         } else {
@@ -2018,19 +2096,21 @@ function renderOrdenWizardInstrumentacion(instId) {
               <td>${formatImporteDisplay(t.monto)}</td>
               <td>${cobradorL(t)}</td>
               <td>${pagadorL(t)}</td>
-              <td>${estadoTrxCombo(t)}</td>
-              <td><button type="button" class="btn-editar btn-editar-transaccion-ordenwizard" data-id="${t.id}">Editar</button></td>
+              <td>${canCambiarEstado ? estadoTrxCombo(t) : estadoTexto(t)}</td>
+              <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-ordenwizard" data-id="${t.id}">Editar</button>` : ''}</td>
             </tr>`;
           }).join('');
-          tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
-            sel.addEventListener('change', function() { cambiarEstadoTransaccion(this.getAttribute('data-id'), this.value, instId, this); });
-          });
-          tbody.querySelectorAll('.btn-editar-transaccion-ordenwizard').forEach((btn) => {
-            btn.addEventListener('click', () => {
-              const row = lista.find((r) => r.id === btn.getAttribute('data-id'));
-              if (row) openModalTransaccion(row, instId);
+          if (canCambiarEstado) {
+            tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
+              sel.addEventListener('change', function() { cambiarEstadoTransaccion(this.getAttribute('data-id'), this.value, instId, this); });
             });
-          });
+            tbody.querySelectorAll('.btn-editar-transaccion-ordenwizard').forEach((btn) => {
+              btn.addEventListener('click', () => {
+                const row = lista.find((r) => r.id === btn.getAttribute('data-id'));
+                if (row) openModalTransaccion(row, instId);
+              });
+            });
+          }
         }
       }
 
@@ -2060,6 +2140,19 @@ function renderOrdenWizardInstrumentacion(instId) {
 function saveOrden() {
   const idEl = document.getElementById('orden-id');
   const id = idEl && idEl.value ? idEl.value.trim() : '';
+  const canAbm = userPermissions.includes('abm_ordenes');
+  const canEditarOrden = canAbm || userPermissions.includes('editar_orden');
+  if (id) {
+    if (!canEditarOrden) {
+      showToast('No tenés permiso para editar órdenes.', 'error');
+      return;
+    }
+  } else {
+    if (!canAbm) {
+      showToast('No tenés permiso para crear órdenes.', 'error');
+      return;
+    }
+  }
   const clienteId = document.getElementById('orden-cliente').value.trim() || null;
   const fecha = document.getElementById('orden-fecha').value;
   const tipoOperacionId = document.getElementById('orden-tipo-operacion')?.value?.trim() || null;
@@ -2494,6 +2587,10 @@ function expandOrdenTransacciones(ordenId, orden) {
   const contentEl = panel.querySelector('.orden-detalle-content');
   const tbody = panel.querySelector('.orden-detalle-tbody');
   if (!encabezado || !loadingEl || !contentEl || !tbody) return;
+  const canAbm = userPermissions.includes('abm_ordenes');
+  const canCambiarEstado = canAbm || userPermissions.includes('cambiar_estado_transaccion');
+  const btnNuevaTr = panel.querySelector('.btn-nueva-transaccion-panel');
+  if (btnNuevaTr) btnNuevaTr.style.display = canAbm ? '' : 'none';
 
   const estadoLabelOrd = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada' }[e] || (e || '–'));
   const estadoBadgeOrd = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada'].includes(e) ? `<span class="badge badge-estado-${e.replace(/_/g, '-')}">${estadoLabelOrd(e)}</span>` : estadoLabelOrd(e));
@@ -2560,6 +2657,7 @@ function expandOrdenTransacciones(ordenId, orden) {
               const cobradorL = (t) => ownerL(t.cobrador || (t.tipo === 'ingreso' ? t.owner : 'pandy'));
               const pagadorL = (t) => ownerL(t.pagador || (t.tipo === 'egreso' ? t.owner : 'pandy'));
               const estadoTrxCombo = (t) => { const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente'; return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`; };
+              const estadoTexto = (t) => (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente');
               tbody.innerHTML = lista
                 .map(
                   (t) => {
@@ -2572,21 +2670,23 @@ function expandOrdenTransacciones(ordenId, orden) {
                       <td>${formatImporteDisplay(t.monto)}</td>
                       <td>${cobradorL(t)}</td>
                       <td>${pagadorL(t)}</td>
-                      <td>${estadoTrxCombo(t)}</td>
-                      <td><button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button></td>
+                      <td>${canCambiarEstado ? estadoTrxCombo(t) : estadoTexto(t)}</td>
+                      <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button>` : ''}</td>
                     </tr>`;
                   }
                 )
                 .join('');
-              tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
-                sel.addEventListener('change', function() { cambiarEstadoTransaccion(this.getAttribute('data-id'), this.value, instrumentacionId, this); });
-              });
-              tbody.querySelectorAll('.btn-editar-transaccion-panel').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                  const row = lista.find((r) => r.id === btn.getAttribute('data-id'));
-                  if (row) openModalTransaccion(row, instrumentacionId);
+              if (canCambiarEstado) {
+                tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
+                  sel.addEventListener('change', function() { cambiarEstadoTransaccion(this.getAttribute('data-id'), this.value, instrumentacionId, this); });
                 });
-              });
+                tbody.querySelectorAll('.btn-editar-transaccion-panel').forEach((btn) => {
+                  btn.addEventListener('click', () => {
+                    const row = lista.find((r) => r.id === btn.getAttribute('data-id'));
+                    if (row) openModalTransaccion(row, instrumentacionId);
+                  });
+                });
+              }
             });
           }
 
@@ -2644,6 +2744,7 @@ function refreshTransaccionesPanel(ordenId) {
       const okEnt = totalEntregado <= me + 1e-6;
       totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>Instrumentado:</strong> Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}`;
     }
+    const canCambiarEstado = userPermissions.includes('abm_ordenes') || userPermissions.includes('cambiar_estado_transaccion');
     client.from('modos_pago').select('id, codigo, nombre').then((rModos) => {
         const modosMap = {};
         (rModos.data || []).forEach((m) => { modosMap[m.id] = m; });
@@ -2653,6 +2754,7 @@ function refreshTransaccionesPanel(ordenId) {
         const cobradorL = (t) => ownerL(t.cobrador || (t.tipo === 'ingreso' ? t.owner : 'pandy'));
         const pagadorL = (t) => ownerL(t.pagador || (t.tipo === 'egreso' ? t.owner : 'pandy'));
         const estadoTrxCombo = (t) => { const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente'; return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`; };
+        const estadoTexto = (t) => (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente');
         tbody.innerHTML = list
           .map(
             (t) => {
@@ -2665,21 +2767,23 @@ function refreshTransaccionesPanel(ordenId) {
                 <td>${formatImporteDisplay(t.monto)}</td>
                 <td>${cobradorL(t)}</td>
                 <td>${pagadorL(t)}</td>
-                <td>${estadoTrxCombo(t)}</td>
-                <td><button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button></td>
+                <td>${canCambiarEstado ? estadoTrxCombo(t) : estadoTexto(t)}</td>
+                <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button>` : ''}</td>
               </tr>`;
             }
           )
           .join('');
-        tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
-          sel.addEventListener('change', function() { cambiarEstadoTransaccion(this.getAttribute('data-id'), this.value, instrumentacionId, this); });
-        });
-        tbody.querySelectorAll('.btn-editar-transaccion-panel').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const row = list.find((r) => r.id === btn.getAttribute('data-id'));
-            if (row) openModalTransaccion(row, instrumentacionId);
+        if (canCambiarEstado) {
+          tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
+            sel.addEventListener('change', function() { cambiarEstadoTransaccion(this.getAttribute('data-id'), this.value, instrumentacionId, this); });
           });
-        });
+          tbody.querySelectorAll('.btn-editar-transaccion-panel').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const row = list.find((r) => r.id === btn.getAttribute('data-id'));
+              if (row) openModalTransaccion(row, instrumentacionId);
+            });
+          });
+        }
       });
   });
 }

@@ -41,6 +41,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Conceptos CC y layout', 'Conceptos cuenta corriente más claros: Conversión de moneda (antes Conversión por tipo de cambio), Comisión del acuerdo (antes Comisión). Layout: max-width 1600px para aprovechar pantalla.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Responsive móvil reforzado', 'Safe area insets (notch, barra gestos), body overflow-x hidden, todos los tabla-wrap con scroll táctil, toasts y popovers adaptados, form-actions en columna en 480px, títulos y paneles con menos padding.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Panel de Control sin título redundante', 'Quitado el h3 "Panel de Control" duplicado dentro de la vista Inicio; el título solo se muestra en el header de la página.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Permisos editar orden y cambiar estado transacción', 'Nuevos permisos editar_orden y cambiar_estado_transaccion. Migración SQL (app_permission, app_role_permission, RLS en ordenes, transacciones, mov_cc, instrumentacion, comisiones_orden). Frontend: botones Editar/Transacciones, combo pendiente/ejecutada y Editar transacción según permiso; saveOrden valida permisos.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -70,6 +71,7 @@ const funcionalidades = [
   ['Movimientos caja efectivo/banco', 'En nuevo movimiento de caja: selector Caja (Efectivo o Banco). Los movimientos manuales se guardan con caja_tipo; saldos por tipo en vista Cajas.'],
   ['Conceptos cuenta corriente', 'Textos más claros en CC: Conversión de moneda (ajuste por cotización), Comisión del acuerdo. Incluye compatibilidad con textos legacy al borrar/regenerar.'],
   ['Layout y responsive', 'Contenedor principal hasta 1600px. Móvil: safe area, overflow-x hidden, todos los tabla-wrap con scroll táctil, toasts y form-actions adaptados a 480px.'],
+  ['Permisos granulares órdenes', 'editar_orden: editar datos de orden e instrumentación. cambiar_estado_transaccion: cambiar estado pendiente/ejecutada y editar transacción. Botones y combos en vista Órdenes, panel detalle, modal transacciones pendientes y wizard según permiso; RLS actualizado en Supabase.'],
 ];
 
 const wsResumen = XLSX.utils.aoa_to_sheet(funcionalidades);
@@ -94,6 +96,7 @@ const versiones = [
   ['1.0', '__HOY__', 'Setup: estructura repo, reglas de trabajo, script bitácora, package.json, Vercel, config.example.'],
   ['1.1', '__HOY__', 'Mensajería propia (toast en lugar de alert), tasa descuento intermediario solo coma decimal, movimientos caja efectivo/banco, conceptos CC más claros (Conversión de moneda, Comisión del acuerdo), layout extendido (max-width 1600px), responsive móvil reforzado (safe area, tablas, toasts, form actions).'],
   ['1.2', '__HOY__', 'Quitar título redundante "Panel de Control" en vista Inicio (solo se muestra en el header).'],
+  ['1.3', '__HOY__', 'Permisos granulares: editar_orden y cambiar_estado_transaccion. SQL migración (app_permission, RLS), frontend: botones Editar orden y combo estado transacción según permiso; guardar orden con validación de permisos.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
