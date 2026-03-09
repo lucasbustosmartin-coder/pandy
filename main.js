@@ -768,30 +768,32 @@ function loadCuentaCorrienteIntermediario(intermediarioId) {
       setCcSaldoCards(saldos);
       renderCcTable();
       wrapEl.style.display = 'block';
-      // Backfill: recalcular movimientos de conversión/comisión por orden ejecutada (saldar Pandy–intermediario; incluye Comisión en Debe)
+      // Backfill: recalcular movimientos de conversión/comisión por orden ejecutada (conciliación: Debe no puede superar Haber por moneda)
       client.from('ordenes').select('id').eq('intermediario_id', intermediarioId).eq('estado', 'orden_ejecutada').then((rOrd) => {
         const ordenes = rOrd.data || [];
-        if (ordenes.length === 0) return;
-        let generado = false;
-        const siguiente = (i) => {
-          if (i >= ordenes.length) {
-            if (generado) {
-              client.from('movimientos_cuenta_corriente_intermediario').select('id, moneda, monto, concepto, fecha, estado, estado_fecha').eq('intermediario_id', intermediarioId).or('estado.eq.cerrado,estado.is.null').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((r2) => {
-                if (!r2.error && r2.data) {
-                  ccMovimientosList = r2.data;
-                  const saldos = { USD: 0, EUR: 0, ARS: 0 };
-                  ccMovimientosList.forEach((m) => { if (saldos[m.moneda] != null) saldos[m.moneda] += Number(m.monto); });
-                  setCcSaldoCards(saldos);
-                  renderCcTable();
-                }
-              });
+        const refetch = () => {
+          client.from('movimientos_cuenta_corriente_intermediario').select('id, moneda, monto, concepto, fecha, estado, estado_fecha').eq('intermediario_id', intermediarioId).or('estado.eq.cerrado,estado.is.null').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((r2) => {
+            if (!r2.error && r2.data) {
+              ccMovimientosList = r2.data;
+              const saldos = { USD: 0, EUR: 0, ARS: 0 };
+              ccMovimientosList.forEach((m) => { if (saldos[m.moneda] != null) saldos[m.moneda] += Number(m.monto); });
+              setCcSaldoCards(saldos);
+              renderCcTable();
             }
+          });
+        };
+        if (ordenes.length === 0) return;
+        let i = 0;
+        const siguiente = () => {
+          if (i >= ordenes.length) {
+            refetch();
             return;
           }
           const ordenId = ordenes[i].id;
-          generarMovimientoConversionCcIntermediario(ordenId).then(() => { generado = true; siguiente(i + 1); }).catch(() => siguiente(i + 1));
+          i += 1;
+          generarMovimientoConversionCcIntermediario(ordenId).then(siguiente).catch(siguiente);
         };
-        siguiente(0);
+        siguiente();
       });
     });
 }
@@ -1582,7 +1584,7 @@ function openModalOrden(registro) {
       if (!wrapSplit || !selTipoEl) return;
       const opt = selTipoEl.selectedOptions && selTipoEl.selectedOptions[0];
       const codigo = opt ? (opt.getAttribute('data-codigo') || '') : '';
-      const isTipoConComision = codigo === 'USD-USD' || codigo === 'ARS-DOLAR' || codigo === 'USD-ARS';
+      const isTipoConComision = codigo === 'USD-USD' || codigo === 'ARS-DOLAR' || codigo === 'ARS-USD' || codigo === 'USD-ARS';
       const tieneIntermediario = !!(selIntEl && selIntEl.value && selIntEl.value.trim());
       wrapSplit.style.display = isTipoConComision ? 'flex' : 'none';
       if (isTipoConComision) {
@@ -1650,6 +1652,7 @@ function openModalOrden(registro) {
       });
     };
 
+    let promContinuar = Promise.resolve();
     if (registro) {
       titulo.textContent = 'Editar orden';
       idEl.value = registro.id;
@@ -1668,6 +1671,21 @@ function openModalOrden(registro) {
       document.getElementById('orden-observaciones').value = registro.observaciones || '';
       onTipoChange();
       ordenWizardOrdenIdActual = registro.id;
+      promContinuar = client.from('comisiones_orden').select('beneficiario, monto').eq('orden_id', registro.id).then((rCom) => {
+        const rows = rCom.data || [];
+        let pandyMonto = 0, interMonto = 0;
+        rows.forEach((row) => {
+          if (row.beneficiario === 'pandy') pandyMonto += Number(row.monto) || 0;
+          else if (row.beneficiario === 'intermediario') interMonto += Number(row.monto) || 0;
+        });
+        const total = pandyMonto + interMonto;
+        if (total > 1e-6 && pctPandyEl && pctIntEl) {
+          const pctP = (pandyMonto / total) * 100;
+          const pctI = (interMonto / total) * 100;
+          pctPandyEl.value = formatImporteDisplay(pctP);
+          pctIntEl.value = formatImporteDisplay(pctI);
+        }
+      });
     } else {
       titulo.textContent = 'Nueva orden';
       idEl.value = '';
@@ -1677,16 +1695,18 @@ function openModalOrden(registro) {
       if (wizard) wizard.style.display = 'none';
       ordenWizardOrdenIdActual = null;
     }
-    if (pctPandyEl && !pctPandyEl.value) pctPandyEl.value = '100';
-    if (pctIntEl && !pctIntEl.value) pctIntEl.value = '0';
-    backdrop.classList.add('activo');
-    showOrdenWizardStep('participantes');
-    setupInputImporte(document.getElementById('orden-monto-recibido'));
-    setupInputImporte(document.getElementById('orden-monto-entregado'));
-    setupInputImporte(document.getElementById('orden-cotizacion'));
-    setupInputImporte(document.getElementById('orden-tasa-descuento-intermediario'), 2, true);
-    setupInputImporte(document.getElementById('orden-comision-pandy-pct'));
-    setupInputImporte(document.getElementById('orden-comision-intermediario-pct'));
+    promContinuar.then(() => {
+      if (pctPandyEl && !pctPandyEl.value) pctPandyEl.value = '100';
+      if (pctIntEl && !pctIntEl.value) pctIntEl.value = '0';
+      backdrop.classList.add('activo');
+      showOrdenWizardStep('participantes');
+      setupInputImporte(document.getElementById('orden-monto-recibido'));
+      setupInputImporte(document.getElementById('orden-monto-entregado'));
+      setupInputImporte(document.getElementById('orden-cotizacion'));
+      setupInputImporte(document.getElementById('orden-tasa-descuento-intermediario'), 2, true);
+      setupInputImporte(document.getElementById('orden-comision-pandy-pct'));
+      setupInputImporte(document.getElementById('orden-comision-intermediario-pct'));
+    });
   });
 }
 
@@ -1737,7 +1757,11 @@ function adaptarFormularioOrden(codigo, tipos) {
   const wrapComisionSplit = document.getElementById('orden-wrap-comision-split');
   if (wrapComision) wrapComision.style.display = (isUsdUsd || isTipoConTc || isArsArs) ? 'block' : 'none';
   if (wrapTasaDescuentoInt) wrapTasaDescuentoInt.style.display = isArsArs ? 'block' : 'none';
-  if (wrapComisionSplit && isArsArs) wrapComisionSplit.style.display = 'none';
+  if (wrapComisionSplit) {
+    if (isArsArs) wrapComisionSplit.style.display = 'none';
+    else if ((isUsdUsd || isArsDolar || isUsdArs) && document.getElementById('orden-intermediario')?.value?.trim())
+      wrapComisionSplit.style.display = 'flex';
+  }
   if (wrapCotizacion) {
     wrapCotizacion.style.display = (isUsdUsd || isArsArs) ? 'none' : 'block';
     if (labelCotizacion) labelCotizacion.textContent = isTipoConTc ? 'Tipo de cambio del acuerdo *' : 'Cotización (opcional)';
@@ -1918,18 +1942,22 @@ function guardarOrdenDesdeWizard() {
   }
   const comisionUsd = tipoCodigo === 'USD-USD' ? montoRecibido - montoEntregado
     : (tipoCodigo === 'ARS-ARS' ? montoRecibido - montoEntregado
-      : (tipoCodigo === 'ARS-DOLAR' && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado
+      : ((tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'ARS-USD') && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado
         : (tipoCodigo === 'USD-ARS' && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
   const pctPandy = parseImporteInput(document.getElementById('orden-comision-pandy-pct')?.value || '100');
   const pctInt = parseImporteInput(document.getElementById('orden-comision-intermediario-pct')?.value || '0');
   const tieneSplitVisible = document.getElementById('orden-wrap-comision-split')?.style?.display !== 'none';
-    if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'USD-ARS' || tipoCodigo === 'ARS-ARS') && intermediarioId && tieneSplitVisible) {
+  if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'ARS-USD' || tipoCodigo === 'USD-ARS' || tipoCodigo === 'ARS-ARS') && intermediarioId && tieneSplitVisible) {
     const a = Number(pctPandy);
     const b = Number(pctInt);
     if (isNaN(a) || isNaN(b) || a < 0 || b < 0 || a > 100 || b > 100 || Math.abs((a + b) - 100) > 1e-6) {
       showToast('La distribución de comisión debe sumar 100% (Pandy + Intermediario).', 'error');
       return Promise.resolve(null);
     }
+  }
+  if (intermediarioId && tieneSplitVisible && (Number(pctInt) || 0) < 1e-6) {
+    const acepta = confirm('La comisión del intermediario es cero. ¿Deseás guardar la orden igual?');
+    if (!acepta) return Promise.resolve(null);
   }
 
   const tasaDescuentoIntPct = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim();
@@ -2189,14 +2217,14 @@ function saveOrden() {
 
   const selTipoOpt = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
   const tipoCodigo = selTipoOpt ? (selTipoOpt.getAttribute('data-codigo') || '') : '';
-  if (tipoCodigo === 'ARS-DOLAR') {
+  if (tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'ARS-USD') {
     if (!cotizacion || !(cotizacion > 0)) {
-      showToast('En ARS - DOLAR el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
+      showToast('En ARS - USD el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
       return;
     }
     const usdEquiv = montoRecibido / cotizacion;
     if (usdEquiv <= montoEntregado) {
-      showToast('En ARS - DOLAR el monto a recibir (dolarizado) debe ser mayor al monto a entregar. La diferencia es la comisión.', 'error');
+      showToast('En ARS - USD el monto a recibir (dolarizado) debe ser mayor al monto a entregar. La diferencia es la comisión.', 'error');
       return;
     }
   }
@@ -2231,18 +2259,21 @@ function saveOrden() {
       return;
     }
   }
-  const comisionUsd = tipoCodigo === 'USD-USD' ? montoRecibido - montoEntregado : (tipoCodigo === 'ARS-ARS' ? montoRecibido - montoEntregado : (tipoCodigo === 'ARS-DOLAR' && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado : (tipoCodigo === 'USD-ARS' && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
+  const comisionUsd = tipoCodigo === 'USD-USD' ? montoRecibido - montoEntregado : (tipoCodigo === 'ARS-ARS' ? montoRecibido - montoEntregado : ((tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'ARS-USD') && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado : (tipoCodigo === 'USD-ARS' && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
 
   const pctPandy = parseImporteInput(document.getElementById('orden-comision-pandy-pct')?.value || '100');
   const pctInt = parseImporteInput(document.getElementById('orden-comision-intermediario-pct')?.value || '0');
   const tieneSplitVisible = document.getElementById('orden-wrap-comision-split')?.style?.display !== 'none';
-  if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'USD-ARS' || tipoCodigo === 'ARS-ARS') && intermediarioId && tieneSplitVisible) {
+  if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'ARS-USD' || tipoCodigo === 'USD-ARS' || tipoCodigo === 'ARS-ARS') && intermediarioId && tieneSplitVisible) {
     const a = Number(pctPandy);
     const b = Number(pctInt);
     if (isNaN(a) || isNaN(b) || a < 0 || b < 0 || a > 100 || b > 100 || Math.abs((a + b) - 100) > 1e-6) {
       showToast('La distribución de comisión debe sumar 100% (Pandy + Intermediario).', 'error');
       return;
     }
+  }
+  if (intermediarioId && tieneSplitVisible && (Number(pctInt) || 0) < 1e-6) {
+    if (!confirm('La comisión del intermediario es cero. ¿Deseás guardar la orden igual?')) return;
   }
 
   const tasaDescuentoIntPctSave = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim();
@@ -2842,6 +2873,33 @@ function toggleTransaccionMonedaArs() {
   }
 }
 
+/** Según tipo de operación: Ingreso solo permite moneda recibida; Egreso solo moneda entregada. Grisa opciones no permitidas. */
+function adaptarTransaccionTipoYMoneda() {
+  const backdrop = document.getElementById('modal-transaccion-backdrop');
+  const selTipo = document.getElementById('transaccion-tipo');
+  const selMoneda = document.getElementById('transaccion-moneda');
+  if (!backdrop || !selTipo || !selMoneda) return;
+  const monedaRecibida = (backdrop.dataset.monedaRecibida || '').toUpperCase();
+  const monedaEntregada = (backdrop.dataset.monedaEntregada || '').toUpperCase();
+  const tipo = selTipo.value;
+  const opciones = Array.from(selMoneda.options);
+  const monedasValidas = ['USD', 'EUR', 'ARS'];
+  const restringir = monedasValidas.includes(monedaRecibida) && monedasValidas.includes(monedaEntregada);
+  if (!restringir) {
+    opciones.forEach((opt) => { opt.disabled = false; });
+    return;
+  }
+  const monedaPermitida = tipo === 'ingreso' ? monedaRecibida : monedaEntregada;
+  opciones.forEach((opt) => {
+    opt.disabled = opt.value !== monedaPermitida;
+  });
+  const valorActual = selMoneda.value;
+  if (valorActual !== monedaPermitida) {
+    selMoneda.value = monedaPermitida;
+    toggleTransaccionMonedaArs();
+  }
+}
+
 function openModalTransaccion(registro, instrumentacionId) {
   const backdrop = document.getElementById('modal-transaccion-backdrop');
   const titulo = document.getElementById('modal-transaccion-titulo');
@@ -2854,21 +2912,24 @@ function openModalTransaccion(registro, instrumentacionId) {
 
   instIdEl.value = instrumentacionId || '';
   function cargarParticipantesYOrden() {
-    if (!instrumentacionId) return Promise.resolve({ cliente: false, intermediario: false, cotizacion: null, esCheque: false });
+    if (!instrumentacionId) return Promise.resolve({ cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '' });
     return client.from('instrumentacion').select('orden_id').eq('id', instrumentacionId).single().then((rInst) => {
       const ordenId = rInst.data && rInst.data.orden_id;
-      if (!ordenId) return { cliente: false, intermediario: false, cotizacion: null, esCheque: false };
-      return client.from('ordenes').select('cliente_id, intermediario_id, cotizacion, tipo_operacion_id').eq('id', ordenId).single().then((rOrd) => {
+      if (!ordenId) return { cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '' };
+      return client.from('ordenes').select('cliente_id, intermediario_id, cotizacion, tipo_operacion_id, moneda_recibida, moneda_entregada').eq('id', ordenId).single().then((rOrd) => {
         const o = rOrd.data || {};
         const cot = o.cotizacion != null && Number(o.cotizacion) > 0 ? Number(o.cotizacion) : null;
         const tipoOpId = o.tipo_operacion_id;
-        if (!tipoOpId) return { cliente: !!o.cliente_id, intermediario: !!o.intermediario_id, cotizacion: cot, esCheque: false };
+        const monedaRecibida = (o.moneda_recibida || '').trim().toUpperCase() || '';
+        const monedaEntregada = (o.moneda_entregada || '').trim().toUpperCase() || '';
+        const base = { cliente: !!o.cliente_id, intermediario: !!o.intermediario_id, cotizacion: cot, monedaRecibida, monedaEntregada };
+        if (!tipoOpId) return { ...base, esCheque: false };
         return client.from('tipos_operacion').select('codigo').eq('id', tipoOpId).single().then((rTipo) => {
           const codigo = (rTipo.data && rTipo.data.codigo) || '';
-          return { cliente: !!o.cliente_id, intermediario: !!o.intermediario_id, cotizacion: cot, esCheque: codigo === 'ARS-ARS' };
-        }).catch(() => ({ cliente: !!o.cliente_id, intermediario: !!o.intermediario_id, cotizacion: cot, esCheque: false }));
+          return { ...base, esCheque: codigo === 'ARS-ARS' };
+        }).catch(() => ({ ...base, esCheque: false }));
       });
-    }).catch(() => ({ cliente: false, intermediario: false, cotizacion: null, esCheque: false }));
+    }).catch(() => ({ cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '' }));
   }
 
   Promise.all([
@@ -2932,6 +2993,11 @@ function openModalTransaccion(registro, instrumentacionId) {
         document.getElementById('transaccion-tipo-cambio').value = tcAcuerdo != null ? formatImporteDisplay(tcAcuerdo) : '';
       } else document.getElementById('transaccion-tipo-cambio').value = '';
     }
+    if (backdrop) {
+      backdrop.dataset.monedaRecibida = participantes?.monedaRecibida || '';
+      backdrop.dataset.monedaEntregada = participantes?.monedaEntregada || '';
+    }
+    adaptarTransaccionTipoYMoneda();
     toggleTransaccionMonedaArs();
     backdrop.classList.add('activo');
     setupInputImporte(document.getElementById('transaccion-monto'));
@@ -3602,26 +3668,65 @@ function generarMovimientoConversionCcIntermediario(ordenId) {
             const inserts = [];
             const tieneComisionInter = ['USD', 'EUR', 'ARS'].some((mon) => comisionPorMoneda[mon] > 1e-6);
             if (tieneComisionInter && montoEntregado > 1e-6 && monedaEntregada) {
-              inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
-                intermediario_id: intermediarioId, moneda: monedaEntregada, monto: montoEntregado, orden_id: ordenId, transaccion_id: null,
-                concepto: CONCEPTO_CC_CONVERSION, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
-              }));
-              ['USD', 'EUR', 'ARS'].forEach((moneda) => {
-                const com = comisionPorMoneda[moneda] || 0;
-                if (com < 1e-6) return;
-                inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
-                  intermediario_id: intermediarioId, moneda, monto: com, orden_id: ordenId, transaccion_id: null,
-                  concepto: CONCEPTO_CC_COMISION, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
-                }));
-              });
+              const haberEnMonedaEntregada = Math.max(0, -(saldos[monedaEntregada] || 0));
+              const totalDebePlaneado = montoEntregado + (comisionPorMoneda[monedaEntregada] || 0);
+              const totalDebeACrear = totalDebePlaneado <= 1e-6 ? 0 : Math.min(totalDebePlaneado, haberEnMonedaEntregada);
+              if (totalDebeACrear > 1e-6) {
+                const estamosCap = totalDebeACrear < totalDebePlaneado - 1e-6;
+                if (estamosCap) {
+                  // Un solo movimiento: comisión a cobrar (Debe) concilia con comisión cobrada (Haber)
+                  inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
+                    intermediario_id: intermediarioId, moneda: monedaEntregada, monto: totalDebeACrear, orden_id: ordenId, transaccion_id: null,
+                    concepto: CONCEPTO_CC_COMISION, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                  }));
+                } else {
+                  const convMonto = Math.round(montoEntregado * 1e4) / 1e4;
+                  const comMonto = Math.round((comisionPorMoneda[monedaEntregada] || 0) * 1e4) / 1e4;
+                  if (convMonto > 1e-6) {
+                    inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
+                      intermediario_id: intermediarioId, moneda: monedaEntregada, monto: convMonto, orden_id: ordenId, transaccion_id: null,
+                      concepto: CONCEPTO_CC_CONVERSION, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                    }));
+                  }
+                  if (comMonto > 1e-6) {
+                    inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
+                      intermediario_id: intermediarioId, moneda: monedaEntregada, monto: comMonto, orden_id: ordenId, transaccion_id: null,
+                      concepto: CONCEPTO_CC_COMISION, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                    }));
+                  }
+                }
+              }
+              // Otras monedas: limitar Debe al Haber; si hay tope, un solo movimiento "Comisión del acuerdo"
               ['USD', 'EUR', 'ARS'].forEach((moneda) => {
                 if (moneda === monedaEntregada) return;
                 const saldo = saldos[moneda];
-                if (saldo === 0) return;
-                inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
-                  intermediario_id: intermediarioId, moneda, monto: -saldo, orden_id: ordenId, transaccion_id: null,
-                  concepto: CONCEPTO_CC_CONVERSION, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
-                }));
+                const haberEnMoneda = Math.max(0, -(saldo || 0));
+                if (haberEnMoneda <= 1e-6) return;
+                const convPlaneado = saldo < 0 ? -saldo : 0;
+                const comPlaneado = comisionPorMoneda[moneda] || 0;
+                const totalPlaneado = convPlaneado + comPlaneado;
+                const totalACrear = totalPlaneado <= 1e-6 ? 0 : Math.min(totalPlaneado, haberEnMoneda);
+                if (totalACrear <= 1e-6) return;
+                const estamosCap = totalACrear < totalPlaneado - 1e-6;
+                if (estamosCap) {
+                  inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
+                    intermediario_id: intermediarioId, moneda, monto: totalACrear, orden_id: ordenId, transaccion_id: null,
+                    concepto: CONCEPTO_CC_COMISION, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                  }));
+                } else {
+                  if (convPlaneado > 1e-6) {
+                    inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
+                      intermediario_id: intermediarioId, moneda, monto: convPlaneado, orden_id: ordenId, transaccion_id: null,
+                      concepto: CONCEPTO_CC_CONVERSION, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                    }));
+                  }
+                  if (comPlaneado > 1e-6) {
+                    inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
+                      intermediario_id: intermediarioId, moneda, monto: comPlaneado, orden_id: ordenId, transaccion_id: null,
+                      concepto: CONCEPTO_CC_COMISION, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                    }));
+                  }
+                }
               });
             } else {
               ['USD', 'EUR', 'ARS'].forEach((moneda) => {
@@ -3690,6 +3795,8 @@ function setupModalTransaccion() {
   if (btnCancel) btnCancel.addEventListener('click', closeModalTransaccion);
   if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalTransaccion(); });
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveTransaccion(); });
+  const selTipo = document.getElementById('transaccion-tipo');
+  if (selTipo) selTipo.addEventListener('change', adaptarTransaccionTipoYMoneda);
   if (selMoneda) selMoneda.addEventListener('change', toggleTransaccionMonedaArs);
   if (montoBaseEl) { montoBaseEl.addEventListener('input', actualizarMontoArsCalculado); montoBaseEl.addEventListener('change', actualizarMontoArsCalculado); }
   if (tcEl) { tcEl.addEventListener('input', actualizarMontoArsCalculado); tcEl.addEventListener('change', actualizarMontoArsCalculado); }

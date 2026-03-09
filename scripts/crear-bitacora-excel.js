@@ -45,6 +45,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Logo y favicon desde Emoji-de-WhatsApp-panda', 'Favicon y logo de app generados desde JPG del panda. Corrección cropOffset (Y X = 0 262) con sips; PNG 192x192 (logo), 32x32 y 16x16 (pestaña). Logo en círculo (contain), z-index para que sidebar no tape; ?v=2 en links favicon para cache.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Tipo operación define monedas en Nueva orden', 'Regla: primera moneda del tipo = recibida, segunda = entregada. Selects Moneda recibida/entregada se rellenan y deshabilitan según tipo (estilo gris). ARS-USD tratado como ARS-DOLAR. Cualquier código XXX-YYY aplica.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Transacciones auto sin intermediario', 'AutoCompletarInstrumentacionSinIntermediario para USD-USD, ARS-USD, ARS-DOLAR, USD-ARS y ARS-ARS. Al abrir instrumentación vacía se crean dos transacciones (ingreso/egreso efectivo).', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'v1.7: CC intermediario, transacciones y orden', 'Conciliación CC intermediario: cap Debe por moneda al Haber; un solo movimiento Comisión del acuerdo cuando hay tope. Modal transacción: moneda/tipo según operación (Ingreso=moneda recibida, Egreso=entregada). Orden: distribución comisión siempre visible con intermediario; carga desde comisiones_orden al editar; alerta genérica si comisión intermediario 0% (todos los tipos); ARS-USD en split y validaciones.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -106,6 +107,7 @@ const versiones = [
   ['1.4', '__HOY__', 'Logo y favicon: Emoji-de-WhatsApp-panda como base. Recorte correcto (cropOffset Y X = 0 262) para cuadrado central; PNG 192/32/16 y favicon; logo en header/login con contenedor circular; z-index para que sidebar no tape logo; cache-bust ?v=2 en favicon.'],
   ['1.5', '__HOY__', 'Nueva orden: tipo de operación define monedas (primera = recibida, segunda = entregada). Monedas recibida/entregada se rellenan y deshabilitan según tipo; estilo gris para selects deshabilitados. ARS-USD tratado como ARS-DOLAR.'],
   ['1.6', '__HOY__', 'Instrumentación sin intermediario: auto-generación de transacciones para USD-USD, ARS-USD, ARS-DOLAR, USD-ARS y ARS-ARS. Al abrir instrumentación vacía se crean dos transacciones (ingreso/egreso efectivo).'],
+  ['1.7', '__HOY__', 'CC intermediario: conciliación por moneda (Debe ≤ Haber), un movimiento Comisión cuando hay tope. Transacciones: moneda/tipo según tipo operación. Orden: distribución comisión visible y editable con intermediario; alerta si 0% intermediario (todos los tipos); ARS-USD en split y validaciones.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
