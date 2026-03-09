@@ -2130,7 +2130,7 @@ function renderOrdenWizardInstrumentacion(instId) {
           if (codigo === 'ARS-ARS' && orden.intermediario_id) {
             return autoCompletarInstrumentacionChequeConIntermediario(ordenId, instId, orden);
           }
-          if (!orden.intermediario_id && (codigo === 'ARS-DOLAR' || codigo === 'USD-ARS' || codigo === 'ARS-ARS')) {
+          if (!orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-DOLAR' || codigo === 'ARS-USD' || codigo === 'USD-ARS' || codigo === 'ARS-ARS')) {
             return autoCompletarInstrumentacionSinIntermediario(ordenId, instId, orden);
           }
           return Promise.resolve();
@@ -2545,14 +2545,20 @@ function autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumenta
 }
 
 /**
- * Si la orden es ARS-DOLAR o USD-ARS sin intermediario (o ARS-ARS sin intermediario) y la instrumentación está vacía,
- * crea dos transacciones por defecto: estado pendiente, modo de pago efectivo.
+ * Si la orden es sin intermediario y la instrumentación está vacía, crea dos transacciones por defecto
+ * (ingreso moneda recibida, egreso moneda entregada). Soporta USD-USD, ARS-DOLAR, ARS-USD, USD-ARS, ARS-ARS.
+ * Modo de pago efectivo, estado pendiente.
  */
 function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId, orden) {
   if (!ordenId || !instrumentacionId || !orden || orden.intermediario_id || !orden.tipo_operacion_id) return Promise.resolve();
   return client.from('tipos_operacion').select('codigo').eq('id', orden.tipo_operacion_id).single().then((rTipo) => {
     const codigo = (rTipo.data && rTipo.data.codigo) || '';
-    if (codigo !== 'ARS-DOLAR' && codigo !== 'USD-ARS' && codigo !== 'ARS-ARS') return Promise.resolve();
+    const codigoNorm = codigo === 'ARS-USD' ? 'ARS-DOLAR' : codigo;
+    const esUsdUsd = codigoNorm === 'USD-USD';
+    const esArsDolar = codigoNorm === 'ARS-DOLAR';
+    const esUsdArs = codigoNorm === 'USD-ARS';
+    const esArsArs = codigoNorm === 'ARS-ARS';
+    if (!esUsdUsd && !esArsDolar && !esUsdArs && !esArsArs) return Promise.resolve();
     return client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle().then((rModo) => {
       const modoPagoEfectivoId = (rModo.data && rModo.data.id) || null;
       if (!modoPagoEfectivoId) return Promise.resolve();
@@ -2563,15 +2569,16 @@ function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId
       const cotizacion = Number(orden.cotizacion) || null;
       const ahora = new Date().toISOString();
       const rows = [];
-      // Ingreso: cobrador Pandy (recibe), pagador Cliente (paga). Egreso: cobrador Cliente (recibe), pagador Pandy (paga).
-      if (codigo === 'ARS-DOLAR') {
+      if (esUsdUsd) {
+        rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
+        rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
+      } else if (esArsDolar) {
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: cotizacion, updated_at: ahora });
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
-      } else if (codigo === 'USD-ARS') {
+      } else if (esUsdArs) {
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: cotizacion, updated_at: ahora });
       } else {
-        // ARS-ARS (CHEQUE) sin intermediario: 2 transacciones efectivo
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: 'ARS', monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: 'ARS', monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
       }
@@ -2706,9 +2713,9 @@ function expandOrdenTransacciones(ordenId, orden) {
               if (codigo === 'ARS-ARS' && orden.intermediario_id) {
                 return autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumentacionId, orden);
               }
-              if (!orden.intermediario_id && (codigo === 'ARS-DOLAR' || codigo === 'USD-ARS' || codigo === 'ARS-ARS')) {
-                return autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId, orden);
-              }
+if (!orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-DOLAR' || codigo === 'ARS-USD' || codigo === 'USD-ARS' || codigo === 'ARS-ARS')) {
+              return autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId, orden);
+            }
               return Promise.resolve();
             }).then(() =>
               client.from('transacciones').select('id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true })

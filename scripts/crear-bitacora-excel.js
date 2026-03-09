@@ -44,6 +44,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Permisos editar orden y cambiar estado transacción', 'Nuevos permisos editar_orden y cambiar_estado_transaccion. Migración SQL (app_permission, app_role_permission, RLS en ordenes, transacciones, mov_cc, instrumentacion, comisiones_orden). Frontend: botones Editar/Transacciones, combo pendiente/ejecutada y Editar transacción según permiso; saveOrden valida permisos.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Logo y favicon desde Emoji-de-WhatsApp-panda', 'Favicon y logo de app generados desde JPG del panda. Corrección cropOffset (Y X = 0 262) con sips; PNG 192x192 (logo), 32x32 y 16x16 (pestaña). Logo en círculo (contain), z-index para que sidebar no tape; ?v=2 en links favicon para cache.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Tipo operación define monedas en Nueva orden', 'Regla: primera moneda del tipo = recibida, segunda = entregada. Selects Moneda recibida/entregada se rellenan y deshabilitan según tipo (estilo gris). ARS-USD tratado como ARS-DOLAR. Cualquier código XXX-YYY aplica.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Transacciones auto sin intermediario', 'AutoCompletarInstrumentacionSinIntermediario para USD-USD, ARS-USD, ARS-DOLAR, USD-ARS y ARS-ARS. Al abrir instrumentación vacía se crean dos transacciones (ingreso/egreso efectivo).', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -76,6 +77,7 @@ const funcionalidades = [
   ['Permisos granulares órdenes', 'editar_orden: editar datos de orden e instrumentación. cambiar_estado_transaccion: cambiar estado pendiente/ejecutada y editar transacción. Botones y combos en vista Órdenes, panel detalle, modal transacciones pendientes y wizard según permiso; RLS actualizado en Supabase.'],
   ['Logo y favicon', 'Logo de app y favicon de pestaña generados desde Emoji-de-WhatsApp-panda.jpg. Recorte central 675x675 (sips cropOffset 0 262), PNG 192/32/16. Logo en header y login en círculo (object-fit contain); z-index para que no lo tape el sidebar; cache-bust en favicon.'],
   ['Tipo de operación y monedas en orden', 'En Nueva orden / Editar orden, el tipo de operación define monedas: primera = recibida, segunda = entregada. Los selects se rellenan y deshabilitan (gris); ARS-USD equivalente a ARS-DOLAR.'],
+  ['Instrumentación sin intermediario', 'Órdenes sin intermediario (USD-USD, ARS-USD, ARS-DOLAR, USD-ARS, ARS-ARS): al abrir instrumentación vacía se generan automáticamente dos transacciones (ingreso y egreso en efectivo).'],
 ];
 
 const wsResumen = XLSX.utils.aoa_to_sheet(funcionalidades);
@@ -103,6 +105,7 @@ const versiones = [
   ['1.3', '__HOY__', 'Permisos granulares: editar_orden y cambiar_estado_transaccion. SQL migración (app_permission, RLS), frontend: botones Editar orden y combo estado transacción según permiso; guardar orden con validación de permisos.'],
   ['1.4', '__HOY__', 'Logo y favicon: Emoji-de-WhatsApp-panda como base. Recorte correcto (cropOffset Y X = 0 262) para cuadrado central; PNG 192/32/16 y favicon; logo en header/login con contenedor circular; z-index para que sidebar no tape logo; cache-bust ?v=2 en favicon.'],
   ['1.5', '__HOY__', 'Nueva orden: tipo de operación define monedas (primera = recibida, segunda = entregada). Monedas recibida/entregada se rellenan y deshabilitan según tipo; estilo gris para selects deshabilitados. ARS-USD tratado como ARS-DOLAR.'],
+  ['1.6', '__HOY__', 'Instrumentación sin intermediario: auto-generación de transacciones para USD-USD, ARS-USD, ARS-DOLAR, USD-ARS y ARS-ARS. Al abrir instrumentación vacía se crean dos transacciones (ingreso/egreso efectivo).'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
