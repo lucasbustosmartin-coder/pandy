@@ -40,6 +40,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Tasa descuento intermediario y caja banco', 'Campo tasa ARS-ARS CHEQUE: solo coma decimal (no punto), mantener coma al escribir decimales. Modal movimiento caja: selector Caja (Efectivo/Banco) para movimientos manuales; caja_tipo guardado en movimientos_caja.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Conceptos CC y layout', 'Conceptos cuenta corriente más claros: Conversión de moneda (antes Conversión por tipo de cambio), Comisión del acuerdo (antes Comisión). Layout: max-width 1600px para aprovechar pantalla.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Responsive móvil reforzado', 'Safe area insets (notch, barra gestos), body overflow-x hidden, todos los tabla-wrap con scroll táctil, toasts y popovers adaptados, form-actions en columna en 480px, títulos y paneles con menos padding.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Panel de Control sin título redundante', 'Quitado el h3 "Panel de Control" duplicado dentro de la vista Inicio; el título solo se muestra en el header de la página.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -61,7 +62,7 @@ const funcionalidades = [
   ['Vista Órdenes', 'Listado, Nueva orden y Editar. Estados: cotización, cerrada, concertada. Al concertar se generan movimientos de caja y cuenta corriente (evita doble concertación).'],
   ['Edición movimientos de caja', 'Editar movimiento: manual (todos los campos) o por orden (solo concepto y fecha).'],
   ['Vista Cuenta corriente', 'Selector cliente, saldos USD/EUR/ARS, tabla de movimientos con filtro por moneda. Convención: positivo = cliente nos debe, negativo = nosotros le debemos.'],
-  ['Vista Inicio', 'Saldos de las 3 cajas y accesos rápidos a Órdenes, Cajas, Clientes, Cuenta corriente.'],
+  ['Vista Inicio', 'Saldos de las 3 cajas y accesos rápidos a Órdenes, Cajas, Clientes, Cuenta corriente. Título de vista solo en el header (sin duplicado en el contenido).'],
   ['Convención y corrección CC', 'Signos correctos al concertar. sql/corregir_signos_cuenta_corriente.sql para corregir datos ya cargados.'],
   ['Edición movimientos cuenta corriente', 'En vista Cuenta corriente, botón Editar por movimiento. Modal: concepto y fecha. Permiso abm_ordenes.'],
   ['Responsividad móvil', 'Media queries 768px y 480px. Touch 44px, tablas con scroll táctil, modales y cards adaptados, formularios en una columna en móvil.'],
@@ -92,6 +93,7 @@ const versiones = [
   ['Versión', 'Fecha', 'Descripción'],
   ['1.0', '__HOY__', 'Setup: estructura repo, reglas de trabajo, script bitácora, package.json, Vercel, config.example.'],
   ['1.1', '__HOY__', 'Mensajería propia (toast en lugar de alert), tasa descuento intermediario solo coma decimal, movimientos caja efectivo/banco, conceptos CC más claros (Conversión de moneda, Comisión del acuerdo), layout extendido (max-width 1600px), responsive móvil reforzado (safe area, tablas, toasts, form actions).'],
+  ['1.2', '__HOY__', 'Quitar título redundante "Panel de Control" en vista Inicio (solo se muestra en el header).'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
