@@ -1691,8 +1691,16 @@ function openModalOrden(registro) {
 }
 
 function adaptarFormularioOrden(codigo, tipos) {
+  // Regla: en el código tipo operación la primera moneda es la recibida y la segunda la entregada (ej. ARS-USD → recibimos ARS, entregamos USD)
+  const partes = (codigo || '').split('-');
+  const primera = (partes[0] || '').trim().toUpperCase();
+  const segunda = (partes[1] || '').trim().toUpperCase();
+  const normalizarMoneda = (s) => (s === 'DOLAR' ? 'USD' : s);
+  const recibidaDesdeTipo = primera && segunda ? normalizarMoneda(primera) : null;
+  const entregadaDesdeTipo = primera && segunda ? normalizarMoneda(segunda) : null;
+
   const isUsdUsd = codigo === 'USD-USD';
-  const isArsDolar = codigo === 'ARS-DOLAR';
+  const isArsDolar = codigo === 'ARS-DOLAR' || codigo === 'ARS-USD';
   const isUsdArs = codigo === 'USD-ARS';
   const isArsArs = codigo === 'ARS-ARS';
   const isTipoConTc = isArsDolar || isUsdArs;
@@ -1708,18 +1716,20 @@ function adaptarFormularioOrden(codigo, tipos) {
   const estadoSelect = document.getElementById('orden-estado');
 
   if (monedaRecibida) {
-    if (isUsdUsd) { monedaRecibida.value = 'USD'; monedaRecibida.disabled = true; }
-    else if (isArsDolar) { monedaRecibida.value = 'ARS'; monedaRecibida.disabled = true; }
-    else if (isUsdArs) { monedaRecibida.value = 'USD'; monedaRecibida.disabled = true; }
-    else if (isArsArs) { monedaRecibida.value = 'ARS'; monedaRecibida.disabled = true; }
-    else { monedaRecibida.disabled = false; }
+    if (recibidaDesdeTipo && ['USD', 'EUR', 'ARS'].includes(recibidaDesdeTipo)) {
+      monedaRecibida.value = recibidaDesdeTipo;
+      monedaRecibida.disabled = true;
+    } else {
+      monedaRecibida.disabled = false;
+    }
   }
   if (monedaEntregada) {
-    if (isUsdUsd) { monedaEntregada.value = 'USD'; monedaEntregada.disabled = true; }
-    else if (isArsDolar) { monedaEntregada.value = 'USD'; monedaEntregada.disabled = true; }
-    else if (isUsdArs) { monedaEntregada.value = 'ARS'; monedaEntregada.disabled = true; }
-    else if (isArsArs) { monedaEntregada.value = 'ARS'; monedaEntregada.disabled = true; }
-    else { monedaEntregada.disabled = false; }
+    if (entregadaDesdeTipo && ['USD', 'EUR', 'ARS'].includes(entregadaDesdeTipo)) {
+      monedaEntregada.value = entregadaDesdeTipo;
+      monedaEntregada.disabled = true;
+    } else {
+      monedaEntregada.disabled = false;
+    }
   }
   if (labelMontoRecibido) labelMontoRecibido.textContent = (isUsdUsd || isTipoConTc || isArsArs) ? 'Monto a Recibir *' : 'Monto recibido *';
   if (labelMontoEntregado) labelMontoEntregado.textContent = (isUsdUsd || isTipoConTc || isArsArs) ? 'Monto a Entregar *' : 'Monto entregado *';
