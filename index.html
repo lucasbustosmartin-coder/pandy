@@ -3,13 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <link rel="icon" type="image/png" href="/favicon.png" />
+  <!-- Favicon: recomendación Chrome — PNG cuadrados con sizes (desde Emoji-de-WhatsApp-panda) -->
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=2" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=2" />
+  <link rel="alternate icon" type="image/png" href="/favicon-32x32.png?v=2" />
   <title>Pandi</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; margin: 0; padding: 0; background: #f5f5f5; display: flex; min-height: 100vh; }
-    .sidebar { width: 56px; min-width: 56px; background: #1a1a1a; color: #fff; transition: width 0.25s ease; overflow: hidden; display: flex; flex-direction: column; flex-shrink: 0; }
+    .sidebar { width: 56px; min-width: 56px; background: #1a1a1a; color: #fff; transition: width 0.25s ease; overflow: hidden; display: flex; flex-direction: column; flex-shrink: 0; position: relative; z-index: 0; }
     .sidebar.expanded { width: 220px; }
     .sidebar-toggle { display: flex; align-items: center; justify-content: center; width: 56px; height: 52px; border: none; background: transparent; color: #fff; cursor: pointer; font-size: 1.25rem; flex-shrink: 0; }
     .sidebar-toggle:hover { background: rgba(255,255,255,0.1); }
@@ -25,10 +28,11 @@
     .sidebar-nav .menu-item .menu-label { white-space: nowrap; opacity: 0; width: 0; overflow: hidden; transition: opacity 0.2s, width 0.2s; }
     .sidebar.expanded .sidebar-nav .menu-item .menu-label { opacity: 1; width: auto; }
     .sidebar-version { margin-top: auto; padding: 0.75rem 1rem; font-size: 0.75rem; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
-    .main-content { flex: 1; padding: 1.5rem; overflow-x: auto; }
+    .main-content { flex: 1; padding: 1.5rem; overflow-x: auto; position: relative; z-index: 1; background: #f5f5f5; }
     .app { max-width: 1600px; width: 100%; }
-    .page-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
-    .page-header .page-logo { height: 40px; width: auto; max-width: 160px; object-fit: contain; display: block; }
+    .page-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; position: relative; z-index: 2; }
+    .page-header .page-logo-wrap { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.08); }
+.page-header .page-logo-wrap .page-logo { width: 100%; height: 100%; object-fit: contain; object-position: center; }
     .page-header h1, .page-header #page-title { margin: 0; color: #1a1a1a; font-size: 1.5rem; font-weight: 700; }
     .card { background: #fff; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
     .login-screen { max-width: 380px; margin: 2rem auto; padding: 2rem; background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
@@ -41,7 +45,8 @@
     .login-screen .login-error { color: #b91c1c; font-size: 0.9rem; margin-top: 0.5rem; }
     .login-screen .login-footer { margin-top: 1.25rem; font-size: 0.9rem; color: #666; }
     .login-screen .login-footer a { color: #0d7d3d; cursor: pointer; }
-    .login-screen .login-logo { height: 48px; width: auto; max-width: 180px; display: block; margin: 0 auto 1.25rem auto; object-fit: contain; }
+    .login-screen .login-logo-wrap { width: 56px; height: 56px; margin: 0 auto 1.25rem auto; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(0,0,0,0.1); }
+.login-screen .login-logo-wrap .login-logo { width: 100%; height: 100%; object-fit: contain; object-position: center; }
     .user-bar { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; font-size: 0.9rem; color: #555; }
     .user-bar .btn-cerrar { padding: 0.4rem 0.75rem; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
     .user-bar .btn-cerrar:hover { background: #f0f0f0; }
@@ -173,7 +178,7 @@
       .app { min-width: 0; }
       .main-content { padding: 0.75rem 1rem; padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); padding-bottom: max(1rem, env(safe-area-inset-bottom)); overflow-x: hidden; }
       .page-header { flex-wrap: wrap; gap: 0.5rem; flex-direction: row; }
-      .page-header .page-logo { height: 36px; max-width: 120px; }
+      .page-header .page-logo-wrap { height: 36px; width: 36px; }
       .page-header h1, #page-title { font-size: 1.25rem; }
       .user-bar { margin-left: 0; width: 100%; order: 3; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
       .user-bar .btn-cerrar { min-height: 44px; padding: 0.5rem 0.85rem; }
@@ -207,7 +212,7 @@
       .sidebar { width: 52px; min-width: 52px; }
       .sidebar.expanded { width: 200px; }
       .sidebar-toggle { width: 52px; height: 48px; min-height: 44px; }
-      .page-header .page-logo { height: 32px; max-width: 100px; }
+      .page-header .page-logo-wrap { height: 32px; width: 32px; }
       #page-title { font-size: 1.1rem; }
       .card { padding: 0.85rem; }
       .modal { max-width: 100%; border-radius: 10px; margin: 0; }
@@ -263,12 +268,12 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.3</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.4</div>
   </aside>
 
   <main class="main-content">
     <div id="login-screen" class="login-screen card" style="display:none;">
-      <img src="/Logo.png" alt="Pandi" class="login-logo" onerror="this.style.display='none'" />
+      <span class="login-logo-wrap"><img src="/favicon-192x192.png" alt="Pandi" class="login-logo" /></span>
       <h2>Iniciar sesión</h2>
       <form id="login-form">
         <div class="form-group">
@@ -285,7 +290,7 @@
       <p class="login-footer">¿No tenés cuenta? <a href="#" id="link-registro">Registrarse</a></p>
     </div>
     <div id="register-screen" class="login-screen card" style="display:none;">
-      <img src="/Logo.png" alt="Pandi" class="login-logo" onerror="this.style.display='none'" />
+      <span class="login-logo-wrap"><img src="/favicon-192x192.png" alt="Pandi" class="login-logo" /></span>
       <h2>Registrarse</h2>
       <form id="register-form">
         <div class="form-group">
@@ -304,7 +309,7 @@
 
     <div class="app" id="app-content" style="display:none;">
       <header class="page-header">
-        <img src="/Logo.png" alt="Pandi" class="page-logo" id="page-logo" onerror="this.style.display='none'" />
+        <span class="page-logo-wrap"><img src="/favicon-192x192.png" alt="Pandi" class="page-logo" id="page-logo" /></span>
         <h1 id="page-title">Panel de Control</h1>
         <div class="user-bar" id="user-bar">
           <span id="user-email"></span>
