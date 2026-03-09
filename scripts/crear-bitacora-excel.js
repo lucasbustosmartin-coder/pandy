@@ -22,6 +22,24 @@ function aplicarHoyAhora(rows) {
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
   ['__HOY__', '__AHORA__', 'Setup Pandi', 'Estructura repo (sql/, scripts/, docs/, Base/), reglas .cursor/rules, script bitácora, package.json, vercel, config.example.', 'Setup'],
+  ['__HOY__', '__AHORA__', 'SQL tablas y seguridad', 'Tablas negocio: clientes, tipos_movimiento_caja, ordenes, movimientos_caja, movimientos_cuenta_corriente. Seguridad: roles (Admin, Encargado, Visor), permisos abm_*, RLS, set_user_role.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'UI base y login', 'Layout tipo Everfit: sidebar (Inicio, Órdenes, Cajas, Clientes, Cuenta corriente, Seguridad), login/registro, header con logo y user-bar. Auth Supabase, navegación entre vistas. Vista Seguridad: get_users_for_admin + set_user_role.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'ABM Clientes', 'Vista Clientes: listado desde Supabase, botón Nuevo cliente (si abm_clientes), modal Alta/Edición con nombre, documento, email, teléfono, dirección, activo. Guardar insert/update.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Vista Cajas', 'Saldos USD/EUR/ARS (cards), filtro por moneda, tabla de movimientos. Nuevo movimiento manual: modal con moneda, tipo (tipos_movimiento_caja), monto, concepto, fecha. Signo según tipo ingreso/egreso.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'ABM Tipos de movimiento de caja', 'Integrado en vista Cajas: listado de tipos, Nuevo tipo y Editar. Campos: nombre, dirección (Ingreso/Egreso), activo. Al cargar se define si es Ingreso o Egreso.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Iconos y regla botones', 'Iconos por moneda en Cajas (USA USD, Euro EUR, bandera ARS). Regla: todo botón de acción con icono a la izquierda. Aplicado a Entrar, Crear cuenta, Cerrar sesión, Nuevo/Editar/Guardar/Cancelar en todas las vistas.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Importes y formato', 'Campo monto con formato es-AR (miles con punto, decimales con coma). parseImporteInput, formatImporteDisplay, setupInputImporte en modales.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Vista Órdenes', 'Listado de órdenes (fecha, cliente, estado, recibido/entregado, cotización). Nueva orden y Editar con modal (cliente, fecha, monedas y montos, estado cotización/cerrada/concertada). Al concertar se crean movimientos de caja y cuenta corriente (una sola vez por orden).', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Edición movimientos de caja', 'Botón Editar en cada movimiento. Modal en modo edición: para movimientos manuales se editan moneda, tipo, monto, concepto y fecha; para movimientos por orden solo concepto y fecha.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Vista Cuenta corriente', 'Selector de cliente, saldos por moneda (USD, EUR, ARS), tabla de movimientos con filtro por moneda. Convención: positivo = cliente nos debe, negativo = nosotros le debemos.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Vista Inicio', 'Resumen con saldos de las 3 cajas (USD, EUR, ARS) y accesos rápidos a Órdenes, Cajas, Clientes y Cuenta corriente.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Convención cuenta corriente', 'Corregidos signos al concertar: moneda recibida → monto negativo (nosotros le debemos), moneda entregada → monto positivo (cliente nos debe). Leyenda aclarada en la vista. Script sql/corregir_signos_cuenta_corriente.sql para datos existentes.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Edición movimientos cuenta corriente', 'Botón Editar en tabla de movimientos de cuenta corriente (permiso abm_ordenes). Modal para editar concepto y fecha. Guardar actualiza y recarga la vista del cliente.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Responsividad móvil', 'Breakpoints 768px y 480px. Touch targets mínimos 44px en botones y menú. Tablas con scroll horizontal y -webkit-overflow-scrolling: touch. Cards y modales adaptados; form dos columnas en una en móvil; inputs font-size 16px en modal para evitar zoom iOS.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Mensajería propia (toast)', 'Reemplazo de todos los alert() por showToast(): validaciones de órdenes, transacciones, movimientos caja/CC, clientes, intermediarios, tipos movimiento, roles. Toasts con tipo success/error/info.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Tasa descuento intermediario y caja banco', 'Campo tasa ARS-ARS CHEQUE: solo coma decimal (no punto), mantener coma al escribir decimales. Modal movimiento caja: selector Caja (Efectivo/Banco) para movimientos manuales; caja_tipo guardado en movimientos_caja.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Conceptos CC y layout', 'Conceptos cuenta corriente más claros: Conversión de moneda (antes Conversión por tipo de cambio), Comisión del acuerdo (antes Comisión). Layout: max-width 1600px para aprovechar pantalla.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Responsive móvil reforzado', 'Safe area insets (notch, barra gestos), body overflow-x hidden, todos los tabla-wrap con scroll táctil, toasts y popovers adaptados, form-actions en columna en 480px, títulos y paneles con menos padding.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -33,6 +51,24 @@ const funcionalidades = [
   ['Funcionalidad', 'Descripción'],
   ['Estructura del repo', 'Carpetas sql/, scripts/, docs/, Base/. Reglas en .cursor/rules (estructura-proyecto, reglas-pandi, bitácora, preguntas-solo-respuesta).'],
   ['Bitácora', 'Node.js + SheetJS (xlsx). Script scripts/crear-bitacora-excel.js genera Bitacora_tareas.xlsx con Log, Resumen, Ref Git y Vercel, Versiones, Tecnología.'],
+  ['Tablas de negocio (Supabase)', 'clientes, tipos_movimiento_caja, ordenes, movimientos_caja, movimientos_cuenta_corriente. Órdenes: cotizacion, cerrada, concertada. CC por cliente y moneda.'],
+  ['Seguridad (Supabase)', 'Roles Admin/Encargado/Visor. Permisos abm_*. RLS. RPC set_user_role.'],
+  ['UI base Pandi', 'index.html + main.js: sidebar colapsable, login/registro, 6 vistas (Inicio, Órdenes, Cajas, Clientes, Cuenta corriente, Seguridad). Estilos Everfit. Vista Seguridad funcional (asignar rol).'],
+  ['ABM Clientes', 'Listado de clientes (tabla clientes), Nuevo cliente y Editar en modal. Campos: nombre, documento, email, teléfono, dirección, activo. Solo usuarios con permiso abm_clientes pueden crear/editar.'],
+  ['Vista Cajas', 'Tres saldos (USD, EUR, ARS) calculados desde movimientos_caja. Filtro por moneda y tabla de movimientos. Alta de movimiento manual con tipo de movimiento (tipos_movimiento_caja), monto positivo; signo según ingreso/egreso.'],
+  ['ABM Tipos de movimiento de caja', 'Integrado en Cajas: listado, Nuevo tipo, Editar. Nombre, Dirección (Ingreso/Egreso), Activo. Permiso abm_tipos_movimiento_caja.'],
+  ['Iconos y botones', 'Iconos por moneda (USA/Euro/Argentina). Todo botón de acción con icono a la izquierda (Entrar, Guardar, Editar, Nuevo, Cancelar, etc.).'],
+  ['Vista Órdenes', 'Listado, Nueva orden y Editar. Estados: cotización, cerrada, concertada. Al concertar se generan movimientos de caja y cuenta corriente (evita doble concertación).'],
+  ['Edición movimientos de caja', 'Editar movimiento: manual (todos los campos) o por orden (solo concepto y fecha).'],
+  ['Vista Cuenta corriente', 'Selector cliente, saldos USD/EUR/ARS, tabla de movimientos con filtro por moneda. Convención: positivo = cliente nos debe, negativo = nosotros le debemos.'],
+  ['Vista Inicio', 'Saldos de las 3 cajas y accesos rápidos a Órdenes, Cajas, Clientes, Cuenta corriente.'],
+  ['Convención y corrección CC', 'Signos correctos al concertar. sql/corregir_signos_cuenta_corriente.sql para corregir datos ya cargados.'],
+  ['Edición movimientos cuenta corriente', 'En vista Cuenta corriente, botón Editar por movimiento. Modal: concepto y fecha. Permiso abm_ordenes.'],
+  ['Responsividad móvil', 'Media queries 768px y 480px. Touch 44px, tablas con scroll táctil, modales y cards adaptados, formularios en una columna en móvil.'],
+  ['Mensajería toast', 'Todos los avisos y errores con showToast() (success/error/info) en lugar de alert(). Aplicado a órdenes, transacciones, movimientos caja/CC, clientes, intermediarios, tipos movimiento, roles.'],
+  ['Movimientos caja efectivo/banco', 'En nuevo movimiento de caja: selector Caja (Efectivo o Banco). Los movimientos manuales se guardan con caja_tipo; saldos por tipo en vista Cajas.'],
+  ['Conceptos cuenta corriente', 'Textos más claros en CC: Conversión de moneda (ajuste por cotización), Comisión del acuerdo. Incluye compatibilidad con textos legacy al borrar/regenerar.'],
+  ['Layout y responsive', 'Contenedor principal hasta 1600px. Móvil: safe area, overflow-x hidden, todos los tabla-wrap con scroll táctil, toasts y form-actions adaptados a 480px.'],
 ];
 
 const wsResumen = XLSX.utils.aoa_to_sheet(funcionalidades);
@@ -55,6 +91,7 @@ wsRef['!cols'] = [{ wch: 28 }, { wch: 70 }];
 const versiones = [
   ['Versión', 'Fecha', 'Descripción'],
   ['1.0', '__HOY__', 'Setup: estructura repo, reglas de trabajo, script bitácora, package.json, Vercel, config.example.'],
+  ['1.1', '__HOY__', 'Mensajería propia (toast en lugar de alert), tasa descuento intermediario solo coma decimal, movimientos caja efectivo/banco, conceptos CC más claros (Conversión de moneda, Comisión del acuerdo), layout extendido (max-width 1600px), responsive móvil reforzado (safe area, tablas, toasts, form actions).'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

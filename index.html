@@ -2,19 +2,1116 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
   <title>Pandi</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 0; background: #f5f5f5; display: flex; min-height: 100vh; }
+    .sidebar { width: 56px; min-width: 56px; background: #1a1a1a; color: #fff; transition: width 0.25s ease; overflow: hidden; display: flex; flex-direction: column; flex-shrink: 0; }
+    .sidebar.expanded { width: 220px; }
+    .sidebar-toggle { display: flex; align-items: center; justify-content: center; width: 56px; height: 52px; border: none; background: transparent; color: #fff; cursor: pointer; font-size: 1.25rem; flex-shrink: 0; }
+    .sidebar-toggle:hover { background: rgba(255,255,255,0.1); }
+    .sidebar-toggle .icon-collapse { display: none; }
+    .sidebar.expanded .sidebar-toggle .icon-expand { display: none; }
+    .sidebar.expanded .sidebar-toggle .icon-collapse { display: inline-flex; }
+    .sidebar-nav { padding: 0.5rem 0; }
+    .sidebar-nav .menu-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.65rem 1rem; color: rgba(255,255,255,0.9); text-decoration: none; border: none; background: none; width: 100%; cursor: pointer; font-size: 0.95rem; font-family: inherit; text-align: left; }
+    .sidebar-nav .menu-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .sidebar-nav .menu-item.menu-item-active { background: rgba(255,255,255,0.15); color: #fff; }
+    .sidebar-nav .menu-item .menu-icon { width: 24px; height: 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .sidebar-nav .menu-item .menu-icon svg { width: 100%; height: 100%; stroke: currentColor; }
+    .sidebar-nav .menu-item .menu-label { white-space: nowrap; opacity: 0; width: 0; overflow: hidden; transition: opacity 0.2s, width 0.2s; }
+    .sidebar.expanded .sidebar-nav .menu-item .menu-label { opacity: 1; width: auto; }
+    .sidebar-version { margin-top: auto; padding: 0.75rem 1rem; font-size: 0.75rem; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+    .main-content { flex: 1; padding: 1.5rem; overflow-x: auto; }
+    .app { max-width: 1600px; width: 100%; }
+    .page-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .page-header .page-logo { height: 40px; width: auto; max-width: 160px; object-fit: contain; display: block; }
+    .page-header h1, .page-header #page-title { margin: 0; color: #1a1a1a; font-size: 1.5rem; font-weight: 700; }
+    .card { background: #fff; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .login-screen { max-width: 380px; margin: 2rem auto; padding: 2rem; background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    .login-screen h2 { margin: 0 0 1.25rem 0; font-size: 1.35rem; color: #1a1a1a; }
+    .login-screen .form-group { margin-bottom: 1rem; }
+    .login-screen label { display: block; margin-bottom: 0.35rem; font-size: 0.9rem; color: #555; }
+    .login-screen input[type="email"], .login-screen input[type="password"] { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+    .login-screen .btn-login { width: 100%; padding: 0.65rem; background: #1a1a1a; color: #fff; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; margin-top: 0.5rem; }
+    .login-screen .btn-login:hover { background: #333; }
+    .login-screen .login-error { color: #b91c1c; font-size: 0.9rem; margin-top: 0.5rem; }
+    .login-screen .login-footer { margin-top: 1.25rem; font-size: 0.9rem; color: #666; }
+    .login-screen .login-footer a { color: #0d7d3d; cursor: pointer; }
+    .login-screen .login-logo { height: 48px; width: auto; max-width: 180px; display: block; margin: 0 auto 1.25rem auto; object-fit: contain; }
+    .user-bar { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; font-size: 0.9rem; color: #555; }
+    .user-bar .btn-cerrar { padding: 0.4rem 0.75rem; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    .user-bar .btn-cerrar:hover { background: #f0f0f0; }
+    .user-bar .btn-refresh { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; color: #555; }
+    .user-bar .btn-refresh:hover { background: #f0f0f0; color: #1a1a1a; }
+    .user-bar .btn-refresh svg { width: 18px; height: 18px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee; }
+    th { font-weight: 600; color: #555; }
+    .panel-seguridad table { margin-top: 0.75rem; }
+    .panel-seguridad th { background: #1a1a1a; color: #fff; }
+    .panel-seguridad select { padding: 0.35rem 0.5rem; border-radius: 6px; border: 1px solid #ccc; }
+    .panel-seguridad .btn-guardar-rol { padding: 0.35rem 0.6rem; font-size: 0.85rem; background: #0d7d3d; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+    .panel-seguridad .btn-guardar-rol:hover { background: #0a5c2e; }
+    .panel-seguridad .seguridad-loading { color: #666; }
+    .vista-placeholder { color: #666; padding: 1rem 0; }
+    .vista-toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .btn-nuevo, .btn-editar, .btn-primary, .btn-secondary, .btn-login, .btn-cerrar { display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; }
+    .btn-nuevo .btn-icon, .btn-editar .btn-icon, .btn-primary .btn-icon, .btn-secondary .btn-icon, .btn-login .btn-icon, .btn-cerrar .btn-icon { width: 18px; height: 18px; flex-shrink: 0; }
+    .btn-nuevo .btn-icon svg, .btn-editar .btn-icon svg, .btn-primary .btn-icon svg, .btn-secondary .btn-icon svg, .btn-login .btn-icon svg, .btn-cerrar .btn-icon svg { width: 100%; height: 100%; stroke: currentColor; }
+    .btn-nuevo { padding: 0.5rem 1rem; border: 1px solid #0d7d3d; background: #0d7d3d; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    .btn-nuevo:hover { background: #0a5c2e; border-color: #0a5c2e; }
+    .btn-editar { padding: 0.25rem 0.5rem; font-size: 0.85rem; background: #fff; color: #555; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
+    .btn-editar:hover { background: #f0f0f0; border-color: #999; }
+    .btn-icon-only { padding: 0.4rem; min-width: 0; border-radius: 6px; }
+    .btn-icon-only .btn-icon { width: 18px; height: 18px; }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
+    .modal-backdrop.activo { display: flex; }
+    .modal { background: #fff; border-radius: 12px; max-width: 520px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+    .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h2 { margin: 0; font-size: 1.25rem; }
+    .modal-close { background: none; border: none; padding: 0.35rem; cursor: pointer; color: #666; line-height: 1; border-radius: 4px; }
+    .modal-close:hover { color: #1a1a1a; background: #eee; }
+    .modal-body { padding: 1rem 1.25rem; }
+    .modal-body .form-group { margin-bottom: 0.75rem; }
+    .modal-body label { display: block; margin-bottom: 0.25rem; font-size: 0.9rem; color: #555; }
+    .modal-body input[type="text"], .modal-body input[type="email"], .modal-body input[type="tel"], .modal-body input[type="number"], .modal-body input[type="date"], .modal-body textarea { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; font-family: inherit; }
+    .modal-body textarea { resize: vertical; min-height: 60px; }
+    .modal-body input[type="checkbox"] { width: auto; margin-right: 0.5rem; }
+    .modal-body select { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+    .form-row.dos-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .form-hint { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
+    .form-hint-block { margin-bottom: 0.75rem; padding: 0.5rem; background: #f5f5f5; border-radius: 6px; }
+    .help-inline { display: inline-flex; align-items: center; vertical-align: middle; position: relative; }
+    .help-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; padding: 0; margin-left: 0.25rem; background: none; border: none; border-radius: 50%; color: #6b7280; cursor: pointer; flex-shrink: 0; }
+    .help-icon-btn:hover { color: #0ea5e9; }
+    .help-icon-btn svg { width: 1rem; height: 1rem; }
+    .help-popover { display: none; position: absolute; left: 0; top: 100%; margin-top: 0.35rem; padding: 0.6rem 0.75rem; max-width: 320px; font-size: 0.85rem; line-height: 1.4; color: #374151; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); border: 1px solid #e5e7eb; z-index: 100; }
+    .help-popover.help-popover-visible { display: block; }
+    .help-inline-block { display: flex; align-items: flex-start; gap: 0.25rem; margin-top: 0.25rem; }
+    .help-inline-block .help-popover { left: 0; top: 100%; }
+    .inicio-accesos { margin-top: 1.5rem; }
+    .link-inicio { text-decoration: none; color: inherit; }
+    .modal.modal-ancho { max-width: 920px; width: 95%; }
+    .form-actions { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .form-actions .btn-primary { padding: 0.5rem 1rem; background: #0d7d3d; color: #fff; border: 1px solid #0d7d3d; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    .form-actions .btn-primary:hover { background: #0a5c2e; }
+    .form-actions .btn-secondary { padding: 0.5rem 1rem; background: #fff; color: #333; border: 1px solid #999; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    .form-actions .btn-secondary:hover { background: #f0f0f0; }
+    .clientes-loading { color: #666; }
+    .tabla-clientes-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .resumen-cajas { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .resumen-cajas .card { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 0.25rem; }
+    .resumen-cajas .card-titulo { display: flex; align-items: center; gap: 0.5rem; color: #555; font-size: 0.95rem; }
+    .resumen-cajas .card-icon { width: 20px; height: 20px; flex-shrink: 0; color: #555; }
+    .resumen-cajas .card-icon svg { width: 100%; height: 100%; stroke: currentColor; }
+    .resumen-cajas .valor { font-size: 1.5rem; font-weight: 700; }
+    .resumen-cajas .valor.positivo { color: #0d7d3d; }
+    .resumen-cajas .valor.negativo { color: #b91c1c; }
+    .inicio-cards-pendientes .card-pendientes { display: flex; flex-direction: column; gap: 0.5rem; }
+    .inicio-cards-pendientes .valor-count { font-size: 1.5rem; font-weight: 700; color: #1a1a1a; }
+    .btn-ver-listo { background: none; border: none; padding: 0.25rem; cursor: pointer; color: #555; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+    .btn-ver-listo:hover { color: #0d7d3d; }
+    .cc-saldo-label { display: block; font-size: 0.8rem; color: #666; margin-top: 0.15rem; }
+    .tabla-cc-debe-haber { width: 100%; }
+    .tabla-cc-debe-haber th:nth-child(n+3), .tabla-cc-debe-haber td:nth-child(n+3) { text-align: right; white-space: nowrap; }
+    .tabla-cc-debe-haber tfoot td { font-weight: 600; border-top: 2px solid #333; padding-top: 0.5rem; }
+    .toggle-moneda { display: inline-flex; border-radius: 8px; border: 1px solid #ccc; overflow: hidden; background: #eee; }
+    .toggle-moneda button { padding: 0.5rem 1rem; border: none; background: transparent; cursor: pointer; font-size: 0.9rem; }
+    .toggle-moneda button.activo { background: #1a1a1a; color: #fff; font-weight: 600; }
+    .cajas-loading { color: #666; }
+    .tabla-movimientos-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 0.75rem; }
+    .tabla-movimientos .monto-positivo { color: #0d7d3d; }
+    .tabla-movimientos .monto-negativo { color: #b91c1c; }
+    .orden-detalle-cell { vertical-align: top; padding: 0 !important; border-left: 3px solid #0d7d3d; background: #f8faf8; }
+    .orden-detalle-panel { padding: 1rem 1.25rem; }
+    .orden-detalle-encabezado { margin-bottom: 0.75rem; }
+    .orden-detalle-resumen { font-size: 0.9rem; color: #555; }
+    .orden-detalle-content .tabla-transacciones-panel { width: 100%; margin-top: 0; }
+    .badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
+    .badge-estado-pendiente-instrumentar { background: #dbeafe; color: #1e40af; }
+    .badge-estado-instrumentacion-parcial { background: #fed7aa; color: #c2410c; }
+    .badge-estado-instrumentacion-cerrada-ejecucion { background: #fef08a; color: #854d0e; }
+    .badge-estado-orden-ejecutada { background: #bbf7d0; color: #15803d; }
+    .badge-estado-abierta, .badge-estado-parcialmente_cerrada, .badge-estado-cerrada { background: #e5e7eb; color: #6b7280; }
+    .badge-estado-cotizacion { background: #e5e7eb; color: #4b5563; }
+    .badge-estado-concertada { background: #d1fae5; color: #047857; }
+    .badge-estado-pendiente { background: #fef3c7; color: #b45309; }
+    .badge-estado-ejecutada { background: #bbf7d0; color: #15803d; }
+    .combo-estado-transaccion { border: 1px solid #ccc; border-radius: 6px; padding: 0.35rem 0.5rem; font-size: 0.9rem; font-weight: 500; cursor: pointer; min-width: 7rem; }
+    .combo-estado-transaccion.combo-estado-pendiente { background: #fef3c7; color: #b45309; }
+    .combo-estado-transaccion.combo-estado-ejecutada { background: #bbf7d0; color: #15803d; }
+    .toast-container { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; max-width: 90vw; }
+    .toast { padding: 0.85rem 1.25rem; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); font-size: 0.95rem; font-weight: 500; color: #fff; pointer-events: auto; animation: toast-in 0.3s ease; display: flex; align-items: center; gap: 0.6rem; min-width: 280px; max-width: 420px; transition: opacity 0.2s ease, transform 0.2s ease; }
+    .toast.toast-success { background: #0d7d3d; }
+    .toast.toast-info { background: #1e40af; }
+    .toast.toast-error { background: #b91c1c; }
+    .toast .toast-icon { width: 22px; height: 22px; flex-shrink: 0; }
+    .toast .toast-icon svg { width: 100%; height: 100%; stroke: currentColor; }
+    .toast .toast-close { margin-left: auto; padding: 0.2rem; background: rgba(255,255,255,0.2); border: none; border-radius: 4px; cursor: pointer; color: #fff; line-height: 1; font-size: 1rem; }
+    .toast .toast-close:hover { background: rgba(255,255,255,0.35); }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    .tabla-clientes-wrap { -webkit-overflow-scrolling: touch; }
+    .sidebar-nav .menu-item { min-height: 44px; }
+    .form-actions .btn-primary, .form-actions .btn-secondary { min-height: 44px; }
+    /* Tablet y pantallas medianas */
+    @media (max-width: 768px) {
+      body { font-size: 15px; overflow-x: hidden; }
+      .app { min-width: 0; }
+      .main-content { padding: 0.75rem 1rem; padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); padding-bottom: max(1rem, env(safe-area-inset-bottom)); overflow-x: hidden; }
+      .page-header { flex-wrap: wrap; gap: 0.5rem; flex-direction: row; }
+      .page-header .page-logo { height: 36px; max-width: 120px; }
+      .page-header h1, #page-title { font-size: 1.25rem; }
+      .user-bar { margin-left: 0; width: 100%; order: 3; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
+      .user-bar .btn-cerrar { min-height: 44px; padding: 0.5rem 0.85rem; }
+      .user-bar .btn-refresh { min-width: 44px; min-height: 44px; }
+      .login-screen { margin: 1rem; padding: 1.25rem; max-width: calc(100vw - 2rem); }
+      .card { padding: 1rem; }
+      .btn-nuevo, .btn-editar { min-height: 44px; padding: 0.5rem 0.75rem; }
+      .btn-primary, .btn-secondary { min-height: 44px; }
+      .toggle-moneda button { min-height: 44px; padding: 0.5rem 0.85rem; }
+      .form-row.dos-columnas { grid-template-columns: 1fr; }
+      .form-actions { gap: 0.5rem; }
+      .modal-backdrop { padding: 0.5rem; padding-left: max(0.5rem, env(safe-area-inset-left)); padding-right: max(0.5rem, env(safe-area-inset-right)); padding-top: max(0.5rem, env(safe-area-inset-top)); align-items: flex-start; }
+      .modal { max-height: 85vh; }
+      .modal-body input, .modal-body select { font-size: 16px; }
+      .modal-close { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+      .resumen-cajas { flex-direction: column; gap: 0.75rem; }
+      .resumen-cajas .card { min-width: 0; }
+      .resumen-cajas .valor { font-size: 1.35rem; }
+      .tabla-clientes-wrap, .tabla-movimientos-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+      #seguridad-tabla-wrap, #orden-inst-tabla-wrap, #transacciones-tabla-wrap, #ordenes-pendientes-tabla-wrap, #transacciones-pendientes-tabla-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+      th, td { padding: 0.45rem 0.5rem; font-size: 0.9rem; }
+      .vista-toolbar { gap: 0.5rem; }
+      .inicio-accesos .vista-toolbar { flex-direction: column; align-items: stretch; }
+      .inicio-accesos .link-inicio { min-height: 44px; justify-content: center; }
+      .help-popover { max-width: min(320px, calc(100vw - 2rem)); }
+    }
+    /* Móvil */
+    @media (max-width: 480px) {
+      body { overflow-x: hidden; }
+      .main-content { padding: 0.5rem 0.75rem; padding-left: max(0.75rem, env(safe-area-inset-left)); padding-right: max(0.75rem, env(safe-area-inset-right)); }
+      .sidebar { width: 52px; min-width: 52px; }
+      .sidebar.expanded { width: 200px; }
+      .sidebar-toggle { width: 52px; height: 48px; min-height: 44px; }
+      .page-header .page-logo { height: 32px; max-width: 100px; }
+      #page-title { font-size: 1.1rem; }
+      .card { padding: 0.85rem; }
+      .modal { max-width: 100%; border-radius: 10px; margin: 0; }
+      .modal.modal-ancho { max-width: 100%; }
+      .modal-header, .modal-body { padding: 0.85rem 1rem; }
+      .modal-header h2 { font-size: 1.1rem; }
+      .form-actions { flex-direction: column; }
+      .form-actions .btn-primary, .form-actions .btn-secondary { width: 100%; justify-content: center; }
+      th, td { padding: 0.4rem 0.4rem; font-size: 0.85rem; }
+      .panel-seguridad th, .panel-seguridad td { padding: 0.5rem; font-size: 0.85rem; }
+      #cc-toggle-moneda button, #cajas-toggle-moneda button { min-height: 44px; padding: 0.5rem 0.65rem; font-size: 0.85rem; }
+      .toast { min-width: 0; max-width: calc(100vw - 2rem); }
+      .toast-container { left: 1rem; right: 1rem; transform: none; max-width: none; padding-bottom: env(safe-area-inset-bottom); }
+      .help-icon-btn { min-width: 44px; min-height: 44px; }
+      .orden-detalle-panel { padding: 0.75rem 1rem; }
+      .vista-ordenes h3, .vista-cajas h3, .vista-clientes h3, .vista-intermediarios h3, .vista-cuenta-corriente h3 { font-size: 1rem; }
+    }
+  </style>
 </head>
 <body>
-  <div id="app">
-    <header>
-      <h1>Pandi</h1>
-      <div class="sidebar-version" id="sidebar-version">v1.0</div>
-    </header>
-    <main>
-      <p>App en construcción. Misma infraestructura que el repo compartido: Supabase, Vercel, bitácora Excel.</p>
-    </main>
+  <aside id="sidebar" class="sidebar" aria-label="Menú principal" style="display:none;">
+    <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Expandir menú">
+      <span class="icon-expand" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+      <span class="icon-collapse" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span>
+    </button>
+    <nav class="sidebar-nav">
+      <a href="#" class="menu-item menu-item-active" id="menu-inicio" title="Panel de Control" aria-label="Panel de Control">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>
+        <span class="menu-label">Panel de Control</span>
+      </a>
+      <a href="#" class="menu-item" id="menu-ordenes" title="Órdenes" aria-label="Órdenes">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
+        <span class="menu-label">Órdenes</span>
+      </a>
+      <a href="#" class="menu-item" id="menu-cajas" title="Cajas" aria-label="Cajas">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span>
+        <span class="menu-label">Cajas</span>
+      </a>
+      <a href="#" class="menu-item" id="menu-clientes" title="Clientes" aria-label="Clientes">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span>
+        <span class="menu-label">Clientes</span>
+      </a>
+      <a href="#" class="menu-item" id="menu-intermediarios" title="Intermediarios" aria-label="Intermediarios">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5a2 2 0 012-2h12a2 2 0 012 2v2"/><path d="M4 7h16v12a2 2 0 01-2 2H6a2 2 0 01-2-2V7"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M12 11v6"/><path d="M9 14h6"/></svg></span>
+        <span class="menu-label">Intermediarios</span>
+      </a>
+      <a href="#" class="menu-item" id="menu-cuenta-corriente" title="Cuenta corriente" aria-label="Cuenta corriente">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></span>
+        <span class="menu-label">Cuenta corriente</span>
+      </a>
+      <a href="#" class="menu-item" id="menu-seguridad" title="Seguridad" aria-label="Seguridad">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+        <span class="menu-label">Seguridad</span>
+      </a>
+    </nav>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.1</div>
+  </aside>
+
+  <main class="main-content">
+    <div id="login-screen" class="login-screen card" style="display:none;">
+      <img src="/Logo.png" alt="Pandi" class="login-logo" onerror="this.style.display='none'" />
+      <h2>Iniciar sesión</h2>
+      <form id="login-form">
+        <div class="form-group">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" required placeholder="tu@email.com" autocomplete="email" />
+        </div>
+        <div class="form-group">
+          <label for="login-password">Contraseña</label>
+          <input type="password" id="login-password" required placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <div id="login-error" class="login-error"></div>
+        <button type="submit" class="btn-login" id="btn-login"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></span>Entrar</button>
+      </form>
+      <p class="login-footer">¿No tenés cuenta? <a href="#" id="link-registro">Registrarse</a></p>
+    </div>
+    <div id="register-screen" class="login-screen card" style="display:none;">
+      <img src="/Logo.png" alt="Pandi" class="login-logo" onerror="this.style.display='none'" />
+      <h2>Registrarse</h2>
+      <form id="register-form">
+        <div class="form-group">
+          <label for="register-email">Email</label>
+          <input type="email" id="register-email" required placeholder="tu@email.com" autocomplete="email" />
+        </div>
+        <div class="form-group">
+          <label for="register-password">Contraseña</label>
+          <input type="password" id="register-password" required placeholder="Mín. 6 caracteres" autocomplete="new-password" minlength="6" />
+        </div>
+        <div id="register-error" class="login-error"></div>
+        <button type="submit" class="btn-login" id="btn-register"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg></span>Crear cuenta</button>
+      </form>
+      <p class="login-footer">¿Ya tenés cuenta? <a href="#" id="link-login">Iniciar sesión</a></p>
+    </div>
+
+    <div class="app" id="app-content" style="display:none;">
+      <header class="page-header">
+        <img src="/Logo.png" alt="Pandi" class="page-logo" id="page-logo" onerror="this.style.display='none'" />
+        <h1 id="page-title">Panel de Control</h1>
+        <div class="user-bar" id="user-bar">
+          <span id="user-email"></span>
+          <button type="button" class="btn-refresh" id="btn-refresh" title="Actualizar permisos" aria-label="Actualizar permisos">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          </button>
+          <button type="button" class="btn-cerrar" id="btn-cerrar-sesion"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>Cerrar sesión</button>
+        </div>
+      </header>
+
+      <div id="vista-inicio" class="card">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem;">Panel de Control</h3>
+        <p style="margin:0 0 1rem 0; font-size:0.9rem; color:#555;">Resumen de cajas y accesos rápidos.</p>
+        <div class="resumen-cajas" id="inicio-saldos">
+          <div class="card">
+            <span class="card-titulo">
+              <span class="card-icon card-icon-usd" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><rect x="2" y="3" width="8" height="7"/><polygon points="6,5.2 6.6,6.4 8,6.6 6.8,7.6 7.2,9 6,8.2 4.8,9 5.2,7.6 4,6.6 5.4,6.4" fill="currentColor" stroke="none"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="15" x2="22" y2="15"/><line x1="10" y1="10" x2="22" y2="10"/></svg></span>
+              Efectivo USD
+            </span>
+            <span class="valor" id="inicio-saldo-efectivo-usd">–</span>
+          </div>
+          <div class="card">
+            <span class="card-titulo">
+              <span class="card-icon card-icon-eur" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6.5C16 5 13.5 4 11 4a8 8 0 00-8 8c0 4 3 7.5 7 7.5 2.5 0 5-1 7-2.5"/><line x1="4" y1="12" x2="18" y2="12"/><line x1="4" y1="9" x2="14" y2="9"/><line x1="4" y1="15" x2="14" y2="15"/></svg></span>
+              Efectivo EUR
+            </span>
+            <span class="valor" id="inicio-saldo-efectivo-eur">–</span>
+          </div>
+          <div class="card">
+            <span class="card-titulo">
+              <span class="card-icon card-icon-ars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="22" y2="15"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5v7M9.2 10.2l2.8 1.8 2.8-1.8M9.2 13.8l2.8-1.8 2.8 1.8" stroke-width="1.2"/></svg></span>
+              Efectivo ARS
+            </span>
+            <span class="valor" id="inicio-saldo-efectivo-ars">–</span>
+          </div>
+          <div class="card">
+            <span class="card-titulo">
+              <span class="card-icon card-icon-banco card-icon-usd" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><rect x="2" y="3" width="8" height="7"/><polygon points="6,5.2 6.6,6.4 8,6.6 6.8,7.6 7.2,9 6,8.2 4.8,9 5.2,7.6 4,6.6 5.4,6.4" fill="currentColor" stroke="none"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="15" x2="22" y2="15"/><line x1="10" y1="10" x2="22" y2="10"/></svg></span>
+              Banco USD
+            </span>
+            <span class="valor" id="inicio-saldo-banco-usd">–</span>
+          </div>
+          <div class="card">
+            <span class="card-titulo">
+              <span class="card-icon card-icon-banco card-icon-ars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="22" y2="15"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5v7M9.2 10.2l2.8 1.8 2.8-1.8M9.2 13.8l2.8-1.8 2.8 1.8" stroke-width="1.2"/></svg></span>
+              Banco ARS
+            </span>
+            <span class="valor" id="inicio-saldo-banco-ars">–</span>
+          </div>
+        </div>
+        <div class="inicio-cards-pendientes" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:1rem; margin-top:1.5rem;">
+          <div class="card card-pendientes" id="inicio-card-ordenes-pendientes">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem;">
+              <span class="card-titulo" style="font-size:0.95rem;">Órdenes pendientes</span>
+              <button type="button" class="btn-ver-listo" id="btn-ver-ordenes-pendientes" title="Ver listado" aria-label="Ver listado">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+              </button>
+            </div>
+            <span class="valor valor-count" id="inicio-count-ordenes-pendientes">–</span>
+          </div>
+          <div class="card card-pendientes" id="inicio-card-transacciones-pendientes">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem;">
+              <span class="card-titulo" style="font-size:0.95rem;">Transacciones pendientes</span>
+              <button type="button" class="btn-ver-listo" id="btn-ver-transacciones-pendientes" title="Ver listado" aria-label="Ver listado">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+              </button>
+            </div>
+            <span class="valor valor-count" id="inicio-count-transacciones-pendientes">–</span>
+          </div>
+        </div>
+        <div class="inicio-accesos">
+          <p style="margin:0 0 0.5rem 0; font-size:0.9rem; color:#555;">Accesos rápidos</p>
+          <div class="vista-toolbar" style="flex-wrap:wrap;">
+            <a href="#" class="btn-secondary link-inicio" data-vista="vista-ordenes"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>Órdenes</a>
+            <a href="#" class="btn-secondary link-inicio" data-vista="vista-cajas"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg></span>Cajas</a>
+            <a href="#" class="btn-secondary link-inicio" data-vista="vista-clientes"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span>Clientes</a>
+            <a href="#" class="btn-secondary link-inicio" data-vista="vista-cuenta-corriente"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>Cuenta corriente</a>
+          </div>
+        </div>
+      </div>
+      <div id="vista-ordenes" class="card" style="display:none;">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
+          <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
+          Órdenes de compra/venta de divisas
+        </h3>
+        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Acuerdo comercial con instrumentación (transacciones). Estado: Abierta / Parcialmente cerrada / Cerrada según transacciones ejecutadas.</p>
+        <div class="vista-toolbar">
+          <button type="button" id="btn-nueva-orden" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva orden</button>
+        </div>
+        <div id="ordenes-loading" class="clientes-loading">Cargando órdenes…</div>
+        <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+          <table id="tabla-ordenes">
+            <thead><tr><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Recibido</th><th>Entregado</th><th></th></tr></thead>
+            <tbody id="ordenes-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="vista-cajas" class="card" style="display:none;">
+        <div class="resumen-cajas" id="cajas-saldos">
+          <div class="card">
+            <span class="card-titulo">
+              <span class="card-icon card-icon-usd" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><rect x="2" y="3" width="8" height="7"/><polygon points="6,5.2 6.6,6.4 8,6.6 6.8,7.6 7.2,9 6,8.2 4.8,9 5.2,7.6 4,6.6 5.4,6.4" fill="currentColor" stroke="none"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="15" x2="22" y2="15"/><line x1="10" y1="10" x2="22" y2="10"/></svg></span>
+              Efectivo USD
+            </span>
+            <span class="valor" id="cajas-saldo-efectivo-usd">–</span>
+          </div>
+          <div class="card">
+            <span class="card-titulo">
+              <span class="card-icon card-icon-eur" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6.5C16 5 13.5 4 11 4a8 8 0 00-8 8c0 4 3 7.5 7 7.5 2.5 0 5-1 7-2.5"/><line x1="4" y1="12" x2="18" y2="12"/><line x1="4" y1="9" x2="14" y2="9"/><line x1="4" y1="15" x2="14" y2="15"/></svg></span>
+              Efectivo EUR
+            </span>
+            <span class="valor" id="cajas-saldo-efectivo-eur">–</span>
+          </div>
+          <div class="card">
+            <span class="card-titulo">
+              <span class="card-icon card-icon-ars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="22" y2="15"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5v7M9.2 10.2l2.8 1.8 2.8-1.8M9.2 13.8l2.8-1.8 2.8 1.8" stroke-width="1.2"/></svg></span>
+              Efectivo ARS
+            </span>
+            <span class="valor" id="cajas-saldo-efectivo-ars">–</span>
+          </div>
+          <div class="card">
+            <span class="card-titulo">
+              <span class="card-icon card-icon-banco card-icon-usd" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><rect x="2" y="3" width="8" height="7"/><polygon points="6,5.2 6.6,6.4 8,6.6 6.8,7.6 7.2,9 6,8.2 4.8,9 5.2,7.6 4,6.6 5.4,6.4" fill="currentColor" stroke="none"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="15" x2="22" y2="15"/><line x1="10" y1="10" x2="22" y2="10"/></svg></span>
+              Banco USD
+            </span>
+            <span class="valor" id="cajas-saldo-banco-usd">–</span>
+          </div>
+          <div class="card">
+            <span class="card-titulo">
+              <span class="card-icon card-icon-banco card-icon-ars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="22" y2="15"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5v7M9.2 10.2l2.8 1.8 2.8-1.8M9.2 13.8l2.8-1.8 2.8 1.8" stroke-width="1.2"/></svg></span>
+              Banco ARS
+            </span>
+            <span class="valor" id="cajas-saldo-banco-ars">–</span>
+          </div>
+        </div>
+        <div class="vista-toolbar">
+          <label style="display:flex; align-items:center; gap:0.5rem;">
+            <span>Moneda:</span>
+            <div class="toggle-moneda" id="cajas-toggle-moneda" role="group">
+              <button type="button" class="activo" data-moneda="USD">USD</button>
+              <button type="button" data-moneda="EUR">EUR</button>
+              <button type="button" data-moneda="ARS">ARS</button>
+            </div>
+          </label>
+          <button type="button" id="btn-nuevo-movimiento-caja" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo movimiento</button>
+        </div>
+        <div id="cajas-loading" class="cajas-loading">Cargando movimientos…</div>
+        <div id="cajas-tabla-wrap" class="tabla-movimientos-wrap" style="display:none;">
+          <table class="tabla-movimientos" id="tabla-movimientos-caja">
+            <thead><tr><th>Fecha</th><th>Concepto</th><th>Caja</th><th>Tipo</th><th>Monto</th><th></th></tr></thead>
+            <tbody id="movimientos-caja-tbody"></tbody>
+          </table>
+        </div>
+        <div class="card" style="margin-top:1.5rem;">
+          <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
+            <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg></span>
+            Tipos de movimiento de caja
+          </h3>
+          <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Definí los tipos para movimientos manuales (ingreso o egreso). Al cargar un tipo indicás si es Ingreso o Egreso.</p>
+          <div class="vista-toolbar" style="margin-bottom:0.75rem;">
+            <button type="button" id="btn-nuevo-tipo-movimiento" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo tipo</button>
+          </div>
+          <div id="tipos-mov-loading" class="cajas-loading" style="display:none;">Cargando tipos…</div>
+          <div id="tipos-mov-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+            <table id="tabla-tipos-movimiento">
+              <thead><tr><th>Nombre</th><th>Dirección</th><th>Activo</th><th></th></tr></thead>
+              <tbody id="tipos-movimiento-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div id="vista-intermediarios" class="card" style="display:none;">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
+          <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5a2 2 0 012-2h12a2 2 0 012 2v2"/><path d="M4 7h16v12a2 2 0 01-2 2H6a2 2 0 01-2-2V7"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M12 11v6"/><path d="M9 14h6"/></svg></span>
+          Intermediarios
+        </h3>
+        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Terceros con cuenta corriente propia (operaciones intermediadas).</p>
+        <div class="vista-toolbar">
+          <button type="button" id="btn-nuevo-intermediario" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo intermediario</button>
+        </div>
+        <div id="intermediarios-loading" class="clientes-loading">Cargando…</div>
+        <div id="intermediarios-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+          <table id="tabla-intermediarios">
+            <thead><tr><th>Nombre</th><th>Documento</th><th>Email</th><th>Teléfono</th><th>Activo</th><th></th></tr></thead>
+            <tbody id="intermediarios-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="vista-clientes" class="card" style="display:none;">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
+          <span style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span>
+          Clientes
+        </h3>
+        <div class="vista-toolbar">
+          <button type="button" id="btn-nuevo-cliente" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg></span>Nuevo cliente</button>
+        </div>
+        <div id="clientes-loading" class="clientes-loading">Cargando clientes…</div>
+        <div id="clientes-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+          <table id="tabla-clientes">
+            <thead><tr><th>Nombre</th><th>Documento</th><th>Email</th><th>Teléfono</th><th>Activo</th><th></th></tr></thead>
+            <tbody id="clientes-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="vista-cuenta-corriente" class="card" style="display:none;">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
+          <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
+          Cuenta corriente
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Saldos por cliente o intermediario y moneda. <strong>Saldo a favor</strong> = nos debe; <strong>Saldo negativo</strong> = nosotros le debemos. La cuenta corriente se actualiza al guardar cada transacción (pendiente o ejecutada). Las cards de caja/banco solo se impactan cuando la transacción está <strong>ejecutada</strong>. Cada moneda se muestra por separado (no se convierte entre monedas).</span></span>
+        </h3>
+        <div class="vista-toolbar" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
+          <label style="display:flex; align-items:center; gap:0.5rem;">
+            <span>Tipo:</span>
+            <div class="toggle-moneda" id="cc-tipo-entity" role="group">
+              <button type="button" class="activo" data-tipo="cliente">Cliente</button>
+              <button type="button" data-tipo="intermediario">Intermediario</button>
+            </div>
+          </label>
+          <div class="form-group" id="cc-wrap-cliente" style="margin:0; max-width:280px;">
+            <label for="cc-cliente">Cliente *</label>
+            <select id="cc-cliente"><option value="">Elegir cliente…</option></select>
+          </div>
+          <div class="form-group" id="cc-wrap-intermediario" style="margin:0; max-width:280px; display:none;">
+            <label for="cc-intermediario">Intermediario *</label>
+            <select id="cc-intermediario"><option value="">Elegir intermediario…</option></select>
+          </div>
+        </div>
+        <div id="cc-sin-cliente" class="vista-placeholder" style="display:none;">Elegí un cliente para ver su cuenta corriente.</div>
+        <div id="cc-sin-intermediario" class="vista-placeholder" style="display:none;">Elegí un intermediario para ver la cuenta corriente entre vos y el intermediario.</div>
+        <div id="cc-contenido" style="display:none;">
+          <div class="resumen-cajas" id="cc-saldos">
+            <div class="card">
+              <span class="card-titulo">
+                <span class="card-icon card-icon-usd" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><rect x="2" y="3" width="8" height="7"/><polygon points="6,5.2 6.6,6.4 8,6.6 6.8,7.6 7.2,9 6,8.2 4.8,9 5.2,7.6 4,6.6 5.4,6.4" fill="currentColor" stroke="none"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="15" x2="22" y2="15"/><line x1="10" y1="10" x2="22" y2="10"/></svg></span>
+                USD
+              </span>
+              <span class="cc-saldo-label" id="cc-saldo-label-usd" aria-hidden="true"></span>
+              <span class="valor" id="cc-saldo-usd">–</span>
+            </div>
+            <div class="card">
+              <span class="card-titulo">
+                <span class="card-icon card-icon-eur" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6.5C16 5 13.5 4 11 4a8 8 0 00-8 8c0 4 3 7.5 7 7.5 2.5 0 5-1 7-2.5"/><line x1="4" y1="12" x2="18" y2="12"/><line x1="4" y1="9" x2="14" y2="9"/><line x1="4" y1="15" x2="14" y2="15"/></svg></span>
+                EUR
+              </span>
+              <span class="cc-saldo-label" id="cc-saldo-label-eur" aria-hidden="true"></span>
+              <span class="valor" id="cc-saldo-eur">–</span>
+            </div>
+            <div class="card">
+              <span class="card-titulo">
+                <span class="card-icon card-icon-ars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="22" y2="15"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5v7M9.2 10.2l2.8 1.8 2.8-1.8M9.2 13.8l2.8-1.8 2.8 1.8" stroke-width="1.2"/></svg></span>
+                ARS
+              </span>
+              <span class="cc-saldo-label" id="cc-saldo-label-ars" aria-hidden="true"></span>
+              <span class="valor" id="cc-saldo-ars">–</span>
+            </div>
+          </div>
+          <div class="vista-toolbar" style="margin-top:1rem;">
+            <label style="display:flex; align-items:center; gap:0.5rem;">
+              <span>Moneda:</span>
+              <div class="toggle-moneda" id="cc-toggle-moneda" role="group">
+                <button type="button" class="activo" data-moneda="TODAS">Todas</button>
+                <button type="button" data-moneda="USD">USD</button>
+                <button type="button" data-moneda="EUR">EUR</button>
+                <button type="button" data-moneda="ARS">ARS</button>
+              </div>
+            </label>
+          </div>
+          <div id="cc-loading" class="clientes-loading" style="display:none;">Cargando movimientos…</div>
+          <div id="cc-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+            <table id="tabla-cc" class="tabla-cc-debe-haber">
+              <thead>
+                <tr>
+                  <th>Fecha</th><th>Concepto</th>
+                  <th>Debe (USD)</th><th>Haber (USD)</th>
+                  <th>Debe (EUR)</th><th>Haber (EUR)</th>
+                  <th>Debe (ARS)</th><th>Haber (ARS)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cc-tbody"></tbody>
+              <tfoot id="cc-tfoot"></tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div id="vista-seguridad" class="card panel-seguridad" style="display:none;">
+        <h2 style="margin:0 0 0.5rem 0; display:flex; align-items:center; gap:0.5rem;">
+          <span style="width:24px; height:24px; color:#555; flex-shrink:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+          Seguridad – Usuarios y roles
+        </h2>
+        <p style="margin:0 0 0.75rem 0; font-size:0.95rem; color:#555;">Asigná el rol (Admin, Encargado, Visor) a cada usuario.</p>
+        <div id="seguridad-loading" class="seguridad-loading">Cargando usuarios…</div>
+        <div id="seguridad-tabla-wrap" style="display:none;">
+          <table id="seguridad-tabla">
+            <thead><tr><th>Email</th><th>Rol</th><th>Acción</th></tr></thead>
+            <tbody id="seguridad-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="modal-cliente-backdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-cliente-titulo">Nuevo cliente</h2>
+        <button type="button" class="modal-close" id="modal-cliente-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-cliente">
+          <input type="hidden" id="cliente-id" value="" />
+          <div class="form-group">
+            <label for="cliente-nombre">Nombre *</label>
+            <input type="text" id="cliente-nombre" required maxlength="255" placeholder="Nombre o razón social" />
+          </div>
+          <div class="form-group">
+            <label for="cliente-documento">Documento</label>
+            <input type="text" id="cliente-documento" maxlength="50" placeholder="DNI, CUIT, etc." />
+          </div>
+          <div class="form-group">
+            <label for="cliente-email">Email</label>
+            <input type="email" id="cliente-email" maxlength="255" placeholder="email@ejemplo.com" />
+          </div>
+          <div class="form-group">
+            <label for="cliente-telefono">Teléfono</label>
+            <input type="tel" id="cliente-telefono" maxlength="50" placeholder="" />
+          </div>
+          <div class="form-group">
+            <label for="cliente-direccion">Dirección</label>
+            <input type="text" id="cliente-direccion" maxlength="500" placeholder="" />
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="cliente-activo" checked /> Activo</label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="modal-cliente-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
+
+  <div id="modal-intermediario-backdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-intermediario-titulo">Nuevo intermediario</h2>
+        <button type="button" class="modal-close" id="modal-intermediario-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-intermediario">
+          <input type="hidden" id="intermediario-id" value="" />
+          <div class="form-group">
+            <label for="intermediario-nombre">Nombre *</label>
+            <input type="text" id="intermediario-nombre" required maxlength="255" placeholder="Nombre o razón social" />
+          </div>
+          <div class="form-group">
+            <label for="intermediario-documento">Documento</label>
+            <input type="text" id="intermediario-documento" maxlength="50" placeholder="DNI, CUIT, etc." />
+          </div>
+          <div class="form-group">
+            <label for="intermediario-email">Email</label>
+            <input type="email" id="intermediario-email" maxlength="255" placeholder="email@ejemplo.com" />
+          </div>
+          <div class="form-group">
+            <label for="intermediario-telefono">Teléfono</label>
+            <input type="tel" id="intermediario-telefono" maxlength="50" placeholder="" />
+          </div>
+          <div class="form-group">
+            <label for="intermediario-direccion">Dirección</label>
+            <input type="text" id="intermediario-direccion" maxlength="500" placeholder="" />
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="intermediario-activo" checked /> Activo</label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="modal-intermediario-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-movimiento-caja-backdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-movimiento-caja-titulo">Nuevo movimiento de caja</h2>
+        <button type="button" class="modal-close" id="modal-movimiento-caja-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-movimiento-caja">
+          <input type="hidden" id="mov-caja-id" value="" />
+          <input type="hidden" id="mov-caja-orden-id" value="" />
+          <p id="mov-caja-hint-orden" style="display:none;" class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Movimiento generado por una orden; solo podés editar concepto y fecha.</span></span></p>
+          <div class="form-group">
+            <label for="mov-caja-moneda">Moneda *</label>
+            <select id="mov-caja-moneda" required>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="ARS">ARS</option>
+            </select>
+          </div>
+          <div class="form-group" id="mov-caja-wrap-tipo-caja">
+            <label for="mov-caja-tipo-caja">Caja *</label>
+            <select id="mov-caja-tipo-caja">
+              <option value="efectivo">Efectivo</option>
+              <option value="banco">Banco</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="mov-caja-tipo">Tipo de movimiento *</label>
+            <select id="mov-caja-tipo" required></select>
+          </div>
+          <div class="form-group">
+            <label for="mov-caja-monto">Monto (siempre positivo) *</label>
+            <input type="text" id="mov-caja-monto" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label for="mov-caja-concepto">Concepto</label>
+            <input type="text" id="mov-caja-concepto" maxlength="255" placeholder="Opcional" />
+          </div>
+          <div class="form-group">
+            <label for="mov-caja-fecha">Fecha *</label>
+            <input type="date" id="mov-caja-fecha" required />
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="modal-movimiento-caja-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-tipo-movimiento-backdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-tipo-movimiento-titulo">Nuevo tipo de movimiento</h2>
+        <button type="button" class="modal-close" id="modal-tipo-movimiento-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-tipo-movimiento">
+          <input type="hidden" id="tipo-movimiento-id" value="" />
+          <div class="form-group">
+            <label for="tipo-movimiento-nombre">Nombre *</label>
+            <input type="text" id="tipo-movimiento-nombre" required maxlength="255" placeholder="Ej. Ajuste ingreso, Depósito" />
+          </div>
+          <div class="form-group">
+            <label for="tipo-movimiento-direccion">Dirección *</label>
+            <select id="tipo-movimiento-direccion" required>
+              <option value="ingreso">Ingreso</option>
+              <option value="egreso">Egreso</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="tipo-movimiento-activo" checked /> Activo</label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="modal-tipo-movimiento-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-orden-backdrop" class="modal-backdrop">
+    <div class="modal modal-ancho">
+      <div class="modal-header">
+        <h2 id="modal-orden-titulo">Nueva orden</h2>
+        <button type="button" class="modal-close" id="modal-orden-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-orden">
+          <input type="hidden" id="orden-id" value="" />
+          <div class="form-group">
+            <label for="orden-tipo-operacion">Tipo de operación *</label>
+            <select id="orden-tipo-operacion" required><option value="">Elegir…</option></select>
+          </div>
+          <div id="orden-wizard" style="display:none;">
+            <div id="orden-step-participantes">
+              <h3 style="margin:0 0 0.75rem 0; font-size:1rem;">Participantes <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Pandy siempre participa. Podés cargar la orden con cliente, con intermediario o con ambos.</span></span></h3>
+              <div class="form-row dos-columnas">
+                <div class="form-group">
+                  <label>Participante fijo</label>
+                  <input type="text" value="Pandy" readonly style="background:#eee; color:#555;" />
+                </div>
+                <div class="form-group">
+                  <label for="orden-cliente">Cliente (opcional)</label>
+                  <select id="orden-cliente"><option value="">Sin asignar</option></select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="orden-intermediario">Intermediario (opcional) <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Puede haber operaciones Pandy ↔ Intermediario sin cliente.</span></span></label>
+                <select id="orden-intermediario"><option value="">Sin asignar</option></select>
+              </div>
+              <div class="form-actions" style="justify-content:flex-end;">
+                <button type="button" class="btn-primary" id="orden-btn-next"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span>Continuar</button>
+              </div>
+            </div>
+
+            <div id="orden-step-detalles" style="display:none;">
+              <div class="form-actions" style="justify-content:flex-start; margin-top:0; margin-bottom:0.5rem;">
+                <button type="button" class="btn-secondary" id="orden-btn-back"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M11 18l-6-6 6-6"/></svg></span>Participantes</button>
+              </div>
+              <div id="orden-form-resto">
+          <div class="form-group" id="orden-wrap-cotizacion">
+            <label for="orden-cotizacion" id="orden-label-cotizacion">Cotización (opcional)</label>
+            <input type="text" id="orden-cotizacion" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label for="orden-fecha">Fecha *</label>
+            <input type="date" id="orden-fecha" required />
+          </div>
+          <div class="form-row dos-columnas">
+            <div class="form-group">
+              <label for="orden-moneda-recibida" id="orden-label-moneda-recibida">Moneda que recibimos *</label>
+              <select id="orden-moneda-recibida" required>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="ARS">ARS</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="orden-monto-recibido" id="orden-label-monto-recibido">Monto recibido *</label>
+              <input type="text" id="orden-monto-recibido" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+            </div>
+          </div>
+          <div class="form-row dos-columnas">
+            <div class="form-group">
+              <label for="orden-moneda-entregada" id="orden-label-moneda-entregada">Moneda que entregamos *</label>
+              <select id="orden-moneda-entregada" required>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="ARS">ARS</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="orden-monto-entregado" id="orden-label-monto-entregado">Monto entregado *</label>
+              <input type="text" id="orden-monto-entregado" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+            </div>
+          </div>
+          <div class="form-group" id="orden-wrap-comision" style="display:none;">
+            <label for="orden-comision-display">Comisión a Recibir</label>
+            <input type="text" id="orden-comision-display" readonly class="input-importe" placeholder="0,00" style="background:#eee; color:#555;" />
+          </div>
+          <div class="form-group" id="orden-wrap-tasa-descuento-intermediario" style="display:none;">
+            <label for="orden-tasa-descuento-intermediario">Tasa de descuento del intermediario (%) * <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Ej. 1,50 = 1,5%. Acepta hasta dos decimales. Con 10.000.000 nominal y 1%, Pandy recibe 9.900.000 en efectivo del intermediario.</span></span></label>
+            <input type="text" id="orden-tasa-descuento-intermediario" inputmode="decimal" class="input-importe" placeholder="1,50" autocomplete="off" />
+          </div>
+          <div class="form-row dos-columnas" id="orden-wrap-comision-split" style="display:none;">
+            <div class="form-group">
+              <label for="orden-comision-pandy-pct">Comisión para Pandy (%)</label>
+              <input type="text" id="orden-comision-pandy-pct" inputmode="decimal" class="input-importe" placeholder="100" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="orden-comision-intermediario-pct">Comisión para Intermediario (%)</label>
+              <input type="text" id="orden-comision-intermediario-pct" inputmode="decimal" class="input-importe" placeholder="0" autocomplete="off" />
+            </div>
+            <p style="grid-column:1/-1; margin-top:-0.25rem;" class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Al cambiar uno, el otro se ajusta para que la suma sea siempre 100%.</span></span></p>
+          </div>
+          <div class="form-group">
+            <label for="orden-estado">Estado *</label>
+            <select id="orden-estado" required>
+              <option value="pendiente_instrumentar">Pendiente Instrumentar</option>
+              <option value="instrumentacion_parcial">Instrumentación Parcial</option>
+              <option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option>
+              <option value="orden_ejecutada">Orden Ejecutada</option>
+            </select>
+            <span class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover" id="orden-estado-hint">Se actualiza al cargar/ejecutar transacciones: Pendiente → Parcial o Cerrada en ejecución → Orden Ejecutada.</span></span></span>
+          </div>
+          <div class="form-group">
+            <label for="orden-observaciones">Observaciones</label>
+            <textarea id="orden-observaciones" rows="2" maxlength="500" placeholder="Opcional"></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="orden-btn-ir-instrumentacion" title="Guardar y cargar transacciones">Instrumentación</button>
+            <button type="button" class="btn-secondary" id="modal-orden-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="orden-step-instrumentacion" style="display:none;">
+            <div class="form-actions" style="justify-content:flex-start; margin-top:0; margin-bottom:0.5rem;">
+              <button type="button" class="btn-secondary" id="orden-btn-back-detalles"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M11 18l-6-6 6-6"/></svg></span>Detalles</button>
+            </div>
+            <h3 style="margin:0 0 0.5rem 0; font-size:1rem;">Instrumentación <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Cargá y editá transacciones sin salir del modal. El estado de la orden se recalcula automáticamente.</span></span></h3>
+
+            <div id="orden-inst-acuerdo-block" class="orden-inst-acuerdo" style="margin-bottom:1rem; padding:0.75rem 1rem; background:#f5f5f5; border-radius:8px; border:1px solid #e0e0e0;">
+              <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:0.5rem 1rem;">
+                <strong>Acuerdo:</strong>
+                <span id="orden-inst-acuerdo-texto">–</span>
+              </div>
+              <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:0.5rem 1rem; margin-top:0.35rem;">
+                <strong>Instrumentado:</strong>
+                <span id="orden-inst-instrumentado-texto">–</span>
+                <span id="orden-inst-acuerdo-aviso" style="color:#b91c1c; font-size:0.9rem;"></span>
+                <span id="orden-inst-actualizando-msg" style="display:none; margin-left:0.5rem; color:#0ea5e9; font-size:0.9rem; font-weight:500;">Actualizando estado…</span>
+              </div>
+            </div>
+
+            <div class="vista-toolbar" style="margin-bottom:0.75rem; justify-content:flex-start;">
+              <button type="button" id="orden-btn-nueva-transaccion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
+            </div>
+            <div id="orden-inst-loading" class="clientes-loading" style="display:none;">Cargando transacciones…</div>
+            <div id="orden-inst-tabla-wrap" style="display:none;">
+              <table id="orden-inst-tabla">
+                <thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Cobrador</th><th>Pagador</th><th>Estado</th><th></th></tr></thead>
+                <tbody id="orden-inst-tbody"></tbody>
+              </table>
+            </div>
+            <div class="form-actions" style="margin-top:0.75rem;">
+              <button type="button" class="btn-primary" id="orden-btn-cerrar-wizard"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Listo</button>
+              <button type="button" class="btn-secondary" id="orden-btn-cancelar-wizard"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cerrar</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-transacciones-backdrop" class="modal-backdrop">
+    <div class="modal modal-ancho">
+      <div class="modal-header">
+        <h2 id="modal-transacciones-titulo">Instrumentación – Transacciones</h2>
+        <button type="button" class="modal-close" id="modal-transacciones-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="transacciones-orden-id" value="" />
+        <div class="vista-toolbar" style="margin-bottom:0.75rem;">
+          <button type="button" id="btn-nueva-transaccion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
+        </div>
+        <div id="transacciones-loading" class="clientes-loading">Cargando…</div>
+        <div id="transacciones-tabla-wrap" style="display:none;">
+          <table id="tabla-transacciones">
+            <thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Cobrador</th><th>Pagador</th><th>Estado</th><th></th></tr></thead>
+            <tbody id="transacciones-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-transaccion-backdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-transaccion-titulo">Nueva transacción</h2>
+        <button type="button" class="modal-close" id="modal-transaccion-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-transaccion">
+          <input type="hidden" id="transaccion-id" value="" />
+          <input type="hidden" id="transaccion-instrumentacion-id" value="" />
+          <input type="hidden" id="transaccion-es-orden-cheque" value="0" />
+          <div class="form-group">
+            <label for="transaccion-tipo">Tipo *</label>
+            <select id="transaccion-tipo" required>
+              <option value="ingreso">Ingreso</option>
+              <option value="egreso">Egreso</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="transaccion-modo-pago">Modo de pago *</label>
+            <select id="transaccion-modo-pago" required></select>
+          </div>
+          <div class="form-group">
+            <label for="transaccion-moneda">Moneda *</label>
+            <select id="transaccion-moneda" required>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="ARS">ARS</option>
+            </select>
+          </div>
+          <div class="form-group" id="transaccion-wrap-monto-normal">
+            <label for="transaccion-monto">Monto *</label>
+            <input type="text" id="transaccion-monto" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+          </div>
+          <div class="form-group" id="transaccion-wrap-ars" style="display:none;">
+            <p style="margin-bottom:0.5rem;" class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">En ARS el monto se calcula: monto base × tipo de cambio.</span></span></p>
+            <div class="form-group">
+              <label for="transaccion-monto-base">Monto base (ej. en USD) *</label>
+              <input type="text" id="transaccion-monto-base" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="transaccion-tipo-cambio">Tipo de cambio *</label>
+              <input type="text" id="transaccion-tipo-cambio" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="transaccion-monto-ars-display">Monto (ARS) calculado</label>
+              <input type="text" id="transaccion-monto-ars-display" readonly class="input-importe" placeholder="0,00" style="background:#eee; color:#555;" />
+            </div>
+          </div>
+          <div class="form-group form-row dos-columnas">
+            <div>
+              <label for="transaccion-cobrador">Cobrador *</label>
+              <select id="transaccion-cobrador" required>
+                <option value="pandy">Pandy</option>
+                <option value="cliente">Cliente</option>
+                <option value="intermediario">Intermediario</option>
+              </select>
+            </div>
+            <div>
+              <label for="transaccion-pagador">Pagador *</label>
+              <select id="transaccion-pagador" required>
+                <option value="pandy">Pandy</option>
+                <option value="cliente">Cliente</option>
+                <option value="intermediario">Intermediario</option>
+              </select>
+            </div>
+          </div>
+          <p class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Quién cobra y quién paga en esta transacción (deben ser distintos). Así se concilian la cuenta corriente del cliente y la del intermediario con Pandy.</span></span></p>
+          <div class="form-group">
+            <label for="transaccion-estado">Estado * <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Al guardar como Ejecutada se impactan caja y cuenta corriente.</span></span></label>
+            <select id="transaccion-estado">
+              <option value="pendiente">Pendiente</option>
+              <option value="ejecutada">Ejecutada</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="transaccion-concepto">Concepto</label>
+            <input type="text" id="transaccion-concepto" maxlength="255" placeholder="Opcional" />
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="modal-transaccion-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-ordenes-pendientes-backdrop" class="modal-backdrop">
+    <div class="modal modal-ancho">
+      <div class="modal-header">
+        <h2>Órdenes pendientes</h2>
+        <button type="button" class="modal-close" id="modal-ordenes-pendientes-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="ordenes-pendientes-loading" class="clientes-loading">Cargando…</div>
+        <div id="ordenes-pendientes-tabla-wrap" style="display:none;">
+          <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Órdenes que no están en estado Ejecutada. Podés editar o abrir la instrumentación.</p>
+          <div class="tabla-clientes-wrap">
+            <table class="tabla-clientes">
+              <thead><tr><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Recibido</th><th>Entregado</th><th></th></tr></thead>
+              <tbody id="ordenes-pendientes-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-transacciones-pendientes-backdrop" class="modal-backdrop">
+    <div class="modal modal-ancho">
+      <div class="modal-header">
+        <h2>Transacciones pendientes</h2>
+        <button type="button" class="modal-close" id="modal-transacciones-pendientes-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="vista-toolbar" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+          <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
+            <span>Cliente:</span>
+            <select id="transacciones-pendientes-filtro-cliente" style="min-width:140px;"><option value="">Todos</option></select>
+          </label>
+          <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
+            <span>Intermediario:</span>
+            <select id="transacciones-pendientes-filtro-intermediario" style="min-width:140px;"><option value="">Todos</option></select>
+          </label>
+          <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem; cursor:pointer;">
+            <input type="checkbox" id="transacciones-pendientes-filtro-pandy" />
+            <span>Solo Pandy (cobrador o pagador)</span>
+          </label>
+        </div>
+        <div id="transacciones-pendientes-loading" class="clientes-loading">Cargando…</div>
+        <div id="transacciones-pendientes-tabla-wrap" style="display:none;">
+          <div class="tabla-clientes-wrap">
+            <table class="tabla-clientes">
+              <thead><tr><th>Orden</th><th>Cliente</th><th>Intermediario</th><th>Tipo</th><th>Moneda</th><th>Monto</th><th>Cobrador</th><th>Pagador</th><th>Estado</th><th></th></tr></thead>
+              <tbody id="transacciones-pendientes-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-movimiento-cc-backdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Editar movimiento de cuenta corriente</h2>
+        <button type="button" class="modal-close" id="modal-movimiento-cc-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-movimiento-cc">
+          <input type="hidden" id="mov-cc-id" value="" />
+          <div class="form-group">
+            <label for="mov-cc-concepto">Concepto</label>
+            <input type="text" id="mov-cc-concepto" maxlength="255" placeholder="Opcional" />
+          </div>
+          <div class="form-group">
+            <label for="mov-cc-fecha">Fecha *</label>
+            <input type="date" id="mov-cc-fecha" required />
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="modal-movimiento-cc-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
   <script src="/config.js"></script>
   <script type="module" src="/main.js"></script>
 </body>
