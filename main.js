@@ -112,10 +112,24 @@ function refreshPermisosYVista() {
     .then((res) => {
       if (res.error) return;
       userPermissions = res.data || [];
+      applyVistasMenuVisibility();
+      const currentVistaId = VIEWS_CONFIG.find((r) => {
+        const el = document.getElementById(r[1]);
+        return el && el.style.display === 'block';
+      })?.[1];
+      if (currentVistaId && !canViewVista(currentVistaId)) {
+        const [firstId, firstTitle] = getFirstAllowedView();
+        showView(firstId, firstTitle);
+      }
     });
 }
 
 function showView(vistaId, pageTitle) {
+  if (!canViewVista(vistaId)) {
+    const [firstId, firstTitle] = getFirstAllowedView();
+    showView(firstId, firstTitle);
+    return;
+  }
   ['vista-inicio', 'vista-ordenes', 'vista-cajas', 'vista-clientes', 'vista-intermediarios', 'vista-cuenta-corriente', 'vista-seguridad'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.display = id === vistaId ? 'block' : 'none';
@@ -162,16 +176,19 @@ function loadSeguridad() {
     client.from('app_role').select('role, label').order('role'),
     client.from('app_permission').select('permission, description').order('permission').then((r) => {
       const perms = r.data || [];
-      const ordenPermisos = ['ingresar_orden', 'editar_orden', 'anular_orden', 'editar_estado_orden', 'ingresar_transacciones', 'editar_transacciones', 'eliminar_transacciones'];
-      const ordenados = [...perms].sort((a, b) => {
-        const ia = ordenPermisos.indexOf(a.permission);
-        const ib = ordenPermisos.indexOf(b.permission);
+      const ordenVistas = ['ver_inicio', 'ver_inicio_efectivo', 'ver_inicio_banco', 'ver_inicio_pendientes', 'ver_ordenes', 'ver_cajas', 'ver_clientes', 'ver_intermediarios', 'ver_cuenta_corriente', 'ver_seguridad'];
+      const ordenABM = ['assign_roles', 'abm_clientes', 'abm_movimientos_caja', 'abm_tipos_movimiento_caja', 'ingresar_orden', 'editar_orden', 'anular_orden', 'editar_estado_orden', 'ingresar_transacciones', 'editar_transacciones', 'eliminar_transacciones'];
+      const sortByOrder = (list, order) => [...list].sort((a, b) => {
+        const ia = order.indexOf(a.permission);
+        const ib = order.indexOf(b.permission);
         if (ia !== -1 && ib !== -1) return ia - ib;
         if (ia !== -1) return -1;
         if (ib !== -1) return 1;
         return (a.permission || '').localeCompare(b.permission || '');
       });
-      return { ...r, data: ordenados };
+      const vistas = sortByOrder(perms.filter((p) => (p.permission || '').startsWith('ver_')), ordenVistas);
+      const abm = sortByOrder(perms.filter((p) => !(p.permission || '').startsWith('ver_')), ordenABM);
+      return { ...r, data: { vistas, abm } };
     }),
     client.from('app_role_permission').select('role, permission'),
   ]).then(([rUsers, rRoles, rPerms, rRolePerms]) => {
@@ -216,35 +233,68 @@ function loadSeguridad() {
       wrapEl.style.display = 'block';
     }
 
-    const permissions = (rPerms.data || []).slice();
+    const permData = rPerms.data || { vistas: [], abm: [] };
+    const permisosVistas = permData.vistas || [];
+    const permisosABM = permData.abm || [];
     const rolePermList = rRolePerms.data || [];
     const rolePermSet = new Set(rolePermList.map((r) => r.role + '|' + r.permission));
+    const subPermsVistas = new Set(['ver_inicio_efectivo', 'ver_inicio_banco', 'ver_inicio_pendientes']);
 
-    if (permisosGrid && roles.length > 0 && permissions.length > 0) {
+    const iconVistas = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>';
+    const iconABM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    const iconChevron = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
+    const renderPermRows = (perms, roleKey, opts) => {
+      const subPerms = (opts && opts.subPerms) || new Set();
+      return perms
+        .map((p) => {
+          const permKey = p.permission;
+          const desc = escapeHtml(p.description || permKey);
+          const checked = rolePermSet.has(roleKey + '|' + permKey);
+          const id = 'perm-' + roleKey + '-' + permKey.replace(/_/g, '-');
+          const isSub = subPerms.has(permKey);
+          const rowClass = 'seguridad-perm-row' + (isSub ? ' seguridad-perm-row-sub' : '');
+          const labelContent = isSub ? `<span class="seguridad-perm-bullet" aria-hidden="true"></span><span>${desc}</span>` : desc;
+          return `<div class="${rowClass}">
+            <label for="${id}">${labelContent}</label>
+            <span class="toggle-switch">
+              <input type="checkbox" id="${id}" class="seguridad-perm-toggle" data-role="${roleKey}" data-permission="${permKey}" ${checked ? ' checked' : ''} />
+              <span class="slider"></span>
+            </span>
+          </div>`;
+        })
+        .join('');
+    };
+
+    if (permisosGrid && roles.length > 0 && (permisosVistas.length > 0 || permisosABM.length > 0)) {
       permisosGrid.innerHTML = roles
         .map((r) => {
           const roleKey = r.role;
           const label = escapeHtml(r.label || roleKey);
-          const rows = permissions
-            .map((p) => {
-              const permKey = p.permission;
-              const desc = escapeHtml(p.description || permKey);
-              const checked = rolePermSet.has(roleKey + '|' + permKey);
-              const id = 'perm-' + roleKey + '-' + permKey.replace(/_/g, '-');
-              return `<div class="seguridad-perm-row">
-                <label for="${id}" style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;width:100%;cursor:pointer;">
-                  <span>${desc}</span>
-                  <span class="toggle-switch">
-                    <input type="checkbox" id="${id}" class="seguridad-perm-toggle" data-role="${roleKey}" data-permission="${permKey}" ${checked ? ' checked' : ''} />
-                    <span class="slider"></span>
-                  </span>
-                </label>
-              </div>`;
-            })
-            .join('');
-          return `<div class="seguridad-permisos-rol" data-role="${roleKey}"><h4>${label}</h4>${rows}</div>`;
+          const blockVistas = permisosVistas.length > 0
+            ? `<div class="seguridad-permisos-grupo"><h5 class="seguridad-permisos-grupo-titulo"><span class="seguridad-permisos-grupo-icono" aria-hidden="true">${iconVistas}</span>Permisos de vistas</h5>${renderPermRows(permisosVistas, roleKey, { subPerms: subPermsVistas })}</div>`
+            : '';
+          const blockABM = permisosABM.length > 0
+            ? `<div class="seguridad-permisos-grupo"><h5 class="seguridad-permisos-grupo-titulo"><span class="seguridad-permisos-grupo-icono" aria-hidden="true">${iconABM}</span>Permisos de alta, baja o modificación</h5>${renderPermRows(permisosABM, roleKey)}</div>`
+            : '';
+          return `<div class="seguridad-permisos-rol" data-role="${roleKey}">
+            <button type="button" class="seguridad-permisos-rol-header" aria-expanded="false" aria-controls="seguridad-rol-body-${roleKey}" id="seguridad-rol-header-${roleKey}">
+              <span>${label}</span>
+              <span class="seguridad-permisos-rol-chevron" aria-hidden="true">${iconChevron}</span>
+            </button>
+            <div class="seguridad-permisos-rol-body" id="seguridad-rol-body-${roleKey}" role="region" aria-labelledby="seguridad-rol-header-${roleKey}">${blockVistas}${blockABM}</div>
+          </div>`;
         })
         .join('');
+
+      permisosGrid.querySelectorAll('.seguridad-permisos-rol-header').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const card = btn.closest('.seguridad-permisos-rol');
+          if (!card) return;
+          const isExpanded = card.classList.toggle('expanded');
+          btn.setAttribute('aria-expanded', isExpanded);
+        });
+      });
 
       permisosGrid.querySelectorAll('.seguridad-perm-toggle').forEach((chk) => {
         chk.addEventListener('change', function () {
@@ -364,6 +414,26 @@ function loadCajas() {
 }
 
 function loadInicio() {
+  const elEfectivo = document.getElementById('inicio-card-efectivo');
+  const elBanco = document.getElementById('inicio-card-banco');
+  const elSaldos = document.getElementById('inicio-saldos');
+  const elPendientes = document.getElementById('inicio-cards-pendientes');
+  const hasEfectivoPerm = userPermissions.includes('ver_inicio_efectivo');
+  const hasBancoPerm = userPermissions.includes('ver_inicio_banco');
+  const hasPendientesPerm = userPermissions.includes('ver_inicio_pendientes');
+  const hasAnyPanelCardPerm = hasEfectivoPerm || hasBancoPerm || hasPendientesPerm;
+  if (hasAnyPanelCardPerm) {
+    if (elEfectivo) elEfectivo.style.display = hasEfectivoPerm ? '' : 'none';
+    if (elBanco) elBanco.style.display = hasBancoPerm ? '' : 'none';
+    if (elSaldos) elSaldos.style.display = hasEfectivoPerm || hasBancoPerm ? '' : 'none';
+    if (elPendientes) elPendientes.style.display = hasPendientesPerm ? '' : 'none';
+  } else {
+    if (elEfectivo) elEfectivo.style.display = '';
+    if (elBanco) elBanco.style.display = '';
+    if (elSaldos) elSaldos.style.display = '';
+    if (elPendientes) elPendientes.style.display = '';
+  }
+
   const hoy = new Date();
   const hoyStr = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
   const ayer = new Date(hoy);
@@ -4293,17 +4363,44 @@ function setupModalIntermediario() {
   if (btnNuevo) btnNuevo.addEventListener('click', () => openModalIntermediario(null));
 }
 
+/** Configuración de vistas: [menuId, vistaId, título, permiso de vista]. Orden del menú. */
+const VIEWS_CONFIG = [
+  ['menu-inicio', 'vista-inicio', 'Panel de Control', 'ver_inicio'],
+  ['menu-ordenes', 'vista-ordenes', 'Órdenes', 'ver_ordenes'],
+  ['menu-cajas', 'vista-cajas', 'Cajas', 'ver_cajas'],
+  ['menu-clientes', 'vista-clientes', 'Clientes', 'ver_clientes'],
+  ['menu-intermediarios', 'vista-intermediarios', 'Intermediarios', 'ver_intermediarios'],
+  ['menu-cuenta-corriente', 'vista-cuenta-corriente', 'Cuenta corriente', 'ver_cuenta_corriente'],
+  ['menu-seguridad', 'vista-seguridad', 'Seguridad', 'ver_seguridad'],
+];
+
+function hasAnyViewPermission() {
+  return VIEWS_CONFIG.some((r) => userPermissions.includes(r[3]));
+}
+
+function canViewVista(vistaId) {
+  if (!hasAnyViewPermission()) return true; // Sin migración de vistas: ver todo
+  const row = VIEWS_CONFIG.find((r) => r[1] === vistaId);
+  if (!row) return true;
+  return userPermissions.includes(row[3]);
+}
+
+function getFirstAllowedView() {
+  const row = VIEWS_CONFIG.find((r) => userPermissions.includes(r[3]));
+  return row ? [row[1], row[2]] : ['vista-inicio', 'Panel de Control'];
+}
+
+function applyVistasMenuVisibility() {
+  const useVistasPermisos = hasAnyViewPermission();
+  VIEWS_CONFIG.forEach(([menuId, , , perm]) => {
+    const menuEl = document.getElementById(menuId);
+    if (!menuEl) return;
+    menuEl.style.display = !useVistasPermisos || userPermissions.includes(perm) ? '' : 'none';
+  });
+}
+
 function setupVistasMenu() {
-  const views = [
-    ['menu-inicio', 'vista-inicio', 'Panel de Control'],
-    ['menu-ordenes', 'vista-ordenes', 'Órdenes'],
-    ['menu-cajas', 'vista-cajas', 'Cajas'],
-    ['menu-clientes', 'vista-clientes', 'Clientes'],
-    ['menu-intermediarios', 'vista-intermediarios', 'Intermediarios'],
-    ['menu-cuenta-corriente', 'vista-cuenta-corriente', 'Cuenta corriente'],
-    ['menu-seguridad', 'vista-seguridad', 'Seguridad'],
-  ];
-  views.forEach(([menuId, vistaId, title]) => {
+  VIEWS_CONFIG.forEach(([menuId, vistaId, title]) => {
     const menuEl = document.getElementById(menuId);
     if (!menuEl) return;
     menuEl.addEventListener('click', (e) => {
@@ -4346,6 +4443,7 @@ function onSessionReady(session) {
       }
 
       setupVistasMenu();
+      applyVistasMenuVisibility();
       setupPanelControl();
       setupModalCliente();
       setupModalIntermediario();
@@ -4358,7 +4456,8 @@ function onSessionReady(session) {
       setupCuentaCorriente();
       setupModalMovimientoCc();
       setupHelpPopovers();
-      showView('vista-inicio', 'Panel de Control');
+      const [defaultVistaId, defaultTitle] = getFirstAllowedView();
+      showView(defaultVistaId, defaultTitle);
     });
 }
 
