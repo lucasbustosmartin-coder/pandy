@@ -381,7 +381,7 @@ function loadInicio() {
       setVal(els[4], saldos.banco.ARS, 'ARS');
       const elCountOrd = document.getElementById('inicio-count-ordenes-pendientes');
       const elCountTr = document.getElementById('inicio-count-transacciones-pendientes');
-      if (elCountOrd) client.from('ordenes').select('id', { count: 'exact', head: true }).neq('estado', 'orden_ejecutada').then((r) => { elCountOrd.textContent = r.count != null ? String(r.count) : '–'; });
+      if (elCountOrd) client.from('ordenes').select('id', { count: 'exact', head: true }).neq('estado', 'orden_ejecutada').neq('estado', 'anulada').then((r) => { elCountOrd.textContent = r.count != null ? String(r.count) : '–'; });
       if (elCountTr) client.from('transacciones').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente').then((r) => { elCountTr.textContent = r.count != null ? String(r.count) : '–'; });
     });
 }
@@ -405,6 +405,7 @@ function openModalOrdenesPendientes() {
     .from('ordenes')
     .select('id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones')
     .neq('estado', 'orden_ejecutada')
+    .neq('estado', 'anulada')
     .order('fecha', { ascending: false })
     .order('created_at', { ascending: false })
     .then((res) => {
@@ -435,8 +436,8 @@ function openModalOrdenesPendientes() {
         (tr.data || []).forEach((t) => { tiposOpMap[t.id] = t.nombre || ''; });
         const intermediariosMap = {};
         (ir.data || []).forEach((i) => { intermediariosMap[i.id] = i.nombre || ''; });
-        const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada' }[e] || (e ? String(e) : '–'));
-        const estadoBadgeClass = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
+        const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada' }[e] || (e ? String(e) : '–'));
+        const estadoBadgeClass = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
         tbody.innerHTML = list.map((o) => {
           const estado = o.estado || '';
           const badgeClass = estadoBadgeClass(estado);
@@ -1401,6 +1402,37 @@ function showToast(mensaje, type = 'success', duracionMs = 4500) {
   container.appendChild(toast);
 }
 
+/** Confirmación con mensajería interna (no usar confirm() del navegador). Muestra un modal con mensaje y botones; llama onConfirm al aceptar, onCancel al cancelar o cerrar. */
+function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel) {
+  const backdrop = document.getElementById('modal-confirm-backdrop');
+  const titulo = document.getElementById('modal-confirm-titulo');
+  const texto = document.getElementById('modal-confirm-mensaje');
+  const btnAceptar = document.getElementById('modal-confirm-aceptar');
+  const btnCancelar = document.getElementById('modal-confirm-cancelar');
+  const btnCerrar = document.getElementById('modal-confirm-cerrar');
+  if (!backdrop || !texto || !btnAceptar || !btnCancelar) return;
+  texto.textContent = mensaje;
+  if (titulo) titulo.textContent = 'Confirmar';
+  btnAceptar.textContent = textoConfirmar || 'Confirmar';
+  backdrop.classList.add('activo');
+  backdrop.setAttribute('aria-hidden', 'false');
+  const cerrar = (ejecutado) => {
+    backdrop.classList.remove('activo');
+    backdrop.setAttribute('aria-hidden', 'true');
+    btnAceptar.onclick = null;
+    btnCancelar.onclick = null;
+    btnCerrar.onclick = null;
+    if (backdrop._confirmAbort) backdrop.removeEventListener('click', backdrop._confirmAbort);
+    backdrop._confirmAbort = null;
+    if (!ejecutado && typeof onCancel === 'function') onCancel();
+  };
+  btnAceptar.onclick = () => { if (typeof onConfirm === 'function') onConfirm(); cerrar(true); };
+  btnCancelar.onclick = () => cerrar(false);
+  btnCerrar.onclick = () => cerrar(false);
+  backdrop._confirmAbort = (e) => { if (e.target === backdrop) cerrar(false); };
+  backdrop.addEventListener('click', backdrop._confirmAbort);
+}
+
 function setupModalMovimientoCaja() {
   const backdrop = document.getElementById('modal-movimiento-caja-backdrop');
   const btnClose = document.getElementById('modal-movimiento-caja-close');
@@ -1479,8 +1511,8 @@ function loadOrdenes() {
         (tr.data || []).forEach((t) => { tiposOpMap[t.id] = t.nombre || ''; });
         const intermediariosMap = {};
         (ir.data || []).forEach((i) => { intermediariosMap[i.id] = i.nombre || ''; });
-        const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', cotizacion: 'Cotización', concertada: 'Concertada' }[e] || (e ? String(e) : '–'));
-        const estadoBadgeClass = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'cotizacion', 'concertada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
+        const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada', cotizacion: 'Cotización', concertada: 'Concertada' }[e] || (e ? String(e) : '–'));
+        const estadoBadgeClass = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada', 'cotizacion', 'concertada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
         tbody.innerHTML = list
           .map(
             (o) => {
@@ -1495,7 +1527,7 @@ function loadOrdenes() {
                 <td>${estadoHtml}</td>
                 <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
                 <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
-                <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>` : ''}</td>
+                <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${canEditarOrden && o.estado !== 'anulada' ? ` <button type="button" class="btn-secondary btn-anular-orden-tabla btn-icon-only" data-id="${o.id}" title="Anular orden" aria-label="Anular orden" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>` : ''}` : ''}</td>
               </tr>
               <tr class="orden-detalle-tr" id="orden-detalle-${o.id}" data-orden-id="${o.id}" style="display:none;">
                 <td colspan="8" class="orden-detalle-cell">
@@ -1526,6 +1558,19 @@ function loadOrdenes() {
           btn.addEventListener('click', () => {
             const id = btn.getAttribute('data-id');
             if (id) expandOrdenTransacciones(id, list.find((r) => r.id === id));
+          });
+        });
+        tbody.querySelectorAll('.btn-anular-orden-tabla').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            if (id) {
+              showConfirm('¿Anular esta orden? El estado pasará a Anulada.', 'Anular', () => {
+                client.from('ordenes').update({ estado: 'anulada', updated_at: new Date().toISOString() }).eq('id', id).then((r) => {
+                  if (r.error) showToast('Error: ' + (r.error?.message || ''), 'error');
+                  else { showToast('Orden anulada.', 'success'); loadOrdenes(); }
+                });
+              });
+            }
           });
         });
         loadingEl.style.display = 'none';
@@ -1584,7 +1629,7 @@ function openModalOrden(registro) {
       if (!wrapSplit || !selTipoEl) return;
       const opt = selTipoEl.selectedOptions && selTipoEl.selectedOptions[0];
       const codigo = opt ? (opt.getAttribute('data-codigo') || '') : '';
-      const isTipoConComision = codigo === 'USD-USD' || codigo === 'ARS-DOLAR' || codigo === 'ARS-USD' || codigo === 'USD-ARS';
+      const isTipoConComision = codigo === 'USD-USD';
       const tieneIntermediario = !!(selIntEl && selIntEl.value && selIntEl.value.trim());
       wrapSplit.style.display = isTipoConComision ? 'flex' : 'none';
       if (isTipoConComision) {
@@ -1630,7 +1675,20 @@ function openModalOrden(registro) {
     if (pctPandyEl) pctPandyEl.addEventListener('input', () => syncComisionPctOtro('pandy'));
     if (pctIntEl) pctIntEl.addEventListener('change', () => syncComisionPctOtro('intermediario'));
     if (pctIntEl) pctIntEl.addEventListener('input', () => syncComisionPctOtro('intermediario'));
-    if (btnNext) btnNext.onclick = () => showStep('detalles');
+    if (btnNext) btnNext.onclick = () => {
+      showStep('detalles');
+      const opt = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+      const codigo = opt?.getAttribute('data-codigo') || '';
+      if (codigo === 'ARS-USD' || codigo === 'USD-ARS') {
+        setTimeout(() => {
+          const el = document.getElementById('orden-cotizacion');
+          if (el) {
+            el.focus();
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }, 150);
+      }
+    };
     if (btnBack) btnBack.onclick = () => showStep('participantes');
     if (btnBackDetalles) btnBackDetalles.onclick = () => showOrdenWizardStep('detalles');
     if (btnCerrarWizard) btnCerrarWizard.onclick = () => { closeModalOrden(); loadOrdenes(); };
@@ -1667,10 +1725,26 @@ function openModalOrden(registro) {
       document.getElementById('orden-cotizacion').value = registro.cotizacion != null && registro.cotizacion !== '' ? formatImporteDisplay(registro.cotizacion) : '';
       const tasaIntEl = document.getElementById('orden-tasa-descuento-intermediario');
       if (tasaIntEl) tasaIntEl.value = (registro.tasa_descuento_intermediario != null && Number(registro.tasa_descuento_intermediario) > 0) ? formatImporteDisplay(Number(registro.tasa_descuento_intermediario) * 100) : '';
-      document.getElementById('orden-estado').value = (registro.estado && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada'].includes(registro.estado)) ? registro.estado : 'pendiente_instrumentar';
+      document.getElementById('orden-estado').value = (registro.estado && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada'].includes(registro.estado)) ? registro.estado : 'pendiente_instrumentar';
       document.getElementById('orden-observaciones').value = registro.observaciones || '';
       onTipoChange();
       ordenWizardOrdenIdActual = registro.id;
+      const btnAnular = document.getElementById('orden-btn-anular');
+      if (btnAnular) {
+        const canEditarOrden = userPermissions.includes('abm_ordenes') || userPermissions.includes('editar_orden');
+        if (registro.estado !== 'anulada' && canEditarOrden) {
+          btnAnular.style.display = '';
+          btnAnular.onclick = () => {
+            showConfirm('¿Anular esta orden? El estado pasará a Anulada.', 'Anular', () => {
+              document.getElementById('orden-estado').value = 'anulada';
+              saveOrden();
+            });
+            return;
+          };
+        } else {
+          btnAnular.style.display = 'none';
+        }
+      }
       promContinuar = client.from('comisiones_orden').select('beneficiario, monto').eq('orden_id', registro.id).then((rCom) => {
         const rows = rCom.data || [];
         let pandyMonto = 0, interMonto = 0;
@@ -1694,6 +1768,8 @@ function openModalOrden(registro) {
       document.getElementById('orden-estado').value = 'pendiente_instrumentar';
       if (wizard) wizard.style.display = 'none';
       ordenWizardOrdenIdActual = null;
+      const btnAnular = document.getElementById('orden-btn-anular');
+      if (btnAnular) btnAnular.style.display = 'none';
     }
     promContinuar.then(() => {
       if (pctPandyEl && !pctPandyEl.value) pctPandyEl.value = '100';
@@ -1720,10 +1796,10 @@ function adaptarFormularioOrden(codigo, tipos) {
   const entregadaDesdeTipo = primera && segunda ? normalizarMoneda(segunda) : null;
 
   const isUsdUsd = codigo === 'USD-USD';
-  const isArsDolar = codigo === 'ARS-DOLAR' || codigo === 'ARS-USD';
+  const isArsUsd = codigo === 'ARS-USD';
   const isUsdArs = codigo === 'USD-ARS';
   const isArsArs = codigo === 'ARS-ARS';
-  const isTipoConTc = isArsDolar || isUsdArs;
+  const isTipoConTc = isArsUsd || isUsdArs;
   const monedaRecibida = document.getElementById('orden-moneda-recibida');
   const monedaEntregada = document.getElementById('orden-moneda-entregada');
   const labelMontoRecibido = document.getElementById('orden-label-monto-recibido');
@@ -1755,11 +1831,12 @@ function adaptarFormularioOrden(codigo, tipos) {
   if (labelMontoEntregado) labelMontoEntregado.textContent = (isUsdUsd || isTipoConTc || isArsArs) ? 'Monto a Entregar *' : 'Monto entregado *';
   const wrapTasaDescuentoInt = document.getElementById('orden-wrap-tasa-descuento-intermediario');
   const wrapComisionSplit = document.getElementById('orden-wrap-comision-split');
-  if (wrapComision) wrapComision.style.display = (isUsdUsd || isTipoConTc || isArsArs) ? 'block' : 'none';
+  const isTipoSinComision = codigo === 'ARS-USD' || codigo === 'USD-ARS';
+  if (wrapComision) wrapComision.style.display = (isUsdUsd || (isTipoConTc && !isTipoSinComision) || isArsArs) ? 'block' : 'none';
   if (wrapTasaDescuentoInt) wrapTasaDescuentoInt.style.display = isArsArs ? 'block' : 'none';
   if (wrapComisionSplit) {
-    if (isArsArs) wrapComisionSplit.style.display = 'none';
-    else if ((isUsdUsd || isArsDolar || isUsdArs) && document.getElementById('orden-intermediario')?.value?.trim())
+    if (isArsArs || isTipoSinComision) wrapComisionSplit.style.display = 'none';
+    else if (isUsdUsd && document.getElementById('orden-intermediario')?.value?.trim())
       wrapComisionSplit.style.display = 'flex';
   }
   if (wrapCotizacion) {
@@ -1782,18 +1859,6 @@ function adaptarFormularioOrden(codigo, tipos) {
     const e = parseImporteInput(document.getElementById('orden-monto-entregado').value);
     const comision = (typeof r === 'number' && !isNaN(r) && typeof e === 'number' && !isNaN(e) && r > e) ? r - e : null;
     comisionDisplay.value = comision != null ? formatImporteDisplay(comision) : '';
-  }
-  function actualizarComisionArsDolar() {
-    if (!isArsDolar || !comisionDisplay) return;
-    const r = parseImporteInput(document.getElementById('orden-monto-recibido').value);
-    const e = parseImporteInput(document.getElementById('orden-monto-entregado').value);
-    const tc = parseImporteInput(document.getElementById('orden-cotizacion').value);
-    let comision = null;
-    if (typeof r === 'number' && !isNaN(r) && r > 0 && typeof tc === 'number' && !isNaN(tc) && tc > 0 && typeof e === 'number' && !isNaN(e) && e >= 0) {
-      const usdEquiv = r / tc;
-      if (usdEquiv > e) comision = usdEquiv - e;
-    }
-    comisionDisplay.value = comision != null ? formatImporteDisplay(comision) + ' USD' : '';
   }
   function actualizarComisionUsdArs() {
     if (!isUsdArs || !comisionDisplay) return;
@@ -1818,34 +1883,73 @@ function adaptarFormularioOrden(codigo, tipos) {
   const montoEntregadoEl = document.getElementById('orden-monto-entregado');
   if (montoRecibidoEl) {
     montoRecibidoEl.removeEventListener('input', actualizarComisionUsdUsd); montoRecibidoEl.removeEventListener('change', actualizarComisionUsdUsd);
-    montoRecibidoEl.removeEventListener('input', actualizarComisionArsDolar); montoRecibidoEl.removeEventListener('change', actualizarComisionArsDolar);
     montoRecibidoEl.removeEventListener('input', actualizarComisionUsdArs); montoRecibidoEl.removeEventListener('change', actualizarComisionUsdArs);
     montoRecibidoEl.removeEventListener('input', actualizarComisionArsArs); montoRecibidoEl.removeEventListener('change', actualizarComisionArsArs);
   }
   if (montoEntregadoEl) {
     montoEntregadoEl.removeEventListener('input', actualizarComisionUsdUsd); montoEntregadoEl.removeEventListener('change', actualizarComisionUsdUsd);
-    montoEntregadoEl.removeEventListener('input', actualizarComisionArsDolar); montoEntregadoEl.removeEventListener('change', actualizarComisionArsDolar);
     montoEntregadoEl.removeEventListener('input', actualizarComisionUsdArs); montoEntregadoEl.removeEventListener('change', actualizarComisionUsdArs);
     montoEntregadoEl.removeEventListener('input', actualizarComisionArsArs); montoEntregadoEl.removeEventListener('change', actualizarComisionArsArs);
   }
   if (inputCotizacion) {
-    inputCotizacion.removeEventListener('input', actualizarComisionArsDolar); inputCotizacion.removeEventListener('change', actualizarComisionArsDolar);
     inputCotizacion.removeEventListener('input', actualizarComisionUsdArs); inputCotizacion.removeEventListener('change', actualizarComisionUsdArs);
+  }
+  let _actualizandoMontosTc = false;
+  function actualizarMontosDesdeTc(origen) {
+    if (_actualizandoMontosTc || !inputCotizacion || !montoRecibidoEl || !montoEntregadoEl) return;
+    const tc = parseImporteInput(inputCotizacion.value);
+    if (typeof tc !== 'number' || isNaN(tc) || tc <= 0) return;
+    const r = parseImporteInput(montoRecibidoEl.value);
+    const e = parseImporteInput(montoEntregadoEl.value);
+    const tieneRecibir = typeof r === 'number' && !isNaN(r) && r > 0;
+    const tieneEntregar = typeof e === 'number' && !isNaN(e) && e > 0;
+    if (codigo === 'ARS-USD') {
+      if (origen === 'tc' || origen === 'entregar') {
+        const baseEntregar = tieneEntregar ? e : 1;
+        if (tieneEntregar || origen === 'tc') {
+          _actualizandoMontosTc = true;
+          if (!tieneEntregar) montoEntregadoEl.value = formatImporteDisplay(1);
+          montoRecibidoEl.value = formatImporteDisplay(baseEntregar * tc);
+          _actualizandoMontosTc = false;
+        }
+      } else if (origen === 'recibir' && tieneRecibir) {
+        _actualizandoMontosTc = true;
+        montoEntregadoEl.value = formatImporteDisplay(r / tc);
+        _actualizandoMontosTc = false;
+      }
+    } else if (codigo === 'USD-ARS') {
+      if (origen === 'tc' || origen === 'entregar') {
+        const baseEntregar = tieneEntregar ? e : 1;
+        if (tieneEntregar || origen === 'tc') {
+          _actualizandoMontosTc = true;
+          if (!tieneEntregar) montoEntregadoEl.value = formatImporteDisplay(1);
+          montoRecibidoEl.value = formatImporteDisplay(baseEntregar / tc);
+          _actualizandoMontosTc = false;
+        }
+      } else if (origen === 'recibir' && tieneRecibir) {
+        _actualizandoMontosTc = true;
+        montoEntregadoEl.value = formatImporteDisplay(r * tc);
+        _actualizandoMontosTc = false;
+      }
+    }
   }
   if (isUsdUsd) {
     if (montoRecibidoEl) { montoRecibidoEl.addEventListener('input', actualizarComisionUsdUsd); montoRecibidoEl.addEventListener('change', actualizarComisionUsdUsd); }
     if (montoEntregadoEl) { montoEntregadoEl.addEventListener('input', actualizarComisionUsdUsd); montoEntregadoEl.addEventListener('change', actualizarComisionUsdUsd); }
     actualizarComisionUsdUsd();
-  } else if (isArsDolar) {
-    if (montoRecibidoEl) { montoRecibidoEl.addEventListener('input', actualizarComisionArsDolar); montoRecibidoEl.addEventListener('change', actualizarComisionArsDolar); }
-    if (montoEntregadoEl) { montoEntregadoEl.addEventListener('input', actualizarComisionArsDolar); montoEntregadoEl.addEventListener('change', actualizarComisionArsDolar); }
-    if (inputCotizacion) { inputCotizacion.addEventListener('input', actualizarComisionArsDolar); inputCotizacion.addEventListener('change', actualizarComisionArsDolar); }
-    actualizarComisionArsDolar();
-  } else if (isUsdArs) {
-    if (montoRecibidoEl) { montoRecibidoEl.addEventListener('input', actualizarComisionUsdArs); montoRecibidoEl.addEventListener('change', actualizarComisionUsdArs); }
-    if (montoEntregadoEl) { montoEntregadoEl.addEventListener('input', actualizarComisionUsdArs); montoEntregadoEl.addEventListener('change', actualizarComisionUsdArs); }
-    if (inputCotizacion) { inputCotizacion.addEventListener('input', actualizarComisionUsdArs); inputCotizacion.addEventListener('change', actualizarComisionUsdArs); }
-    actualizarComisionUsdArs();
+  } else if (codigo === 'ARS-USD' || codigo === 'USD-ARS') {
+    if (inputCotizacion) {
+      inputCotizacion.addEventListener('input', () => actualizarMontosDesdeTc('tc'));
+      inputCotizacion.addEventListener('change', () => actualizarMontosDesdeTc('tc'));
+    }
+    if (montoEntregadoEl) {
+      montoEntregadoEl.addEventListener('input', () => actualizarMontosDesdeTc('entregar'));
+      montoEntregadoEl.addEventListener('change', () => actualizarMontosDesdeTc('entregar'));
+    }
+    if (montoRecibidoEl) {
+      montoRecibidoEl.addEventListener('input', () => actualizarMontosDesdeTc('recibir'));
+      montoRecibidoEl.addEventListener('change', () => actualizarMontosDesdeTc('recibir'));
+    }
   } else if (isArsArs) {
     if (montoRecibidoEl) { montoRecibidoEl.addEventListener('input', actualizarComisionArsArs); montoRecibidoEl.addEventListener('change', actualizarComisionArsArs); }
     if (montoEntregadoEl) { montoEntregadoEl.addEventListener('input', actualizarComisionArsArs); montoEntregadoEl.addEventListener('change', actualizarComisionArsArs); }
@@ -1870,7 +1974,7 @@ function showOrdenWizardStep(which) {
 }
 
 /** Guarda la orden según el form, pero sin cerrar el modal. Devuelve Promise<ordenId>. */
-function guardarOrdenDesdeWizard() {
+function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
   const idEl = document.getElementById('orden-id');
   const id = idEl && idEl.value ? idEl.value.trim() : '';
   const clienteId = document.getElementById('orden-cliente').value.trim() || null;
@@ -1898,25 +2002,9 @@ function guardarOrdenDesdeWizard() {
 
   const selTipoOpt = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
   const tipoCodigo = selTipoOpt ? (selTipoOpt.getAttribute('data-codigo') || '') : '';
-  if (tipoCodigo === 'ARS-DOLAR') {
+  if (tipoCodigo === 'ARS-USD' || tipoCodigo === 'USD-ARS') {
     if (!cotizacion || !(cotizacion > 0)) {
-      showToast('En ARS - DOLAR el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
-      return Promise.resolve(null);
-    }
-    const usdEquiv = montoRecibido / cotizacion;
-    if (usdEquiv <= montoEntregado) {
-      showToast('En ARS - DOLAR el monto a recibir (dolarizado) debe ser mayor al monto a entregar. La diferencia es la comisión.', 'error');
-      return Promise.resolve(null);
-    }
-  }
-  if (tipoCodigo === 'USD-ARS') {
-    if (!cotizacion || !(cotizacion > 0)) {
-      showToast('En USD - ARS el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
-      return Promise.resolve(null);
-    }
-    const usdEquivEntregado = montoEntregado / cotizacion;
-    if (montoRecibido <= usdEquivEntregado) {
-      showToast('En USD - ARS el monto a recibir debe ser mayor al monto a entregar (pesificado). La diferencia es la comisión.', 'error');
+      showToast('En ARS-USD y USD-ARS el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
       return Promise.resolve(null);
     }
   }
@@ -1942,12 +2030,12 @@ function guardarOrdenDesdeWizard() {
   }
   const comisionUsd = tipoCodigo === 'USD-USD' ? montoRecibido - montoEntregado
     : (tipoCodigo === 'ARS-ARS' ? montoRecibido - montoEntregado
-      : ((tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'ARS-USD') && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado
+      : ((tipoCodigo === 'ARS-USD') && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado
         : (tipoCodigo === 'USD-ARS' && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
   const pctPandy = parseImporteInput(document.getElementById('orden-comision-pandy-pct')?.value || '100');
   const pctInt = parseImporteInput(document.getElementById('orden-comision-intermediario-pct')?.value || '0');
   const tieneSplitVisible = document.getElementById('orden-wrap-comision-split')?.style?.display !== 'none';
-  if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'ARS-USD' || tipoCodigo === 'USD-ARS' || tipoCodigo === 'ARS-ARS') && intermediarioId && tieneSplitVisible) {
+  if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-USD' || tipoCodigo === 'USD-ARS' || tipoCodigo === 'ARS-ARS') && intermediarioId && tieneSplitVisible) {
     const a = Number(pctPandy);
     const b = Number(pctInt);
     if (isNaN(a) || isNaN(b) || a < 0 || b < 0 || a > 100 || b > 100 || Math.abs((a + b) - 100) > 1e-6) {
@@ -1955,9 +2043,9 @@ function guardarOrdenDesdeWizard() {
       return Promise.resolve(null);
     }
   }
-  if (intermediarioId && tieneSplitVisible && (Number(pctInt) || 0) < 1e-6) {
-    const acepta = confirm('La comisión del intermediario es cero. ¿Deseás guardar la orden igual?');
-    if (!acepta) return Promise.resolve(null);
+  if (intermediarioId && tieneSplitVisible && (Number(pctInt) || 0) < 1e-6 && !opcionGuardarConComisionCero) {
+    showConfirm('La comisión del intermediario es cero. ¿Deseás guardar la orden igual?', 'Sí, guardar', () => guardarOrdenDesdeWizard(true));
+    return Promise.resolve(null);
   }
 
   const tasaDescuentoIntPct = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim();
@@ -2009,9 +2097,9 @@ function guardarOrdenDesdeWizard() {
     if (!idEl.value) idEl.value = ordenId;
     ordenWizardOrdenIdActual = ordenId;
     function guardarComision() {
-      const conceptoComision = tipoCodigo === 'ARS-DOLAR' ? 'Comisión ARS-USD' : (tipoCodigo === 'USD-ARS' ? 'Comisión USD-ARS' : (tipoCodigo === 'ARS-ARS' ? 'Comisión ARS-ARS' : 'Comisión USD-USD'));
+      const conceptoComision = tipoCodigo === 'USD-ARS' ? 'Comisión USD-ARS' : (tipoCodigo === 'ARS-ARS' ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
       const comisionMoneda = tipoCodigo === 'ARS-ARS' ? 'ARS' : 'USD';
-      if (!((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'USD-ARS' || tipoCodigo === 'ARS-ARS') && comisionUsd != null && comisionUsd > 0)) return Promise.resolve();
+      if (!((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-ARS') && comisionUsd != null && comisionUsd > 0)) return Promise.resolve();
       return client.from('comisiones_orden').delete().eq('orden_id', ordenId).then(() => {
         const a = intermediarioId ? Number(pctPandy) : 100;
         const b = intermediarioId ? Number(pctInt) : 0;
@@ -2070,7 +2158,7 @@ function renderOrdenWizardInstrumentacion(instId) {
       return;
     }
     Promise.all([
-      client.from('ordenes').select('id, cliente_id, tipo_operacion_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario').eq('id', ordenId).single(),
+      client.from('ordenes').select('id, cliente_id, tipo_operacion_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, estado').eq('id', ordenId).single(),
       client.from('transacciones').select('id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio').eq('instrumentacion_id', instId).order('created_at', { ascending: true }),
       client.from('modos_pago').select('id, codigo, nombre'),
     ]).then(([rOrd, resTr, rModos]) => {
@@ -2096,12 +2184,22 @@ function renderOrdenWizardInstrumentacion(instId) {
 
       function renderWizardList(lista) {
         const { totalRecibido, totalEntregado } = totalesInstrumentacion(lista, orden);
+        const labelEl = document.getElementById('orden-inst-instrumentado-label');
         if (instrumentadoTexto && orden) {
           const monR = orden.moneda_recibida || 'USD';
           const monE = orden.moneda_entregada || 'USD';
-          instrumentadoTexto.textContent = `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`;
-        } else if (instrumentadoTexto) {
-          instrumentadoTexto.textContent = '–';
+          const ejecutada = orden.estado === 'orden_ejecutada';
+          if (labelEl) labelEl.textContent = ejecutada ? 'Instrumentado:' : 'Instrumentación:';
+          if (ejecutada) {
+            instrumentadoTexto.textContent = `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`;
+          } else {
+            const mr = Number(orden.monto_recibido) || 0;
+            const me = Number(orden.monto_entregado) || 0;
+            instrumentadoTexto.textContent = `A recibir ${formatImporteDisplay(mr)} ${monR} - A entregar ${formatImporteDisplay(me)} ${monE}.`;
+          }
+        } else {
+          if (labelEl) labelEl.textContent = 'Instrumentado:';
+          if (instrumentadoTexto) instrumentadoTexto.textContent = '–';
         }
         if (acuerdoAviso && orden) {
           const mr = Number(orden.monto_recibido) || 0;
@@ -2158,7 +2256,7 @@ function renderOrdenWizardInstrumentacion(instId) {
           if (codigo === 'ARS-ARS' && orden.intermediario_id) {
             return autoCompletarInstrumentacionChequeConIntermediario(ordenId, instId, orden);
           }
-          if (!orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-DOLAR' || codigo === 'ARS-USD' || codigo === 'USD-ARS' || codigo === 'ARS-ARS')) {
+          if (!orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-USD' || codigo === 'USD-ARS' || codigo === 'ARS-ARS')) {
             return autoCompletarInstrumentacionSinIntermediario(ordenId, instId, orden);
           }
           return Promise.resolve();
@@ -2175,7 +2273,7 @@ function renderOrdenWizardInstrumentacion(instId) {
   });
 }
 
-function saveOrden() {
+function saveOrden(aceptaComisionCero = false) {
   const idEl = document.getElementById('orden-id');
   const id = idEl && idEl.value ? idEl.value.trim() : '';
   const canAbm = userPermissions.includes('abm_ordenes');
@@ -2217,25 +2315,15 @@ function saveOrden() {
 
   const selTipoOpt = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
   const tipoCodigo = selTipoOpt ? (selTipoOpt.getAttribute('data-codigo') || '') : '';
-  if (tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'ARS-USD') {
+  if (tipoCodigo === 'ARS-USD') {
     if (!cotizacion || !(cotizacion > 0)) {
-      showToast('En ARS - USD el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
-      return;
-    }
-    const usdEquiv = montoRecibido / cotizacion;
-    if (usdEquiv <= montoEntregado) {
-      showToast('En ARS - USD el monto a recibir (dolarizado) debe ser mayor al monto a entregar. La diferencia es la comisión.', 'error');
+      showToast('En ARS-USD el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
       return;
     }
   }
   if (tipoCodigo === 'USD-ARS') {
     if (!cotizacion || !(cotizacion > 0)) {
       showToast('En USD - ARS el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
-      return;
-    }
-    const usdEquivEntregado = montoEntregado / cotizacion;
-    if (montoRecibido <= usdEquivEntregado) {
-      showToast('En USD - ARS el monto a recibir debe ser mayor al monto a entregar (pesificado). La diferencia es la comisión.', 'error');
       return;
     }
   }
@@ -2259,12 +2347,12 @@ function saveOrden() {
       return;
     }
   }
-  const comisionUsd = tipoCodigo === 'USD-USD' ? montoRecibido - montoEntregado : (tipoCodigo === 'ARS-ARS' ? montoRecibido - montoEntregado : ((tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'ARS-USD') && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado : (tipoCodigo === 'USD-ARS' && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
+  const comisionUsd = tipoCodigo === 'USD-USD' ? montoRecibido - montoEntregado : (tipoCodigo === 'ARS-ARS' ? montoRecibido - montoEntregado : ((tipoCodigo === 'ARS-USD') && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado : (tipoCodigo === 'USD-ARS' && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
 
   const pctPandy = parseImporteInput(document.getElementById('orden-comision-pandy-pct')?.value || '100');
   const pctInt = parseImporteInput(document.getElementById('orden-comision-intermediario-pct')?.value || '0');
   const tieneSplitVisible = document.getElementById('orden-wrap-comision-split')?.style?.display !== 'none';
-  if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'ARS-USD' || tipoCodigo === 'USD-ARS' || tipoCodigo === 'ARS-ARS') && intermediarioId && tieneSplitVisible) {
+  if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-USD' || tipoCodigo === 'USD-ARS' || tipoCodigo === 'ARS-ARS') && intermediarioId && tieneSplitVisible) {
     const a = Number(pctPandy);
     const b = Number(pctInt);
     if (isNaN(a) || isNaN(b) || a < 0 || b < 0 || a > 100 || b > 100 || Math.abs((a + b) - 100) > 1e-6) {
@@ -2272,8 +2360,9 @@ function saveOrden() {
       return;
     }
   }
-  if (intermediarioId && tieneSplitVisible && (Number(pctInt) || 0) < 1e-6) {
-    if (!confirm('La comisión del intermediario es cero. ¿Deseás guardar la orden igual?')) return;
+  if (intermediarioId && tieneSplitVisible && (Number(pctInt) || 0) < 1e-6 && !aceptaComisionCero) {
+    showConfirm('La comisión del intermediario es cero. ¿Deseás guardar la orden igual?', 'Sí, guardar', () => saveOrden(true));
+    return;
   }
 
   const tasaDescuentoIntPctSave = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim();
@@ -2326,10 +2415,10 @@ function saveOrden() {
       loadOrdenes();
       return;
     }
-    const conceptoComision = tipoCodigo === 'ARS-DOLAR' ? 'Comisión ARS-USD' : (tipoCodigo === 'USD-ARS' ? 'Comisión USD-ARS' : (tipoCodigo === 'ARS-ARS' ? 'Comisión ARS-ARS' : 'Comisión USD-USD'));
+    const conceptoComision = tipoCodigo === 'USD-ARS' ? 'Comisión USD-ARS' : (tipoCodigo === 'ARS-ARS' ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
     const comisionMoneda = tipoCodigo === 'ARS-ARS' ? 'ARS' : 'USD';
     function guardarComisionYContinuar(continuar) {
-      if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-DOLAR' || tipoCodigo === 'USD-ARS' || tipoCodigo === 'ARS-ARS') && comisionUsd != null && comisionUsd > 0) {
+      if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-ARS') && comisionUsd != null && comisionUsd > 0) {
         client.from('comisiones_orden').delete().eq('orden_id', ordenId).then(() => {
           const a = intermediarioId ? Number(pctPandy) : 100;
           const b = intermediarioId ? Number(pctInt) : 0;
@@ -2431,6 +2520,13 @@ function setupModalOrden() {
   if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalOrden(); });
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveOrden(); });
   if (btnNuevo) btnNuevo.addEventListener('click', () => openModalOrden(null));
+  ['orden-cotizacion', 'orden-monto-recibido', 'orden-monto-entregado'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('focus', () => el.classList.add('orden-field-editing'));
+      el.addEventListener('blur', () => el.classList.remove('orden-field-editing'));
+    }
+  });
 }
 
 // --- Transacciones (panel debajo de la orden) ---
@@ -2571,25 +2667,24 @@ function autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumenta
       { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoChequeId, moneda: 'ARS', monto: mr, cobrador: 'intermediario', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora },
       { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoEfectivoId, moneda: 'ARS', monto: montoEfectivoInt, cobrador: 'pandy', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora },
     ];
-    return Promise.all(rows.map((row) => client.from('transacciones').insert(row)));
+    return Promise.all(rows.map((row) => client.from('transacciones').insert(row))).then(() => actualizarEstadoOrden(ordenId));
   });
 }
 
 /**
  * Si la orden es sin intermediario y la instrumentación está vacía, crea dos transacciones por defecto
- * (ingreso moneda recibida, egreso moneda entregada). Soporta USD-USD, ARS-DOLAR, ARS-USD, USD-ARS, ARS-ARS.
+ * (ingreso moneda recibida, egreso moneda entregada). Soporta USD-USD, ARS-USD, USD-ARS, ARS-ARS.
  * Modo de pago efectivo, estado pendiente.
  */
 function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId, orden) {
   if (!ordenId || !instrumentacionId || !orden || orden.intermediario_id || !orden.tipo_operacion_id) return Promise.resolve();
   return client.from('tipos_operacion').select('codigo').eq('id', orden.tipo_operacion_id).single().then((rTipo) => {
     const codigo = (rTipo.data && rTipo.data.codigo) || '';
-    const codigoNorm = codigo === 'ARS-USD' ? 'ARS-DOLAR' : codigo;
-    const esUsdUsd = codigoNorm === 'USD-USD';
-    const esArsDolar = codigoNorm === 'ARS-DOLAR';
-    const esUsdArs = codigoNorm === 'USD-ARS';
-    const esArsArs = codigoNorm === 'ARS-ARS';
-    if (!esUsdUsd && !esArsDolar && !esUsdArs && !esArsArs) return Promise.resolve();
+    const esUsdUsd = codigo === 'USD-USD';
+    const esArsUsd = codigo === 'ARS-USD';
+    const esUsdArs = codigo === 'USD-ARS';
+    const esArsArs = codigo === 'ARS-ARS';
+    if (!esUsdUsd && !esArsUsd && !esUsdArs && !esArsArs) return Promise.resolve();
     return client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle().then((rModo) => {
       const modoPagoEfectivoId = (rModo.data && rModo.data.id) || null;
       if (!modoPagoEfectivoId) return Promise.resolve();
@@ -2603,7 +2698,7 @@ function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId
       if (esUsdUsd) {
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
-      } else if (esArsDolar) {
+      } else if (esArsUsd) {
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: cotizacion, updated_at: ahora });
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
       } else if (esUsdArs) {
@@ -2613,7 +2708,7 @@ function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: 'ARS', monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: 'ARS', monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
       }
-      return Promise.all(rows.map((row) => client.from('transacciones').insert(row)));
+      return Promise.all(rows.map((row) => client.from('transacciones').insert(row))).then(() => actualizarEstadoOrden(ordenId));
     });
   });
 }
@@ -2640,8 +2735,8 @@ function expandOrdenTransacciones(ordenId, orden) {
   const btnNuevaTr = panel.querySelector('.btn-nueva-transaccion-panel');
   if (btnNuevaTr) btnNuevaTr.style.display = canAbm ? '' : 'none';
 
-  const estadoLabelOrd = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada' }[e] || (e || '–'));
-  const estadoBadgeOrd = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada'].includes(e) ? `<span class="badge badge-estado-${e.replace(/_/g, '-')}">${estadoLabelOrd(e)}</span>` : estadoLabelOrd(e));
+  const estadoLabelOrd = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada' }[e] || (e || '–'));
+  const estadoBadgeOrd = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada'].includes(e) ? `<span class="badge badge-estado-${e.replace(/_/g, '-')}">${estadoLabelOrd(e)}</span>` : estadoLabelOrd(e));
   encabezado.innerHTML = orden
     ? `<div class="orden-detalle-resumen"><strong>Orden</strong> ${(orden.fecha || '').toString().slice(0, 10)} · Estado: ${estadoBadgeOrd(orden.estado)} · ${orden.moneda_recibida} ${formatImporteDisplay(orden.monto_recibido)} → ${orden.moneda_entregada} ${formatImporteDisplay(orden.monto_entregado)}</div>`
     : '';
@@ -2694,7 +2789,11 @@ function expandOrdenTransacciones(ordenId, orden) {
               const monE = orden.moneda_entregada || 'USD';
               const okRec = totalRecibido <= mr + 1e-6;
               const okEnt = totalEntregado <= me + 1e-6;
-              totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>Instrumentado:</strong> Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}`;
+              const ejecutada = orden.estado === 'orden_ejecutada';
+              const textoInst = ejecutada
+                ? `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`
+                : `Instrumentación: A recibir ${formatImporteDisplay(mr)} ${monR} - A entregar ${formatImporteDisplay(me)} ${monE}.`;
+              totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}`;
             }
             return client.from('modos_pago').select('id, codigo, nombre').then((rModos) => {
               const modosMap = {};
@@ -2719,7 +2818,7 @@ function expandOrdenTransacciones(ordenId, orden) {
                       <td>${cobradorL(t)}</td>
                       <td>${pagadorL(t)}</td>
                       <td>${canCambiarEstado ? estadoTrxCombo(t) : estadoTexto(t)}</td>
-                      <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button>` : ''}</td>
+                      <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button>` : ''}${canAbm ? ` <button type="button" class="btn-secondary btn-eliminar-transaccion-panel" data-id="${t.id}" title="Dar de baja">Eliminar</button>` : ''}</td>
                     </tr>`;
                   }
                 )
@@ -2735,6 +2834,9 @@ function expandOrdenTransacciones(ordenId, orden) {
                   });
                 });
               }
+              tbody.querySelectorAll('.btn-eliminar-transaccion-panel').forEach((btn) => {
+                btn.addEventListener('click', () => { eliminarTransaccion(btn.getAttribute('data-id'), ordenId); });
+              });
             });
           }
 
@@ -2744,7 +2846,7 @@ function expandOrdenTransacciones(ordenId, orden) {
               if (codigo === 'ARS-ARS' && orden.intermediario_id) {
                 return autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumentacionId, orden);
               }
-if (!orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-DOLAR' || codigo === 'ARS-USD' || codigo === 'USD-ARS' || codigo === 'ARS-ARS')) {
+if (!orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-USD' || codigo === 'USD-ARS' || codigo === 'ARS-ARS')) {
               return autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId, orden);
             }
               return Promise.resolve();
@@ -2773,7 +2875,7 @@ function refreshTransaccionesPanel(ordenId) {
   tbody.innerHTML = '';
   Promise.all([
     client.from('transacciones').select('id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true }),
-    client.from('ordenes').select('id, cliente_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').eq('id', ordenId).single(),
+    client.from('ordenes').select('id, cliente_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, estado').eq('id', ordenId).single(),
   ]).then(([resTr, resOrd]) => {
     const orden = resOrd?.data || null;
     if (resTr.error) {
@@ -2790,9 +2892,14 @@ function refreshTransaccionesPanel(ordenId) {
       const monE = orden.moneda_entregada || 'USD';
       const okRec = totalRecibido <= mr + 1e-6;
       const okEnt = totalEntregado <= me + 1e-6;
-      totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>Instrumentado:</strong> Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}`;
+      const ejecutada = orden.estado === 'orden_ejecutada';
+      const textoInst = ejecutada
+        ? `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`
+        : `Instrumentación: A recibir ${formatImporteDisplay(mr)} ${monR} - A entregar ${formatImporteDisplay(me)} ${monE}.`;
+      totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}`;
     }
     const canCambiarEstado = userPermissions.includes('abm_ordenes') || userPermissions.includes('cambiar_estado_transaccion');
+    const canAbm = userPermissions.includes('abm_ordenes');
     client.from('modos_pago').select('id, codigo, nombre').then((rModos) => {
         const modosMap = {};
         (rModos.data || []).forEach((m) => { modosMap[m.id] = m; });
@@ -2816,7 +2923,7 @@ function refreshTransaccionesPanel(ordenId) {
                 <td>${cobradorL(t)}</td>
                 <td>${pagadorL(t)}</td>
                 <td>${canCambiarEstado ? estadoTrxCombo(t) : estadoTexto(t)}</td>
-                <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button>` : ''}</td>
+                <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button>` : ''}${canAbm ? ` <button type="button" class="btn-secondary btn-eliminar-transaccion-panel" data-id="${t.id}" title="Dar de baja">Eliminar</button>` : ''}</td>
               </tr>`;
             }
           )
@@ -2832,6 +2939,9 @@ function refreshTransaccionesPanel(ordenId) {
             });
           });
         }
+        tbody.querySelectorAll('.btn-eliminar-transaccion-panel').forEach((btn) => {
+          btn.addEventListener('click', () => { eliminarTransaccion(btn.getAttribute('data-id'), ordenId); });
+        });
       });
   });
 }
@@ -3563,7 +3673,7 @@ function generarMovimientoConversionCc(ordenId) {
                   concepto: CONCEPTO_CC_CONVERSION, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                 }));
               }
-              // Comisión en CC cliente para que la cuenta cierre: ARS-DOLAR en USD (Haber), USD-ARS en ARS (Haber), USD-USD en moneda (Haber)
+              // Comisión en CC cliente para que la cuenta cierre: ARS-USD / USD-ARS / USD-USD en moneda correspondiente (Haber)
               if (comisionUsd != null && comisionUsd > 1e-6) {
                 if (!mismaMoneda && monedaRecibida === 'ARS' && monedaEntregada === 'USD') {
                   inserts.push(client.from('movimientos_cuenta_corriente').insert({
@@ -3743,6 +3853,40 @@ function generarMovimientoConversionCcIntermediario(ordenId) {
           });
         }));
       });
+    });
+  });
+}
+
+/** Baja (elimina) una transacción: borra movimientos asociados, la transacción y recalcula estado de la orden. */
+function eliminarTransaccion(transaccionId, ordenId) {
+  if (!transaccionId || !ordenId) return Promise.resolve();
+  const canAbm = userPermissions.includes('abm_ordenes');
+  if (!canAbm) {
+    showToast('No tenés permiso para dar de baja transacciones.', 'error');
+    return Promise.resolve();
+  }
+  showConfirm('¿Dar de baja esta transacción? Se eliminarán también los movimientos de caja y cuenta corriente asociados.', 'Dar de baja', () => {
+  const deletes = [
+    client.from('movimientos_cuenta_corriente').delete().eq('transaccion_id', transaccionId),
+    client.from('movimientos_cuenta_corriente_intermediario').delete().eq('transaccion_id', transaccionId),
+    client.from('movimientos_caja').delete().eq('transaccion_id', transaccionId),
+  ];
+  return Promise.all(deletes)
+    .then(() => client.from('transacciones').delete().eq('id', transaccionId))
+    .then((rDel) => {
+      if (rDel.error) {
+        showToast('Error al eliminar: ' + (rDel.error?.message || ''), 'error');
+        return;
+      }
+      showToast('Transacción dada de baja.', 'success');
+      return actualizarEstadoOrden(ordenId);
+    })
+    .then(() => {
+      const vistaCc = document.getElementById('vista-cuenta-corriente');
+      if (vistaCc && vistaCc.style.display !== 'none') {
+        if (ccEsIntermediario && document.getElementById('cc-intermediario')?.value) loadCuentaCorrienteIntermediario(document.getElementById('cc-intermediario').value);
+        else if (document.getElementById('cc-cliente')?.value) loadCuentaCorrienteCliente(document.getElementById('cc-cliente').value);
+      }
     });
   });
 }

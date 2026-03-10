@@ -15,6 +15,16 @@ alwaysApply: true
 
 - Si se agregan o cambian tablas en Supabase: actualizar `sql/` con los DDL correspondientes, el código que las use y la documentación en `docs/` si aplica.
 
+## Mensajería interna (no usar diálogos del navegador)
+
+- **Toda comunicación con el usuario** debe usar la **mensajería interna** de la app:
+  - **Avisos y resultados:** `showToast(mensaje, type)` con `type`: `'success'`, `'info'` o `'error'`. No usar `alert()`.
+  - **Confirmaciones (sí/no):** `showConfirm(mensaje, textoBotonConfirmar, onConfirm, onCancel)`. No usar `confirm()` del navegador. El modal de confirmación (`#modal-confirm-backdrop`) es parte de la UI y mantiene la misma experiencia en toda la app.
+
+## Botones de acción
+
+- **Todo botón de acción** debe contener un **icono apropiado a la izquierda**, simple y limpio (SVG stroke, mismo estilo que el resto de la app). Ejemplos: Nuevo cliente, Guardar, Editar, Cerrar sesión, Entrar.
+
 ## Responsive / móvil
 
 - **Desde ahora en más:** al agregar o modificar vistas, formularios, tablas o modales en la app, tener **siempre en cuenta la responsividad en móviles**. Incluir o ajustar estilos para pantallas pequeñas: breakpoints típicos 768px (tablet/móvil grande) y 480px (móvil chico), touch targets mínimos 44px, padding y fuentes reducidos, scroll horizontal con `-webkit-overflow-scrolling: touch` donde haga falta, y `viewport-fit=cover` si aplica. No dejar que nuevos componentes rompan el layout en celulares.

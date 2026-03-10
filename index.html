@@ -98,6 +98,8 @@
     .modal-body input[type="checkbox"] { width: auto; margin-right: 0.5rem; }
     .modal-body select { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
     .modal-body select:disabled { background: #e9ecef; color: #6c757d; cursor: not-allowed; }
+    .modal-confirm .modal-confirm-texto { margin: 0; color: #333; line-height: 1.5; }
+    .orden-field-editing { box-shadow: 0 0 0 2px #0ea5e9; outline: none; }
     .form-row.dos-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
     .form-hint { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
     .form-hint-block { margin-bottom: 0.75rem; padding: 0.5rem; background: #f5f5f5; border-radius: 6px; }
@@ -152,6 +154,7 @@
     .badge-estado-instrumentacion-parcial { background: #fed7aa; color: #c2410c; }
     .badge-estado-instrumentacion-cerrada-ejecucion { background: #fef08a; color: #854d0e; }
     .badge-estado-orden-ejecutada { background: #bbf7d0; color: #15803d; }
+    .badge-estado-anulada { background: #fecaca; color: #b91c1c; }
     .badge-estado-abierta, .badge-estado-parcialmente_cerrada, .badge-estado-cerrada { background: #e5e7eb; color: #6b7280; }
     .badge-estado-cotizacion { background: #e5e7eb; color: #4b5563; }
     .badge-estado-concertada { background: #d1fae5; color: #047857; }
@@ -269,7 +272,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.7</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.8</div>
   </aside>
 
   <main class="main-content">
@@ -884,6 +887,7 @@
               <option value="instrumentacion_parcial">Instrumentación Parcial</option>
               <option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option>
               <option value="orden_ejecutada">Orden Ejecutada</option>
+              <option value="anulada">Anulada</option>
             </select>
             <span class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover" id="orden-estado-hint">Se actualiza al cargar/ejecutar transacciones: Pendiente → Parcial o Cerrada en ejecución → Orden Ejecutada.</span></span></span>
           </div>
@@ -894,6 +898,7 @@
           <div class="form-actions">
             <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
             <button type="button" class="btn-secondary" id="orden-btn-ir-instrumentacion" title="Guardar y cargar transacciones">Instrumentación</button>
+            <button type="button" class="btn-secondary btn-anular-orden" id="orden-btn-anular" title="Anular esta orden" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span>Anular orden</button>
             <button type="button" class="btn-secondary" id="modal-orden-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
           </div>
               </div>
@@ -912,7 +917,7 @@
                 <span id="orden-inst-acuerdo-texto">–</span>
               </div>
               <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:0.5rem 1rem; margin-top:0.35rem;">
-                <strong>Instrumentado:</strong>
+                <strong id="orden-inst-instrumentado-label">Instrumentado:</strong>
                 <span id="orden-inst-instrumentado-texto">–</span>
                 <span id="orden-inst-acuerdo-aviso" style="color:#b91c1c; font-size:0.9rem;"></span>
                 <span id="orden-inst-actualizando-msg" style="display:none; margin-left:0.5rem; color:#0ea5e9; font-size:0.9rem; font-weight:500;">Actualizando estado…</span>
@@ -1126,6 +1131,23 @@
             <button type="button" class="btn-secondary" id="modal-movimiento-cc-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de confirmación (mensajería interna; no usar confirm() del navegador) -->
+  <div id="modal-confirm-backdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal modal-confirm">
+      <div class="modal-header">
+        <h2 id="modal-confirm-titulo">Confirmar</h2>
+        <button type="button" class="modal-close" id="modal-confirm-cerrar" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="modal-confirm-mensaje" class="modal-confirm-texto"></p>
+        <div class="form-actions" style="margin-top:1rem; margin-bottom:0;">
+          <button type="button" class="btn-primary" id="modal-confirm-aceptar">Confirmar</button>
+          <button type="button" class="btn-secondary" id="modal-confirm-cancelar">Cancelar</button>
+        </div>
       </div>
     </div>
   </div>
