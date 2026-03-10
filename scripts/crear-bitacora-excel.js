@@ -48,6 +48,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'v1.7: CC intermediario, transacciones y orden', 'Conciliación CC intermediario: cap Debe por moneda al Haber; un solo movimiento Comisión del acuerdo cuando hay tope. Modal transacción: moneda/tipo según operación (Ingreso=moneda recibida, Egreso=entregada). Orden: distribución comisión siempre visible con intermediario; carga desde comisiones_orden al editar; alerta genérica si comisión intermediario 0% (todos los tipos); ARS-USD en split y validaciones.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'v1.8: ARS-USD/USD-ARS, anulación, mensajería interna, estado al instrumentar', 'ARS-USD/USD-ARS: foco en tipo de cambio al abrir detalle, sin comisión, cálculo Monto a Recibir/Entregar desde TC (autocompletar con base 1). Anulación de órdenes: estado anulada, botón Anular en tabla y en modal. Baja de transacciones: botón Eliminar por fila. Mensajería interna: showConfirm (modal) reemplaza confirm(); regla en .cursor/rules. Estado de orden: actualizarEstadoOrden tras auto-completar instrumentación (sin intermediario y cheque con intermediario). Eliminación de ARS-DOLAR en código y catálogo.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'v1.9: Permisos reordenados (7 granulares, sin abm_ordenes)', 'Migración SQL: nuevos permisos ingresar_orden, editar_orden, anular_orden, editar_estado_orden, ingresar_transacciones, editar_transacciones, eliminar_transacciones; eliminados abm_ordenes, cambiar_estado_transaccion. RLS actualizado. Frontend: todos los botones y combos (Nueva orden, Editar, Anular, estado orden, Nueva transacción, Editar/Eliminar transacción) usan solo los 7 permisos; orden en Seguridad según lista acordada.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'v1.10: Panel de Control rediseñado', 'Tarjetas Efectivo y Banco con Saldo Inicial, Saldo Actual (resaltado), Var. por moneda (USD, ARS, EUR en Efectivo; USD, ARS en Banco); iconos por moneda y por caja; sin decimales. Cards Órdenes pendientes (por estado con ojo por fila) y Transacciones pendientes (número en círculo); mismo ancho que Efectivo. Fila Saldo Actual con fondo y negrita.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -70,6 +71,7 @@ const funcionalidades = [
   ['Edición movimientos de caja', 'Editar movimiento: manual (todos los campos) o por orden (solo concepto y fecha).'],
   ['Vista Cuenta corriente', 'Selector cliente, saldos USD/EUR/ARS, tabla de movimientos con filtro por moneda. Convención: positivo = cliente nos debe, negativo = nosotros le debemos.'],
   ['Vista Inicio', 'Saldos de las 3 cajas y accesos rápidos a Órdenes, Cajas, Clientes, Cuenta corriente. Título de vista solo en el header (sin duplicado en el contenido).'],
+  ['Panel de Control (Inicio)', 'Tarjetas Efectivo y Banco: Saldo Inicial, Saldo Actual (fila destacada), Var. con icono tendencia; USD/ARS/EUR (Efectivo) y USD/ARS (Banco); iconos por moneda. Cards Órdenes pendientes (por estado, ojo por fila y en título) y Transacciones pendientes (cantidad en círculo); mismo ancho que Efectivo.'],
   ['Convención y corrección CC', 'Signos correctos al concertar. sql/corregir_signos_cuenta_corriente.sql para corregir datos ya cargados.'],
   ['Edición movimientos cuenta corriente', 'En vista Cuenta corriente, botón Editar por movimiento. Modal: concepto y fecha. Permiso abm_ordenes.'],
   ['Responsividad móvil', 'Media queries 768px y 480px. Touch 44px, tablas con scroll táctil, modales y cards adaptados, formularios en una columna en móvil.'],
@@ -114,6 +116,7 @@ const versiones = [
   ['1.7', '__HOY__', 'CC intermediario: conciliación por moneda (Debe ≤ Haber), un movimiento Comisión cuando hay tope. Transacciones: moneda/tipo según tipo operación. Orden: distribución comisión visible y editable con intermediario; alerta si 0% intermediario (todos los tipos); ARS-USD en split y validaciones.'],
   ['1.8', '__HOY__', 'ARS-USD/USD-ARS (sin comisión, montos desde TC). Anulación de órdenes y baja de transacciones. Mensajería interna: showConfirm. Estado de orden se actualiza al instrumentar (auto-complete). ARS-DOLAR eliminado.'],
   ['1.9', '__HOY__', 'Permisos reordenados: 7 granulares (Ingresar/Editar/Anular Orden, Editar Estado Orden, Ingresar/Editar/Eliminar Transacciones). Eliminado abm_ordenes. Migración SQL y RLS; frontend solo usa los 7 permisos.'],
+  ['1.10', '__HOY__', 'Panel de Control: tarjetas Efectivo/Banco (Saldo Inicial, Saldo Actual destacado, Var. con tendencia); Órdenes pendientes por estado con ojo por fila; Transacciones pendientes con número en círculo; mismo ancho que Efectivo.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

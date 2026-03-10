@@ -364,42 +364,111 @@ function loadCajas() {
 }
 
 function loadInicio() {
-  const ids = ['inicio-saldo-efectivo-usd', 'inicio-saldo-efectivo-eur', 'inicio-saldo-efectivo-ars', 'inicio-saldo-banco-usd', 'inicio-saldo-banco-ars'];
-  const els = ids.map((id) => document.getElementById(id));
-  if (els.some((el) => !el)) return;
+  const hoy = new Date();
+  const hoyStr = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
+  const ayer = new Date(hoy);
+  ayer.setDate(ayer.getDate() - 1);
+  const ayerStr = ayer.getFullYear() + '-' + String(ayer.getMonth() + 1).padStart(2, '0') + '-' + String(ayer.getDate()).padStart(2, '0');
+
+  const monedasEfectivo = ['USD', 'ARS', 'EUR'];
+  const monedasBanco = ['USD', 'ARS'];
+
   client
     .from('movimientos_caja')
-    .select('moneda, monto, caja_tipo')
+    .select('moneda, monto, caja_tipo, fecha')
     .eq('estado', 'cerrado')
     .then((res) => {
       if (res.error) {
-        els.forEach((el) => { el.textContent = '–'; });
+        loadInicioPendientes();
         return;
       }
-      const saldos = { efectivo: { USD: 0, EUR: 0, ARS: 0 }, banco: { USD: 0, EUR: 0, ARS: 0 }, cheque: { USD: 0, EUR: 0, ARS: 0 } };
-      (res.data || []).forEach((m) => {
+      const list = res.data || [];
+      const saldoT1 = { efectivo: { USD: 0, EUR: 0, ARS: 0 }, banco: { USD: 0, EUR: 0, ARS: 0 } };
+      const saldoT = { efectivo: { USD: 0, EUR: 0, ARS: 0 }, banco: { USD: 0, EUR: 0, ARS: 0 } };
+      list.forEach((m) => {
         const tipo = (m.caja_tipo || 'efectivo').toLowerCase();
+        if (tipo === 'cheque') return;
+        const t = tipo === 'efectivo' || tipo === 'banco' ? tipo : 'efectivo';
         const moneda = m.moneda;
-        if (saldos[tipo] && saldos[tipo][moneda] != null) saldos[tipo][moneda] += Number(m.monto);
+        const monto = Number(m.monto);
+        const fecha = (m.fecha || '').toString().slice(0, 10);
+        if (fecha && fecha <= ayerStr && saldoT1[t] && saldoT1[t][moneda] != null) saldoT1[t][moneda] += monto;
+        if (fecha && fecha <= hoyStr && saldoT[t] && saldoT[t][moneda] != null) saldoT[t][moneda] += monto;
       });
-      const setVal = (el, valor, moneda) => {
-        el.textContent = formatMonto(valor, moneda);
-        el.className = 'valor ' + (valor >= 0 ? 'positivo' : 'negativo');
+
+      const svgSube = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>';
+      const svgBaja = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+      const svgIgual = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+      const formatInicio = (n) => (n == null || isNaN(n)) ? '–' : Math.round(Number(n)).toLocaleString('es-AR', { maximumFractionDigits: 0, minimumFractionDigits: 0 });
+
+      const setFila = (caja, moneda) => {
+        const s1 = saldoT1[caja][moneda] ?? 0;
+        const sT = saldoT[caja][moneda] ?? 0;
+        const variacion = sT - s1;
+        const pct = s1 !== 0 ? (variacion / Math.abs(s1)) * 100 : (variacion !== 0 ? 100 : 0);
+        const elInicial = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-inicial`);
+        const elActual = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-actual`);
+        const elVar = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-var`);
+        const elTend = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-tendencia`);
+        if (elInicial) {
+          elInicial.textContent = formatInicio(s1);
+          elInicial.className = 'inicio-caja-valor ' + (s1 >= 0 ? 'positivo' : 'negativo');
+        }
+        if (elActual) {
+          elActual.textContent = formatInicio(sT);
+          elActual.className = 'inicio-caja-valor ' + (sT >= 0 ? 'positivo' : 'negativo');
+        }
+        if (elVar) {
+          const signo = variacion > 0 ? '+' : '';
+          elVar.textContent = `${signo}${formatInicio(variacion)} (${variacion >= 0 ? '+' : ''}${Math.round(pct)}%)`;
+          elVar.className = 'inicio-caja-var-valor ' + (variacion > 0 ? 'sube' : variacion < 0 ? 'baja' : 'igual');
+        }
+        if (elTend) {
+          elTend.className = 'inicio-caja-tendencia ' + (variacion > 0 ? 'tendencia-sube' : variacion < 0 ? 'tendencia-baja' : 'tendencia-igual');
+          elTend.innerHTML = variacion > 0 ? svgSube : variacion < 0 ? svgBaja : svgIgual;
+        }
       };
-      setVal(els[0], saldos.efectivo.USD, 'USD');
-      setVal(els[1], saldos.efectivo.EUR, 'EUR');
-      setVal(els[2], saldos.efectivo.ARS, 'ARS');
-      setVal(els[3], saldos.banco.USD, 'USD');
-      setVal(els[4], saldos.banco.ARS, 'ARS');
-      const elCountOrd = document.getElementById('inicio-count-ordenes-pendientes');
-      const elCountTr = document.getElementById('inicio-count-transacciones-pendientes');
-      if (elCountOrd) client.from('ordenes').select('id', { count: 'exact', head: true }).neq('estado', 'orden_ejecutada').neq('estado', 'anulada').then((r) => { elCountOrd.textContent = r.count != null ? String(r.count) : '–'; });
-      if (elCountTr) client.from('transacciones').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente').then((r) => { elCountTr.textContent = r.count != null ? String(r.count) : '–'; });
+      monedasEfectivo.forEach((mon) => setFila('efectivo', mon));
+      monedasBanco.forEach((mon) => setFila('banco', mon));
+      loadInicioPendientes();
     });
 }
 
-/** Abre el modal de órdenes pendientes (estado ≠ orden_ejecutada) y reutiliza la lógica de la lista para operar. */
-function openModalOrdenesPendientes() {
+function loadInicioPendientes() {
+  const bodyOrd = document.getElementById('inicio-ordenes-pendientes-body');
+  const elCountTr = document.getElementById('inicio-count-transacciones-pendientes');
+
+  const estadoLabelOrd = (e) => ({ pendiente_instrumentar: 'Pend. Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada' }[e] || (e ? String(e) : '–'));
+  const estadoBadgeOrd = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
+
+  const ordenEstados = ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion'];
+  if (bodyOrd) {
+    client.from('ordenes').select('id, estado').neq('estado', 'orden_ejecutada').neq('estado', 'anulada').then((r) => {
+      const list = r.data || [];
+      const byEstado = {};
+      list.forEach((o) => { byEstado[o.estado] = (byEstado[o.estado] || 0) + 1; });
+      const svgOjo = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>';
+      const filas = ordenEstados.filter((e) => (byEstado[e] || 0) > 0).map((estado) => {
+        const badgeClass = estadoBadgeOrd(estado);
+        const label = estadoLabelOrd(estado);
+        const num = byEstado[estado];
+        return `<div class="inicio-card-ordenes-fila" data-estado="${estado}">
+          <span class="inicio-card-ordenes-badge"><span class="${badgeClass}">${label}</span></span>
+          <span class="inicio-card-ordenes-num">${num}</span>
+          <button type="button" class="btn-ver-estado" data-estado="${estado}" title="Ver estas órdenes" aria-label="Ver estas órdenes">${svgOjo}</button>
+        </div>`;
+      });
+      bodyOrd.innerHTML = filas.length ? filas.join('') : '<div class="inicio-card-ordenes-fila"><span class="inicio-card-pendientes-valor" style="grid-column:1/-1;">–</span></div>';
+      bodyOrd.querySelectorAll('.btn-ver-estado').forEach((btn) => {
+        btn.addEventListener('click', () => { openModalOrdenesPendientes(btn.getAttribute('data-estado')); });
+      });
+    });
+  }
+  if (elCountTr) client.from('transacciones').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente').then((r) => { elCountTr.textContent = r.count != null ? String(r.count) : '–'; });
+}
+
+/** Abre el modal de órdenes pendientes (estado ≠ orden_ejecutada). Si se pasa estadoFilter, solo se muestran órdenes de ese estado. */
+function openModalOrdenesPendientes(estadoFilter) {
   const backdrop = document.getElementById('modal-ordenes-pendientes-backdrop');
   const loadingEl = document.getElementById('ordenes-pendientes-loading');
   const wrapEl = document.getElementById('ordenes-pendientes-tabla-wrap');
@@ -417,14 +486,9 @@ function openModalOrdenesPendientes() {
   const canEditarTransacciones = userPermissions.includes('editar_transacciones');
   const canEliminarTransacciones = userPermissions.includes('eliminar_transacciones');
   const canVerAccionesOrden = canEditarOrden || canAnularOrden || canEditarEstadoOrden || canIngresarTransacciones || canEditarTransacciones || canEliminarTransacciones;
-  client
-    .from('ordenes')
-    .select('id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones')
-    .neq('estado', 'orden_ejecutada')
-    .neq('estado', 'anulada')
-    .order('fecha', { ascending: false })
-    .order('created_at', { ascending: false })
-    .then((res) => {
+  let q = client.from('ordenes').select('id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones').neq('estado', 'orden_ejecutada').neq('estado', 'anulada');
+  if (estadoFilter) q = q.eq('estado', estadoFilter);
+  q.order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((res) => {
       if (res.error) {
         loadingEl.style.display = 'none';
         tbody.innerHTML = '<tr><td colspan="8">Error: ' + (res.error.message || '') + '</td></tr>';

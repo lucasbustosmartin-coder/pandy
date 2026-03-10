@@ -129,8 +129,55 @@
     .resumen-cajas .valor { font-size: 1.5rem; font-weight: 700; }
     .resumen-cajas .valor.positivo { color: #0d7d3d; }
     .resumen-cajas .valor.negativo { color: #b91c1c; }
+    .inicio-cajas-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1rem; }
+    .inicio-caja-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1rem 1.25rem; }
+    .inicio-caja-card-titulo { margin: 0 0 0.75rem 0; font-size: 1.1rem; font-weight: 600; color: #1a1a1a; display: flex; align-items: center; gap: 0.5rem; }
+    .inicio-caja-icono-caja { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; color: #555; flex-shrink: 0; }
+    .inicio-caja-icono-caja svg { width: 100%; height: 100%; }
+    .inicio-caja-tabla { display: flex; flex-direction: column; gap: 0.4rem; }
+    .inicio-caja-fila { display: grid; grid-template-columns: 6.5rem 1fr 1fr 1fr; align-items: center; gap: 0.75rem 1rem; font-size: 0.9rem; }
+    .inicio-caja-banco-fila { grid-template-columns: 6.5rem 1fr 1fr; }
+    .inicio-caja-fila-header { padding-bottom: 0.35rem; border-bottom: 1px solid #e5e7eb; }
+    .inicio-caja-col-header { font-weight: 600; color: #374151; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; }
+    .inicio-caja-icono-moneda { object-fit: contain; flex-shrink: 0; vertical-align: middle; width: 26px; height: 26px; }
+    .inicio-caja-etiqueta { color: #6b7280; }
+    .inicio-caja-valor { font-weight: 600; text-align: right; }
+    .inicio-caja-valor.positivo { color: #0d7d3d; }
+    .inicio-caja-valor.negativo { color: #b91c1c; }
+    .inicio-caja-fila-var .inicio-caja-var-derecha { justify-content: flex-end; min-width: 0; }
+    .inicio-caja-var-derecha { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.25rem; text-align: right; white-space: nowrap; }
+    .inicio-caja-var-valor { font-weight: 600; font-size: 0.8rem; white-space: nowrap; }
+    .inicio-caja-var-valor.sube { color: #0d7d3d; }
+    .inicio-caja-var-valor.baja { color: #b91c1c; }
+    .inicio-caja-var-valor.igual { color: #6b7280; }
+    .inicio-caja-tendencia { display: inline-flex; align-items: center; flex-shrink: 0; }
+    .inicio-caja-tendencia svg { width: 20px; height: 20px; }
+    .inicio-caja-tendencia.tendencia-sube { color: #0d7d3d; }
+    .inicio-caja-tendencia.tendencia-baja { color: #b91c1c; }
+    .inicio-caja-tendencia.tendencia-igual { color: #6b7280; }
+    .inicio-cards-pendientes { max-width: calc((100% - 1.25rem) / 2); display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.5rem; }
     .inicio-cards-pendientes .card-pendientes { display: flex; flex-direction: column; gap: 0.5rem; }
-    .inicio-cards-pendientes .valor-count { font-size: 1.5rem; font-weight: 700; color: #1a1a1a; }
+    .inicio-card-pendientes-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+    .inicio-card-pendientes-titulo { font-size: 0.95rem; font-weight: 600; color: #1a1a1a; display: inline-flex; align-items: center; gap: 0.4rem; }
+    .inicio-card-pendientes-icono { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; color: #555; flex-shrink: 0; }
+    .inicio-card-pendientes-icono svg { width: 100%; height: 100%; }
+    .inicio-card-pendientes-filas { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.25rem; }
+    .inicio-card-pendientes-fila { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.9rem; }
+    .inicio-card-pendientes-etiqueta { color: #6b7280; }
+    .inicio-card-pendientes-valor { font-weight: 600; color: #1a1a1a; }
+    .inicio-card-ordenes-tabla { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; }
+    .inicio-card-ordenes-fila { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 0.5rem 0.75rem; font-size: 0.9rem; min-height: 2rem; }
+    .inicio-card-ordenes-fila .inicio-card-ordenes-badge { min-width: 10rem; }
+    .inicio-card-ordenes-fila .inicio-card-ordenes-num { font-weight: 700; color: #1a1a1a; text-align: right; min-width: 1.5rem; }
+    .inicio-card-ordenes-fila .btn-ver-estado { background: none; border: none; padding: 0.25rem; cursor: pointer; color: #555; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+    .inicio-card-ordenes-fila .btn-ver-estado:hover { color: #0d7d3d; }
+    .inicio-card-ordenes-fila .btn-ver-estado svg { width: 18px; height: 18px; }
+    .inicio-cards-pendientes .valor-count { font-size: 1.25rem; font-weight: 700; color: #1a1a1a; }
+    .inicio-count-transacciones-wrap { display: flex; justify-content: center; align-items: center; margin-top: 0.5rem; }
+    .valor-count-circulo { display: inline-flex; align-items: center; justify-content: center; min-width: 3rem; min-height: 3rem; padding: 0.5rem; border-radius: 50%; background: #e0f2fe; color: #0369a1; font-weight: 700; font-size: 1.35rem; }
+    .inicio-caja-fila-actual { background: #ecfdf5; border-radius: 6px; padding: 0.35rem 0.5rem; margin: 0 -0.5rem; font-weight: 700; }
+    .inicio-caja-fila-actual .inicio-caja-etiqueta { font-weight: 700; color: #065f46; }
+    .inicio-caja-fila-actual .inicio-caja-valor { font-weight: 700; }
     .btn-ver-listo { background: none; border: none; padding: 0.25rem; cursor: pointer; color: #555; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
     .btn-ver-listo:hover { color: #0d7d3d; }
     .cc-saldo-label { display: block; font-size: 0.8rem; color: #666; margin-top: 0.15rem; }
@@ -201,6 +248,13 @@
       .resumen-cajas { flex-direction: column; gap: 0.75rem; }
       .resumen-cajas .card { min-width: 0; }
       .resumen-cajas .valor { font-size: 1.35rem; }
+      .inicio-cajas-dos { grid-template-columns: 1fr; gap: 1rem; }
+      .inicio-cards-pendientes { max-width: 100%; }
+      .inicio-caja-card { padding: 0.85rem 1rem; }
+      .inicio-caja-card-titulo { font-size: 1rem; }
+      .inicio-caja-fila { grid-template-columns: 5.5rem 1fr 1fr 1fr; gap: 0.5rem 0.75rem; font-size: 0.85rem; }
+      .inicio-caja-banco-fila { grid-template-columns: 5.5rem 1fr 1fr; }
+      .inicio-caja-tabla { overflow-x: auto; -webkit-overflow-scrolling: touch; }
       .tabla-clientes-wrap, .tabla-movimientos-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
       #seguridad-tabla-wrap, #orden-inst-tabla-wrap, #transacciones-tabla-wrap, #ordenes-pendientes-tabla-wrap, #transacciones-pendientes-tabla-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
       th, td { padding: 0.45rem 0.5rem; font-size: 0.9rem; }
@@ -272,7 +326,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.9</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.10</div>
   </aside>
 
   <main class="main-content">
@@ -326,61 +380,84 @@
 
       <div id="vista-inicio" class="card">
         <p style="margin:0 0 1rem 0; font-size:0.9rem; color:#555;">Resumen de cajas y accesos rápidos.</p>
-        <div class="resumen-cajas" id="inicio-saldos">
-          <div class="card">
-            <span class="card-titulo">
-              <span class="card-icon card-icon-usd" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><rect x="2" y="3" width="8" height="7"/><polygon points="6,5.2 6.6,6.4 8,6.6 6.8,7.6 7.2,9 6,8.2 4.8,9 5.2,7.6 4,6.6 5.4,6.4" fill="currentColor" stroke="none"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="15" x2="22" y2="15"/><line x1="10" y1="10" x2="22" y2="10"/></svg></span>
-              Efectivo USD
-            </span>
-            <span class="valor" id="inicio-saldo-efectivo-usd">–</span>
+        <div class="inicio-cajas-dos" id="inicio-saldos">
+          <div class="inicio-caja-card inicio-caja-efectivo" id="inicio-card-efectivo">
+            <h3 class="inicio-caja-card-titulo"><span class="inicio-caja-icono-caja" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg></span>Efectivo</h3>
+            <div class="inicio-caja-tabla">
+              <div class="inicio-caja-fila inicio-caja-fila-header">
+                <span class="inicio-caja-etiqueta"></span>
+                <span class="inicio-caja-col-header"><img src="/Icono_Dolar.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>USD</span>
+                <span class="inicio-caja-col-header"><img src="/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
+                <span class="inicio-caja-col-header"><img src="/Icono_Euro.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>EUR</span>
+              </div>
+              <div class="inicio-caja-fila">
+                <span class="inicio-caja-etiqueta">Saldo Inicial</span>
+                <span class="inicio-caja-valor" id="inicio-efectivo-usd-inicial">–</span>
+                <span class="inicio-caja-valor" id="inicio-efectivo-ars-inicial">–</span>
+                <span class="inicio-caja-valor" id="inicio-efectivo-eur-inicial">–</span>
+              </div>
+              <div class="inicio-caja-fila inicio-caja-fila-actual">
+                <span class="inicio-caja-etiqueta">Saldo Actual</span>
+                <span class="inicio-caja-valor" id="inicio-efectivo-usd-actual">–</span>
+                <span class="inicio-caja-valor" id="inicio-efectivo-ars-actual">–</span>
+                <span class="inicio-caja-valor" id="inicio-efectivo-eur-actual">–</span>
+              </div>
+              <div class="inicio-caja-fila inicio-caja-fila-var">
+                <span class="inicio-caja-etiqueta">Var.</span>
+                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-efectivo-usd-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-efectivo-usd-var">–</span></span>
+                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-efectivo-ars-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-efectivo-ars-var">–</span></span>
+                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-efectivo-eur-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-efectivo-eur-var">–</span></span>
+              </div>
+            </div>
           </div>
-          <div class="card">
-            <span class="card-titulo">
-              <span class="card-icon card-icon-eur" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6.5C16 5 13.5 4 11 4a8 8 0 00-8 8c0 4 3 7.5 7 7.5 2.5 0 5-1 7-2.5"/><line x1="4" y1="12" x2="18" y2="12"/><line x1="4" y1="9" x2="14" y2="9"/><line x1="4" y1="15" x2="14" y2="15"/></svg></span>
-              Efectivo EUR
-            </span>
-            <span class="valor" id="inicio-saldo-efectivo-eur">–</span>
-          </div>
-          <div class="card">
-            <span class="card-titulo">
-              <span class="card-icon card-icon-ars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="22" y2="15"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5v7M9.2 10.2l2.8 1.8 2.8-1.8M9.2 13.8l2.8-1.8 2.8 1.8" stroke-width="1.2"/></svg></span>
-              Efectivo ARS
-            </span>
-            <span class="valor" id="inicio-saldo-efectivo-ars">–</span>
-          </div>
-          <div class="card">
-            <span class="card-titulo">
-              <span class="card-icon card-icon-banco card-icon-usd" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><rect x="2" y="3" width="8" height="7"/><polygon points="6,5.2 6.6,6.4 8,6.6 6.8,7.6 7.2,9 6,8.2 4.8,9 5.2,7.6 4,6.6 5.4,6.4" fill="currentColor" stroke="none"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="15" x2="22" y2="15"/><line x1="10" y1="10" x2="22" y2="10"/></svg></span>
-              Banco USD
-            </span>
-            <span class="valor" id="inicio-saldo-banco-usd">–</span>
-          </div>
-          <div class="card">
-            <span class="card-titulo">
-              <span class="card-icon card-icon-banco card-icon-ars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="22" y2="15"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5v7M9.2 10.2l2.8 1.8 2.8-1.8M9.2 13.8l2.8-1.8 2.8 1.8" stroke-width="1.2"/></svg></span>
-              Banco ARS
-            </span>
-            <span class="valor" id="inicio-saldo-banco-ars">–</span>
+          <div class="inicio-caja-card inicio-caja-banco" id="inicio-card-banco">
+            <h3 class="inicio-caja-card-titulo"><span class="inicio-caja-icono-caja" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="22" x2="22" y2="22"/><path d="M3 22V10h18v12"/><path d="M3 10l9-7 9 7"/><path d="M12 22v-7"/></svg></span>Banco</h3>
+            <div class="inicio-caja-tabla">
+              <div class="inicio-caja-fila inicio-caja-fila-header inicio-caja-banco-fila">
+                <span class="inicio-caja-etiqueta"></span>
+                <span class="inicio-caja-col-header"><img src="/Icono_Dolar.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>USD</span>
+                <span class="inicio-caja-col-header"><img src="/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
+              </div>
+              <div class="inicio-caja-fila inicio-caja-banco-fila">
+                <span class="inicio-caja-etiqueta">Saldo Inicial</span>
+                <span class="inicio-caja-valor" id="inicio-banco-usd-inicial">–</span>
+                <span class="inicio-caja-valor" id="inicio-banco-ars-inicial">–</span>
+              </div>
+              <div class="inicio-caja-fila inicio-caja-banco-fila inicio-caja-fila-actual">
+                <span class="inicio-caja-etiqueta">Saldo Actual</span>
+                <span class="inicio-caja-valor" id="inicio-banco-usd-actual">–</span>
+                <span class="inicio-caja-valor" id="inicio-banco-ars-actual">–</span>
+              </div>
+              <div class="inicio-caja-fila inicio-caja-fila-var inicio-caja-banco-fila">
+                <span class="inicio-caja-etiqueta">Var.</span>
+                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-banco-usd-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-banco-usd-var">–</span></span>
+                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-banco-ars-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-banco-ars-var">–</span></span>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="inicio-cards-pendientes" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:1rem; margin-top:1.5rem;">
+        <div class="inicio-cards-pendientes">
           <div class="card card-pendientes" id="inicio-card-ordenes-pendientes">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem;">
-              <span class="card-titulo" style="font-size:0.95rem;">Órdenes pendientes</span>
-              <button type="button" class="btn-ver-listo" id="btn-ver-ordenes-pendientes" title="Ver listado" aria-label="Ver listado">
+            <div class="inicio-card-pendientes-header">
+              <span class="inicio-card-pendientes-titulo"><span class="inicio-card-pendientes-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>Órdenes pendientes</span>
+              <button type="button" class="btn-ver-listo" id="btn-ver-ordenes-pendientes" title="Ver todas" aria-label="Ver todas">
                 <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
               </button>
             </div>
-            <span class="valor valor-count" id="inicio-count-ordenes-pendientes">–</span>
+            <div class="inicio-card-ordenes-tabla" id="inicio-ordenes-pendientes-body">
+              <!-- Filas por estado: badge | # | ojo (JS) -->
+            </div>
           </div>
           <div class="card card-pendientes" id="inicio-card-transacciones-pendientes">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem;">
-              <span class="card-titulo" style="font-size:0.95rem;">Transacciones pendientes</span>
+            <div class="inicio-card-pendientes-header">
+              <span class="inicio-card-pendientes-titulo"><span class="inicio-card-pendientes-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2h4a1 1 0 011 1v4"/><path d="M7 22H3a1 1 0 01-1-1v-4"/><path d="M22 7l-5 5-5-5"/><path d="M2 17l5-5 5 5"/></svg></span>Transacciones pendientes</span>
               <button type="button" class="btn-ver-listo" id="btn-ver-transacciones-pendientes" title="Ver listado" aria-label="Ver listado">
                 <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
               </button>
             </div>
-            <span class="valor valor-count" id="inicio-count-transacciones-pendientes">–</span>
+            <div class="inicio-count-transacciones-wrap">
+              <span class="valor valor-count valor-count-circulo" id="inicio-count-transacciones-pendientes">–</span>
+            </div>
           </div>
         </div>
         <div class="inicio-accesos">
