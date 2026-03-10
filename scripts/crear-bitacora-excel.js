@@ -56,6 +56,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Presentación comercial PPT', 'Script presentacion/crear_presentacion_pptx.py: barra azul (#0d2137), logo transparente y contorno blanco, paginado "actual / total", interlineados y leyendas mejorados.', 'Presentación'],
   ['__HOY__', '__AHORA__', 'Filtros en Órdenes pendientes', 'Modal Órdenes pendientes: filtros por Cliente, Intermediario y Estado; misma barra y estilos que el resto de la web; re-render al cambiar filtros.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Regla de despliegue sin PPT', 'Flujo de despliegue ya no incluye regenerar PowerPoint; commit sin Propuesta_Pandi.pptx. Reglas bitacora-tareas y reglas-pandi actualizadas.', 'Reglas'],
+  ['__HOY__', '__AHORA__', 'Tiempo de inactividad', 'Cierre de sesión automático tras X minutos sin actividad. Solo Admin ve y edita el parámetro en Seguridad. Tabla app_config, sql/app_config_session_timeout.sql.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -97,6 +98,7 @@ const funcionalidades = [
   ['Estado de orden al instrumentar', 'Al auto-completar instrumentación (sin intermediario o cheque con intermediario) se llama actualizarEstadoOrden: la orden pasa de Pendiente Instrumentar a Instrumentación Parcial o Cerrada en Ejecución.'],
   ['Presentación comercial (PPT)', 'Script presentacion/crear_presentacion_pptx.py genera Propuesta_Pandi.pptx desde Bitácora Presupuesto. Barra azul (#0d2137), logo transparente con contorno blanco, paginado "actual / total", interlineados y leyendas mejorados.'],
   ['Filtros en Órdenes pendientes', 'En el modal Órdenes pendientes (Panel de Control): filtros por Cliente, Intermediario y Estado; misma vista-toolbar y estilos que Transacciones pendientes; filtrado en memoria y re-render al cambiar.'],
+  ['Tiempo de inactividad', 'En Seguridad (solo Admin): parámetro en minutos. Tras X minutos sin actividad (clic, teclado, scroll) se cierra la sesión automáticamente. Tabla app_config; script sql/app_config_session_timeout.sql.'],
 ];
 
 const wsResumen = XLSX.utils.aoa_to_sheet(funcionalidades);
@@ -132,6 +134,7 @@ const versiones = [
   ['1.11', '__HOY__', 'Permisos de vistas por perfil (ver_inicio, ver_ordenes, etc.). Panel parametrizable: tarjetas Efectivo/Banco/Pendientes por permiso (por defecto visor solo pendientes). Seguridad: agrupación Vistas/ABM, subpermisos con sangría e iconos, roles colapsados al iniciar.'],
   ['1.12', '__HOY__', 'Presentación comercial: barra azul (#0d2137), logo con fondo transparente y contorno blanco, paginado "actual / total", interlineados y leyendas mejorados.'],
   ['1.13', '__HOY__', 'Filtros en modal Órdenes pendientes: Cliente, Intermediario y Estado. Regla de despliegue sin generación de PPT.'],
+  ['1.14', '__HOY__', 'Tiempo de inactividad: cierre de sesión automático tras X minutos sin actividad (clic, teclado, scroll). Solo Admin configura en Seguridad. Tabla app_config (sql/app_config_session_timeout.sql).'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

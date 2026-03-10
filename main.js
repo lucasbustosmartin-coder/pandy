@@ -18,6 +18,13 @@ let ordenWizardInstrumentacionIdActual = null;
 
 const SIDEBAR_KEY = 'pandi-sidebar-expanded';
 
+// Tiempo de inactividad: tras X minutos sin usar la app se cierra la sesión (configurable por Admin en Seguridad)
+let lastActivityTime = 0;
+let sessionTimeoutMinutes = 60;
+let sessionCheckIntervalId = null;
+const SESSION_ACTIVITY_THROTTLE_MS = 30000; // actualizar lastActivityTime como máximo cada 30 s
+let lastActivityUpdate = 0;
+
 function showLogin() {
   document.getElementById('sidebar').style.display = 'none';
   document.getElementById('login-screen').style.display = 'block';
@@ -173,6 +180,7 @@ function loadSeguridad() {
 
   Promise.all([
     client.rpc('get_users_for_admin'),
+    client.rpc('get_my_role'),
     client.from('app_role').select('role, label').order('role'),
     client.from('app_permission').select('permission, description').order('permission').then((r) => {
       const perms = r.data || [];
@@ -191,8 +199,40 @@ function loadSeguridad() {
       return { ...r, data: { vistas, abm } };
     }),
     client.from('app_role_permission').select('role, permission'),
-  ]).then(([rUsers, rRoles, rPerms, rRolePerms]) => {
+  ]).then(([rUsers, rMyRole, rRoles, rPerms, rRolePerms]) => {
     loadingEl.style.display = 'none';
+
+    const myRole = (rMyRole && rMyRole.data != null) ? String(rMyRole.data) : '';
+    const tiempoSesionWrap = document.getElementById('seguridad-tiempo-sesion-wrap');
+    const inputTimeout = document.getElementById('seguridad-session-timeout-min');
+    const btnGuardarTimeout = document.getElementById('seguridad-session-timeout-guardar');
+    if (tiempoSesionWrap && myRole === 'admin') {
+      tiempoSesionWrap.style.display = 'block';
+      client.from('app_config').select('value').eq('key', 'session_timeout_minutes').maybeSingle().then((r) => {
+        const val = (r && r.data && r.data.value) ? parseInt(r.data.value, 10) : 60;
+        if (inputTimeout) inputTimeout.value = (val >= 1 && val <= 1440) ? val : 60;
+      });
+      if (btnGuardarTimeout && inputTimeout) {
+        btnGuardarTimeout.replaceWith(btnGuardarTimeout.cloneNode(true));
+        document.getElementById('seguridad-session-timeout-guardar').addEventListener('click', () => {
+          const v = parseInt(inputTimeout.value, 10);
+          if (isNaN(v) || v < 1 || v > 1440) {
+            showToast('Ingresá un número entre 1 y 1440.', 'error');
+            return;
+          }
+          client.from('app_config').upsert({ key: 'session_timeout_minutes', value: String(v), updated_at: new Date().toISOString(), updated_by: currentUserId }, { onConflict: 'key' }).then((res) => {
+            if (res.error) {
+              showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+              return;
+            }
+            sessionTimeoutMinutes = v;
+            showToast('Tiempo de inactividad actualizado. Se aplicará a todas las sesiones.', 'success');
+          });
+        });
+      }
+    } else if (tiempoSesionWrap) {
+      tiempoSesionWrap.style.display = 'none';
+    }
 
     const users = rUsers.data || [];
     const roles = (rRoles.data || []).slice();
@@ -4461,22 +4501,65 @@ function setupVistasMenu() {
   });
 }
 
+function updateSessionActivity() {
+  const now = Date.now();
+  if (now - lastActivityUpdate < SESSION_ACTIVITY_THROTTLE_MS) return;
+  lastActivityUpdate = now;
+  lastActivityTime = now;
+}
+
+function startSessionTimeoutCheck() {
+  if (sessionCheckIntervalId) clearInterval(sessionCheckIntervalId);
+  lastActivityTime = Date.now();
+  lastActivityUpdate = lastActivityTime;
+  const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+  events.forEach((ev) => document.addEventListener(ev, updateSessionActivity));
+  sessionCheckIntervalId = setInterval(() => {
+    if (sessionTimeoutMinutes <= 0) return;
+    const inactiveMin = (Date.now() - lastActivityTime) / 60000;
+    if (inactiveMin >= sessionTimeoutMinutes) {
+      clearInterval(sessionCheckIntervalId);
+      sessionCheckIntervalId = null;
+      events.forEach((ev) => document.removeEventListener(ev, updateSessionActivity));
+      client.auth.signOut().then(() => {
+        showLogin();
+        showToast('Sesión cerrada por inactividad.', 'info');
+      });
+    }
+  }, 60000);
+}
+
 function onSessionReady(session) {
   currentUserEmail = session.user.email || '';
   currentUserId = session.user.id;
+  lastActivityTime = Date.now();
   ensureProfile(session)
     .then(() => client.rpc('get_my_permissions'))
     .then((res) => {
       if (res.error) {
         document.getElementById('login-error').textContent = res.error.message || 'Error al cargar permisos.';
-        return;
+        return Promise.reject(res.error);
       }
       userPermissions = res.data || [];
+      return client.from('app_config').select('value').eq('key', 'session_timeout_minutes').maybeSingle();
+    })
+    .then((configRes) => {
+      if (!configRes || configRes.error) {
+        configRes = { data: null };
+      }
+      if (configRes && !configRes.error && configRes.data && configRes.data.value) {
+        const n = parseInt(configRes.data.value, 10);
+        if (n > 0 && n <= 1440) sessionTimeoutMinutes = n;
+      }
+      startSessionTimeoutCheck();
       showAppContent();
       const userEmailEl = document.getElementById('user-email');
       if (userEmailEl) userEmailEl.textContent = currentUserEmail;
 
       document.getElementById('btn-cerrar-sesion').addEventListener('click', () => {
+        if (sessionCheckIntervalId) clearInterval(sessionCheckIntervalId);
+        sessionCheckIntervalId = null;
+        ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach((ev) => document.removeEventListener(ev, updateSessionActivity));
         client.auth.signOut().then(() => showLogin());
       });
 
@@ -4509,7 +4592,8 @@ function onSessionReady(session) {
       setupHelpPopovers();
       const [defaultVistaId, defaultTitle] = getFirstAllowedView();
       showView(defaultVistaId, defaultTitle);
-    });
+    })
+    .catch(() => {});
 }
 
 /** Iconos de ayuda: al hacer clic en .help-icon-btn se muestra/oculta el .help-popover; clic fuera cierra. */

@@ -348,7 +348,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.13</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.14</div>
   </aside>
 
   <main class="main-content">
@@ -703,6 +703,20 @@
           Seguridad – Usuarios y roles
         </h2>
         <p style="margin:0 0 0.75rem 0; font-size:0.95rem; color:#555;">Asigná el rol (Admin, Encargado, Visor) a cada usuario.</p>
+        <div id="seguridad-tiempo-sesion-wrap" class="seguridad-tiempo-sesion" style="display:none; margin-bottom:1.25rem; padding:1rem; background:#f9fafb; border-radius:10px; border:1px solid #e5e7eb;">
+          <h3 style="margin:0 0 0.5rem 0; font-size:1rem;">Tiempo de inactividad</h3>
+          <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Si el usuario no interactúa con la app (clic, teclado, scroll) durante esta cantidad de minutos, se cierra la sesión automáticamente para que la información no quede expuesta. Solo el Admin puede modificar este valor.</p>
+          <div class="vista-toolbar" style="align-items:center; gap:0.5rem;">
+            <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
+              <span>Minutos sin actividad:</span>
+              <input type="number" id="seguridad-session-timeout-min" min="1" max="1440" step="1" style="width:5rem; padding:0.35rem 0.5rem; border-radius:6px; border:1px solid #ccc;" aria-label="Minutos de inactividad antes de cerrar sesión" />
+            </label>
+            <button type="button" class="btn-primary" id="seguridad-session-timeout-guardar">
+              <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>
+              Guardar
+            </button>
+          </div>
+        </div>
         <div id="seguridad-loading" class="seguridad-loading">Cargando usuarios…</div>
         <div id="seguridad-tabla-wrap" style="display:none;">
           <table id="seguridad-tabla">
