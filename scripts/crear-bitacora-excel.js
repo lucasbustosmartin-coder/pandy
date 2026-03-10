@@ -53,6 +53,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Panel de Control parametrizable', 'Tres permisos: ver_inicio_efectivo, ver_inicio_banco, ver_inicio_pendientes. Tarjetas Efectivo/Banco/Pendientes visibles según permiso; por defecto visor solo tarjetas de pendientes. loadInicio muestra/oculta bloques.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Seguridad: agrupación y subpermisos', 'Permisos por rol agrupados en Permisos de vistas y Permisos de alta, baja o modificación. Subpermisos del Panel (Efectivo, Banco, Pendientes) con sangría y viñeta. Títulos con icono; líneas entre filas; toggles alineados.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Seguridad: roles colapsados', 'Cada rol (Admin, Encargado, Visor) inicia colapsado; clic en el encabezado expande/contrae los permisos. Chevron animado; accesibilidad aria-expanded/aria-controls.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Presentación comercial PPT', 'Script presentacion/crear_presentacion_pptx.py: barra azul (#0d2137), logo transparente y contorno blanco, paginado "actual / total", interlineados y leyendas mejorados.', 'Presentación'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -92,6 +93,7 @@ const funcionalidades = [
   ['Instrumentación sin intermediario', 'Órdenes sin intermediario (USD-USD, ARS-USD, USD-ARS, ARS-ARS): al abrir instrumentación vacía se generan automáticamente dos transacciones (ingreso y egreso en efectivo).'],
   ['Anulación de órdenes y baja de transacciones', 'Estado anulada en órdenes. Botón Anular en tabla y en modal de orden. Botón Eliminar por transacción (dar de baja). Mensajería interna: showConfirm (modal) en lugar de confirm(); regla en .cursor/rules.'],
   ['Estado de orden al instrumentar', 'Al auto-completar instrumentación (sin intermediario o cheque con intermediario) se llama actualizarEstadoOrden: la orden pasa de Pendiente Instrumentar a Instrumentación Parcial o Cerrada en Ejecución.'],
+  ['Presentación comercial (PPT)', 'Script presentacion/crear_presentacion_pptx.py genera Propuesta_Pandi.pptx desde Bitácora Presupuesto. Barra azul (#0d2137), logo transparente con contorno blanco, paginado "actual / total", interlineados y leyendas mejorados.'],
 ];
 
 const wsResumen = XLSX.utils.aoa_to_sheet(funcionalidades);
@@ -125,6 +127,7 @@ const versiones = [
   ['1.9', '__HOY__', 'Permisos reordenados: 7 granulares (Ingresar/Editar/Anular Orden, Editar Estado Orden, Ingresar/Editar/Eliminar Transacciones). Eliminado abm_ordenes. Migración SQL y RLS; frontend solo usa los 7 permisos.'],
   ['1.10', '__HOY__', 'Panel de Control: tarjetas Efectivo/Banco (Saldo Inicial, Saldo Actual destacado, Var. con tendencia); Órdenes pendientes por estado con ojo por fila; Transacciones pendientes con número en círculo; mismo ancho que Efectivo.'],
   ['1.11', '__HOY__', 'Permisos de vistas por perfil (ver_inicio, ver_ordenes, etc.). Panel parametrizable: tarjetas Efectivo/Banco/Pendientes por permiso (por defecto visor solo pendientes). Seguridad: agrupación Vistas/ABM, subpermisos con sangría e iconos, roles colapsados al iniciar.'],
+  ['1.12', '__HOY__', 'Presentación comercial: barra azul (#0d2137), logo con fondo transparente y contorno blanco, paginado "actual / total", interlineados y leyendas mejorados.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
