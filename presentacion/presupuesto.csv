@@ -1,0 +1,15 @@
+Funcionalidad,Horas hombre,Importe (USD)
+Setup y arquitectura (repo Supabase Vercel config),12,456
+Autenticación y seguridad (Auth roles permisos RLS),24,912
+UI base y navegación (sidebar vistas login responsive),20,760
+ABM Clientes (listado alta edición permisos),8,304
+Módulo Cajas (saldos movimientos tipos Efectivo/Banco),24,912
+Módulo Órdenes (CRUD estados concertación monedas),32,1216
+Instrumentación y transacciones (intermediarios comisiones),28,1064
+Cuenta corriente (cliente e intermediario conciliación),24,912
+Panel de Control (saldos pendientes accesos parametrizable),16,608
+Permisos granulares y control de vistas por rol,12,456
+Experiencia de usuario (toast confirm validaciones),8,304
+Responsive y adaptación móvil (touch safe area),12,456
+Documentación bitácora y despliegue continuo,12,456
+TOTAL,232,8816

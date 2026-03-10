@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Propuesta – Sistema de gestión financiera y operativa</title>
+  <style>
+    :root {
+      --primary: #0d7d3d;
+      --primary-dark: #0a5c2e;
+      --text: #1a1a1a;
+      --text-muted: #555;
+      --bg: #fafafa;
+      --card: #fff;
+      --border: #e5e7eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 18px;
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .slide {
+      min-height: 100vh;
+      padding: 3rem 2rem 4rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .slide.portada {
+      text-align: center;
+      background: linear-gradient(160deg, #0d7d3d 0%, #0a5c2e 100%);
+      color: #fff;
+    }
+    .slide.portada h1 { font-size: 2rem; margin: 0 0 0.5rem; font-weight: 700; }
+    .slide.portada .subtitulo { font-size: 1.25rem; opacity: 0.95; margin-bottom: 3rem; }
+    .slide.portada .pie { font-size: 0.85rem; opacity: 0.8; margin-top: auto; }
+    h2 { font-size: 1.5rem; color: var(--primary); margin: 0 0 1.5rem; font-weight: 700; border-bottom: 2px solid var(--primary); padding-bottom: 0.5rem; }
+    h3 { font-size: 1.1rem; margin: 1.25rem 0 0.5rem; color: var(--text); }
+    ul { margin: 0.5rem 0 1rem 1.25rem; padding: 0; }
+    li { margin: 0.35rem 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin: 1rem 0;
+      background: var(--card);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    th, td { padding: 0.65rem 0.85rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { background: var(--primary); color: #fff; font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    tr.total { font-weight: 700; background: #ecfdf5; }
+    tr.total td { border-top: 2px solid var(--primary); }
+    td:nth-child(2), td:nth-child(3) { text-align: right; }
+    .benefit-table td:first-child { font-weight: 600; color: var(--primary-dark); }
+    .mensaje { font-style: italic; color: var(--text-muted); margin-top: 1rem; }
+    .numero { font-weight: 700; color: var(--primary); font-size: 1.1em; }
+    @media (max-width: 640px) {
+      .slide { padding: 2rem 1rem 3rem; font-size: 16px; }
+      table { font-size: 0.8rem; }
+      th, td { padding: 0.5rem 0.5rem; }
+    }
+    @media print {
+      .slide { min-height: auto; padding: 1.5rem 1rem; page-break-after: always; }
+      .slide:last-child { page-break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <section class="slide portada">
+    <h1>Propuesta de desarrollo</h1>
+    <p class="subtitulo">Sistema de gestión de órdenes, cajas y cuenta corriente</p>
+    <p class="pie">Confidencial · [Tu nombre o estudio] · [Fecha]</p>
+  </section>
+
+  <section class="slide">
+    <h2>El desafío</h2>
+    <p><strong>Un solo lugar para operar con claridad</strong></p>
+    <ul>
+      <li>Operaciones en múltiples monedas (USD, EUR, ARS) y con intermediarios.</li>
+      <li>Necesidad de trazar cada orden desde la cotización hasta el cobro/pago.</li>
+      <li>Cajas (efectivo y banco) y cuenta corriente con clientes e intermediarios.</li>
+      <li>Equipos con distintos niveles de acceso (admin, encargado, visor).</li>
+    </ul>
+    <p class="mensaje">Centralizar la operación, con seguridad y sin perder el control.</p>
+  </section>
+
+  <section class="slide">
+    <h2>La solución</h2>
+    <p><strong>Una aplicación web a medida</strong></p>
+    <ul>
+      <li><strong>Panel de Control</strong> con saldos por caja (efectivo/banco), variaciones y pendientes.</li>
+      <li><strong>Órdenes</strong> con estados claros (cotización → cerrada → concertada → ejecutada) e instrumentación de transacciones.</li>
+      <li><strong>Cajas</strong> con movimientos manuales y automáticos por orden; tipos de movimiento configurables.</li>
+      <li><strong>Cuenta corriente</strong> con clientes e intermediarios; conciliación y comisiones.</li>
+      <li><strong>Seguridad</strong> por roles y permisos granulares (vistas y acciones).</li>
+      <li><strong>Responsive</strong> para usar en escritorio y móvil.</li>
+    </ul>
+    <p class="mensaje">Todo en un solo sistema, accesible desde el navegador.</p>
+  </section>
+
+  <section class="slide">
+    <h2>Beneficios</h2>
+    <p><strong>Qué gana tu operación</strong></p>
+    <table class="benefit-table">
+      <tr><td>Trazabilidad</td><td>Cada orden y transacción registrada y vinculada a caja y cuenta corriente.</td></tr>
+      <tr><td>Control por roles</td><td>Admin, encargado y visor ven solo lo que necesitan; permisos por vista y por acción.</td></tr>
+      <tr><td>Menos errores</td><td>Concertación única, validaciones y mensajería clara.</td></tr>
+      <tr><td>Múltiples monedas</td><td>USD, EUR, ARS en cajas y cuenta corriente; tipos de operación configurables.</td></tr>
+      <tr><td>Uso en celular</td><td>Interfaz adaptable para consultas y tareas básicas en movimiento.</td></tr>
+    </table>
+  </section>
+
+  <section class="slide">
+    <h2>Alcance del desarrollo</h2>
+    <ol>
+      <li>Setup y arquitectura (repo, Supabase, Vercel)</li>
+      <li>Autenticación y seguridad (Auth, roles, RLS)</li>
+      <li>UI base (sidebar, vistas, login)</li>
+      <li>ABM Clientes</li>
+      <li>Módulo Cajas (saldos, movimientos, Efectivo/Banco)</li>
+      <li>Módulo Órdenes (CRUD, estados, concertación)</li>
+      <li>Instrumentación y transacciones (intermediarios, comisiones)</li>
+      <li>Cuenta corriente (cliente e intermediario)</li>
+      <li>Panel de Control (parametrizable por rol)</li>
+      <li>Permisos granulares y control de vistas</li>
+      <li>Experiencia de usuario (toast, confirm, validaciones)</li>
+      <li>Responsive y móvil</li>
+      <li>Documentación y despliegue continuo</li>
+    </ol>
+  </section>
+
+  <section class="slide">
+    <h2>Presupuesto</h2>
+    <p><strong>Inversión por funcionalidad</strong> · Tarifa de referencia: <span class="numero">USD 38/h</span> (Argentina)</p>
+    <table>
+      <thead>
+        <tr><th>Funcionalidad</th><th>Horas</th><th>Importe (USD)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Setup y arquitectura</td><td>12</td><td>456</td></tr>
+        <tr><td>Autenticación y seguridad</td><td>24</td><td>912</td></tr>
+        <tr><td>UI base y navegación</td><td>20</td><td>760</td></tr>
+        <tr><td>ABM Clientes</td><td>8</td><td>304</td></tr>
+        <tr><td>Módulo Cajas</td><td>24</td><td>912</td></tr>
+        <tr><td>Módulo Órdenes</td><td>32</td><td>1 216</td></tr>
+        <tr><td>Instrumentación y transacciones</td><td>28</td><td>1 064</td></tr>
+        <tr><td>Cuenta corriente</td><td>24</td><td>912</td></tr>
+        <tr><td>Panel de Control</td><td>16</td><td>608</td></tr>
+        <tr><td>Permisos granulares y vistas</td><td>12</td><td>456</td></tr>
+        <tr><td>Experiencia de usuario</td><td>8</td><td>304</td></tr>
+        <tr><td>Responsive y móvil</td><td>12</td><td>456</td></tr>
+        <tr><td>Documentación y despliegue</td><td>12</td><td>456</td></tr>
+        <tr class="total"><td>TOTAL</td><td>232</td><td>8 816</td></tr>
+      </tbody>
+    </table>
+    <p class="mensaje">Importes en dólares estadounidenses. Forma de pago y cronograma a definir.</p>
+  </section>
+
+  <section class="slide">
+    <h2>Próximos pasos</h2>
+    <ol>
+      <li><strong>Reunión de alcance</strong> – Validar funcionalidades y prioridades.</li>
+      <li><strong>Acuerdo comercial</strong> – Forma de pago (por hitos o mensual), plazos y aceptación del presupuesto.</li>
+      <li><strong>Kick-off</strong> – Setup del repo, Supabase y primer despliegue.</li>
+      <li><strong>Desarrollo por módulos</strong> – Entregas parciales y pruebas.</li>
+      <li><strong>Puesta en producción</strong> – Dominio, variables de entorno y capacitación.</li>
+    </ol>
+    <p class="mensaje" style="margin-top: 1.5rem;">Gracias por considerar esta propuesta. Quedamos a disposición para ajustar alcance o plazos.</p>
+  </section>
+</body>
+</html>

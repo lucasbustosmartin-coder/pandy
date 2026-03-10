@@ -63,7 +63,7 @@ wsLog['!cols'] = [{ wch: 12 }, { wch: 6 }, { wch: 45 }, { wch: 95 }, { wch: 14 }
 const funcionalidades = [
   ['Funcionalidad', 'Descripción'],
   ['Estructura del repo', 'Carpetas sql/, scripts/, docs/, Base/. Reglas en .cursor/rules (estructura-proyecto, reglas-pandi, bitácora, preguntas-solo-respuesta).'],
-  ['Bitácora', 'Node.js + SheetJS (xlsx). Script scripts/crear-bitacora-excel.js genera Bitacora_tareas.xlsx con Log, Resumen, Ref Git y Vercel, Versiones, Tecnología.'],
+  ['Bitácora', 'Node.js + SheetJS (xlsx). Script scripts/crear-bitacora-excel.js genera Bitacora_tareas.xlsx con Log, Resumen, Ref Git y Vercel, Versiones, Tecnología, Presupuesto.'],
   ['Tablas de negocio (Supabase)', 'clientes, tipos_movimiento_caja, ordenes, movimientos_caja, movimientos_cuenta_corriente. Órdenes: cotizacion, cerrada, concertada. CC por cliente y moneda.'],
   ['Seguridad (Supabase)', 'Roles Admin/Encargado/Visor. Permisos abm_*. RLS. RPC set_user_role.'],
   ['UI base Pandi', 'index.html + main.js: sidebar colapsable, login/registro, 6 vistas (Inicio, Órdenes, Cajas, Clientes, Cuenta corriente, Seguridad). Estilos Everfit. Vista Seguridad funcional (asignar rol).'],
@@ -136,10 +136,32 @@ const tecnologia = [
   ['Datos', 'Supabase (PostgreSQL). Tablas según la app. Scripts SQL en sql/.'],
   ['Hosting', 'Vercel. Despliegue con vercel --prod tras push a main.'],
   ['Repositorio', 'Git/GitHub, rama main.'],
-  ['Bitácora', 'Node.js + SheetJS (xlsx). Script scripts/crear-bitacora-excel.js genera Bitacora_tareas.xlsx con Log, Resumen, Ref Git y Vercel, Versiones, Tecnología.'],
+  ['Bitácora', 'Node.js + SheetJS (xlsx). Script scripts/crear-bitacora-excel.js genera Bitacora_tareas.xlsx con Log, Resumen, Ref Git y Vercel, Versiones, Tecnología, Presupuesto.'],
 ];
 const wsTecnologia = XLSX.utils.aoa_to_sheet(tecnologia);
 wsTecnologia['!cols'] = [{ wch: 18 }, { wch: 95 }];
+
+// --- Hoja Presupuesto (propuesta comercial; el PPT toma los datos de aquí)
+// Editar aquí horas/importes; al agregar nuevas líneas por código, poner "Sí" en columna Nuevo para formatear en otro color en Excel.
+const presupuesto = [
+  ['Funcionalidad', 'Horas hombre', 'Importe (USD)', 'Nuevo'],
+  ['Setup y arquitectura (repo Supabase Vercel config)', 12, 456, ''],
+  ['Autenticación y seguridad (Auth roles permisos RLS)', 24, 912, ''],
+  ['UI base y navegación (sidebar vistas login responsive)', 20, 760, ''],
+  ['ABM Clientes (listado alta edición permisos)', 8, 304, ''],
+  ['Módulo Cajas (saldos movimientos tipos Efectivo/Banco)', 24, 912, ''],
+  ['Módulo Órdenes (CRUD estados concertación monedas)', 32, 1216, ''],
+  ['Instrumentación y transacciones (intermediarios comisiones)', 28, 1064, ''],
+  ['Cuenta corriente (cliente e intermediario conciliación)', 24, 912, ''],
+  ['Panel de Control (saldos pendientes accesos parametrizable)', 16, 608, ''],
+  ['Permisos granulares y control de vistas por rol', 12, 456, ''],
+  ['Experiencia de usuario (toast confirm validaciones)', 8, 304, ''],
+  ['Responsive y adaptación móvil (touch safe area)', 12, 456, ''],
+  ['Documentación bitácora y despliegue continuo', 12, 456, ''],
+  ['TOTAL', 232, 8816, ''],
+];
+const wsPresupuesto = XLSX.utils.aoa_to_sheet(presupuesto);
+wsPresupuesto['!cols'] = [{ wch: 52 }, { wch: 14 }, { wch: 14 }, { wch: 6 }];
 
 const outPath = path.join(__dirname, '..', 'Bitacora_tareas.xlsx');
 const wb = XLSX.utils.book_new();
@@ -148,6 +170,7 @@ XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
 XLSX.utils.book_append_sheet(wb, wsRef, 'Ref Git y Vercel');
 XLSX.utils.book_append_sheet(wb, wsVersiones, 'Versiones');
 XLSX.utils.book_append_sheet(wb, wsTecnologia, 'Tecnología');
+XLSX.utils.book_append_sheet(wb, wsPresupuesto, 'Presupuesto');
 
 XLSX.writeFile(wb, outPath);
 console.log('Creado:', outPath);

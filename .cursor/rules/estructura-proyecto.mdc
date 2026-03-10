@@ -14,6 +14,7 @@ Mantener siempre esta organización para que sea **simple y eficiente** encontra
 | **`sql/`** | Todo lo SQL (Supabase): tablas, RLS, migraciones, scripts de datos. | `supabase_*.sql` |
 | **`scripts/`** | Scripts de utilidad: **Python** (migración, análisis) y **Node.js** (bitácora, build). | `crear-bitacora-excel.js`, `build-config.js` |
 | **`docs/`** | Documentación en Markdown: requisitos Supabase, guías de uso, README de features. | `SUPABASE_REQUISITOS.md`, `GIT_Y_VERCEL.md` |
+| **`presentacion/`** | Propuesta comercial y presupuesto: guion para PowerPoint, CSV de presupuesto, versión web. Actualizar al cambiar alcance o tarifa (ver regla bitácora). | `PROPUESTA_COMERCIAL.md`, `presupuesto.csv`, `index.html` |
 | **`Base/`** | Archivo(s) Excel de origen si la app los usa. No modificar estructura sin actualizar script y documentación. | (opcional) |
 | **Raíz** | Config (`package.json`, `config.example.js`), `.gitignore`, `index.html`, `main.js`. | |
 
@@ -22,7 +23,8 @@ Mantener siempre esta organización para que sea **simple y eficiente** encontra
 - **Nuevo script SQL** → siempre en `sql/` (nombre descriptivo, ej. `supabase_*` si es para Supabase).
 - **Nuevo script Python o Node.js** de utilidad → en `scripts/`. Si lee/escribe archivos en la raíz o en `Base/`, usar rutas relativas al proyecto: `Path(__file__).resolve().parent.parent` (Python) o `path.join(__dirname, '..', '...')` (Node).
 - **Nueva documentación** (.md de guías, requisitos) → en `docs/`.
-- **Referencias en docs o en código** a archivos: usar rutas relativas a la raíz (`sql/...`, `scripts/...`, `docs/...`, `Base/...`).
+- **Material de presentación comercial** (propuesta, presupuesto, slides) → en `presentacion/`. Actualizar según regla bitácora.
+- **Referencias en docs o en código** a archivos: usar rutas relativas a la raíz (`sql/...`, `scripts/...`, `docs/...`, `presentacion/...`, `Base/...`).
 
 ## Comandos y rutas
 

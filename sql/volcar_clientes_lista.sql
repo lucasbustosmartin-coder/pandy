@@ -1,0 +1,33 @@
+-- Vuelco de clientes: nombres en mayúscula (29 clientes)
+-- Ejecutar en Supabase SQL Editor (proyecto Pandi). Si lo ejecutás dos veces, se duplican filas.
+
+INSERT INTO public.clientes (nombre, activo) VALUES
+  ('JULIAN', true),
+  ('DOC', true),
+  ('CORA', true),
+  ('ABUDIAB', true),
+  ('LEVI', true),
+  ('RIESNIK', true),
+  ('CARRERA', true),
+  ('MATI FLORIDA', true),
+  ('CROSTI', true),
+  ('VICENTE', true),
+  ('GONZALITO', true),
+  ('ARI EISEN', true),
+  ('BLANCH', true),
+  ('BLANCO', true),
+  ('PACHI', true),
+  ('ALVARITO', true),
+  ('LAUTARO', true),
+  ('ACHL', true),
+  ('CAGNONI', true),
+  ('SERGIO', true),
+  ('ROU', true),
+  ('FEDE ASU', true),
+  ('SERFIN', true),
+  ('ADRIANA', true),
+  ('RANIELI', true),
+  ('GLOJA', true),
+  ('GERARDO', true),
+  ('CIPOLLA', true),
+  ('ALFIE', true);
