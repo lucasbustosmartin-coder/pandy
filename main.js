@@ -160,7 +160,19 @@ function loadSeguridad() {
   Promise.all([
     client.rpc('get_users_for_admin'),
     client.from('app_role').select('role, label').order('role'),
-    client.from('app_permission').select('permission, description').order('permission'),
+    client.from('app_permission').select('permission, description').order('permission').then((r) => {
+      const perms = r.data || [];
+      const ordenPermisos = ['ingresar_orden', 'editar_orden', 'anular_orden', 'editar_estado_orden', 'ingresar_transacciones', 'editar_transacciones', 'eliminar_transacciones'];
+      const ordenados = [...perms].sort((a, b) => {
+        const ia = ordenPermisos.indexOf(a.permission);
+        const ib = ordenPermisos.indexOf(b.permission);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1;
+        if (ib !== -1) return 1;
+        return (a.permission || '').localeCompare(b.permission || '');
+      });
+      return { ...r, data: ordenados };
+    }),
     client.from('app_role_permission').select('role, permission'),
   ]).then(([rUsers, rRoles, rPerms, rRolePerms]) => {
     loadingEl.style.display = 'none';
@@ -397,10 +409,14 @@ function openModalOrdenesPendientes() {
   loadingEl.style.display = 'block';
   wrapEl.style.display = 'none';
   tbody.innerHTML = '';
-  const canAbm = userPermissions.includes('abm_ordenes');
-  const canEditarOrden = canAbm || userPermissions.includes('editar_orden');
-  const canCambiarEstado = canAbm || userPermissions.includes('cambiar_estado_transaccion');
-  const canVerAccionesOrden = canEditarOrden || canCambiarEstado;
+  const canIngresarOrden = userPermissions.includes('ingresar_orden');
+  const canEditarOrden = userPermissions.includes('editar_orden');
+  const canAnularOrden = userPermissions.includes('anular_orden');
+  const canEditarEstadoOrden = userPermissions.includes('editar_estado_orden');
+  const canIngresarTransacciones = userPermissions.includes('ingresar_transacciones');
+  const canEditarTransacciones = userPermissions.includes('editar_transacciones');
+  const canEliminarTransacciones = userPermissions.includes('eliminar_transacciones');
+  const canVerAccionesOrden = canEditarOrden || canAnularOrden || canEditarEstadoOrden || canIngresarTransacciones || canEditarTransacciones || canEliminarTransacciones;
   client
     .from('ordenes')
     .select('id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones')
@@ -562,8 +578,7 @@ function renderTransaccionesPendientesTabla() {
   const selIntermediario = document.getElementById('transacciones-pendientes-filtro-intermediario');
   const chkPandy = document.getElementById('transacciones-pendientes-filtro-pandy');
   if (!tbody) return;
-  const canAbm = userPermissions.includes('abm_ordenes');
-  const canCambiarEstado = canAbm || userPermissions.includes('cambiar_estado_transaccion');
+  const canEditarTransacciones = userPermissions.includes('editar_transacciones');
   const clienteId = selCliente && selCliente.value ? selCliente.value : '';
   const intermediarioId = selIntermediario && selIntermediario.value ? selIntermediario.value : '';
   const soloPandy = chkPandy && chkPandy.checked;
@@ -593,11 +608,11 @@ function renderTransaccionesPendientesTabla() {
       <td>${formatMonto(t.monto)}</td>
       <td>${ownerL(t.cobrador)}</td>
       <td>${ownerL(t.pagador)}</td>
-      <td>${canCambiarEstado ? estadoTrxCombo(t) : estadoTexto(t)}</td>
-      <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-pendiente" data-id="${t.id}" data-instrumentacion-id="${t.instrumentacion_id}" title="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button>` : ''}</td>
+      <td>${canEditarTransacciones ? estadoTrxCombo(t) : estadoTexto(t)}</td>
+      <td>${canEditarTransacciones ? `<button type="button" class="btn-editar btn-editar-transaccion-pendiente" data-id="${t.id}" data-instrumentacion-id="${t.instrumentacion_id}" title="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button>` : ''}</td>
     </tr>`;
   }).join('');
-  if (canCambiarEstado) {
+  if (canEditarTransacciones) {
   tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
     sel.addEventListener('change', function() {
       const transaccionId = this.getAttribute('data-id');
@@ -866,7 +881,7 @@ function renderCcTable() {
   const tfoot = document.getElementById('cc-tfoot');
   const moneda = ccMonedaActual === 'TODAS' ? null : ccMonedaActual;
   const filtrados = moneda ? ccMovimientosList.filter((m) => m.moneda === moneda) : ccMovimientosList;
-  const canAbmCc = userPermissions.includes('abm_ordenes') && !ccEsIntermediario;
+  const canAbmCc = userPermissions.includes('editar_transacciones') && !ccEsIntermediario;
   if (!tbody) return;
 
   const totals = { USD: { debe: 0, haber: 0 }, EUR: { debe: 0, haber: 0 }, ARS: { debe: 0, haber: 0 } };
@@ -1468,11 +1483,15 @@ function loadOrdenes() {
   const btnNuevo = document.getElementById('btn-nueva-orden');
   if (!loadingEl || !wrapEl || !tbody) return Promise.resolve();
 
-  const canAbm = userPermissions.includes('abm_ordenes');
-  const canEditarOrden = canAbm || userPermissions.includes('editar_orden');
-  const canCambiarEstado = canAbm || userPermissions.includes('cambiar_estado_transaccion');
-  const canVerAccionesOrden = canEditarOrden || canCambiarEstado;
-  if (btnNuevo) btnNuevo.style.display = canAbm ? '' : 'none';
+  const canIngresarOrden = userPermissions.includes('ingresar_orden');
+  const canEditarOrden = userPermissions.includes('editar_orden');
+  const canAnularOrden = userPermissions.includes('anular_orden');
+  const canEditarEstadoOrden = userPermissions.includes('editar_estado_orden');
+  const canIngresarTransacciones = userPermissions.includes('ingresar_transacciones');
+  const canEditarTransacciones = userPermissions.includes('editar_transacciones');
+  const canEliminarTransacciones = userPermissions.includes('eliminar_transacciones');
+  const canVerAccionesOrden = canEditarOrden || canAnularOrden || canEditarEstadoOrden || canIngresarTransacciones || canEditarTransacciones || canEliminarTransacciones;
+  if (btnNuevo) btnNuevo.style.display = canIngresarOrden ? '' : 'none';
 
   loadingEl.style.display = 'block';
   wrapEl.style.display = 'none';
@@ -1527,7 +1546,7 @@ function loadOrdenes() {
                 <td>${estadoHtml}</td>
                 <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
                 <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
-                <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${canEditarOrden && o.estado !== 'anulada' ? ` <button type="button" class="btn-secondary btn-anular-orden-tabla btn-icon-only" data-id="${o.id}" title="Anular orden" aria-label="Anular orden" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>` : ''}` : ''}</td>
+                <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${canAnularOrden && o.estado !== 'anulada' ? ` <button type="button" class="btn-secondary btn-anular-orden-tabla btn-icon-only" data-id="${o.id}" title="Anular orden" aria-label="Anular orden" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>` : ''}` : ''}</td>
               </tr>
               <tr class="orden-detalle-tr" id="orden-detalle-${o.id}" data-orden-id="${o.id}" style="display:none;">
                 <td colspan="8" class="orden-detalle-cell">
@@ -1702,8 +1721,8 @@ function openModalOrden(registro) {
           showOrdenWizardStep('instrumentacion');
           renderOrdenWizardInstrumentacion(instId);
           if (btnNuevaTr) {
-            const canAbm = userPermissions.includes('abm_ordenes');
-            btnNuevaTr.style.display = canAbm ? '' : 'none';
+            const canIngresarTr = userPermissions.includes('ingresar_transacciones');
+            btnNuevaTr.style.display = canIngresarTr ? '' : 'none';
             btnNuevaTr.onclick = () => openModalTransaccion(null, instId);
           }
         });
@@ -1731,8 +1750,9 @@ function openModalOrden(registro) {
       ordenWizardOrdenIdActual = registro.id;
       const btnAnular = document.getElementById('orden-btn-anular');
       if (btnAnular) {
-        const canEditarOrden = userPermissions.includes('abm_ordenes') || userPermissions.includes('editar_orden');
-        if (registro.estado !== 'anulada' && canEditarOrden) {
+        const puedeEditar = userPermissions.includes('editar_orden');
+        const puedeAnular = userPermissions.includes('anular_orden');
+          if (registro.estado !== 'anulada' && puedeAnular) {
           btnAnular.style.display = '';
           btnAnular.onclick = () => {
             showConfirm('¿Anular esta orden? El estado pasará a Anulada.', 'Anular', () => {
@@ -2215,9 +2235,8 @@ function renderOrdenWizardInstrumentacion(instId) {
         const ownerL = (o) => ({ pandy: 'Pandy', cliente: 'Cliente', intermediario: 'Intermediario' }[o] || o);
         const cobradorL = (t) => ownerL(t.cobrador || (t.tipo === 'ingreso' ? t.owner : 'pandy'));
         const pagadorL = (t) => ownerL(t.pagador || (t.tipo === 'egreso' ? t.owner : 'pandy'));
-        const canAbm = userPermissions.includes('abm_ordenes');
-        const canCambiarEstado = canAbm || userPermissions.includes('cambiar_estado_transaccion');
-        const estadoTrxCombo = (t) => { const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente'; return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`; };
+  const canEditarTransacciones = userPermissions.includes('editar_transacciones');
+  const estadoTrxCombo = (t) => { const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente'; return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`; };
         const estadoTexto = (t) => (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente');
         if (lista.length === 0) {
           tbody.innerHTML = '<tr><td colspan="8">Todavía no hay transacciones.</td></tr>';
@@ -2232,11 +2251,11 @@ function renderOrdenWizardInstrumentacion(instId) {
               <td>${formatImporteDisplay(t.monto)}</td>
               <td>${cobradorL(t)}</td>
               <td>${pagadorL(t)}</td>
-              <td>${canCambiarEstado ? estadoTrxCombo(t) : estadoTexto(t)}</td>
-              <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-ordenwizard" data-id="${t.id}">Editar</button>` : ''}</td>
+              <td>${canEditarTr ? estadoTrxCombo(t) : estadoTexto(t)}</td>
+              <td>${canEditarTr ? `<button type="button" class="btn-editar btn-editar-transaccion-ordenwizard" data-id="${t.id}">Editar</button>` : ''}</td>
             </tr>`;
           }).join('');
-          if (canCambiarEstado) {
+          if (canEditarTr) {
             tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
               sel.addEventListener('change', function() { cambiarEstadoTransaccion(this.getAttribute('data-id'), this.value, instId, this); });
             });
@@ -2276,15 +2295,16 @@ function renderOrdenWizardInstrumentacion(instId) {
 function saveOrden(aceptaComisionCero = false) {
   const idEl = document.getElementById('orden-id');
   const id = idEl && idEl.value ? idEl.value.trim() : '';
-  const canAbm = userPermissions.includes('abm_ordenes');
-  const canEditarOrden = canAbm || userPermissions.includes('editar_orden');
+  const canIngresarOrden = userPermissions.includes('ingresar_orden');
+  const canEditarOrden = userPermissions.includes('editar_orden');
+  const canEditarEstadoOrden = userPermissions.includes('editar_estado_orden');
   if (id) {
-    if (!canEditarOrden) {
+    if (!canEditarOrden && !canEditarEstadoOrden) {
       showToast('No tenés permiso para editar órdenes.', 'error');
       return;
     }
   } else {
-    if (!canAbm) {
+    if (!canIngresarOrden) {
       showToast('No tenés permiso para crear órdenes.', 'error');
       return;
     }
@@ -2730,10 +2750,11 @@ function expandOrdenTransacciones(ordenId, orden) {
   const contentEl = panel.querySelector('.orden-detalle-content');
   const tbody = panel.querySelector('.orden-detalle-tbody');
   if (!encabezado || !loadingEl || !contentEl || !tbody) return;
-  const canAbm = userPermissions.includes('abm_ordenes');
-  const canCambiarEstado = canAbm || userPermissions.includes('cambiar_estado_transaccion');
+  const canIngresarTr = userPermissions.includes('ingresar_transacciones');
+  const canEditarTr = userPermissions.includes('editar_transacciones');
+  const canEliminarTr = userPermissions.includes('eliminar_transacciones');
   const btnNuevaTr = panel.querySelector('.btn-nueva-transaccion-panel');
-  if (btnNuevaTr) btnNuevaTr.style.display = canAbm ? '' : 'none';
+  if (btnNuevaTr) btnNuevaTr.style.display = canIngresarTr ? '' : 'none';
 
   const estadoLabelOrd = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada' }[e] || (e || '–'));
   const estadoBadgeOrd = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada'].includes(e) ? `<span class="badge badge-estado-${e.replace(/_/g, '-')}">${estadoLabelOrd(e)}</span>` : estadoLabelOrd(e));
@@ -2817,13 +2838,13 @@ function expandOrdenTransacciones(ordenId, orden) {
                       <td>${formatImporteDisplay(t.monto)}</td>
                       <td>${cobradorL(t)}</td>
                       <td>${pagadorL(t)}</td>
-                      <td>${canCambiarEstado ? estadoTrxCombo(t) : estadoTexto(t)}</td>
-                      <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button>` : ''}${canAbm ? ` <button type="button" class="btn-secondary btn-eliminar-transaccion-panel" data-id="${t.id}" title="Dar de baja">Eliminar</button>` : ''}</td>
+                      <td>${canEditarTr ? estadoTrxCombo(t) : estadoTexto(t)}</td>
+                      <td>${canEditarTr ? `<button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button>` : ''}${canEliminarTr ? ` <button type="button" class="btn-secondary btn-eliminar-transaccion-panel" data-id="${t.id}" title="Dar de baja">Eliminar</button>` : ''}</td>
                     </tr>`;
                   }
                 )
                 .join('');
-              if (canCambiarEstado) {
+              if (canEditarTr) {
                 tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
                   sel.addEventListener('change', function() { cambiarEstadoTransaccion(this.getAttribute('data-id'), this.value, instrumentacionId, this); });
                 });
@@ -2898,8 +2919,8 @@ function refreshTransaccionesPanel(ordenId) {
         : `Instrumentación: A recibir ${formatImporteDisplay(mr)} ${monR} - A entregar ${formatImporteDisplay(me)} ${monE}.`;
       totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}`;
     }
-    const canCambiarEstado = userPermissions.includes('abm_ordenes') || userPermissions.includes('cambiar_estado_transaccion');
-    const canAbm = userPermissions.includes('abm_ordenes');
+    const canEditarTr = userPermissions.includes('editar_transacciones');
+    const canEliminarTr = userPermissions.includes('eliminar_transacciones');
     client.from('modos_pago').select('id, codigo, nombre').then((rModos) => {
         const modosMap = {};
         (rModos.data || []).forEach((m) => { modosMap[m.id] = m; });
@@ -2922,13 +2943,13 @@ function refreshTransaccionesPanel(ordenId) {
                 <td>${formatImporteDisplay(t.monto)}</td>
                 <td>${cobradorL(t)}</td>
                 <td>${pagadorL(t)}</td>
-                <td>${canCambiarEstado ? estadoTrxCombo(t) : estadoTexto(t)}</td>
-                <td>${canCambiarEstado ? `<button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button>` : ''}${canAbm ? ` <button type="button" class="btn-secondary btn-eliminar-transaccion-panel" data-id="${t.id}" title="Dar de baja">Eliminar</button>` : ''}</td>
+                <td>${canEditarTr ? estadoTrxCombo(t) : estadoTexto(t)}</td>
+                <td>${canEditarTr ? `<button type="button" class="btn-editar btn-editar-transaccion-panel" data-id="${t.id}">Editar</button>` : ''}${canEliminarTr ? ` <button type="button" class="btn-secondary btn-eliminar-transaccion-panel" data-id="${t.id}" title="Dar de baja">Eliminar</button>` : ''}</td>
               </tr>`;
             }
           )
           .join('');
-        if (canCambiarEstado) {
+        if (canEditarTr) {
           tbody.querySelectorAll('.combo-estado-transaccion').forEach((sel) => {
             sel.addEventListener('change', function() { cambiarEstadoTransaccion(this.getAttribute('data-id'), this.value, instrumentacionId, this); });
           });
@@ -3860,8 +3881,8 @@ function generarMovimientoConversionCcIntermediario(ordenId) {
 /** Baja (elimina) una transacción: borra movimientos asociados, la transacción y recalcula estado de la orden. */
 function eliminarTransaccion(transaccionId, ordenId) {
   if (!transaccionId || !ordenId) return Promise.resolve();
-  const canAbm = userPermissions.includes('abm_ordenes');
-  if (!canAbm) {
+  const canEliminarTr = userPermissions.includes('eliminar_transacciones');
+  if (!canEliminarTr) {
     showToast('No tenés permiso para dar de baja transacciones.', 'error');
     return Promise.resolve();
   }
