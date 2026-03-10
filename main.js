@@ -4569,10 +4569,18 @@ function onSessionReady(session) {
       const sidebar = document.getElementById('sidebar');
       const toggle = document.getElementById('sidebar-toggle');
       if (localStorage.getItem(SIDEBAR_KEY) === '1') sidebar.classList.add('expanded');
+      function updateSidebarToggleLabel() {
+        if (!toggle) return;
+        const expanded = sidebar.classList.contains('expanded');
+        toggle.setAttribute('aria-label', expanded ? 'Contraer menú' : 'Expandir menú');
+        toggle.setAttribute('title', expanded ? 'Contraer menú' : 'Expandir menú');
+      }
+      updateSidebarToggleLabel();
       if (toggle) {
         toggle.addEventListener('click', () => {
           sidebar.classList.toggle('expanded');
           localStorage.setItem(SIDEBAR_KEY, sidebar.classList.contains('expanded') ? '1' : '0');
+          updateSidebarToggleLabel();
         });
       }
 
