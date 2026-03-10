@@ -60,13 +60,11 @@ Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK de
 3. **Regenerar Excel**  
    Ejecutar `node scripts/crear-bitacora-excel.js` (desde la raíz del proyecto) para actualizar `Bitacora_tareas.xlsx`.
 
-4. **Regenerar presentación PowerPoint (si el cambio es relevante)**  
-   Si los cambios del despliegue **incluyen funcionalidades nuevas o modificaciones que deban reflejarse en la propuesta comercial** (nuevas capacidades del producto, cambios de alcance, etc.), ejecutar `python3 presentacion/crear_presentacion_pptx.py` para regenerar `presentacion/Propuesta_Pandi.pptx`. Si se regeneró el PPTX, incluirlo en el commit del paso 5. Si el despliegue es solo corrección de bugs, ajuste de textos o cambios no comerciales, se puede omitir este paso.
+4. **Commit y push**  
+   Incluir en el commit: `index.html` (con la versión actualizada), `scripts/crear-bitacora-excel.js`, `Bitacora_tareas.xlsx` y cualquier otro archivo modificado en la sesión. Mensaje de commit: `vX.Y: descripción breve`. Ejecutar `git add`, `git commit`, `git push origin main`. Si el push falla por credenciales, indicar al usuario que ejecute `git push origin main` en su máquina.  
+   *(La presentación PowerPoint se regenera solo cuando se desee actualizar la propuesta comercial; no forma parte del flujo de despliegue.)*
 
-5. **Commit y push**  
-   Incluir en el commit: `index.html` (con la versión actualizada), `scripts/crear-bitacora-excel.js`, `Bitacora_tareas.xlsx`, y `presentacion/Propuesta_Pandi.pptx` si se regeneró en el paso 4 (y cualquier otro archivo modificado en la sesión). Mensaje de commit: `vX.Y: descripción breve`. Ejecutar `git add`, `git commit`, `git push origin main`. Si el push falla por credenciales, indicar al usuario que ejecute `git push origin main` en su máquina.
-
-6. **Desplegar a producción**  
+5. **Desplegar a producción**  
    Ejecutar `vercel --prod` (o el comando equivalente) para que la versión desplegada sea la de producción (p. ej. pandi.vercel.app cuando esté conectado el proyecto).
 
 No hacer push ni desplegar hasta que el usuario lo indique explícitamente.

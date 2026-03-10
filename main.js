@@ -537,28 +537,96 @@ function loadInicioPendientes() {
   if (elCountTr) client.from('transacciones').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente').then((r) => { elCountTr.textContent = r.count != null ? String(r.count) : '–'; });
 }
 
-/** Abre el modal de órdenes pendientes (estado ≠ orden_ejecutada). Si se pasa estadoFilter, solo se muestran órdenes de ese estado. */
+/** Datos del modal de órdenes pendientes para filtrado y re-render. */
+let ordenesPendientesList = [];
+let ordenesPendientesClientesMap = {};
+let ordenesPendientesTiposOpMap = {};
+let ordenesPendientesIntermediariosMap = {};
+
+function renderOrdenesPendientesFiltros(list, clientesMap, intermediariosMap) {
+  const selCliente = document.getElementById('ordenes-pendientes-filtro-cliente');
+  const selIntermediario = document.getElementById('ordenes-pendientes-filtro-intermediario');
+  if (!selCliente || !selIntermediario) return;
+  const clienteIds = [...new Set(list.map((o) => o.cliente_id).filter(Boolean))].sort((a, b) => (clientesMap[a] || '').localeCompare(clientesMap[b] || ''));
+  const intIds = [...new Set(list.map((o) => o.intermediario_id).filter(Boolean))].sort((a, b) => (intermediariosMap[a] || '').localeCompare(intermediariosMap[b] || ''));
+  selCliente.innerHTML = '<option value="">Todos</option>' + clienteIds.map((id) => `<option value="${id}">${escapeHtml(clientesMap[id] || id)}</option>`).join('');
+  selIntermediario.innerHTML = '<option value="">Todos</option>' + intIds.map((id) => `<option value="${id}">${escapeHtml(intermediariosMap[id] || id)}</option>`).join('');
+}
+
+function renderOrdenesPendientesTabla() {
+  const backdrop = document.getElementById('modal-ordenes-pendientes-backdrop');
+  const tbody = document.getElementById('ordenes-pendientes-tbody');
+  const selCliente = document.getElementById('ordenes-pendientes-filtro-cliente');
+  const selIntermediario = document.getElementById('ordenes-pendientes-filtro-intermediario');
+  const selEstado = document.getElementById('ordenes-pendientes-filtro-estado');
+  if (!tbody) return;
+  const clienteId = selCliente && selCliente.value ? selCliente.value : '';
+  const intermediarioId = selIntermediario && selIntermediario.value ? selIntermediario.value : '';
+  const estadoVal = selEstado && selEstado.value ? selEstado.value : '';
+  let list = ordenesPendientesList;
+  if (clienteId) list = list.filter((o) => o.cliente_id === clienteId);
+  if (intermediarioId) list = list.filter((o) => o.intermediario_id === intermediarioId);
+  if (estadoVal) list = list.filter((o) => o.estado === estadoVal);
+  const canEditarOrden = userPermissions.includes('editar_orden');
+  const canIngresarTransacciones = userPermissions.includes('ingresar_transacciones');
+  const canEditarTransacciones = userPermissions.includes('editar_transacciones');
+  const canEliminarTransacciones = userPermissions.includes('eliminar_transacciones');
+  const canVerAccionesOrden = userPermissions.includes('editar_orden') || userPermissions.includes('anular_orden') || userPermissions.includes('editar_estado_orden') || canIngresarTransacciones || canEditarTransacciones || canEliminarTransacciones;
+  const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada' }[e] || (e ? String(e) : '–'));
+  const estadoBadgeClass = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
+  const clientesMap = ordenesPendientesClientesMap;
+  const tiposOpMap = ordenesPendientesTiposOpMap;
+  const intermediariosMap = ordenesPendientesIntermediariosMap;
+  tbody.innerHTML = list.length ? list.map((o) => {
+    const estado = o.estado || '';
+    const badgeClass = estadoBadgeClass(estado);
+    const estadoHtml = badgeClass ? `<span class="${badgeClass}">${estadoLabel(estado)}</span>` : estadoLabel(estado);
+    return `<tr data-id="${o.id}">
+      <td>${(o.fecha || '').toString().slice(0, 10)}</td>
+      <td>${escapeHtml(o.tipo_operacion_id ? tiposOpMap[o.tipo_operacion_id] || '–' : '–')}</td>
+      <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
+      <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
+      <td>${estadoHtml}</td>
+      <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
+      <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
+      <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden-pendiente" data-id="${o.id}" title="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones-pendiente" data-id="${o.id}" title="Transacciones"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>` : ''}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8">No hay órdenes que coincidan con los filtros.</td></tr>';
+  tbody.querySelectorAll('.btn-editar-orden-pendiente').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      const row = ordenesPendientesList.find((r) => r.id === id);
+      if (row && backdrop) { backdrop.classList.remove('activo'); openModalOrden(row); }
+    });
+  });
+  tbody.querySelectorAll('.btn-transacciones-pendiente').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      const orden = ordenesPendientesList.find((r) => r.id === id);
+      if (!orden) return;
+      if (backdrop) backdrop.classList.remove('activo');
+      showView('vista-ordenes', 'Órdenes');
+      loadOrdenes().then(() => { expandOrdenTransacciones(id, orden); });
+    });
+  });
+}
+
+/** Abre el modal de órdenes pendientes (estado ≠ orden_ejecutada). Si se pasa estadoFilter, solo se muestran órdenes de ese estado inicialmente y se preselecciona el filtro Estado. */
 function openModalOrdenesPendientes(estadoFilter) {
   const backdrop = document.getElementById('modal-ordenes-pendientes-backdrop');
   const loadingEl = document.getElementById('ordenes-pendientes-loading');
   const wrapEl = document.getElementById('ordenes-pendientes-tabla-wrap');
+  const filtrosWrap = document.getElementById('ordenes-pendientes-filtros-wrap');
   const tbody = document.getElementById('ordenes-pendientes-tbody');
   if (!backdrop || !loadingEl || !wrapEl || !tbody) return;
   backdrop.classList.add('activo');
   loadingEl.style.display = 'block';
+  if (filtrosWrap) filtrosWrap.style.display = 'none';
   wrapEl.style.display = 'none';
   tbody.innerHTML = '';
-  const canIngresarOrden = userPermissions.includes('ingresar_orden');
-  const canEditarOrden = userPermissions.includes('editar_orden');
-  const canAnularOrden = userPermissions.includes('anular_orden');
-  const canEditarEstadoOrden = userPermissions.includes('editar_estado_orden');
-  const canIngresarTransacciones = userPermissions.includes('ingresar_transacciones');
-  const canEditarTransacciones = userPermissions.includes('editar_transacciones');
-  const canEliminarTransacciones = userPermissions.includes('eliminar_transacciones');
-  const canVerAccionesOrden = canEditarOrden || canAnularOrden || canEditarEstadoOrden || canIngresarTransacciones || canEditarTransacciones || canEliminarTransacciones;
-  let q = client.from('ordenes').select('id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones').neq('estado', 'orden_ejecutada').neq('estado', 'anulada');
-  if (estadoFilter) q = q.eq('estado', estadoFilter);
-  q.order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((res) => {
+  const selEstado = document.getElementById('ordenes-pendientes-filtro-estado');
+  if (selEstado) selEstado.value = estadoFilter || '';
+  client.from('ordenes').select('id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones').neq('estado', 'orden_ejecutada').neq('estado', 'anulada').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((res) => {
       if (res.error) {
         loadingEl.style.display = 'none';
         tbody.innerHTML = '<tr><td colspan="8">Error: ' + (res.error.message || '') + '</td></tr>';
@@ -586,44 +654,26 @@ function openModalOrdenesPendientes(estadoFilter) {
         (tr.data || []).forEach((t) => { tiposOpMap[t.id] = t.nombre || ''; });
         const intermediariosMap = {};
         (ir.data || []).forEach((i) => { intermediariosMap[i.id] = i.nombre || ''; });
-        const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada' }[e] || (e ? String(e) : '–'));
-        const estadoBadgeClass = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
-        tbody.innerHTML = list.map((o) => {
-          const estado = o.estado || '';
-          const badgeClass = estadoBadgeClass(estado);
-          const estadoHtml = badgeClass ? `<span class="${badgeClass}">${estadoLabel(estado)}</span>` : estadoLabel(estado);
-          return `<tr data-id="${o.id}">
-            <td>${(o.fecha || '').toString().slice(0, 10)}</td>
-            <td>${escapeHtml(o.tipo_operacion_id ? tiposOpMap[o.tipo_operacion_id] || '–' : '–')}</td>
-            <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
-            <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
-            <td>${estadoHtml}</td>
-            <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
-            <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
-            <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden-pendiente" data-id="${o.id}" title="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones-pendiente" data-id="${o.id}" title="Transacciones"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>` : ''}</td>
-          </tr>`;
-        }).join('');
-        tbody.querySelectorAll('.btn-editar-orden-pendiente').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-id');
-            const row = list.find((r) => r.id === id);
-            if (row) { backdrop.classList.remove('activo'); openModalOrden(row); }
-          });
-        });
-        tbody.querySelectorAll('.btn-transacciones-pendiente').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-id');
-            const orden = list.find((r) => r.id === id);
-            if (!orden) return;
-            backdrop.classList.remove('activo');
-            showView('vista-ordenes', 'Órdenes');
-            loadOrdenes().then(() => { expandOrdenTransacciones(id, orden); });
-          });
-        });
+        ordenesPendientesList = list;
+        ordenesPendientesClientesMap = clientesMap;
+        ordenesPendientesTiposOpMap = tiposOpMap;
+        ordenesPendientesIntermediariosMap = intermediariosMap;
+        renderOrdenesPendientesFiltros(list, clientesMap, intermediariosMap);
+        if (filtrosWrap) filtrosWrap.style.display = 'flex';
+        renderOrdenesPendientesTabla();
         loadingEl.style.display = 'none';
         wrapEl.style.display = 'block';
       });
     });
+}
+
+function setupOrdenesPendientesFiltrosListeners() {
+  const selCliente = document.getElementById('ordenes-pendientes-filtro-cliente');
+  const selIntermediario = document.getElementById('ordenes-pendientes-filtro-intermediario');
+  const selEstado = document.getElementById('ordenes-pendientes-filtro-estado');
+  if (selCliente) selCliente.addEventListener('change', () => renderOrdenesPendientesTabla());
+  if (selIntermediario) selIntermediario.addEventListener('change', () => renderOrdenesPendientesTabla());
+  if (selEstado) selEstado.addEventListener('change', () => renderOrdenesPendientesTabla());
 }
 
 /** Lista de transacciones pendientes con filtros (cliente, intermediario, solo Pandy). Guarda en ventana para filtrado. */
@@ -795,6 +845,7 @@ function setupPanelControl() {
   if (selCliente) selCliente.addEventListener('change', () => renderTransaccionesPendientesTabla());
   if (selIntermediario) selIntermediario.addEventListener('change', () => renderTransaccionesPendientesTabla());
   if (chkPandy) chkPandy.addEventListener('change', () => renderTransaccionesPendientesTabla());
+  setupOrdenesPendientesFiltrosListeners();
 }
 
 // --- Cuenta corriente ---

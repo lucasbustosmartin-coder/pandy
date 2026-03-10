@@ -31,7 +31,7 @@ alwaysApply: true
 
 ## Despliegue
 
-- Cuando el usuario pida desplegar (ej. "desplegar", "ok desplegar"), aplicar **siempre** el flujo completo en este orden: 1) Incrementar versión en `index.html` (id `sidebar-version`), 2) Actualizar bitácora en `scripts/crear-bitacora-excel.js` (Versiones, Log, Resumen según corresponda), 3) Regenerar Excel (`node scripts/crear-bitacora-excel.js`), 4) Si el cambio es relevante para la propuesta comercial, regenerar PowerPoint (`python3 presentacion/crear_presentacion_pptx.py`) e incluir `presentacion/Propuesta_Pandi.pptx` en el commit, 5) Commit y push a `main` con mensaje `vX.Y: descripción`, 6) `vercel --prod`. Detalle en la regla **bitacora-tareas**.
+- Cuando el usuario pida desplegar (ej. "desplegar", "ok desplegar"), aplicar **siempre** el flujo completo en este orden: 1) Incrementar versión en `index.html` (id `sidebar-version`), 2) Actualizar bitácora en `scripts/crear-bitacora-excel.js` (Versiones, Log, Resumen según corresponda), 3) Regenerar Excel (`node scripts/crear-bitacora-excel.js`), 4) Commit y push a `main` con mensaje `vX.Y: descripción`, 5) `vercel --prod`. Detalle en la regla **bitacora-tareas**. (La PPT no se genera en el flujo de despliegue.)
 
 ## Documentación de referencia
 

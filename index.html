@@ -348,7 +348,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.12</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.13</div>
   </aside>
 
   <main class="main-content">
@@ -1163,6 +1163,20 @@
         <button type="button" class="modal-close" id="modal-ordenes-pendientes-close" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
+        <div class="vista-toolbar" id="ordenes-pendientes-filtros-wrap" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem; display:none;">
+          <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
+            <span>Cliente:</span>
+            <select id="ordenes-pendientes-filtro-cliente" style="min-width:140px;"><option value="">Todos</option></select>
+          </label>
+          <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
+            <span>Intermediario:</span>
+            <select id="ordenes-pendientes-filtro-intermediario" style="min-width:140px;"><option value="">Todos</option></select>
+          </label>
+          <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
+            <span>Estado:</span>
+            <select id="ordenes-pendientes-filtro-estado" style="min-width:180px;"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option></select>
+          </label>
+        </div>
         <div id="ordenes-pendientes-loading" class="clientes-loading">Cargando…</div>
         <div id="ordenes-pendientes-tabla-wrap" style="display:none;">
           <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Órdenes que no están en estado Ejecutada. Podés editar o abrir la instrumentación.</p>
