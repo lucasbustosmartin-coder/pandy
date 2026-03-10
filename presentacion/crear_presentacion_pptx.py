@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Genera la presentación PowerPoint de la propuesta comercial (Propuesta_Pandi.pptx).
-Usa el logo en ../Logos/SP_logo.svg (convertido a PNG para insertar) o SP_logo.png.
+Usa el logo en ../assets/SP_logo.svg (convertido a PNG para insertar) o SP_logo.png.
 La barra de título usa el mismo azul que el logo (#0d2137); el logo se genera/convierte
 con fondo transparente para que luzca bien sobre la barra.
 Ejecutar desde la raíz: python presentacion/crear_presentacion_pptx.py
@@ -24,11 +24,11 @@ except ImportError:
 # Rutas: script puede estar en presentacion/ o invocarse desde raíz
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-LOGOS_DIR = PROJECT_ROOT / "Logos"
-SVG_LOGO = LOGOS_DIR / "SP_logo.svg"
+ASSETS_DIR = PROJECT_ROOT / "assets"
+SVG_LOGO = ASSETS_DIR / "SP_logo.svg"
 LOGO_PNG_CANDIDATES = [
-    LOGOS_DIR / "SP_logo.png",   # PNG con fondo transparente recomendado
-    SCRIPT_DIR / "_logo.png",    # Generado desde SVG o Pillow (con transparencia)
+    ASSETS_DIR / "SP_logo.png",   # PNG con fondo transparente recomendado
+    SCRIPT_DIR / "_logo.png",     # Generado desde SVG o Pillow (con transparencia)
 ]
 OUT_PPTX = SCRIPT_DIR / "Propuesta_Pandi.pptx"
 BITACORA_XLSX = PROJECT_ROOT / "Bitacora_tareas.xlsx"
@@ -112,7 +112,7 @@ def _generar_logo_pillow():
 
 
 def obtener_logo_png():
-    """Devuelve la ruta a un PNG del logo: primero busca PNG en Logos, luego SVG→PNG, luego genera con Pillow."""
+    """Devuelve la ruta a un PNG del logo: primero busca PNG en assets, luego SVG→PNG, luego genera con Pillow."""
     for p in LOGO_PNG_CANDIDATES:
         if p.exists():
             return p

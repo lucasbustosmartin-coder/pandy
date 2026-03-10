@@ -58,6 +58,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Regla de despliegue sin PPT', 'Flujo de despliegue ya no incluye regenerar PowerPoint; commit sin Propuesta_Pandi.pptx. Reglas bitacora-tareas y reglas-pandi actualizadas.', 'Reglas'],
   ['__HOY__', '__AHORA__', 'Tiempo de inactividad', 'Cierre de sesión automático tras X minutos sin actividad. Solo Admin ve y edita el parámetro en Seguridad. Tabla app_config, sql/app_config_session_timeout.sql.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Sidebar colapsado más visible', 'Borde derecho y sombra cuando está colapsado; botón expandir con fondo, borde y flecha más grande; title/aria-label dinámicos (Expandir/Contraer menú).', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Iconos y carpeta assets', 'Tarjetas Efectivo y Banco con iconos cash.png y Banco.webp. Carpeta assets/ con favicons, logos, iconos monedas y cajas; referencias /assets/ en index.html y crear_presentacion_pptx.py; regla estructura-proyecto.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -101,6 +102,7 @@ const funcionalidades = [
   ['Filtros en Órdenes pendientes', 'En el modal Órdenes pendientes (Panel de Control): filtros por Cliente, Intermediario y Estado; misma vista-toolbar y estilos que Transacciones pendientes; filtrado en memoria y re-render al cambiar.'],
   ['Tiempo de inactividad', 'En Seguridad (solo Admin): parámetro en minutos. Tras X minutos sin actividad (clic, teclado, scroll) se cierra la sesión automáticamente. Tabla app_config; script sql/app_config_session_timeout.sql.'],
   ['Sidebar colapsable', 'Menú lateral colapsable. Cuando está colapsado: borde derecho y sombra; botón con fondo, borde y flecha grande para expandir; al expandir, botón con flecha para contraer. Aria-label y title dinámicos.'],
+  ['Carpeta assets', 'Logos e iconos en assets/: favicon, logo app, Icono_Dolar/ARS/Euro, cash.png, Banco.webp, SP_logo.svg. En la app se usan como /assets/nombre.ext. Script PPT usa assets/SP_logo.svg.'],
 ];
 
 const wsResumen = XLSX.utils.aoa_to_sheet(funcionalidades);
@@ -138,6 +140,7 @@ const versiones = [
   ['1.13', '__HOY__', 'Filtros en modal Órdenes pendientes: Cliente, Intermediario y Estado. Regla de despliegue sin generación de PPT.'],
   ['1.14', '__HOY__', 'Tiempo de inactividad: cierre de sesión automático tras X minutos sin actividad (clic, teclado, scroll). Solo Admin configura en Seguridad. Tabla app_config (sql/app_config_session_timeout.sql).'],
   ['1.15', '__HOY__', 'Sidebar colapsado más visible: borde derecho, botón con fondo y flecha grande para expandir/contraer; aria-label y title dinámicos.'],
+  ['1.16', '__HOY__', 'Iconos cash/Banco en tarjetas Efectivo y Banco. Reorganización: carpeta assets/ con todos los logos e iconos; rutas /assets/ en app y script PPT; regla estructura-proyecto actualizada.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
