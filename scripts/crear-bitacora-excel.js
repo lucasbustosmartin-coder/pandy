@@ -92,6 +92,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Botón Cargar por chat: estilo y Panel de Control', 'Botón con clase btn-chat (mismo estilo que Nueva orden, color azul #0c6ea8). Cargar por chat también en Panel de Control (Accesos rápidos), visible solo con permiso ingresar_orden.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Chat orden: auto-generar transacciones al confirmar', 'Al confirmar desde el chat se llama a autoCompletarInstrumentacionSinIntermediario tras crear la instrumentación, para generar las dos transacciones (ingreso/egreso) según tipo de operación.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Modal chat: icono en título, Enviar a la derecha del input', 'Título del modal con icono de chat; botón Enviar con mismo estilo que el resto (btn-primary); input y Enviar en la misma fila (Enviar a la derecha).', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Filtros vista Órdenes y estilo combos', 'Vista Órdenes: filtros Cliente, Intermediario y Estado. Clase select-filtro para combos de filtros (puntas redondeadas, estilo moderno). Quitar Cotización y Concertada del filtro Estado.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -189,6 +190,7 @@ const versiones = [
   ['1.25', '__HOY__', 'Ayudas (help): los íconos de ayuda ahora abren un modal de Help (en lugar de popover) para mostrar textos largos de forma legible. Regla actualizada para el patrón modal.'],
   ['1.26', '__HOY__', 'Cargar orden por chat: botón azul (btn-chat) en Órdenes y Panel de Control; tipo de cambio y cálculo del otro monto; al confirmar se crean orden, instrumentación y transacciones automáticas; desde Panel redirige a Órdenes al finalizar.'],
   ['1.27', '__HOY__', 'Modal Cargar por chat: icono en el título, botón Enviar con estilo unificado y a la derecha del campo de texto.'],
+  ['1.28', '__HOY__', 'Vista Órdenes: filtros Cliente, Intermediario y Estado. Combos de filtros con estilo moderno (select-filtro, puntas redondeadas). Quitar Cotización y Concertada del filtro Estado.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

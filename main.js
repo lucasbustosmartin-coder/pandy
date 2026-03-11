@@ -2040,26 +2040,127 @@ function setupModalTipoMovimientoCaja() {
 }
 
 // --- Órdenes ---
+let ordenesVistaList = [];
+let ordenesVistaClientesMap = {};
+let ordenesVistaTiposOpMap = {};
+let ordenesVistaIntermediariosMap = {};
+let ordenesFiltrosListenersAttached = false;
+
+function renderOrdenesTabla(list) {
+  const tbody = document.getElementById('ordenes-tbody');
+  const wrapEl = document.getElementById('ordenes-tabla-wrap');
+  if (!tbody || !wrapEl) return;
+  const canEditarOrden = userPermissions.includes('editar_orden');
+  const canAnularOrden = userPermissions.includes('anular_orden');
+  const canIngresarTransacciones = userPermissions.includes('ingresar_transacciones');
+  const canEditarTransacciones = userPermissions.includes('editar_transacciones');
+  const canEliminarTransacciones = userPermissions.includes('eliminar_transacciones');
+  const canVerAccionesOrden = canEditarOrden || canAnularOrden || userPermissions.includes('editar_estado_orden') || canIngresarTransacciones || canEditarTransacciones || canEliminarTransacciones;
+  const clientesMap = ordenesVistaClientesMap;
+  const tiposOpMap = ordenesVistaTiposOpMap;
+  const intermediariosMap = ordenesVistaIntermediariosMap;
+  const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada', cotizacion: 'Cotización', concertada: 'Concertada' }[e] || (e ? String(e) : '–'));
+  const estadoBadgeClass = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada', 'cotizacion', 'concertada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8">No hay órdenes con los filtros aplicados.</td></tr>';
+    wrapEl.style.display = 'block';
+    return;
+  }
+  tbody.innerHTML = list
+    .map(
+      (o) => {
+        const estado = o.estado || '';
+        const badgeClass = estadoBadgeClass(estado);
+        const estadoHtml = badgeClass ? `<span class="${badgeClass}">${estadoLabel(estado)}</span>` : estadoLabel(estado);
+        return `<tr data-id="${o.id}">
+          <td>${(o.fecha || '').toString().slice(0, 10)}</td>
+          <td>${escapeHtml(o.tipo_operacion_id ? tiposOpMap[o.tipo_operacion_id] || '–' : '–')}</td>
+          <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
+          <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
+          <td>${estadoHtml}</td>
+          <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
+          <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
+          <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${canAnularOrden && o.estado !== 'anulada' && o.estado !== 'orden_ejecutada' ? ` <button type="button" class="btn-secondary btn-anular-orden-tabla btn-icon-only" data-id="${o.id}" title="Anular orden" aria-label="Anular orden" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>` : ''}` : ''}</td>
+        </tr>
+        <tr class="orden-detalle-tr" id="orden-detalle-${o.id}" data-orden-id="${o.id}" style="display:none;">
+          <td colspan="8" class="orden-detalle-cell">
+            <div class="orden-detalle-panel" id="panel-orden-${o.id}" data-orden-id="${o.id}">
+              <div class="orden-detalle-encabezado"></div>
+              <div class="orden-detalle-loading" style="display:none;">Cargando transacciones…</div>
+              <div class="orden-detalle-content" style="display:none;">
+                <div class="orden-detalle-totales" style="margin-bottom:0.75rem; font-size:0.9rem; color:#555;"></div>
+                <div class="vista-toolbar" style="margin-bottom:0.75rem;">
+                  <button type="button" class="btn-nuevo btn-nueva-transaccion-panel" data-orden-id="${o.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
+                </div>
+                <table class="tabla-transacciones-panel"><thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Cobrador</th><th>Pagador</th><th>Estado</th><th></th></tr></thead><tbody class="orden-detalle-tbody"></tbody></table>
+              </div>
+            </div>
+          </td>
+        </tr>`;
+      }
+    )
+    .join('');
+  tbody.querySelectorAll('.btn-editar-orden').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      const row = list.find((r) => r.id === id);
+      if (row) openModalOrden(row);
+    });
+  });
+  tbody.querySelectorAll('.btn-transacciones').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      if (id) expandOrdenTransacciones(id, list.find((r) => r.id === id));
+    });
+  });
+  tbody.querySelectorAll('.btn-anular-orden-tabla').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      if (id) {
+        showConfirm('¿Anular esta orden? El estado pasará a Anulada.', 'Anular', () => {
+          client.from('ordenes').update({ estado: 'anulada', updated_at: new Date().toISOString() }).eq('id', id).then((r) => {
+            if (r.error) showToast('Error: ' + (r.error?.message || ''), 'error');
+            else { showToast('Orden anulada.', 'success'); loadOrdenes(); }
+          });
+        });
+      }
+    });
+  });
+  wrapEl.style.display = 'block';
+}
+
+function aplicarFiltrosOrdenesVista() {
+  const selCliente = document.getElementById('ordenes-filtro-cliente');
+  const selIntermediario = document.getElementById('ordenes-filtro-intermediario');
+  const selEstado = document.getElementById('ordenes-filtro-estado');
+  const clienteId = selCliente && selCliente.value ? selCliente.value.trim() : '';
+  const intermediarioId = selIntermediario && selIntermediario.value ? selIntermediario.value.trim() : '';
+  const estado = selEstado && selEstado.value ? selEstado.value.trim() : '';
+  const filtered = ordenesVistaList.filter((o) => {
+    if (clienteId && o.cliente_id !== clienteId) return false;
+    if (intermediarioId && o.intermediario_id !== intermediarioId) return false;
+    if (estado && (o.estado || '') !== estado) return false;
+    return true;
+  });
+  renderOrdenesTabla(filtered);
+}
+
 function loadOrdenes() {
   const loadingEl = document.getElementById('ordenes-loading');
   const wrapEl = document.getElementById('ordenes-tabla-wrap');
   const tbody = document.getElementById('ordenes-tbody');
   const btnNuevo = document.getElementById('btn-nueva-orden');
+  const filtrosWrap = document.getElementById('ordenes-filtros-wrap');
   if (!loadingEl || !wrapEl || !tbody) return Promise.resolve();
 
   const canIngresarOrden = userPermissions.includes('ingresar_orden');
   const canEditarOrden = userPermissions.includes('editar_orden');
-  const canAnularOrden = userPermissions.includes('anular_orden');
-  const canEditarEstadoOrden = userPermissions.includes('editar_estado_orden');
-  const canIngresarTransacciones = userPermissions.includes('ingresar_transacciones');
-  const canEditarTransacciones = userPermissions.includes('editar_transacciones');
-  const canEliminarTransacciones = userPermissions.includes('eliminar_transacciones');
-  const canVerAccionesOrden = canEditarOrden || canAnularOrden || canEditarEstadoOrden || canIngresarTransacciones || canEditarTransacciones || canEliminarTransacciones;
   if (btnNuevo) btnNuevo.style.display = canIngresarOrden ? '' : 'none';
   const btnOrdenPorChat = document.getElementById('btn-orden-por-chat');
   if (btnOrdenPorChat) btnOrdenPorChat.style.display = canIngresarOrden ? '' : 'none';
 
   loadingEl.style.display = 'block';
+  if (filtrosWrap) filtrosWrap.style.display = 'none';
   wrapEl.style.display = 'none';
   tbody.innerHTML = '';
 
@@ -2076,90 +2177,45 @@ function loadOrdenes() {
         return Promise.resolve();
       }
       const list = res.data || [];
-      if (list.length === 0) {
-        loadingEl.style.display = 'none';
-        tbody.innerHTML = '<tr><td colspan="8">No hay órdenes.</td></tr>';
-        wrapEl.style.display = 'block';
-        return Promise.resolve();
-      }
       const clienteIds = [...new Set(list.map((o) => o.cliente_id).filter(Boolean))];
       const tipoOpIds = [...new Set(list.map((o) => o.tipo_operacion_id).filter(Boolean))];
       const intIds = [...new Set(list.map((o) => o.intermediario_id).filter(Boolean))];
       return Promise.all([
-        clienteIds.length ? client.from('clientes').select('id, nombre').in('id', clienteIds) : Promise.resolve({ data: [] }),
+        client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
         tipoOpIds.length ? client.from('tipos_operacion').select('id, nombre').in('id', tipoOpIds) : Promise.resolve({ data: [] }),
-        intIds.length ? client.from('intermediarios').select('id, nombre').in('id', intIds) : Promise.resolve({ data: [] }),
-      ]).then(([cr, tr, ir]) => {
+        client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
+      ]).then(([crClientes, tr, crInt]) => {
         const clientesMap = {};
-        (cr.data || []).forEach((c) => { clientesMap[c.id] = c.nombre || ''; });
+        (crClientes.data || []).forEach((c) => { clientesMap[c.id] = c.nombre || ''; });
         const tiposOpMap = {};
         (tr.data || []).forEach((t) => { tiposOpMap[t.id] = t.nombre || ''; });
         const intermediariosMap = {};
-        (ir.data || []).forEach((i) => { intermediariosMap[i.id] = i.nombre || ''; });
-        const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada', cotizacion: 'Cotización', concertada: 'Concertada' }[e] || (e ? String(e) : '–'));
-        const estadoBadgeClass = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada', 'cotizacion', 'concertada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
-        tbody.innerHTML = list
-          .map(
-            (o) => {
-              const estado = o.estado || '';
-              const badgeClass = estadoBadgeClass(estado);
-              const estadoHtml = badgeClass ? `<span class="${badgeClass}">${estadoLabel(estado)}</span>` : estadoLabel(estado);
-              return `<tr data-id="${o.id}">
-                <td>${(o.fecha || '').toString().slice(0, 10)}</td>
-                <td>${escapeHtml(o.tipo_operacion_id ? tiposOpMap[o.tipo_operacion_id] || '–' : '–')}</td>
-                <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
-                <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
-                <td>${estadoHtml}</td>
-                <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
-                <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
-                <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${canAnularOrden && o.estado !== 'anulada' && o.estado !== 'orden_ejecutada' ? ` <button type="button" class="btn-secondary btn-anular-orden-tabla btn-icon-only" data-id="${o.id}" title="Anular orden" aria-label="Anular orden" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>` : ''}` : ''}</td>
-              </tr>
-              <tr class="orden-detalle-tr" id="orden-detalle-${o.id}" data-orden-id="${o.id}" style="display:none;">
-                <td colspan="8" class="orden-detalle-cell">
-                  <div class="orden-detalle-panel" id="panel-orden-${o.id}" data-orden-id="${o.id}">
-                    <div class="orden-detalle-encabezado"></div>
-                    <div class="orden-detalle-loading" style="display:none;">Cargando transacciones…</div>
-                    <div class="orden-detalle-content" style="display:none;">
-                      <div class="orden-detalle-totales" style="margin-bottom:0.75rem; font-size:0.9rem; color:#555;"></div>
-                      <div class="vista-toolbar" style="margin-bottom:0.75rem;">
-                        <button type="button" class="btn-nuevo btn-nueva-transaccion-panel" data-orden-id="${o.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
-                      </div>
-                      <table class="tabla-transacciones-panel"><thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Cobrador</th><th>Pagador</th><th>Estado</th><th></th></tr></thead><tbody class="orden-detalle-tbody"></tbody></table>
-                    </div>
-                  </div>
-                </td>
-              </tr>`;
-            }
-          )
-          .join('');
-        tbody.querySelectorAll('.btn-editar-orden').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-id');
-            const row = list.find((r) => r.id === id);
-            if (row) openModalOrden(row);
-          });
-        });
-        tbody.querySelectorAll('.btn-transacciones').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-id');
-            if (id) expandOrdenTransacciones(id, list.find((r) => r.id === id));
-          });
-        });
-        tbody.querySelectorAll('.btn-anular-orden-tabla').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-id');
-            if (id) {
-              showConfirm('¿Anular esta orden? El estado pasará a Anulada.', 'Anular', () => {
-                client.from('ordenes').update({ estado: 'anulada', updated_at: new Date().toISOString() }).eq('id', id).then((r) => {
-                  if (r.error) showToast('Error: ' + (r.error?.message || ''), 'error');
-                  else { showToast('Orden anulada.', 'success'); loadOrdenes(); }
-                });
-              });
-            }
-          });
-        });
+        (crInt.data || []).forEach((i) => { intermediariosMap[i.id] = i.nombre || ''; });
+        ordenesVistaList = list;
+        ordenesVistaClientesMap = clientesMap;
+        ordenesVistaTiposOpMap = tiposOpMap;
+        ordenesVistaIntermediariosMap = intermediariosMap;
+
+        const selCliente = document.getElementById('ordenes-filtro-cliente');
+        const selIntermediario = document.getElementById('ordenes-filtro-intermediario');
+        if (selCliente) {
+          selCliente.innerHTML = '<option value="">Todos</option>' + (crClientes.data || []).map((c) => `<option value="${c.id}">${escapeHtml(c.nombre || '')}</option>`).join('');
+        }
+        if (selIntermediario) {
+          selIntermediario.innerHTML = '<option value="">Todos</option>' + (crInt.data || []).map((i) => `<option value="${i.id}">${escapeHtml(i.nombre || '')}</option>`).join('');
+        }
+        if (filtrosWrap) filtrosWrap.style.display = 'flex';
         loadingEl.style.display = 'none';
-        wrapEl.style.display = 'block';
+        if (!ordenesFiltrosListenersAttached) {
+          const selC = document.getElementById('ordenes-filtro-cliente');
+          const selI = document.getElementById('ordenes-filtro-intermediario');
+          const selE = document.getElementById('ordenes-filtro-estado');
+          if (selC) selC.addEventListener('change', aplicarFiltrosOrdenesVista);
+          if (selI) selI.addEventListener('change', aplicarFiltrosOrdenesVista);
+          if (selE) selE.addEventListener('change', aplicarFiltrosOrdenesVista);
+          ordenesFiltrosListenersAttached = true;
+        }
+        aplicarFiltrosOrdenesVista();
       });
     });
 }

@@ -175,6 +175,10 @@
     .help-popover.help-popover-visible { display: block; }
     .help-inline-block { display: flex; align-items: flex-start; gap: 0.25rem; margin-top: 0.25rem; }
     .help-inline-block .help-popover { left: 0; top: 100%; }
+    .ordenes-filtro-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.9rem; }
+    .select-filtro { padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; font-size: 0.9rem; font-family: inherit; color: #374151; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 2rem; min-height: 38px; }
+    .select-filtro:hover { border-color: #9ca3af; }
+    .select-filtro:focus { outline: none; border-color: #0d7d3d; box-shadow: 0 0 0 2px rgba(13,125,61,0.2); }
     .inicio-accesos { margin-top: 1.5rem; }
     .link-inicio { text-decoration: none; color: inherit; }
     .modal.modal-ancho { max-width: 920px; width: 95%; }
@@ -430,7 +434,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.27</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.28</div>
   </aside>
 
   <main class="main-content">
@@ -584,6 +588,11 @@
         <div class="vista-toolbar">
           <button type="button" id="btn-nueva-orden" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva orden</button>
           <button type="button" id="btn-orden-por-chat" class="btn-chat" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>Cargar por chat</button>
+        </div>
+        <div class="vista-toolbar ordenes-filtros-wrap" id="ordenes-filtros-wrap" style="flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem; display:none;">
+          <label class="ordenes-filtro-label"><span>Cliente:</span><select id="ordenes-filtro-cliente" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select></label>
+          <label class="ordenes-filtro-label"><span>Intermediario:</span><select id="ordenes-filtro-intermediario" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select></label>
+          <label class="ordenes-filtro-label"><span>Estado:</span><select id="ordenes-filtro-estado" class="select-filtro" style="min-width:180px;"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option><option value="orden_ejecutada">Orden Ejecutada</option><option value="anulada">Anulada</option></select></label>
         </div>
         <div id="ordenes-loading" class="clientes-loading">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
@@ -1319,15 +1328,15 @@
         <div class="vista-toolbar" id="ordenes-pendientes-filtros-wrap" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem; display:none;">
           <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
             <span>Cliente:</span>
-            <select id="ordenes-pendientes-filtro-cliente" style="min-width:140px;"><option value="">Todos</option></select>
+            <select id="ordenes-pendientes-filtro-cliente" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select>
           </label>
           <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
             <span>Intermediario:</span>
-            <select id="ordenes-pendientes-filtro-intermediario" style="min-width:140px;"><option value="">Todos</option></select>
+            <select id="ordenes-pendientes-filtro-intermediario" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select>
           </label>
           <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
             <span>Estado:</span>
-            <select id="ordenes-pendientes-filtro-estado" style="min-width:180px;"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option></select>
+            <select id="ordenes-pendientes-filtro-estado" class="select-filtro" style="min-width:180px;"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option></select>
           </label>
         </div>
         <div id="ordenes-pendientes-loading" class="clientes-loading">Cargando…</div>
@@ -1357,11 +1366,11 @@
         <div class="vista-toolbar" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
           <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
             <span>Cliente:</span>
-            <select id="transacciones-pendientes-filtro-cliente" style="min-width:140px;"><option value="">Todos</option></select>
+            <select id="transacciones-pendientes-filtro-cliente" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select>
           </label>
           <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
             <span>Intermediario:</span>
-            <select id="transacciones-pendientes-filtro-intermediario" style="min-width:140px;"><option value="">Todos</option></select>
+            <select id="transacciones-pendientes-filtro-intermediario" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select>
           </label>
           <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem; cursor:pointer;">
             <input type="checkbox" id="transacciones-pendientes-filtro-pandy" />
