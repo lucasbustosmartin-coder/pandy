@@ -66,6 +66,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'v1.17: Cuenta corriente y modales', 'CC: encabezado por moneda (iconos Panel), Positivo/Negativo, filtro Cliente/Intermediario, solo con saldo; columna Acción; icono Ver detalle limpio. Modales: máximo ancho/alto (95vw, 92vh), arrastrables por header; regla Modales en reglas-pandi.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'v1.18: Intermediario en órdenes y transacciones', 'Revisión: guardado y visualización de intermediario en órdenes y modales Órdenes pendientes / Transacciones pendientes correctos. Consistencia: intermediario_id incluido en todos los selects de orden (refresco detalle, validación totales, actualizar estado).', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'v1.19: Wizard instrumentación', 'Corrección: al guardar la primera transacción desde el paso de instrumentación del alta de orden, el paso dejaba de mostrar la tabla y quedaba en "Cargando…". Definición de canEditarTr en renderWizardList para evitar ReferenceError; se puede seguir agregando transacciones en el mismo paso.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'v1.20: Cuenta corriente y Caja', 'CC refleja todos los movimientos en cualquier estado (pendiente y ejecutada). Caja/Bancos solo cuando transacción ejecutada. Auto-completar instrumentación genera movimientos CC para cada transacción creada; helper insertarMovimientosCcParaTransaccion. Doc docs/CUENTA_CORRIENTE_Y_CAJA.md.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -154,6 +155,7 @@ const versiones = [
   ['1.17', '__HOY__', 'Cuenta corriente: tabla por moneda (USD/EUR/ARS) con iconos del Panel, Positivo/Negativo, filtro Cliente/Intermediario, solo entidades con saldo; columna Acción; modales ampliados al máximo y arrastrables por el header; icono Ver detalle sin contorno/relleno; regla Modales en .cursor/rules.'],
   ['1.18', '__HOY__', 'Intermediario: revisión guardado y visualización en órdenes y modales pendientes; intermediario_id en todos los selects de orden para consistencia (refresco detalle, validación totales, actualizar estado).'],
   ['1.19', '__HOY__', 'Wizard nueva orden: corrección paso instrumentación; al guardar la primera transacción se puede seguir agregando en el mismo paso (fix canEditarTr en renderWizardList).'],
+  ['1.20', '__HOY__', 'Cuenta corriente: todos los movimientos en cualquier estado; Caja solo ejecutada. Auto-complete instrumentación genera CC; doc CUENTA_CORRIENTE_Y_CAJA.md.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

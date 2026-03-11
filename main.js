@@ -3091,11 +3091,57 @@ function actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, orden) {
 }
 
 /**
+ * Inserta movimientos en cuenta corriente (cliente e intermediario) para una transacción.
+ * Regla: la cuenta corriente refleja TODAS las transacciones en cualquier estado (pendiente y ejecutada).
+ * orden: { cliente_id, intermediario_id }; t: { cobrador, pagador, moneda, monto }; estadoTransaccion: 'pendiente' | 'ejecutada'.
+ */
+function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTransaccion) {
+  if (!transaccionId || !currentUserId) return Promise.resolve();
+  const concepto = estadoTransaccion === 'ejecutada' ? 'Transacción ejecutada' : 'Transacción pendiente';
+  const fecha = new Date().toISOString().slice(0, 10);
+  const ahora = new Date().toISOString();
+  const monto = Number(t.monto) || 0;
+  const cob = t.cobrador;
+  const pag = t.pagador;
+  const clienteId = orden.cliente_id || null;
+  const intermediarioId = orden.intermediario_id || null;
+  const inserts = [];
+  if (cob === 'cliente' && clienteId) {
+    inserts.push(client.from('movimientos_cuenta_corriente').insert({
+      cliente_id: clienteId, moneda: t.moneda, monto: -monto, transaccion_id: transaccionId,
+      concepto, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+    }));
+  }
+  if (pag === 'cliente' && clienteId) {
+    inserts.push(client.from('movimientos_cuenta_corriente').insert({
+      cliente_id: clienteId, moneda: t.moneda, monto, transaccion_id: transaccionId,
+      concepto, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+    }));
+  }
+  const esPandyInt = (cob === 'pandy' && pag === 'intermediario') || (cob === 'intermediario' && pag === 'pandy');
+  if (esPandyInt && cob === 'intermediario' && intermediarioId) {
+    inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
+      intermediario_id: intermediarioId, moneda: t.moneda, monto: -monto, transaccion_id: transaccionId,
+      concepto, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+    }));
+  }
+  if (esPandyInt && pag === 'intermediario' && intermediarioId) {
+    inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
+      intermediario_id: intermediarioId, moneda: t.moneda, monto: -monto, transaccion_id: transaccionId,
+      concepto, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+    }));
+  }
+  if (inserts.length === 0) return Promise.resolve();
+  return Promise.all(inserts);
+}
+
+/**
  * Operación CHEQUE (ARS-ARS) con intermediario: crea 4 transacciones por defecto.
  * 1) Ingreso cheques 10M ARS – paga cliente, cobra Pandy
  * 2) Egreso efectivo 9,8M ARS – paga Pandy, cobra cliente
  * 3) Egreso cheques 10M ARS – paga Pandy, cobra intermediario
  * 4) Ingreso efectivo 10M*(1-tasa) ARS – paga intermediario, cobra Pandy
+ * Cuenta corriente: se impacta para cada transacción (pendiente) para reflejar todos los movimientos.
  */
 function autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumentacionId, orden) {
   if (!ordenId || !instrumentacionId || !orden || !orden.intermediario_id || !orden.tipo_operacion_id) return Promise.resolve();
@@ -3116,7 +3162,15 @@ function autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumenta
       { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoChequeId, moneda: 'ARS', monto: mr, cobrador: 'intermediario', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora },
       { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoEfectivoId, moneda: 'ARS', monto: montoEfectivoInt, cobrador: 'pandy', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora },
     ];
-    return Promise.all(rows.map((row) => client.from('transacciones').insert(row))).then(() => actualizarEstadoOrden(ordenId));
+    return Promise.all(rows.map((row) => client.from('transacciones').insert(row).select('id').single())).then((results) => {
+      const promesasCc = results.map((r, idx) => {
+        const data = r.data;
+        const row = rows[idx];
+        if (!data || !data.id || !row) return Promise.resolve();
+        return insertarMovimientosCcParaTransaccion(data.id, orden, row, 'pendiente');
+      });
+      return Promise.all(promesasCc).then(() => actualizarEstadoOrden(ordenId));
+    });
   });
 }
 
@@ -3157,7 +3211,15 @@ function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: 'ARS', monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: 'ARS', monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
       }
-      return Promise.all(rows.map((row) => client.from('transacciones').insert(row))).then(() => actualizarEstadoOrden(ordenId));
+      return Promise.all(rows.map((row) => client.from('transacciones').insert(row).select('id').single())).then((results) => {
+        const promesasCc = results.map((r, idx) => {
+          const data = r.data;
+          const row = rows[idx];
+          if (!data || !data.id || !row) return Promise.resolve();
+          return insertarMovimientosCcParaTransaccion(data.id, orden, row, 'pendiente');
+        });
+        return Promise.all(promesasCc).then(() => actualizarEstadoOrden(ordenId));
+      });
     });
   });
 }
