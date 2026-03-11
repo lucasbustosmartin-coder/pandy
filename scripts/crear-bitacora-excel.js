@@ -64,6 +64,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Tipos de operación: moneda_in/moneda_out y ABM', 'tipos_operacion con columnas moneda_in y moneda_out; backfill desde código. Permiso abm_tipos_operacion; RLS INSERT/UPDATE/DELETE. Vista Tipos de operación en menú (solo con permiso); listado y modal Nuevo/Editar (código, nombre, moneda IN, moneda OUT, activo). adaptarFormularioOrden usa monedas del tipo.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Cuenta corriente: vista Todos y modal detalle', 'Vista Cuenta corriente con filtro fijo Todos: una sola tabla con Nombre (cliente/intermediario), Saldo a favor y Saldo negativo por moneda (USD, EUR, ARS) con iconos de moneda en encabezados; botón Ver detalle por fila. Modal Detalle: datos del cliente/intermediario, saldos por moneda (cards) y tabla de movimientos (Debe/Haber); Editar movimiento solo para clientes.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'v1.17: Cuenta corriente y modales', 'CC: encabezado por moneda (iconos Panel), Positivo/Negativo, filtro Cliente/Intermediario, solo con saldo; columna Acción; icono Ver detalle limpio. Modales: máximo ancho/alto (95vw, 92vh), arrastrables por header; regla Modales en reglas-pandi.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'v1.18: Intermediario en órdenes y transacciones', 'Revisión: guardado y visualización de intermediario en órdenes y modales Órdenes pendientes / Transacciones pendientes correctos. Consistencia: intermediario_id incluido en todos los selects de orden (refresco detalle, validación totales, actualizar estado).', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -150,6 +151,7 @@ const versiones = [
   ['1.15', '__HOY__', 'Sidebar colapsado más visible: borde derecho, botón con fondo y flecha grande para expandir/contraer; aria-label y title dinámicos.'],
   ['1.16', '__HOY__', 'Iconos cash/Banco en tarjetas Efectivo y Banco. Reorganización: carpeta assets/ con todos los logos e iconos; rutas /assets/ en app y script PPT; regla estructura-proyecto actualizada.'],
   ['1.17', '__HOY__', 'Cuenta corriente: tabla por moneda (USD/EUR/ARS) con iconos del Panel, Positivo/Negativo, filtro Cliente/Intermediario, solo entidades con saldo; columna Acción; modales ampliados al máximo y arrastrables por el header; icono Ver detalle sin contorno/relleno; regla Modales en .cursor/rules.'],
+  ['1.18', '__HOY__', 'Intermediario: revisión guardado y visualización en órdenes y modales pendientes; intermediario_id en todos los selects de orden para consistencia (refresco detalle, validación totales, actualizar estado).'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

@@ -3325,7 +3325,7 @@ function refreshTransaccionesPanel(ordenId) {
   tbody.innerHTML = '';
   Promise.all([
     client.from('transacciones').select('id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true }),
-    client.from('ordenes').select('id, cliente_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, estado').eq('id', ordenId).single(),
+    client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, estado').eq('id', ordenId).single(),
   ]).then(([resTr, resOrd]) => {
     const orden = resOrd?.data || null;
     if (resTr.error) {
@@ -3796,7 +3796,7 @@ function saveTransaccion() {
       showToast('No se encontró la orden de esta instrumentación.', 'error');
       return;
     }
-    client.from('ordenes').select('id, cliente_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').eq('id', ordenId).single().then((rOrd) => {
+    client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').eq('id', ordenId).single().then((rOrd) => {
       const orden = rOrd.data;
       if (!orden) {
         showToast('No se encontró la orden.', 'error');
@@ -4409,7 +4409,7 @@ function actualizarEstadoOrden(ordenId) {
   return client.from('instrumentacion').select('id').eq('orden_id', ordenId).maybeSingle().then((r) => {
     const instId = r.data && r.data.id;
     if (!instId) return;
-    return client.from('ordenes').select('id, cliente_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').eq('id', ordenId).single().then((rOrd) => {
+    return client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').eq('id', ordenId).single().then((rOrd) => {
       const orden = rOrd.data;
       if (!orden) return;
       return client.from('transacciones').select('id, tipo, moneda, monto, estado, tipo_cambio, cobrador, pagador').eq('instrumentacion_id', instId).then((res) => {
