@@ -157,6 +157,41 @@ function showView(vistaId, pageTitle) {
   if (vistaId === 'vista-tipos-operacion') loadTiposOperacion();
 }
 
+/** Mensaje al desactivar un permiso (para mostrar contexto al administrador). Solo permisos con mensaje específico. */
+const MENSAJE_AL_DESACTIVAR_PERMISO = {
+  ver_cajas: 'Los usuarios con este rol no podrán acceder a la vista Cajas.',
+  ver_cajas_efectivo: 'Los usuarios no verán la tarjeta Efectivo en Cajas. Si tienen Operar, igual podrán registrar movimientos en efectivo desde órdenes o transacciones.',
+  ver_cajas_banco: 'Los usuarios no verán la tarjeta Banco en Cajas. Si tienen Operar, igual podrán registrar movimientos en banco desde órdenes o transacciones.',
+  abm_movimientos_caja: 'Los usuarios podrán ver los saldos (según Ver Efectivo/Banco) pero no crear ni editar movimientos en Cajas.',
+  abm_tipos_movimiento_caja: 'Los usuarios no podrán crear ni editar tipos de movimiento de caja.',
+};
+
+/** Devuelve el permiso "padre" (acceso a la vista) y los "hijos" del menú que contiene este permiso. Si permission es el padre, hijos = resto Ver + Operar. */
+function getMenuParentAndChildren(permission) {
+  for (let i = 0; i < PERMISOS_POR_MENU.length; i++) {
+    const menu = PERMISOS_POR_MENU[i];
+    const inVer = (menu.ver || []).includes(permission);
+    const inOperar = (menu.operar || []).includes(permission);
+    if (!inVer && !inOperar) continue;
+    const parentVer = menu.ver && menu.ver[0] ? menu.ver[0] : null;
+    const children = [...(menu.ver || []).slice(1), ...(menu.operar || [])].filter((p) => p !== permission);
+    return { parentVer, children };
+  }
+  return null;
+}
+
+/** Permisos agrupados por opción de menú. Ver = acceso a la vista e información; Operar = crear/editar/anular. */
+const PERMISOS_POR_MENU = [
+  { id: 'inicio', titulo: 'Panel de Control', ver: ['ver_inicio', 'ver_inicio_efectivo', 'ver_inicio_banco', 'ver_inicio_pendientes'], operar: [] },
+  { id: 'ordenes', titulo: 'Órdenes', ver: ['ver_ordenes'], operar: ['ingresar_orden', 'editar_orden', 'anular_orden', 'editar_estado_orden', 'ingresar_transacciones', 'editar_transacciones', 'eliminar_transacciones'] },
+  { id: 'cajas', titulo: 'Cajas', ver: ['ver_cajas', 'ver_cajas_efectivo', 'ver_cajas_banco'], verSubPerms: ['ver_cajas_efectivo', 'ver_cajas_banco'], operar: ['abm_movimientos_caja', 'abm_tipos_movimiento_caja'] },
+  { id: 'clientes', titulo: 'Clientes', ver: ['ver_clientes'], operar: ['abm_clientes'] },
+  { id: 'intermediarios', titulo: 'Intermediarios', ver: ['ver_intermediarios'], operar: ['abm_intermediarios'] },
+  { id: 'tipos-operacion', titulo: 'Tipos de operación', ver: [], operar: ['abm_tipos_operacion'] },
+  { id: 'cuenta-corriente', titulo: 'Cuenta corriente', ver: ['ver_cuenta_corriente'], operar: [] },
+  { id: 'seguridad', titulo: 'Seguridad', ver: ['ver_seguridad'], operar: ['assign_roles'] },
+];
+
 function loadSeguridad() {
   const loadingEl = document.getElementById('seguridad-loading');
   const wrapEl = document.getElementById('seguridad-tabla-wrap');
@@ -183,22 +218,7 @@ function loadSeguridad() {
     client.rpc('get_users_for_admin'),
     client.rpc('get_my_role'),
     client.from('app_role').select('role, label').order('role'),
-    client.from('app_permission').select('permission, description').order('permission').then((r) => {
-      const perms = r.data || [];
-      const ordenVistas = ['ver_inicio', 'ver_inicio_efectivo', 'ver_inicio_banco', 'ver_inicio_pendientes', 'ver_ordenes', 'ver_cajas', 'ver_clientes', 'ver_intermediarios', 'ver_cuenta_corriente', 'ver_seguridad'];
-      const ordenABM = ['assign_roles', 'abm_clientes', 'abm_movimientos_caja', 'abm_tipos_movimiento_caja', 'abm_tipos_operacion', 'ingresar_orden', 'editar_orden', 'anular_orden', 'editar_estado_orden', 'ingresar_transacciones', 'editar_transacciones', 'eliminar_transacciones'];
-      const sortByOrder = (list, order) => [...list].sort((a, b) => {
-        const ia = order.indexOf(a.permission);
-        const ib = order.indexOf(b.permission);
-        if (ia !== -1 && ib !== -1) return ia - ib;
-        if (ia !== -1) return -1;
-        if (ib !== -1) return 1;
-        return (a.permission || '').localeCompare(b.permission || '');
-      });
-      const vistas = sortByOrder(perms.filter((p) => (p.permission || '').startsWith('ver_')), ordenVistas);
-      const abm = sortByOrder(perms.filter((p) => !(p.permission || '').startsWith('ver_')), ordenABM);
-      return { ...r, data: { vistas, abm } };
-    }),
+    client.from('app_permission').select('permission, description').order('permission'),
     client.from('app_role_permission').select('role, permission'),
   ]).then(([rUsers, rMyRole, rRoles, rPerms, rRolePerms]) => {
     loadingEl.style.display = 'none';
@@ -274,56 +294,71 @@ function loadSeguridad() {
       wrapEl.style.display = 'block';
     }
 
-    const permData = rPerms.data || { vistas: [], abm: [] };
-    const permisosVistas = permData.vistas || [];
-    const permisosABM = permData.abm || [];
+    const allPerms = rPerms.data || [];
+    const permMap = {};
+    allPerms.forEach((p) => { permMap[p.permission] = p.description || p.permission; });
     const rolePermList = rRolePerms.data || [];
     const rolePermSet = new Set(rolePermList.map((r) => r.role + '|' + r.permission));
-    const subPermsVistas = new Set(['ver_inicio_efectivo', 'ver_inicio_banco', 'ver_inicio_pendientes']);
 
-    const iconVistas = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>';
-    const iconABM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
     const iconChevron = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+    const iconVer = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    const iconOperar = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
 
-    const renderPermRows = (perms, roleKey, opts) => {
-      const subPerms = (opts && opts.subPerms) || new Set();
-      return perms
-        .map((p) => {
-          const permKey = p.permission;
-          const desc = escapeHtml(p.description || permKey);
-          const checked = rolePermSet.has(roleKey + '|' + permKey);
-          const id = 'perm-' + roleKey + '-' + permKey.replace(/_/g, '-');
-          const isSub = subPerms.has(permKey);
-          const rowClass = 'seguridad-perm-row' + (isSub ? ' seguridad-perm-row-sub' : '');
-          const labelContent = isSub ? `<span class="seguridad-perm-bullet" aria-hidden="true"></span><span>${desc}</span>` : desc;
-          return `<div class="${rowClass}">
-            <label for="${id}">${labelContent}</label>
-            <span class="toggle-switch">
-              <input type="checkbox" id="${id}" class="seguridad-perm-toggle" data-role="${roleKey}" data-permission="${permKey}" ${checked ? ' checked' : ''} />
-              <span class="slider"></span>
-            </span>
-          </div>`;
-        })
-        .join('');
+    const renderPermToggle = (permKey, roleKey, permMap, isSub) => {
+      const desc = escapeHtml(permMap[permKey] || permKey);
+      const checked = rolePermSet.has(roleKey + '|' + permKey);
+      const id = 'perm-' + roleKey + '-' + permKey.replace(/_/g, '-');
+      const rowClass = 'seguridad-perm-row' + (isSub ? ' seguridad-perm-row-sub' : '');
+      const labelContent = isSub ? `<span class="seguridad-perm-bullet" aria-hidden="true"></span><span>${desc}</span>` : desc;
+      return `<div class="${rowClass}">
+        <label for="${id}">${labelContent}</label>
+        <span class="toggle-switch">
+          <input type="checkbox" id="${id}" class="seguridad-perm-toggle" data-role="${roleKey}" data-permission="${permKey}" ${checked ? ' checked' : ''} />
+          <span class="slider"></span>
+        </span>
+      </div>`;
     };
 
-    if (permisosGrid && roles.length > 0 && (permisosVistas.length > 0 || permisosABM.length > 0)) {
+    const renderMenuBlock = (menu, roleKey, permMap) => {
+      const verPerms = (menu.ver || []).filter((p) => permMap[p]);
+      const operarPerms = (menu.operar || []).filter((p) => permMap[p]);
+      if (verPerms.length === 0 && operarPerms.length === 0) return '';
+      const titulo = escapeHtml(menu.titulo);
+      const menuBodyId = `seguridad-menu-body-${roleKey}-${menu.id}`;
+      const menuHeaderId = `seguridad-menu-header-${roleKey}-${menu.id}`;
+      let bodyHtml = '';
+      if (verPerms.length > 0) {
+        const verSubPerms = menu.verSubPerms || [];
+        bodyHtml += `<div class="seguridad-permisos-subgrupo"><span class="seguridad-permisos-subgrupo-label"><span class="seguridad-permisos-grupo-icono" aria-hidden="true">${iconVer}</span>Ver</span><p class="seguridad-permisos-subgrupo-leyenda">Acceso a la vista y a la información.</p>`;
+        verPerms.forEach((p) => { bodyHtml += renderPermToggle(p, roleKey, permMap, verSubPerms.includes(p)); });
+        bodyHtml += '</div>';
+      }
+      if (operarPerms.length > 0) {
+        bodyHtml += `<div class="seguridad-permisos-subgrupo"><span class="seguridad-permisos-subgrupo-label"><span class="seguridad-permisos-grupo-icono" aria-hidden="true">${iconOperar}</span>Operar</span><p class="seguridad-permisos-subgrupo-leyenda">Crear, editar o anular según corresponda.</p>`;
+        operarPerms.forEach((p) => { bodyHtml += renderPermToggle(p, roleKey, permMap, false); });
+        bodyHtml += '</div>';
+      }
+      return `<div class="seguridad-permisos-por-menu seguridad-permisos-menu-colapsable collapsed" data-menu="${menu.id}">
+        <button type="button" class="seguridad-permisos-menu-header" id="${menuHeaderId}" aria-expanded="false" aria-controls="${menuBodyId}" aria-label="Expandir ${titulo}">
+          <span class="seguridad-permisos-menu-titulo">${titulo}</span>
+          <span class="seguridad-permisos-menu-chevron" aria-hidden="true">${iconChevron}</span>
+        </button>
+        <div class="seguridad-permisos-menu-body" id="${menuBodyId}" role="region" aria-labelledby="${menuHeaderId}">${bodyHtml}</div>
+      </div>`;
+    };
+
+    if (permisosGrid && roles.length > 0 && allPerms.length > 0) {
       permisosGrid.innerHTML = roles
         .map((r) => {
           const roleKey = r.role;
           const label = escapeHtml(r.label || roleKey);
-          const blockVistas = permisosVistas.length > 0
-            ? `<div class="seguridad-permisos-grupo"><h5 class="seguridad-permisos-grupo-titulo"><span class="seguridad-permisos-grupo-icono" aria-hidden="true">${iconVistas}</span>Permisos de vistas</h5>${renderPermRows(permisosVistas, roleKey, { subPerms: subPermsVistas })}</div>`
-            : '';
-          const blockABM = permisosABM.length > 0
-            ? `<div class="seguridad-permisos-grupo"><h5 class="seguridad-permisos-grupo-titulo"><span class="seguridad-permisos-grupo-icono" aria-hidden="true">${iconABM}</span>Permisos de alta, baja o modificación</h5>${renderPermRows(permisosABM, roleKey)}</div>`
-            : '';
+          const blocksByMenu = PERMISOS_POR_MENU.map((menu) => renderMenuBlock(menu, roleKey, permMap)).filter(Boolean).join('');
           return `<div class="seguridad-permisos-rol" data-role="${roleKey}">
             <button type="button" class="seguridad-permisos-rol-header" aria-expanded="false" aria-controls="seguridad-rol-body-${roleKey}" id="seguridad-rol-header-${roleKey}">
               <span>${label}</span>
               <span class="seguridad-permisos-rol-chevron" aria-hidden="true">${iconChevron}</span>
             </button>
-            <div class="seguridad-permisos-rol-body" id="seguridad-rol-body-${roleKey}" role="region" aria-labelledby="seguridad-rol-header-${roleKey}">${blockVistas}${blockABM}</div>
+            <div class="seguridad-permisos-rol-body" id="seguridad-rol-body-${roleKey}" role="region" aria-labelledby="seguridad-rol-header-${roleKey}">${blocksByMenu}</div>
           </div>`;
         })
         .join('');
@@ -334,6 +369,20 @@ function loadSeguridad() {
           if (!card) return;
           const isExpanded = card.classList.toggle('expanded');
           btn.setAttribute('aria-expanded', isExpanded);
+          btn.setAttribute('aria-label', isExpanded ? 'Contraer rol' : 'Expandir rol');
+        });
+      });
+
+      permisosGrid.querySelectorAll('.seguridad-permisos-menu-header').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const block = btn.closest('.seguridad-permisos-menu-colapsable');
+          if (!block) return;
+          block.classList.toggle('collapsed');
+          const isExpanded = !block.classList.contains('collapsed');
+          btn.setAttribute('aria-expanded', isExpanded);
+          const titulo = block.querySelector('.seguridad-permisos-menu-titulo');
+          const name = titulo ? titulo.textContent.trim() : 'menú';
+          btn.setAttribute('aria-label', isExpanded ? `Contraer ${name}` : `Expandir ${name}`);
         });
       });
 
@@ -342,16 +391,48 @@ function loadSeguridad() {
           const role = this.getAttribute('data-role');
           const permission = this.getAttribute('data-permission');
           const enable = this.checked;
-          const prom = enable
-            ? client.from('app_role_permission').insert({ role, permission })
-            : client.from('app_role_permission').delete().eq('role', role).eq('permission', permission);
-          prom.then((res) => {
-            if (res.error) {
-              showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-              this.checked = !enable;
-            } else {
-              showToast(enable ? 'Permiso activado.' : 'Permiso desactivado.', 'success');
-            }
+          if (enable) {
+            client.from('app_role_permission').insert({ role, permission }).then((res) => {
+              if (res.error) {
+                showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+                this.checked = false;
+              } else {
+                showToast('Permiso activado.', 'success');
+              }
+            });
+            return;
+          }
+          const menuInfo = getMenuParentAndChildren(permission);
+          const isParent = menuInfo && menuInfo.parentVer === permission;
+          const toRemove = (isParent && menuInfo.children)
+            ? menuInfo.children.filter((p) => permMap[p])
+            : [];
+          const removeParent = () => {
+            client.from('app_role_permission').delete().eq('role', role).eq('permission', permission).then((res) => {
+              if (res.error) {
+                showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+                this.checked = true;
+              } else {
+                if (toRemove.length > 0) {
+                  showToast('Se desactivó el acceso al menú y también los demás permisos de este ítem (sin acceso no aplican).', 'info');
+                } else {
+                  const msg = MENSAJE_AL_DESACTIVAR_PERMISO[permission];
+                  if (msg) showToast(msg, 'info');
+                  else showToast('Permiso desactivado.', 'success');
+                }
+              }
+            });
+          };
+          if (toRemove.length === 0) {
+            removeParent();
+            return;
+          }
+          Promise.all(toRemove.map((p) => client.from('app_role_permission').delete().eq('role', role).eq('permission', p))).then(() => {
+            toRemove.forEach((p) => {
+              const other = permisosGrid.querySelector(`.seguridad-perm-toggle[data-role="${role}"][data-permission="${p}"]`);
+              if (other) other.checked = false;
+            });
+            removeParent();
           });
         });
       });
@@ -361,7 +442,7 @@ function loadSeguridad() {
 }
 
 // --- Cajas ---
-let cajasMonedaActual = 'USD';
+let cajasMonedaActual = 'TODO';
 let tiposMovimientoCaja = [];
 
 function formatMonto(n, moneda) {
@@ -380,65 +461,84 @@ function loadCajas() {
   const canAbm = userPermissions.includes('abm_movimientos_caja');
   if (btnNuevo) btnNuevo.style.display = canAbm ? '' : 'none';
 
+  const verEfectivo = userPermissions.includes('ver_cajas_efectivo');
+  const verBanco = userPermissions.includes('ver_cajas_banco');
+  const cardEfectivo = document.getElementById('cajas-card-efectivo');
+  const cardBanco = document.getElementById('cajas-card-banco');
+  if (cardEfectivo) cardEfectivo.style.display = verEfectivo ? '' : 'none';
+  if (cardBanco) cardBanco.style.display = verBanco ? '' : 'none';
+
   loadingEl.style.display = 'block';
   wrapEl.style.display = 'none';
   const cajasSaldoIds = ['cajas-saldo-efectivo-usd', 'cajas-saldo-efectivo-eur', 'cajas-saldo-efectivo-ars', 'cajas-saldo-banco-usd', 'cajas-saldo-banco-ars'];
   cajasSaldoIds.forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = '–'; });
 
-  client
-    .from('movimientos_caja')
-    .select('id, moneda, monto, concepto, fecha, tipo_movimiento_id, orden_id, transaccion_id, estado, estado_fecha, caja_tipo')
-    .eq('estado', 'cerrado')
-    .order('fecha', { ascending: false })
-    .order('created_at', { ascending: false })
-    .then((res) => {
-      loadingEl.style.display = 'none';
-      if (res.error) {
-        tbody.innerHTML = '<tr><td colspan="6">Error: ' + (res.error.message || '') + '</td></tr>';
-        wrapEl.style.display = 'block';
-        return;
-      }
-      const list = res.data || [];
-      const saldos = { efectivo: { USD: 0, EUR: 0, ARS: 0 }, banco: { USD: 0, EUR: 0, ARS: 0 }, cheque: { USD: 0, EUR: 0, ARS: 0 } };
-      list.forEach((m) => {
-        const tipo = (m.caja_tipo || 'efectivo').toLowerCase();
-        const moneda = m.moneda;
-        if (saldos[tipo] && saldos[tipo][moneda] != null) saldos[tipo][moneda] += Number(m.monto);
-      });
-      const setVal = (el, valor, moneda) => {
-        if (!el) return;
-        el.textContent = formatMonto(valor, moneda);
-        el.className = 'valor ' + (valor >= 0 ? 'positivo' : 'negativo');
-      };
-      setVal(document.getElementById('cajas-saldo-efectivo-usd'), saldos.efectivo.USD, 'USD');
-      setVal(document.getElementById('cajas-saldo-efectivo-eur'), saldos.efectivo.EUR, 'EUR');
-      setVal(document.getElementById('cajas-saldo-efectivo-ars'), saldos.efectivo.ARS, 'ARS');
-      setVal(document.getElementById('cajas-saldo-banco-usd'), saldos.banco.USD, 'USD');
-      setVal(document.getElementById('cajas-saldo-banco-ars'), saldos.banco.ARS, 'ARS');
+  Promise.all([
+    client
+      .from('movimientos_caja')
+      .select('id, moneda, monto, concepto, fecha, tipo_movimiento_id, orden_id, transaccion_id, estado, estado_fecha, caja_tipo')
+      .eq('estado', 'cerrado')
+      .order('fecha', { ascending: false })
+      .order('created_at', { ascending: false }),
+    client.from('tipos_movimiento_caja').select('id, nombre'),
+  ]).then(([resMov, resTipos]) => {
+    loadingEl.style.display = 'none';
+    if (resMov.error) {
+      tbody.innerHTML = '<tr><td colspan="7">Error: ' + (resMov.error.message || '') + '</td></tr>';
+      wrapEl.style.display = 'block';
+      return;
+    }
+    const list = resMov.data || [];
+    const tiposMap = {};
+    (resTipos.data || []).forEach((t) => { tiposMap[t.id] = t.nombre || '–'; });
+    const saldos = { efectivo: { USD: 0, EUR: 0, ARS: 0 }, banco: { USD: 0, EUR: 0, ARS: 0 }, cheque: { USD: 0, EUR: 0, ARS: 0 } };
+    list.forEach((m) => {
+      const tipo = (m.caja_tipo || 'efectivo').toLowerCase();
+      const moneda = m.moneda;
+      if (saldos[tipo] && saldos[tipo][moneda] != null) saldos[tipo][moneda] += Number(m.monto);
+    });
+    const setVal = (el, valor, moneda) => {
+      if (!el) return;
+      el.textContent = formatMonto(valor, moneda);
+      const base = el.id && el.id.startsWith('cajas-saldo-') ? 'inicio-caja-valor valor ' : 'valor ';
+      el.className = base + (valor >= 0 ? 'positivo' : 'negativo');
+    };
+    setVal(document.getElementById('cajas-saldo-efectivo-usd'), saldos.efectivo.USD, 'USD');
+    setVal(document.getElementById('cajas-saldo-efectivo-eur'), saldos.efectivo.EUR, 'EUR');
+    setVal(document.getElementById('cajas-saldo-efectivo-ars'), saldos.efectivo.ARS, 'ARS');
+    setVal(document.getElementById('cajas-saldo-banco-usd'), saldos.banco.USD, 'USD');
+    setVal(document.getElementById('cajas-saldo-banco-ars'), saldos.banco.ARS, 'ARS');
 
-      const filtrados = list.filter((m) => m.moneda === cajasMonedaActual);
-      const tipoLabel = (m) => (m.orden_id ? 'Orden' : m.transaccion_id ? 'Transacción' : 'Manual');
-      const cajaTipoLabel = (m) => {
-        const t = (m.caja_tipo || 'efectivo').toLowerCase();
-        if (t === 'banco') return 'Banco';
-        if (t === 'cheque') return 'Cheque';
-        return 'Efectivo';
-      };
-      const canAbmCaja = userPermissions.includes('abm_movimientos_caja');
-      tbody.innerHTML = filtrados
-        .map(
-          (m) =>
-            `<tr>
+    const filtrados = cajasMonedaActual === 'TODO' ? list : list.filter((m) => m.moneda === cajasMonedaActual);
+    const tipoMovimientoLabel = (m) => {
+      if (m.tipo_movimiento_id && tiposMap[m.tipo_movimiento_id]) return tiposMap[m.tipo_movimiento_id];
+      if (m.orden_id) return 'Por orden';
+      if (m.transaccion_id) return 'Transacción';
+      return m.concepto || '–';
+    };
+    const tipoLabel = (m) => (m.orden_id ? 'Orden' : m.transaccion_id ? 'Transacción' : 'Manual');
+    const cajaTipoLabel = (m) => {
+      const t = (m.caja_tipo || 'efectivo').toLowerCase();
+      if (t === 'banco') return 'Banco';
+      if (t === 'cheque') return 'Cheque';
+      return 'Efectivo';
+    };
+    const canAbmCaja = userPermissions.includes('abm_movimientos_caja');
+    tbody.innerHTML = filtrados
+      .map(
+        (m) =>
+          `<tr>
               <td>${(m.fecha || '').toString().slice(0, 10)}</td>
-              <td>${escapeHtml(m.concepto || '–')}</td>
+              <td>${escapeHtml(tipoMovimientoLabel(m))}</td>
               <td>${cajaTipoLabel(m)}</td>
               <td>${tipoLabel(m)}</td>
+              <td>${escapeHtml(m.moneda || '–')}</td>
               <td class="${Number(m.monto) >= 0 ? 'monto-positivo' : 'monto-negativo'}">${formatMonto(m.monto)}</td>
               <td>${canAbmCaja ? `<button type="button" class="btn-editar btn-editar-mov-caja" data-id="${m.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : ''}</td>
             </tr>`
-        )
-        .join('');
-      if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="6">No hay movimientos en esta moneda.</td></tr>';
+      )
+      .join('');
+      if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="7">' + (cajasMonedaActual === 'TODO' ? 'No hay movimientos.' : 'No hay movimientos en esta moneda.') + '</td></tr>';
       else {
         tbody.querySelectorAll('.btn-editar-mov-caja').forEach((btn) => {
           btn.addEventListener('click', () => {
@@ -1963,7 +2063,7 @@ function loadOrdenes() {
                 <td>${estadoHtml}</td>
                 <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
                 <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
-                <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${canAnularOrden && o.estado !== 'anulada' ? ` <button type="button" class="btn-secondary btn-anular-orden-tabla btn-icon-only" data-id="${o.id}" title="Anular orden" aria-label="Anular orden" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>` : ''}` : ''}</td>
+                <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${canAnularOrden && o.estado !== 'anulada' && o.estado !== 'orden_ejecutada' ? ` <button type="button" class="btn-secondary btn-anular-orden-tabla btn-icon-only" data-id="${o.id}" title="Anular orden" aria-label="Anular orden" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>` : ''}` : ''}</td>
               </tr>
               <tr class="orden-detalle-tr" id="orden-detalle-${o.id}" data-orden-id="${o.id}" style="display:none;">
                 <td colspan="8" class="orden-detalle-cell">
@@ -2169,7 +2269,7 @@ function openModalOrden(registro) {
       if (btnAnular) {
         const puedeEditar = userPermissions.includes('editar_orden');
         const puedeAnular = userPermissions.includes('anular_orden');
-          if (registro.estado !== 'anulada' && puedeAnular) {
+          if (registro.estado !== 'anulada' && registro.estado !== 'orden_ejecutada' && puedeAnular) {
           btnAnular.style.display = '';
           btnAnular.onclick = () => {
             showConfirm('¿Anular esta orden? El estado pasará a Anulada.', 'Anular', () => {
@@ -2604,13 +2704,28 @@ function renderOrdenWizardInstrumentacion(instId) {
       return;
     }
     Promise.all([
-      client.from('ordenes').select('id, cliente_id, tipo_operacion_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, estado').eq('id', ordenId).single(),
+      client.from('ordenes').select('id, cliente_id, tipo_operacion_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, estado, clientes(nombre), intermediarios(nombre)').eq('id', ordenId).single(),
       client.from('transacciones').select('id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio').eq('instrumentacion_id', instId).order('created_at', { ascending: true }),
       client.from('modos_pago').select('id, codigo, nombre'),
     ]).then(([rOrd, resTr, rModos]) => {
       loadingEl.style.display = 'none';
       wrapEl.style.display = 'block';
       const orden = rOrd.data || null;
+      const participantesEl = document.getElementById('orden-inst-participantes-texto');
+      if (participantesEl) {
+        if (orden) {
+          const nombreCliente = orden.clientes?.nombre ?? (orden.cliente_id ? '–' : null);
+          const nombreIntermediario = orden.intermediarios?.nombre ?? (orden.intermediario_id ? '–' : null);
+          const partes = [];
+          if (nombreCliente) partes.push('Cliente: ' + (nombreCliente || '–'));
+          else if (orden.intermediario_id) partes.push('Cliente: Sin asignar');
+          if (nombreIntermediario) partes.push('Intermediario: ' + nombreIntermediario);
+          else partes.push('Intermediario: Sin asignar');
+          participantesEl.textContent = partes.join(' · ');
+        } else {
+          participantesEl.textContent = '–';
+        }
+      }
       if (orden) {
         const monR = orden.moneda_recibida || 'USD';
         const monE = orden.moneda_entregada || 'USD';
