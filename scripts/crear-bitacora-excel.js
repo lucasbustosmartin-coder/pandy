@@ -78,7 +78,9 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Seguridad: cascada al desactivar padre', 'Al desactivar el permiso padre (acceso al menú) se desactivan también los hijos (resto Ver y Operar) de ese ítem y se actualizan los toggles.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'CC: refresh con nueva lógica y botón Refrescar', 'Tras guardar movimiento CC o cerrar transacción, el modal de detalle actualiza saldos y tabla Operaciones que participan (no solo movimientos). Botón Refrescar en vista Cuenta corriente para recalcular saldos (compromiso − movimientos).', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'CC: compromiso solo órdenes no ejecutadas', 'El compromiso para el saldo de CC solo incluye órdenes que no están en estado orden_ejecutada. Las órdenes cerradas no suman al compromiso; la ganancia según tipo de operación queda solo en movimientos, evitando que aparezca como saldo a favor en la CC del cliente. Leyenda y docs actualizados.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'CC: evitar doble conteo pendientes', 'Ajuste saldo CC: los movimientos con concepto "Transacción pendiente" no se restan del compromiso (solo se restan ejecutados/cierre y manuales). Así al ejecutar una pata y quedar la otra pendiente, la CC no se "anula" por doble conteo y concilia correctamente por moneda.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'v1.22 Despliegue', 'Versión 1.22: Cuenta corriente (compromiso solo no ejecutadas, Refrescar, lista completa y misma lógica intermediario).', 'Despliegue'],
+  ['__HOY__', '__AHORA__', 'v1.23 Despliegue', 'Versión 1.23: CC concilia sin doble conteo (pendientes no se restan del compromiso); saldos negativos/positivos visibles aunque haya patas pendientes. Actualiza leyenda y doc.', 'Despliegue'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -170,6 +172,7 @@ const versiones = [
   ['1.20', '__HOY__', 'Cuenta corriente: todos los movimientos en cualquier estado; Caja solo ejecutada. Auto-complete instrumentación genera CC; doc CUENTA_CORRIENTE_Y_CAJA.md.'],
   ['1.21', '__HOY__', 'Permisos por menú: menús colapsables (por defecto cerrados), encabezado rol sticky, toggles on/off clicables. Cajas: Ver Efectivo/Banco granular (ver_cajas_efectivo, ver_cajas_banco); tarjetas solo con permiso específico. Intermediarios: Operar (abm_intermediarios) en Seguridad. Cascada: al desactivar acceso al menú se desactivan también los hijos de ese ítem.'],
   ['1.22', '__HOY__', 'Cuenta corriente: compromiso solo por órdenes no ejecutadas (ganancia no como saldo del cliente). Refresh del modal con saldos y operaciones; botón Refrescar. Lista incluye todos los clientes/intermediarios y quienes tengan compromiso; misma lógica para intermediario.'],
+  ['1.23', '__HOY__', 'Cuenta corriente: concilia sin doble conteo. Movimientos "Transacción pendiente" no se restan del compromiso (solo ejecutados/cierre y manuales), para que saldos por moneda se mantengan visibles cuando falta ejecutar una pata. Leyenda y doc actualizadas.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

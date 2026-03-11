@@ -25,7 +25,8 @@
 
 - **Saldo por moneda** = **Compromiso por órdenes (solo no ejecutadas)** menos **movimientos ya registrados**.
 - **Compromiso:** solo cuentan las órdenes que aún no están en estado “orden_ejecutada”. Para cada una: el cliente/intermediario “debe” lo que nosotros recibimos (+ en moneda_recibida) y nosotros “debemos” lo que entregamos (− en moneda_entregada). Las órdenes ya ejecutadas no suman al compromiso: su impacto (incl. la ganancia/comisión del acuerdo) queda reflejado solo en los movimientos de CC.
-- Así la ganancia según el tipo de operación no aparece como saldo a favor tuyo en la CC del cliente: una vez cerrada la orden, el saldo de esa operación es 0 (movimientos de cierre incluyen conversión y comisión).
+- **Movimientos ya registrados (para restar):** se restan los movimientos **ejecutados/cierre** (por ejemplo “Transacción ejecutada”, “Conversión de moneda”, “Comisión del acuerdo”) y cualquier ajuste manual. Los movimientos de concepto **“Transacción pendiente” no se restan**, para evitar doble conteo (ya están incluidos en el compromiso de la orden).
+- Así, si una pata está ejecutada y la otra pendiente, el saldo refleja la exposición que queda por moneda. Cuando la orden pasa a ejecutada, deja de sumar al compromiso y su cierre queda reflejado solo en movimientos.
 - En el detalle de CC (modal) se muestra la sección **Operaciones que participan del saldo**: listado de órdenes que aportan al compromiso (fecha, orden, monedas y montos, estado).
 
 ## Resumen

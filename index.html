@@ -415,7 +415,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.22</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.23</div>
   </aside>
 
   <main class="main-content">
@@ -704,7 +704,7 @@
           Cuenta corriente
           <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Saldos por cliente o intermediario y moneda. <strong>Positivo</strong> = nos debe; <strong>Negativo</strong> = nosotros le debemos. La cuenta corriente se actualiza al guardar cada transacción (pendiente o ejecutada). Las cards de caja/banco solo se impactan cuando la transacción está <strong>ejecutada</strong>. Cada moneda se muestra por separado (no se convierte entre monedas).</span></span>
         </h3>
-        <p style="margin:0 0 0.5rem 0; font-size:0.9rem; color:#555;">Solo se listan clientes e intermediarios con saldo (positivo o negativo). El saldo es el <strong>compromiso por órdenes aún no ejecutadas</strong> (lo que el cliente/intermediario debe por lo que recibimos y nosotros por lo que entregamos) menos todos los movimientos ya registrados. Las órdenes cerradas no suman al compromiso: su impacto (incl. tu ganancia) está solo en los movimientos. Positivo = nos debe; Negativo = nosotros le debemos. Usá el icono de detalle para ver movimientos y operaciones que participan.</p>
+        <p style="margin:0 0 0.5rem 0; font-size:0.9rem; color:#555;">Solo se listan clientes e intermediarios con saldo (positivo o negativo). El saldo es el <strong>compromiso por órdenes aún no ejecutadas</strong> (lo que el cliente/intermediario debe por lo que recibimos y nosotros por lo que entregamos) menos los <strong>movimientos ya registrados</strong> (ejecutados/cierre y manuales). Los movimientos de <strong>Transacción pendiente</strong> no se restan para evitar doble conteo (ya están incluidos en el compromiso). Las órdenes cerradas no suman al compromiso: su impacto (incl. tu ganancia) está solo en los movimientos. Positivo = nos debe; Negativo = nosotros le debemos. Usá el icono de detalle para ver movimientos y operaciones que participan.</p>
         <div class="vista-toolbar" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
           <label style="display:flex; align-items:center; gap:0.5rem;">
             <span>Tipo:</span>

@@ -1041,8 +1041,8 @@ function loadCuentaCorriente() {
   Promise.all([
     client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
     client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
-    client.from('movimientos_cuenta_corriente').select('cliente_id, moneda, monto').or('estado.eq.cerrado,estado.is.null'),
-    client.from('movimientos_cuenta_corriente_intermediario').select('intermediario_id, moneda, monto').or('estado.eq.cerrado,estado.is.null'),
+    client.from('movimientos_cuenta_corriente').select('cliente_id, moneda, monto, concepto').or('estado.eq.cerrado,estado.is.null'),
+    client.from('movimientos_cuenta_corriente_intermediario').select('intermediario_id, moneda, monto, concepto').or('estado.eq.cerrado,estado.is.null'),
     client.from('ordenes').select('id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').neq('estado', 'anulada'),
   ]).then(([rClientes, rInt, rMovCli, rMovInt, rOrdenes]) => {
     if (loadingEl) loadingEl.style.display = 'none';
@@ -1074,12 +1074,14 @@ function loadCuentaCorriente() {
 
     const sumMovCli = {};
     movCli.forEach((m) => {
+      if (m && m.concepto === 'Transacción pendiente') return;
       const id = m.cliente_id;
       if (!sumMovCli[id]) sumMovCli[id] = { USD: 0, EUR: 0, ARS: 0 };
       if (sumMovCli[id][m.moneda] != null) sumMovCli[id][m.moneda] += Number(m.monto);
     });
     const sumMovInt = {};
     movInt.forEach((m) => {
+      if (m && m.concepto === 'Transacción pendiente') return;
       const id = m.intermediario_id;
       if (!sumMovInt[id]) sumMovInt[id] = { USD: 0, EUR: 0, ARS: 0 };
       if (sumMovInt[id][m.moneda] != null) sumMovInt[id][m.moneda] += Number(m.monto);
@@ -1202,7 +1204,10 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
     const movimientos = rMov.data || [];
     const ordenes = rOrd.data || [];
     const sumMov = { USD: 0, EUR: 0, ARS: 0 };
-    movimientos.forEach((m) => { if (sumMov[m.moneda] != null) sumMov[m.moneda] += Number(m.monto); });
+    movimientos.forEach((m) => {
+      if (m && m.concepto === 'Transacción pendiente') return;
+      if (sumMov[m.moneda] != null) sumMov[m.moneda] += Number(m.monto);
+    });
     const compromiso = compromisoDesdeOrdenes(ordenes.filter((o) => o.estado !== 'orden_ejecutada'), entityId, campoId);
     const saldos = { USD: compromiso.USD - sumMov.USD, EUR: compromiso.EUR - sumMov.EUR, ARS: compromiso.ARS - sumMov.ARS };
     return { movimientos, saldos, ordenes };
