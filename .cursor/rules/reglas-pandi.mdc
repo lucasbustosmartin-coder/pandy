@@ -25,6 +25,11 @@ alwaysApply: true
 
 - **Todo botón de acción** debe contener un **icono apropiado a la izquierda**, simple y limpio (SVG stroke, mismo estilo que el resto de la app). Ejemplos: Nuevo cliente, Guardar, Editar, Cerrar sesión, Entrar.
 
+## Modales
+
+- **Tamaño:** Los modales deben usar el máximo ancho y alto posible (p. ej. `max-width: min(95vw, 1280px)`, `width: 95%`, `max-height: 92vh`). En móvil se puede ajustar a `98%` / `98vw`.
+- **Movibles:** Todos los modales son arrastrables por el header (excepto el botón Cerrar). La lógica está en `setupModalesDraggable()`; al cerrar el modal se resetea la posición para que la próxima apertura quede centrada. Al agregar modales nuevos, usar la misma estructura (`.modal-backdrop` > `.modal` > `.modal-header` + `.modal-body`) para que arrastre y cierre sigan funcionando.
+
 ## Responsive / móvil
 
 - **Desde ahora en más:** al agregar o modificar vistas, formularios, tablas o modales en la app, tener **siempre en cuenta la responsividad en móviles**. Incluir o ajustar estilos para pantallas pequeñas: breakpoints típicos 768px (tablet/móvil grande) y 480px (móvil chico), touch targets mínimos 44px, padding y fuentes reducidos, scroll horizontal con `-webkit-overflow-scrolling: touch` donde haga falta, y `viewport-fit=cover` si aplica. No dejar que nuevos componentes rompan el layout en celulares.

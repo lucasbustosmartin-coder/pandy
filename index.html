@@ -113,13 +113,15 @@
     .btn-icon-only .btn-icon { width: 18px; height: 18px; }
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
     .modal-backdrop.activo { display: flex; }
-    .modal { background: #fff; border-radius: 12px; max-width: 520px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
-    .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .modal { background: #fff; border-radius: 12px; max-width: min(95vw, 1280px); width: 95%; max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+    .modal .modal-body { overflow-y: auto; flex: 1; min-height: 0; }
+    .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: move; user-select: none; flex-shrink: 0; }
     .modal-header-titulo-wrap { display: flex; align-items: center; gap: 0.5rem; }
     .modal-header-icono { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; color: #555; flex-shrink: 0; }
     .modal-header-icono svg { width: 100%; height: 100%; }
     .modal-header h2 { margin: 0; font-size: 1.25rem; }
     .modal-close { background: none; border: none; padding: 0.35rem; cursor: pointer; color: #666; line-height: 1; border-radius: 4px; }
+    .modal-header .modal-close { cursor: pointer; }
     .modal-close:hover { color: #1a1a1a; background: #eee; }
     .modal-body { padding: 1rem 1.25rem; }
     .modal-body .form-group { margin-bottom: 0.75rem; }
@@ -218,6 +220,33 @@
     .tabla-cc-debe-haber { width: 100%; }
     .tabla-cc-debe-haber th:nth-child(n+3), .tabla-cc-debe-haber td:nth-child(n+3) { text-align: right; white-space: nowrap; }
     .tabla-cc-debe-haber tfoot td { font-weight: 600; border-top: 2px solid #333; padding-top: 0.5rem; }
+    .tabla-cc-resumen { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .tabla-cc-resumen .cc-col { width: 12.5%; }
+    .tabla-cc-resumen th, .tabla-cc-resumen td { padding: 0.5rem 0.75rem; text-align: center; border: 1px solid #d1d5db; }
+    .tabla-cc-resumen th { font-weight: 600; background: #f9fafb; white-space: nowrap; }
+    .tabla-cc-resumen th.th-nombre { border-right: 2px solid #9ca3af; }
+    .tabla-cc-resumen th.th-moneda { vertical-align: bottom; border-right: 2px solid #9ca3af; }
+    .tabla-cc-resumen th.th-moneda:last-of-type { border-right: 2px solid #9ca3af; }
+    .tabla-cc-resumen th.th-sub { border-right: 1px solid #d1d5db; }
+    .tabla-cc-resumen th.th-sub:nth-child(2), .tabla-cc-resumen th.th-sub:nth-child(4), .tabla-cc-resumen th.th-sub:nth-child(6) { border-right: 2px solid #9ca3af; }
+    .tabla-cc-resumen th.th-ver { border-left: 2px solid #9ca3af; }
+    .tabla-cc-resumen td { text-align: center; }
+    .tabla-cc-resumen th.th-nombre { text-align: left; padding-left: 0.75rem; }
+    .tabla-cc-resumen td:first-child { text-align: left; padding-left: 0.75rem; border-right: 2px solid #9ca3af; }
+    .tabla-cc-resumen td:nth-child(3), .tabla-cc-resumen td:nth-child(5), .tabla-cc-resumen td:nth-child(7) { border-right: 2px solid #9ca3af; }
+    .tabla-cc-resumen td:nth-last-child(1) { border-left: 2px solid #9ca3af; }
+    .tabla-cc-resumen th.th-moneda .th-moneda-icon { display: inline-flex; align-items: center; margin-right: 0.25rem; vertical-align: middle; }
+    .cc-icono-moneda { width: 20px; height: 20px; object-fit: contain; vertical-align: middle; }
+    .tabla-cc-resumen .cc-icono-moneda { flex-shrink: 0; }
+    .modal-cc-saldos .card-titulo .cc-icono-moneda { margin-right: 0.25rem; }
+    .tabla-cc-resumen th.th-sub { font-weight: 500; font-size: 0.9em; }
+    .tabla-cc-resumen .valor-positivo { color: #059669; }
+    .tabla-cc-resumen .valor-negativo { color: #dc2626; }
+    .btn-ver-detalle { padding: 0.35rem 0.5rem; min-height: 44px; min-width: 44px; background: none; border: none; color: #555; cursor: pointer; border-radius: 6px; }
+    .btn-ver-detalle:hover { color: #0ea5e9; background: rgba(0,0,0,0.04); }
+    .btn-ver-detalle .btn-icon { display: inline-flex; }
+    .btn-ver-detalle .btn-icon svg { width: 20px; height: 20px; }
+    @media (max-width: 768px) { .tabla-cc-resumen { font-size: 0.9rem; } .tabla-cc-resumen th, .tabla-cc-resumen td { padding: 0.4rem 0.5rem; } }
     .toggle-moneda { display: inline-flex; border-radius: 8px; border: 1px solid #ccc; overflow: hidden; background: #eee; }
     .toggle-moneda button { padding: 0.5rem 1rem; border: none; background: transparent; cursor: pointer; font-size: 0.9rem; }
     .toggle-moneda button.activo { background: #1a1a1a; color: #fff; font-weight: 600; }
@@ -276,7 +305,7 @@
       .form-row.dos-columnas { grid-template-columns: 1fr; }
       .form-actions { gap: 0.5rem; }
       .modal-backdrop { padding: 0.5rem; padding-left: max(0.5rem, env(safe-area-inset-left)); padding-right: max(0.5rem, env(safe-area-inset-right)); padding-top: max(0.5rem, env(safe-area-inset-top)); align-items: flex-start; }
-      .modal { max-height: 85vh; }
+      .modal { max-height: 90vh; width: 96%; max-width: min(96vw, 1280px); }
       .modal-body input, .modal-body select { font-size: 16px; }
       .modal-close { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
       .resumen-cajas { flex-direction: column; gap: 0.75rem; }
@@ -309,7 +338,7 @@
       .page-header .page-logo-wrap { height: 32px; width: 32px; }
       #page-title { font-size: 1.1rem; }
       .card { padding: 0.85rem; }
-      .modal { max-width: 100%; border-radius: 10px; margin: 0; }
+      .modal { max-width: 98vw; width: 98%; border-radius: 10px; margin: 0; }
       .modal.modal-ancho { max-width: 100%; }
       .modal.modal-transacciones-pendientes,
       .modal.modal-ordenes-pendientes { max-width: 100%; width: 100%; margin-left: 0; }
@@ -325,7 +354,9 @@
       .help-icon-btn { min-width: 44px; min-height: 44px; }
       .orden-detalle-panel { padding: 0.75rem 1rem; }
       .vista-ordenes h3, .vista-cajas h3, .vista-clientes h3, .vista-intermediarios h3, .vista-cuenta-corriente h3 { font-size: 1rem; }
+      .transaccion-acuerdo-datos .transaccion-acuerdo-fila + .transaccion-acuerdo-fila { margin-top: 0.35rem; }
     }
+    .transaccion-acuerdo-datos .transaccion-acuerdo-fila + .transaccion-acuerdo-fila { margin-top: 0.35rem; }
   </style>
 </head>
 <body>
@@ -355,6 +386,10 @@
         <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5a2 2 0 012-2h12a2 2 0 012 2v2"/><path d="M4 7h16v12a2 2 0 01-2 2H6a2 2 0 01-2-2V7"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M12 11v6"/><path d="M9 14h6"/></svg></span>
         <span class="menu-label">Intermediarios</span>
       </a>
+      <a href="#" class="menu-item" id="menu-tipos-operacion" title="Tipos de operación" aria-label="Tipos de operación" style="display:none;">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/><circle cx="12" cy="12" r="3"/></svg></span>
+        <span class="menu-label">Tipos de operación</span>
+      </a>
       <a href="#" class="menu-item" id="menu-cuenta-corriente" title="Cuenta corriente" aria-label="Cuenta corriente">
         <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></span>
         <span class="menu-label">Cuenta corriente</span>
@@ -364,7 +399,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.16</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.17</div>
   </aside>
 
   <main class="main-content">
@@ -632,85 +667,67 @@
           </table>
         </div>
       </div>
+      <div id="vista-tipos-operacion" class="card" style="display:none;">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
+          <span style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/><circle cx="12" cy="12" r="3"/></svg></span>
+          Tipos de operación
+        </h3>
+        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Catálogo de tipos (moneda IN = recibida, moneda OUT = entregada). Define las monedas y la lógica de órdenes y transacciones.</p>
+        <div class="vista-toolbar">
+          <button type="button" id="btn-nuevo-tipo-operacion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo tipo</button>
+        </div>
+        <div id="tipos-operacion-loading" class="clientes-loading">Cargando tipos…</div>
+        <div id="tipos-operacion-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+          <table id="tabla-tipos-operacion">
+            <thead><tr><th>Código</th><th>Nombre</th><th>Moneda IN</th><th>Moneda OUT</th><th>Activo</th><th></th></tr></thead>
+            <tbody id="tipos-operacion-tbody"></tbody>
+          </table>
+        </div>
+      </div>
       <div id="vista-cuenta-corriente" class="card" style="display:none;">
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
           Cuenta corriente
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Saldos por cliente o intermediario y moneda. <strong>Saldo a favor</strong> = nos debe; <strong>Saldo negativo</strong> = nosotros le debemos. La cuenta corriente se actualiza al guardar cada transacción (pendiente o ejecutada). Las cards de caja/banco solo se impactan cuando la transacción está <strong>ejecutada</strong>. Cada moneda se muestra por separado (no se convierte entre monedas).</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Saldos por cliente o intermediario y moneda. <strong>Positivo</strong> = nos debe; <strong>Negativo</strong> = nosotros le debemos. La cuenta corriente se actualiza al guardar cada transacción (pendiente o ejecutada). Las cards de caja/banco solo se impactan cuando la transacción está <strong>ejecutada</strong>. Cada moneda se muestra por separado (no se convierte entre monedas).</span></span>
         </h3>
+        <p style="margin:0 0 0.5rem 0; font-size:0.9rem; color:#555;">Solo se listan clientes e intermediarios con saldo (positivo o negativo). Positivo = nos debe; Negativo = nosotros le debemos. Usá el icono de detalle para ver los movimientos.</p>
         <div class="vista-toolbar" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
           <label style="display:flex; align-items:center; gap:0.5rem;">
             <span>Tipo:</span>
-            <div class="toggle-moneda" id="cc-tipo-entity" role="group">
+            <div class="toggle-moneda" id="cc-filtro-tipo" role="group">
               <button type="button" class="activo" data-tipo="cliente">Cliente</button>
               <button type="button" data-tipo="intermediario">Intermediario</button>
             </div>
           </label>
-          <div class="form-group" id="cc-wrap-cliente" style="margin:0; max-width:280px;">
-            <label for="cc-cliente">Cliente *</label>
-            <select id="cc-cliente"><option value="">Elegir cliente…</option></select>
-          </div>
-          <div class="form-group" id="cc-wrap-intermediario" style="margin:0; max-width:280px; display:none;">
-            <label for="cc-intermediario">Intermediario *</label>
-            <select id="cc-intermediario"><option value="">Elegir intermediario…</option></select>
-          </div>
         </div>
-        <div id="cc-sin-cliente" class="vista-placeholder" style="display:none;">Elegí un cliente para ver su cuenta corriente.</div>
-        <div id="cc-sin-intermediario" class="vista-placeholder" style="display:none;">Elegí un intermediario para ver la cuenta corriente entre vos y el intermediario.</div>
-        <div id="cc-contenido" style="display:none;">
-          <div class="resumen-cajas" id="cc-saldos">
-            <div class="card">
-              <span class="card-titulo">
-                <span class="card-icon card-icon-usd" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><rect x="2" y="3" width="8" height="7"/><polygon points="6,5.2 6.6,6.4 8,6.6 6.8,7.6 7.2,9 6,8.2 4.8,9 5.2,7.6 4,6.6 5.4,6.4" fill="currentColor" stroke="none"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="15" x2="22" y2="15"/><line x1="10" y1="10" x2="22" y2="10"/></svg></span>
-                USD
-              </span>
-              <span class="cc-saldo-label" id="cc-saldo-label-usd" aria-hidden="true"></span>
-              <span class="valor" id="cc-saldo-usd">–</span>
-            </div>
-            <div class="card">
-              <span class="card-titulo">
-                <span class="card-icon card-icon-eur" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6.5C16 5 13.5 4 11 4a8 8 0 00-8 8c0 4 3 7.5 7 7.5 2.5 0 5-1 7-2.5"/><line x1="4" y1="12" x2="18" y2="12"/><line x1="4" y1="9" x2="14" y2="9"/><line x1="4" y1="15" x2="14" y2="15"/></svg></span>
-                EUR
-              </span>
-              <span class="cc-saldo-label" id="cc-saldo-label-eur" aria-hidden="true"></span>
-              <span class="valor" id="cc-saldo-eur">–</span>
-            </div>
-            <div class="card">
-              <span class="card-titulo">
-                <span class="card-icon card-icon-ars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="1"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="22" y2="15"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5v7M9.2 10.2l2.8 1.8 2.8-1.8M9.2 13.8l2.8-1.8 2.8 1.8" stroke-width="1.2"/></svg></span>
-                ARS
-              </span>
-              <span class="cc-saldo-label" id="cc-saldo-label-ars" aria-hidden="true"></span>
-              <span class="valor" id="cc-saldo-ars">–</span>
-            </div>
-          </div>
-          <div class="vista-toolbar" style="margin-top:1rem;">
-            <label style="display:flex; align-items:center; gap:0.5rem;">
-              <span>Moneda:</span>
-              <div class="toggle-moneda" id="cc-toggle-moneda" role="group">
-                <button type="button" class="activo" data-moneda="TODAS">Todas</button>
-                <button type="button" data-moneda="USD">USD</button>
-                <button type="button" data-moneda="EUR">EUR</button>
-                <button type="button" data-moneda="ARS">ARS</button>
-              </div>
-            </label>
-          </div>
-          <div id="cc-loading" class="clientes-loading" style="display:none;">Cargando movimientos…</div>
-          <div id="cc-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
-            <table id="tabla-cc" class="tabla-cc-debe-haber">
-              <thead>
-                <tr>
-                  <th>Fecha</th><th>Concepto</th>
-                  <th>Debe (USD)</th><th>Haber (USD)</th>
-                  <th>Debe (EUR)</th><th>Haber (EUR)</th>
-                  <th>Debe (ARS)</th><th>Haber (ARS)</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="cc-tbody"></tbody>
-              <tfoot id="cc-tfoot"></tfoot>
-            </table>
-          </div>
+        <div id="cc-loading" class="clientes-loading" style="display:none;">Cargando…</div>
+        <div id="cc-contenido" class="tabla-clientes-wrap" style="display:none;">
+          <table id="tabla-cc-resumen" class="tabla-cc-resumen">
+            <colgroup>
+              <col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/>
+            </colgroup>
+            <thead>
+              <tr>
+                <th rowspan="2" class="th-nombre">Nombre</th>
+                <th colspan="2" class="th-moneda">
+                  <span class="th-moneda-icon"><img src="/assets/Icono_Dolar.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span> USD
+                </th>
+                <th colspan="2" class="th-moneda">
+                  <span class="th-moneda-icon"><img src="/assets/Icono_Euro.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span> EUR
+                </th>
+                <th colspan="2" class="th-moneda">
+                  <span class="th-moneda-icon"><img src="/assets/Icono_ARS.webp" alt="" class="cc-icono-moneda" width="20" height="20"/></span> ARS
+                </th>
+                <th rowspan="2" class="th-ver">Acción</th>
+              </tr>
+              <tr>
+                <th class="th-sub">Positivo</th><th class="th-sub">Negativo</th>
+                <th class="th-sub">Positivo</th><th class="th-sub">Negativo</th>
+                <th class="th-sub">Positivo</th><th class="th-sub">Negativo</th>
+              </tr>
+            </thead>
+            <tbody id="cc-resumen-tbody"></tbody>
+          </table>
         </div>
       </div>
       <div id="vista-seguridad" class="card panel-seguridad" style="display:none;">
@@ -784,6 +801,51 @@
           <div class="form-actions">
             <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
             <button type="button" class="btn-secondary" id="modal-cliente-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-tipo-operacion-backdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-tipo-operacion-titulo">Nuevo tipo de operación</h2>
+        <button type="button" class="modal-close" id="modal-tipo-operacion-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-tipo-operacion">
+          <input type="hidden" id="tipo-operacion-id" value="" />
+          <div class="form-group">
+            <label for="tipo-operacion-codigo">Código *</label>
+            <input type="text" id="tipo-operacion-codigo" required maxlength="32" placeholder="ej. ARS-USD" />
+          </div>
+          <div class="form-group">
+            <label for="tipo-operacion-nombre">Nombre *</label>
+            <input type="text" id="tipo-operacion-nombre" required maxlength="128" placeholder="ej. ARS - USD" />
+          </div>
+          <div class="form-group">
+            <label for="tipo-operacion-moneda-in">Moneda IN (recibida) *</label>
+            <select id="tipo-operacion-moneda-in" required>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="ARS">ARS</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="tipo-operacion-moneda-out">Moneda OUT (entregada) *</label>
+            <select id="tipo-operacion-moneda-out" required>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="ARS">ARS</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="tipo-operacion-activo" checked /> Activo</label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="modal-tipo-operacion-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
           </div>
         </form>
       </div>
@@ -1102,6 +1164,11 @@
         <button type="button" class="modal-close" id="modal-transaccion-close" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
+        <div id="transaccion-acuerdo-block" class="transaccion-acuerdo-datos" style="margin-bottom:1rem; padding:0.75rem 1rem; background:#f5f5f5; border-radius:8px; border:1px solid #e0e0e0;">
+          <div class="transaccion-acuerdo-fila"><strong>Cliente:</strong> <span id="transaccion-acuerdo-cliente">–</span></div>
+          <div class="transaccion-acuerdo-fila"><strong>Monto a Recibir:</strong> <span id="transaccion-acuerdo-monto-recibido">–</span> <span id="transaccion-acuerdo-moneda-recibida"></span></div>
+          <div class="transaccion-acuerdo-fila"><strong>Monto a Entregar:</strong> <span id="transaccion-acuerdo-monto-entregado">–</span> <span id="transaccion-acuerdo-moneda-entregada"></span></div>
+        </div>
         <form id="form-transaccion">
           <input type="hidden" id="transaccion-id" value="" />
           <input type="hidden" id="transaccion-instrumentacion-id" value="" />
@@ -1115,7 +1182,7 @@
           </div>
           <div class="form-group">
             <label for="transaccion-modo-pago">Modo de pago *</label>
-            <select id="transaccion-modo-pago" required></select>
+            <select id="transaccion-modo-pago"></select>
           </div>
           <div class="form-group">
             <label for="transaccion-moneda">Moneda *</label>
@@ -1125,23 +1192,19 @@
               <option value="ARS">ARS</option>
             </select>
           </div>
-          <div class="form-group" id="transaccion-wrap-monto-normal">
-            <label for="transaccion-monto">Monto *</label>
+          <div class="form-group">
+            <label for="transaccion-monto">Monto (<span id="transaccion-monto-currency-label">USD</span>) *</label>
             <input type="text" id="transaccion-monto" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
           </div>
-          <div class="form-group" id="transaccion-wrap-ars" style="display:none;">
-            <p style="margin-bottom:0.5rem;" class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">En ARS el monto se calcula: monto base × tipo de cambio.</span></span></p>
+          <div class="form-group" id="transaccion-wrap-conversion" style="display:none;">
+            <p style="margin-bottom:0.5rem;" class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Conversión inversa según tipo de cambio del acuerdo: si cargás ARS se muestra el equivalente en la otra moneda (÷ TC); si cargás USD/EUR se muestra el equivalente en ARS (× TC).</span></span></p>
             <div class="form-group">
-              <label for="transaccion-monto-base">Monto base (ej. en USD) *</label>
-              <input type="text" id="transaccion-monto-base" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+              <label for="transaccion-tipo-cambio">Tipo de cambio</label>
+              <input type="text" id="transaccion-tipo-cambio" readonly class="input-importe input-readonly" placeholder="0,00" tabindex="-1" aria-readonly="true" style="background:#eee; color:#555;" />
             </div>
             <div class="form-group">
-              <label for="transaccion-tipo-cambio">Tipo de cambio *</label>
-              <input type="text" id="transaccion-tipo-cambio" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
-            </div>
-            <div class="form-group">
-              <label for="transaccion-monto-ars-display">Monto (ARS) calculado</label>
-              <input type="text" id="transaccion-monto-ars-display" readonly class="input-importe" placeholder="0,00" style="background:#eee; color:#555;" />
+              <label for="transaccion-monto-calculado-display">Monto (<span id="transaccion-monto-calculado-currency-label">USD</span>) calculado</label>
+              <input type="text" id="transaccion-monto-calculado-display" readonly class="input-importe" placeholder="0,00" style="background:#eee; color:#555;" />
             </div>
           </div>
           <div class="form-group form-row dos-columnas">
@@ -1253,6 +1316,35 @@
               <tbody id="transacciones-pendientes-tbody"></tbody>
             </table>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-cc-detalle-backdrop" class="modal-backdrop">
+    <div class="modal modal-cc-detalle">
+      <div class="modal-header">
+        <h2 id="modal-cc-detalle-titulo">Detalle cuenta corriente</h2>
+        <button type="button" class="modal-close" id="modal-cc-detalle-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="modal-cc-detalle-entity" class="modal-cc-entity-block" style="margin-bottom:1rem; padding:0.75rem; background:#f5f5f5; border-radius:8px;"></div>
+        <div id="modal-cc-detalle-saldos" class="resumen-cajas modal-cc-saldos" style="margin-bottom:1rem; display:flex; flex-wrap:wrap; gap:0.5rem;"></div>
+        <div id="modal-cc-detalle-loading" class="clientes-loading" style="display:none;">Cargando movimientos…</div>
+        <div id="modal-cc-detalle-tabla-wrap" class="tabla-clientes-wrap" style="display:none; overflow-x:auto;">
+          <table id="tabla-cc-detalle" class="tabla-cc-debe-haber">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Concepto</th>
+                <th>Debe (USD)</th><th>Haber (USD)</th>
+                <th>Debe (EUR)</th><th>Haber (EUR)</th>
+                <th>Debe (ARS)</th><th>Haber (ARS)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="cc-detalle-tbody"></tbody>
+            <tfoot id="cc-detalle-tfoot"></tfoot>
+          </table>
         </div>
       </div>
     </div>

@@ -137,7 +137,7 @@ function showView(vistaId, pageTitle) {
     showView(firstId, firstTitle);
     return;
   }
-  ['vista-inicio', 'vista-ordenes', 'vista-cajas', 'vista-clientes', 'vista-intermediarios', 'vista-cuenta-corriente', 'vista-seguridad'].forEach((id) => {
+  ['vista-inicio', 'vista-ordenes', 'vista-cajas', 'vista-clientes', 'vista-intermediarios', 'vista-tipos-operacion', 'vista-cuenta-corriente', 'vista-seguridad'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.display = id === vistaId ? 'block' : 'none';
   });
@@ -154,6 +154,7 @@ function showView(vistaId, pageTitle) {
   if (vistaId === 'vista-inicio') loadInicio();
   if (vistaId === 'vista-cuenta-corriente') loadCuentaCorriente();
   if (vistaId === 'vista-intermediarios') loadIntermediarios();
+  if (vistaId === 'vista-tipos-operacion') loadTiposOperacion();
 }
 
 function loadSeguridad() {
@@ -185,7 +186,7 @@ function loadSeguridad() {
     client.from('app_permission').select('permission, description').order('permission').then((r) => {
       const perms = r.data || [];
       const ordenVistas = ['ver_inicio', 'ver_inicio_efectivo', 'ver_inicio_banco', 'ver_inicio_pendientes', 'ver_ordenes', 'ver_cajas', 'ver_clientes', 'ver_intermediarios', 'ver_cuenta_corriente', 'ver_seguridad'];
-      const ordenABM = ['assign_roles', 'abm_clientes', 'abm_movimientos_caja', 'abm_tipos_movimiento_caja', 'ingresar_orden', 'editar_orden', 'anular_orden', 'editar_estado_orden', 'ingresar_transacciones', 'editar_transacciones', 'eliminar_transacciones'];
+      const ordenABM = ['assign_roles', 'abm_clientes', 'abm_movimientos_caja', 'abm_tipos_movimiento_caja', 'abm_tipos_operacion', 'ingresar_orden', 'editar_orden', 'anular_orden', 'editar_estado_orden', 'ingresar_transacciones', 'editar_transacciones', 'eliminar_transacciones'];
       const sortByOrder = (list, order) => [...list].sort((a, b) => {
         const ia = order.indexOf(a.permission);
         const ib = order.indexOf(b.permission);
@@ -892,6 +893,11 @@ function setupPanelControl() {
 let ccMonedaActual = 'TODAS';
 let ccMovimientosList = [];
 let ccEsIntermediario = false;
+let ccDetalleTipo = null;
+let ccDetalleId = null;
+let ccDetalleMovimientosList = [];
+let ccResumenRowsConSaldo = [];
+let ccFiltroTipo = 'cliente';
 
 // Conceptos de movimientos CC (legibles para el usuario). Incluimos textos legacy en listas para borrar/consultar datos ya guardados.
 const CONCEPTO_CC_CONVERSION = 'Conversión de moneda';
@@ -923,59 +929,239 @@ function setCcSaldoCards(saldos) {
 }
 
 function loadCuentaCorriente() {
-  const selCliente = document.getElementById('cc-cliente');
-  const selIntermediario = document.getElementById('cc-intermediario');
-  const sinCliente = document.getElementById('cc-sin-cliente');
-  const sinIntermediario = document.getElementById('cc-sin-intermediario');
+  const loadingEl = document.getElementById('cc-loading');
   const contenido = document.getElementById('cc-contenido');
-  if (!selCliente || !sinCliente || !contenido) return;
+  const tbody = document.getElementById('cc-resumen-tbody');
+  if (!contenido || !tbody) return;
 
-  setCcSaldoCards(null);
-  ccMovimientosList = [];
+  if (loadingEl) loadingEl.style.display = 'block';
+  contenido.style.display = 'none';
 
   Promise.all([
     client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
     client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
-  ]).then(([rClientes, rInt]) => {
+    client.from('movimientos_cuenta_corriente').select('cliente_id, moneda, monto').or('estado.eq.cerrado,estado.is.null'),
+    client.from('movimientos_cuenta_corriente_intermediario').select('intermediario_id, moneda, monto').or('estado.eq.cerrado,estado.is.null'),
+  ]).then(([rClientes, rInt, rMovCli, rMovInt]) => {
+    if (loadingEl) loadingEl.style.display = 'none';
     const clientes = rClientes.data || [];
     const intermediarios = rInt.data || [];
-    selCliente.innerHTML = '<option value="">Elegir cliente…</option>' + clientes.map((c) => `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('');
-    if (selIntermediario) {
-      selIntermediario.innerHTML = '<option value="">Elegir intermediario…</option>' + intermediarios.map((i) => `<option value="${i.id}">${escapeHtml(i.nombre)}</option>`).join('');
-      const idIntStored = selIntermediario.getAttribute('data-last-id') || '';
-      if (idIntStored && intermediarios.some((i) => i.id === idIntStored)) selIntermediario.value = idIntStored;
-    }
-    const tipo = document.getElementById('cc-tipo-entity')?.querySelector('button.activo')?.getAttribute('data-tipo') || 'cliente';
-    ccEsIntermediario = tipo === 'intermediario';
-    const wrapCliente = document.getElementById('cc-wrap-cliente');
-    const wrapIntermediario = document.getElementById('cc-wrap-intermediario');
-    if (wrapCliente) wrapCliente.style.display = ccEsIntermediario ? 'none' : 'block';
-    if (wrapIntermediario) wrapIntermediario.style.display = ccEsIntermediario ? 'block' : 'none';
-    if (sinCliente) sinCliente.style.display = 'none';
-    if (sinIntermediario) sinIntermediario.style.display = 'none';
-    if (ccEsIntermediario) {
-      const idInt = selIntermediario?.value?.trim() || '';
-      if (idInt) {
-        contenido.style.display = 'block';
-        loadCuentaCorrienteIntermediario(idInt);
-      } else {
-        contenido.style.display = 'none';
-        if (sinIntermediario) sinIntermediario.style.display = 'block';
-      }
-    } else {
-      const idStored = selCliente.getAttribute('data-last-id') || '';
-      if (idStored && clientes.some((c) => c.id === idStored)) selCliente.value = idStored;
-      const id = selCliente.value ? selCliente.value.trim() : '';
-      if (id) {
-        sinCliente.style.display = 'none';
-        contenido.style.display = 'block';
-        loadCuentaCorrienteCliente(id);
-      } else {
-        sinCliente.style.display = 'block';
-        contenido.style.display = 'none';
-      }
+    const movCli = rMovCli.data || [];
+    const movInt = rMovInt.data || [];
+
+    const saldosCli = {};
+    movCli.forEach((m) => {
+      const id = m.cliente_id;
+      if (!saldosCli[id]) saldosCli[id] = { USD: 0, EUR: 0, ARS: 0 };
+      if (saldosCli[id][m.moneda] != null) saldosCli[id][m.moneda] += Number(m.monto);
+    });
+    const saldosInt = {};
+    movInt.forEach((m) => {
+      const id = m.intermediario_id;
+      if (!saldosInt[id]) saldosInt[id] = { USD: 0, EUR: 0, ARS: 0 };
+      if (saldosInt[id][m.moneda] != null) saldosInt[id][m.moneda] += Number(m.monto);
+    });
+
+    const rows = [];
+    clientes.forEach((c) => {
+      rows.push({ tipo: 'cliente', id: c.id, nombre: c.nombre, saldos: saldosCli[c.id] || { USD: 0, EUR: 0, ARS: 0 } });
+    });
+    intermediarios.forEach((i) => {
+      rows.push({ tipo: 'intermediario', id: i.id, nombre: i.nombre, saldos: saldosInt[i.id] || { USD: 0, EUR: 0, ARS: 0 } });
+    });
+    const conSaldo = (r) => (Number(r.saldos.USD) || 0) !== 0 || (Number(r.saldos.EUR) || 0) !== 0 || (Number(r.saldos.ARS) || 0) !== 0;
+    ccResumenRowsConSaldo = rows.filter(conSaldo);
+    ccResumenRowsConSaldo.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
+    aplicarFiltroCcResumen();
+    contenido.style.display = 'block';
+  });
+}
+
+function aplicarFiltroCcResumen() {
+  const filtrados = ccResumenRowsConSaldo.filter((r) => r.tipo === ccFiltroTipo);
+  renderCcResumenTable(filtrados);
+}
+
+function renderCcResumenTable(rows) {
+  const tbody = document.getElementById('cc-resumen-tbody');
+  if (!tbody) return;
+
+  const monedas = ['USD', 'EUR', 'ARS'];
+  tbody.innerHTML = rows
+    .map((row) => {
+      const tipoLabel = row.tipo === 'intermediario' ? 'Intermediario' : 'Cliente';
+      const cels = [escapeHtml(row.nombre || '–')];
+      monedas.forEach((mon) => {
+        const s = Number(row.saldos[mon]) || 0;
+        const aFavor = s > 0 ? formatMonto(s, mon) : '–';
+        const negativo = s < 0 ? formatMonto(-s, mon) : '–';
+        const clsFavor = s > 0 ? 'valor-positivo' : '';
+        const clsNeg = s < 0 ? 'valor-negativo' : '';
+        cels.push(`<span class="${clsFavor}">${aFavor}</span>`);
+        cels.push(`<span class="${clsNeg}">${negativo}</span>`);
+      });
+      cels.push(
+        `<button type="button" class="btn-ver-detalle" data-tipo="${escapeHtml(row.tipo)}" data-id="${escapeHtml(row.id)}" data-nombre="${escapeHtml(row.nombre || '')}" title="Ver detalle" aria-label="Ver detalle cuenta corriente"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="2.5" fill="none"/></svg></span></button>`
+      );
+      return `<tr><td>${cels.join('</td><td>')}</td></tr>`;
+    })
+    .join('');
+
+  if (rows.length === 0) tbody.innerHTML = '<tr><td colspan="8">No hay ' + (ccFiltroTipo === 'cliente' ? 'clientes' : 'intermediarios') + ' con saldo distinto de cero.</td></tr>';
+  else {
+    tbody.querySelectorAll('.btn-ver-detalle').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tipo = btn.getAttribute('data-tipo');
+        const id = btn.getAttribute('data-id');
+        const nombre = btn.getAttribute('data-nombre') || '';
+        if (tipo && id) openModalCcDetalle(tipo, id, nombre);
+      });
+    });
+  }
+}
+
+/** Devuelve Promise<{ movimientos, saldos }> para la entidad (cliente o intermediario). */
+function fetchMovimientosCcPorEntidad(tipo, entityId) {
+  const saldos = { USD: 0, EUR: 0, ARS: 0 };
+  if (tipo === 'cliente') {
+    return client
+      .from('movimientos_cuenta_corriente')
+      .select('id, moneda, monto, concepto, fecha, estado, estado_fecha')
+      .eq('cliente_id', entityId)
+      .or('estado.eq.cerrado,estado.is.null')
+      .order('fecha', { ascending: false })
+      .order('created_at', { ascending: false })
+      .then((res) => {
+        const movimientos = res.data || [];
+        movimientos.forEach((m) => { if (saldos[m.moneda] != null) saldos[m.moneda] += Number(m.monto); });
+        return { movimientos, saldos };
+      });
+  }
+  return client
+    .from('movimientos_cuenta_corriente_intermediario')
+    .select('id, moneda, monto, concepto, fecha, estado, estado_fecha')
+    .eq('intermediario_id', entityId)
+    .or('estado.eq.cerrado,estado.is.null')
+    .order('fecha', { ascending: false })
+    .order('created_at', { ascending: false })
+    .then((res) => {
+      const movimientos = res.data || [];
+      movimientos.forEach((m) => { if (saldos[m.moneda] != null) saldos[m.moneda] += Number(m.monto); });
+      return { movimientos, saldos };
+    });
+}
+
+function openModalCcDetalle(tipo, id, nombre) {
+  const backdrop = document.getElementById('modal-cc-detalle-backdrop');
+  const tituloEl = document.getElementById('modal-cc-detalle-titulo');
+  const entityEl = document.getElementById('modal-cc-detalle-entity');
+  const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
+  const loadingEl = document.getElementById('modal-cc-detalle-loading');
+  const tablaWrap = document.getElementById('modal-cc-detalle-tabla-wrap');
+  if (!backdrop || !tituloEl) return;
+
+  ccDetalleTipo = tipo;
+  ccDetalleId = id;
+  const tipoLabel = tipo === 'intermediario' ? 'Intermediario' : 'Cliente';
+  tituloEl.textContent = 'Detalle cuenta corriente';
+  entityEl.innerHTML = '';
+  const strong = document.createElement('strong');
+  strong.textContent = tipoLabel + ': ' + (nombre || '–');
+  entityEl.appendChild(strong);
+  saldosWrap.innerHTML = '';
+  loadingEl.style.display = 'block';
+  tablaWrap.style.display = 'none';
+  backdrop.classList.add('activo');
+
+  fetchMovimientosCcPorEntidad(tipo, id).then(({ movimientos, saldos }) => {
+    ccDetalleMovimientosList = movimientos;
+    loadingEl.style.display = 'none';
+
+    const monedas = ['USD', 'EUR', 'ARS'];
+    const iconUrls = { USD: '/assets/Icono_Dolar.avif', EUR: '/assets/Icono_Euro.avif', ARS: '/assets/Icono_ARS.webp' };
+    saldosWrap.innerHTML = monedas
+      .map((mon) => {
+        const s = Number(saldos[mon]) || 0;
+        const label = s >= 0 ? 'Positivo' : 'Negativo';
+        const val = formatMonto(s >= 0 ? s : -s, mon);
+        const cls = 'valor ' + (s >= 0 ? 'positivo' : 'negativo');
+        return `<div class="card" style="min-width:120px;"><span class="card-titulo"><img src="${iconUrls[mon]}" alt="" class="cc-icono-moneda" width="20" height="20"/> ${mon}</span><span class="cc-saldo-label" aria-hidden="true">${label}</span><span class="${cls}">${val}</span></div>`;
+      })
+      .join('');
+
+    renderCcDetalleTable();
+    tablaWrap.style.display = 'block';
+  });
+}
+
+function closeModalCcDetalle() {
+  const backdrop = document.getElementById('modal-cc-detalle-backdrop');
+  if (backdrop) backdrop.classList.remove('activo');
+  ccDetalleTipo = null;
+  ccDetalleId = null;
+  ccDetalleMovimientosList = [];
+}
+
+function renderCcDetalleTable() {
+  const tbody = document.getElementById('cc-detalle-tbody');
+  const tfoot = document.getElementById('cc-detalle-tfoot');
+  const canAbmCc = userPermissions.includes('editar_transacciones') && ccDetalleTipo === 'cliente';
+  if (!tbody) return;
+
+  const filtrados = ccDetalleMovimientosList;
+  const totals = { USD: { debe: 0, haber: 0 }, EUR: { debe: 0, haber: 0 }, ARS: { debe: 0, haber: 0 } };
+  filtrados.forEach((m) => {
+    const n = Number(m.monto);
+    const mon = m.moneda;
+    if (totals[mon]) {
+      if (n > 0) totals[mon].debe += n;
+      else totals[mon].haber += -n;
     }
   });
+
+  tbody.innerHTML = filtrados
+    .map((m) => {
+      const n = Number(m.monto);
+      const mon = m.moneda;
+      const debeUsd = mon === 'USD' ? (n > 0 ? formatMonto(n, 'USD') : '–') : '–';
+      const haberUsd = mon === 'USD' ? (n <= 0 ? formatMonto(-n, 'USD') : '–') : '–';
+      const debeEur = mon === 'EUR' ? (n > 0 ? formatMonto(n, 'EUR') : '–') : '–';
+      const haberEur = mon === 'EUR' ? (n <= 0 ? formatMonto(-n, 'EUR') : '–') : '–';
+      const debeArs = mon === 'ARS' ? (n > 0 ? formatMonto(n, 'ARS') : '–') : '–';
+      const haberArs = mon === 'ARS' ? (n <= 0 ? formatMonto(-n, 'ARS') : '–') : '–';
+      return `<tr>
+          <td>${(m.fecha || '').toString().slice(0, 10)}</td>
+          <td>${escapeHtml(m.concepto || '–')}</td>
+          <td>${debeUsd}</td><td>${haberUsd}</td>
+          <td>${debeEur}</td><td>${haberEur}</td>
+          <td>${debeArs}</td><td>${haberArs}</td>
+          <td>${canAbmCc ? `<button type="button" class="btn-editar btn-editar-cc-detalle" data-id="${m.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : ''}</td>
+        </tr>`;
+    })
+    .join('');
+
+  if (tfoot) {
+    tfoot.innerHTML = filtrados.length === 0
+      ? ''
+      : `<tr>
+          <td colspan="2">Total</td>
+          <td>${formatMonto(totals.USD.debe, 'USD')}</td><td>${formatMonto(totals.USD.haber, 'USD')}</td>
+          <td>${formatMonto(totals.EUR.debe, 'EUR')}</td><td>${formatMonto(totals.EUR.haber, 'EUR')}</td>
+          <td>${formatMonto(totals.ARS.debe, 'ARS')}</td><td>${formatMonto(totals.ARS.haber, 'ARS')}</td>
+          <td></td>
+        </tr>`;
+  }
+
+  if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="9">No hay movimientos.</td></tr>';
+  else if (canAbmCc) {
+    tbody.querySelectorAll('.btn-editar-cc-detalle').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mov = ccDetalleMovimientosList.find((x) => x.id === btn.getAttribute('data-id'));
+        if (mov) openModalMovimientoCc(mov);
+      });
+    });
+  }
 }
 
 function loadCuentaCorrienteIntermediario(intermediarioId) {
@@ -1200,9 +1386,13 @@ function saveMovimientoCc() {
         return;
       }
       closeModalMovimientoCc();
-      const selCliente = document.getElementById('cc-cliente');
-      const clienteId = selCliente && selCliente.value ? selCliente.value.trim() : '';
-      if (clienteId) loadCuentaCorrienteCliente(clienteId);
+      if (ccDetalleId && ccDetalleTipo) {
+        fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos }) => {
+          ccDetalleMovimientosList = movimientos;
+          renderCcDetalleTable();
+        });
+      }
+      loadCuentaCorriente();
     });
 }
 
@@ -1217,68 +1407,70 @@ function setupModalMovimientoCc() {
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveMovimientoCc(); });
 }
 
+/** Modales: arrastrar por el header para mover; al cerrar se resetea la posición. */
+function setupModalesDraggable() {
+  let dragState = null;
+
+  document.querySelectorAll('.modal').forEach((modal) => {
+    const header = modal.querySelector('.modal-header');
+    if (!header) return;
+    header.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.modal-close')) return;
+      e.preventDefault();
+      const rect = modal.getBoundingClientRect();
+      modal.style.position = 'fixed';
+      modal.style.left = rect.left + 'px';
+      modal.style.top = rect.top + 'px';
+      modal.style.margin = '0';
+      dragState = { modal, startX: e.clientX, startY: e.clientY, startLeft: rect.left, startTop: rect.top };
+    });
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragState) return;
+    const dx = e.clientX - dragState.startX;
+    const dy = e.clientY - dragState.startY;
+    dragState.modal.style.left = (dragState.startLeft + dx) + 'px';
+    dragState.modal.style.top = (dragState.startTop + dy) + 'px';
+  });
+
+  document.addEventListener('mouseup', () => { dragState = null; });
+
+  document.querySelectorAll('.modal-backdrop').forEach((backdrop) => {
+    const modal = backdrop.querySelector('.modal');
+    if (!modal) return;
+    const observer = new MutationObserver(() => {
+      if (!backdrop.classList.contains('activo')) {
+        modal.style.position = '';
+        modal.style.left = '';
+        modal.style.top = '';
+        modal.style.margin = '';
+      }
+    });
+    observer.observe(backdrop, { attributes: true, attributeFilter: ['class'] });
+  });
+}
+
 function setupCuentaCorriente() {
-  const selCliente = document.getElementById('cc-cliente');
-  const selIntermediario = document.getElementById('cc-intermediario');
-  const sinCliente = document.getElementById('cc-sin-cliente');
-  const sinIntermediario = document.getElementById('cc-sin-intermediario');
-  const contenido = document.getElementById('cc-contenido');
-  const wrapCliente = document.getElementById('cc-wrap-cliente');
-  const wrapIntermediario = document.getElementById('cc-wrap-intermediario');
+  const backdropDetalle = document.getElementById('modal-cc-detalle-backdrop');
+  const btnCloseDetalle = document.getElementById('modal-cc-detalle-close');
+  if (btnCloseDetalle) btnCloseDetalle.addEventListener('click', closeModalCcDetalle);
+  if (backdropDetalle) backdropDetalle.addEventListener('click', (e) => { if (e.target === backdropDetalle) closeModalCcDetalle(); });
 
-  const tipoToggle = document.getElementById('cc-tipo-entity');
-  if (tipoToggle) {
-    tipoToggle.querySelectorAll('button').forEach((btn) => {
+  const ccFiltroTipoEl = document.getElementById('cc-filtro-tipo');
+  if (ccFiltroTipoEl) {
+    ccFiltroTipoEl.querySelectorAll('button').forEach((btn) => {
       btn.addEventListener('click', () => {
-        tipoToggle.querySelectorAll('button').forEach((b) => b.classList.remove('activo'));
+        const tipo = btn.getAttribute('data-tipo');
+        if (!tipo) return;
+        ccFiltroTipo = tipo;
+        ccFiltroTipoEl.querySelectorAll('button').forEach((b) => b.classList.remove('activo'));
         btn.classList.add('activo');
-        loadCuentaCorriente();
+        aplicarFiltroCcResumen();
       });
     });
   }
 
-  if (selCliente) {
-    selCliente.addEventListener('change', () => {
-      const id = selCliente.value ? selCliente.value.trim() : '';
-      selCliente.setAttribute('data-last-id', id);
-      if (ccEsIntermediario) return;
-      if (!id) {
-        if (sinCliente) sinCliente.style.display = 'block';
-        if (contenido) contenido.style.display = 'none';
-        return;
-      }
-      if (sinCliente) sinCliente.style.display = 'none';
-      if (contenido) contenido.style.display = 'block';
-      loadCuentaCorrienteCliente(id);
-    });
-  }
-  if (selIntermediario) {
-    selIntermediario.addEventListener('change', () => {
-      const id = selIntermediario.value ? selIntermediario.value.trim() : '';
-      selIntermediario.setAttribute('data-last-id', id);
-      if (!ccEsIntermediario) return;
-      if (!id) {
-        if (sinIntermediario) sinIntermediario.style.display = 'block';
-        if (contenido) contenido.style.display = 'none';
-        return;
-      }
-      if (sinIntermediario) sinIntermediario.style.display = 'none';
-      if (contenido) contenido.style.display = 'block';
-      loadCuentaCorrienteIntermediario(id);
-    });
-  }
-
-  const toggle = document.getElementById('cc-toggle-moneda');
-  if (toggle) {
-    toggle.querySelectorAll('button').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        ccMonedaActual = btn.getAttribute('data-moneda');
-        toggle.querySelectorAll('button').forEach((b) => b.classList.remove('activo'));
-        btn.classList.add('activo');
-        renderCcTable();
-      });
-    });
-  }
   document.querySelectorAll('.link-inicio').forEach((a) => {
     a.addEventListener('click', (e) => {
       e.preventDefault();
@@ -1842,7 +2034,7 @@ function openModalOrden(registro) {
 
   Promise.all([
     client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
-    client.from('tipos_operacion').select('id, codigo, nombre').eq('activo', true).order('codigo'),
+    client.from('tipos_operacion').select('id, codigo, nombre, moneda_in, moneda_out').eq('activo', true).order('codigo'),
     client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
   ]).then(([rClientes, rTipos, rInt]) => {
     const clientes = rClientes.data || [];
@@ -1853,7 +2045,7 @@ function openModalOrden(registro) {
     const selTipo = document.getElementById('orden-tipo-operacion');
     const selInt = document.getElementById('orden-intermediario');
     if (selCliente) selCliente.innerHTML = '<option value="">Sin asignar</option>' + clientes.map((c) => `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('');
-    if (selTipo) selTipo.innerHTML = '<option value="">Elegir…</option>' + tipos.map((t) => `<option value="${t.id}" data-codigo="${escapeHtml(t.codigo || '')}">${escapeHtml(t.nombre)}</option>`).join('');
+    if (selTipo) selTipo.innerHTML = '<option value="">Elegir…</option>' + tipos.map((t) => `<option value="${t.id}" data-codigo="${escapeHtml(t.codigo || '')}" data-moneda-in="${escapeHtml((t.moneda_in || '').toUpperCase())}" data-moneda-out="${escapeHtml((t.moneda_out || '').toUpperCase())}">${escapeHtml(t.nombre)}</option>`).join('');
     if (selInt) selInt.innerHTML = '<option value="">Sin asignar</option>' + intermediarios.map((i) => `<option value="${i.id}">${escapeHtml(i.nombre)}</option>`).join('');
 
     const selTipoEl = document.getElementById('orden-tipo-operacion');
@@ -2032,13 +2224,22 @@ function openModalOrden(registro) {
 }
 
 function adaptarFormularioOrden(codigo, tipos) {
-  // Regla: en el código tipo operación la primera moneda es la recibida y la segunda la entregada (ej. ARS-USD → recibimos ARS, entregamos USD)
-  const partes = (codigo || '').split('-');
-  const primera = (partes[0] || '').trim().toUpperCase();
-  const segunda = (partes[1] || '').trim().toUpperCase();
-  const normalizarMoneda = (s) => (s === 'DOLAR' ? 'USD' : s);
-  const recibidaDesdeTipo = primera && segunda ? normalizarMoneda(primera) : null;
-  const entregadaDesdeTipo = primera && segunda ? normalizarMoneda(segunda) : null;
+  // Prioridad: moneda_in/moneda_out del tipo (tabla); fallback: parsear código (primera = recibida, segunda = entregada)
+  let recibidaDesdeTipo = null;
+  let entregadaDesdeTipo = null;
+  const tipo = Array.isArray(tipos) && codigo ? tipos.find((t) => (t.codigo || '') === codigo) : null;
+  if (tipo && (tipo.moneda_in || tipo.moneda_out)) {
+    recibidaDesdeTipo = (tipo.moneda_in || '').trim().toUpperCase() || null;
+    entregadaDesdeTipo = (tipo.moneda_out || '').trim().toUpperCase() || null;
+  }
+  if (recibidaDesdeTipo == null || entregadaDesdeTipo == null) {
+    const partes = (codigo || '').split('-');
+    const primera = (partes[0] || '').trim().toUpperCase();
+    const segunda = (partes[1] || '').trim().toUpperCase();
+    const normalizarMoneda = (s) => (s === 'DOLAR' ? 'USD' : s);
+    if (recibidaDesdeTipo == null) recibidaDesdeTipo = primera && segunda ? normalizarMoneda(primera) : null;
+    if (entregadaDesdeTipo == null) entregadaDesdeTipo = (segunda === 'CHEQUE' ? 'ARS' : (primera && segunda ? normalizarMoneda(segunda) : null));
+  }
 
   const isUsdUsd = codigo === 'USD-USD';
   const isArsUsd = codigo === 'ARS-USD';
@@ -2717,15 +2918,7 @@ function saveOrden(aceptaComisionCero = false) {
               loadOrdenes();
               loadCajas();
               const vistaCc = document.getElementById('vista-cuenta-corriente');
-              if (vistaCc && vistaCc.style.display !== 'none') {
-                if (ccEsIntermediario) {
-                  const selInt = document.getElementById('cc-intermediario');
-                  if (selInt && selInt.value) loadCuentaCorrienteIntermediario(selInt.value);
-                } else {
-                  const selCc = document.getElementById('cc-cliente');
-                  if (selCc && selCc.value) loadCuentaCorrienteCliente(selCc.value);
-                }
-              }
+              if (vistaCc && vistaCc.style.display !== 'none') loadCuentaCorriente();
             });
           });
         });
@@ -2812,20 +3005,31 @@ function totalesInstrumentacion(transacciones, orden) {
   return { totalRecibido, totalEntregado };
 }
 
-/** Valida que los totales no superen el acuerdo. Devuelve { ok, mensaje }. */
+/** Valida que los totales no superen el acuerdo. Devuelve { ok, mensaje }. Si ya se completó el acuerdo, mensaje específico; si no, indica en cuánto se excede. */
 function validarTotalesVsAcuerdo(transacciones, orden, transaccionExcluirId, transaccionAgregar) {
   const list = (transacciones || []).filter((t) => t.id !== transaccionExcluirId);
-  if (transaccionAgregar) list.push(transaccionAgregar);
-  const { totalRecibido, totalEntregado } = totalesInstrumentacion(list, orden);
+  const listConNueva = transaccionAgregar ? [...list, transaccionAgregar] : list;
+  const { totalRecibido: totalRecSin, totalEntregado: totalEntSin } = totalesInstrumentacion(list, orden);
+  const { totalRecibido: totalRecCon, totalEntregado: totalEntCon } = totalesInstrumentacion(listConNueva, orden);
   const montoRecibido = Number(orden.monto_recibido) || 0;
   const montoEntregado = Number(orden.monto_entregado) || 0;
-  const monedaRecibida = orden.moneda_recibida || 'USD';
-  const monedaEntregada = orden.moneda_entregada || 'USD';
-  if (totalRecibido > montoRecibido + 1e-6) {
-    return { ok: false, mensaje: `La suma de ingresos (${formatImporteDisplay(totalRecibido)} ${monedaRecibida}) supera el acuerdo a recibir (${formatImporteDisplay(montoRecibido)} ${monedaRecibida}).` };
+  const monedaRecibida = (orden.moneda_recibida || 'USD').trim().toUpperCase();
+  const monedaEntregada = (orden.moneda_entregada || 'USD').trim().toUpperCase();
+  const tol = 1e-6;
+
+  if (totalRecCon > montoRecibido + tol) {
+    const yaCompleto = totalRecSin >= montoRecibido - tol;
+    const mensaje = yaCompleto
+      ? 'No se puede cargar una transacción de ingreso dado que ya se completó el acuerdo.'
+      : `La transacción excede el acuerdo en ingresos en ${formatImporteDisplay(totalRecCon - montoRecibido)} ${monedaRecibida}. El máximo permitido es ${formatImporteDisplay(montoRecibido)} ${monedaRecibida}.`;
+    return { ok: false, mensaje };
   }
-  if (totalEntregado > montoEntregado + 1e-6) {
-    return { ok: false, mensaje: `La suma de egresos (${formatImporteDisplay(totalEntregado)} ${monedaEntregada}) supera el acuerdo a entregar (${formatImporteDisplay(montoEntregado)} ${monedaEntregada}).` };
+  if (totalEntCon > montoEntregado + tol) {
+    const yaCompleto = totalEntSin >= montoEntregado - tol;
+    const mensaje = yaCompleto
+      ? 'No se puede cargar una transacción de egreso dado que ya se completó el acuerdo.'
+      : `La transacción excede el acuerdo en egresos en ${formatImporteDisplay(totalEntCon - montoEntregado)} ${monedaEntregada}. El máximo permitido es ${formatImporteDisplay(montoEntregado)} ${monedaEntregada}.`;
+    return { ok: false, mensaje };
   }
   return { ok: true };
 }
@@ -3192,40 +3396,62 @@ function refreshTransaccionesPanel(ordenId) {
   });
 }
 
-function actualizarMontoArsCalculado() {
-  const wrapArs = document.getElementById('transaccion-wrap-ars');
-  const wrapNormal = document.getElementById('transaccion-wrap-monto-normal');
-  const montoBaseRaw = document.getElementById('transaccion-monto-base')?.value?.trim() || '';
+/** Conversión inversa: si moneda es ARS → calculado = monto/TC (otra moneda); si moneda es USD/EUR → calculado = monto*TC (ARS). */
+function actualizarMontoCalculado() {
+  const backdrop = document.getElementById('modal-transaccion-backdrop');
+  const selMoneda = document.getElementById('transaccion-moneda');
+  const selTipo = document.getElementById('transaccion-tipo');
+  const wrapConversion = document.getElementById('transaccion-wrap-conversion');
+  if (!wrapConversion || wrapConversion.style.display !== 'block') return;
+  const monedaRecibida = (backdrop?.dataset.monedaRecibida || '').toUpperCase();
+  const monedaEntregada = (backdrop?.dataset.monedaEntregada || '').toUpperCase();
+  const moneda = (selMoneda?.value || '').toUpperCase();
+  const tipo = selTipo?.value || 'ingreso';
+  const otraMoneda = moneda === 'ARS' ? (tipo === 'ingreso' ? monedaEntregada : monedaRecibida) : 'ARS';
+  const lblCalculado = document.getElementById('transaccion-monto-calculado-currency-label');
+  const display = document.getElementById('transaccion-monto-calculado-display');
+  if (lblCalculado) lblCalculado.textContent = otraMoneda || 'USD';
+  const montoRaw = document.getElementById('transaccion-monto')?.value?.trim() || '';
   const tcRaw = document.getElementById('transaccion-tipo-cambio')?.value?.trim() || '';
-  const base = parseImporteInput(montoBaseRaw);
+  const monto = parseImporteInput(montoRaw);
   const tc = parseImporteInput(tcRaw);
-  const montoArs = (typeof base === 'number' && !isNaN(base) && typeof tc === 'number' && !isNaN(tc) && tc > 0) ? base * tc : null;
-  const display = document.getElementById('transaccion-monto-ars-display');
-  const montoInput = document.getElementById('transaccion-monto');
-  if (display) display.value = montoArs != null ? formatImporteDisplay(montoArs) : '';
-  if (montoInput) montoInput.value = montoArs != null ? formatImporteDisplay(montoArs) : '';
+  let calculado = null;
+  if (typeof monto === 'number' && !isNaN(monto) && typeof tc === 'number' && !isNaN(tc) && tc > 0) {
+    calculado = moneda === 'ARS' ? monto / tc : monto * tc;
+  }
+  if (display) display.value = calculado != null ? formatImporteDisplay(calculado) : '';
 }
 
 function toggleTransaccionMonedaArs() {
   const selMoneda = document.getElementById('transaccion-moneda');
-  const wrapArs = document.getElementById('transaccion-wrap-ars');
-  const wrapNormal = document.getElementById('transaccion-wrap-monto-normal');
+  const selTipo = document.getElementById('transaccion-tipo');
+  const backdrop = document.getElementById('modal-transaccion-backdrop');
+  const wrapConversion = document.getElementById('transaccion-wrap-conversion');
+  const lblMonto = document.getElementById('transaccion-monto-currency-label');
   const esOrdenCheque = document.getElementById('transaccion-es-orden-cheque')?.value === '1';
   if (esOrdenCheque) {
     if (selMoneda) { selMoneda.value = 'ARS'; selMoneda.disabled = true; }
-    if (wrapArs) wrapArs.style.display = 'none';
-    if (wrapNormal) wrapNormal.style.display = 'block';
+    if (wrapConversion) wrapConversion.style.display = 'none';
+    if (lblMonto) lblMonto.textContent = 'ARS';
     return;
   }
   if (selMoneda) selMoneda.disabled = false;
-  const esArs = selMoneda && selMoneda.value === 'ARS';
-  if (wrapArs) wrapArs.style.display = esArs ? 'block' : 'none';
-  if (wrapNormal) wrapNormal.style.display = esArs ? 'none' : 'block';
-  if (esArs) actualizarMontoArsCalculado();
-  else {
-    const d = document.getElementById('transaccion-monto-ars-display');
+  const moneda = (selMoneda?.value || 'USD').toUpperCase();
+  const monedaRecibida = (backdrop?.dataset.monedaRecibida || '').toUpperCase();
+  const monedaEntregada = (backdrop?.dataset.monedaEntregada || '').toUpperCase();
+  const tipo = selTipo?.value || 'ingreso';
+  const monedaTransaccion = tipo === 'ingreso' ? monedaRecibida : monedaEntregada;
+  if (lblMonto) lblMonto.textContent = monedaTransaccion || moneda;
+  const hayDosMonedas = monedaRecibida && monedaEntregada && monedaRecibida !== monedaEntregada;
+  if (wrapConversion) wrapConversion.style.display = hayDosMonedas ? 'block' : 'none';
+  if (hayDosMonedas) {
+    const lblCalculado = document.getElementById('transaccion-monto-calculado-currency-label');
+    const otraMoneda = moneda === 'ARS' ? (tipo === 'ingreso' ? monedaEntregada : monedaRecibida) : 'ARS';
+    if (lblCalculado) lblCalculado.textContent = otraMoneda || 'USD';
+    actualizarMontoCalculado();
+  } else {
+    const d = document.getElementById('transaccion-monto-calculado-display');
     if (d) d.value = '';
-    // No vaciar transaccion-monto: al editar ya tiene el valor cargado; al cambiar de ARS a otra moneda se escribe nuevo monto manualmente.
   }
 }
 
@@ -3261,31 +3487,33 @@ function openModalTransaccion(registro, instrumentacionId) {
   const titulo = document.getElementById('modal-transaccion-titulo');
   const idEl = document.getElementById('transaccion-id');
   const instIdEl = document.getElementById('transaccion-instrumentacion-id');
-  const wrapArs = document.getElementById('transaccion-wrap-ars');
-  const wrapNormal = document.getElementById('transaccion-wrap-monto-normal');
   const selMoneda = document.getElementById('transaccion-moneda');
   if (!backdrop || !titulo || !idEl || !instIdEl) return;
 
   instIdEl.value = instrumentacionId || '';
   function cargarParticipantesYOrden() {
-    if (!instrumentacionId) return Promise.resolve({ cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '' });
+    if (!instrumentacionId) return Promise.resolve({ cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '', clienteNombre: '', montoRecibido: null, montoEntregado: null });
     return client.from('instrumentacion').select('orden_id').eq('id', instrumentacionId).single().then((rInst) => {
       const ordenId = rInst.data && rInst.data.orden_id;
-      if (!ordenId) return { cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '' };
-      return client.from('ordenes').select('cliente_id, intermediario_id, cotizacion, tipo_operacion_id, moneda_recibida, moneda_entregada').eq('id', ordenId).single().then((rOrd) => {
+      if (!ordenId) return { cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '', clienteNombre: '', montoRecibido: null, montoEntregado: null };
+      return client.from('ordenes').select('cliente_id, intermediario_id, cotizacion, tipo_operacion_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, clientes(nombre)').eq('id', ordenId).single().then((rOrd) => {
         const o = rOrd.data || {};
         const cot = o.cotizacion != null && Number(o.cotizacion) > 0 ? Number(o.cotizacion) : null;
         const tipoOpId = o.tipo_operacion_id;
         const monedaRecibida = (o.moneda_recibida || '').trim().toUpperCase() || '';
         const monedaEntregada = (o.moneda_entregada || '').trim().toUpperCase() || '';
-        const base = { cliente: !!o.cliente_id, intermediario: !!o.intermediario_id, cotizacion: cot, monedaRecibida, monedaEntregada };
+        const clientesRef = o.clientes;
+        const clienteNombre = (clientesRef && (typeof clientesRef === 'object' && !Array.isArray(clientesRef) ? clientesRef.nombre : (Array.isArray(clientesRef) ? clientesRef[0]?.nombre : null))) || '';
+        const montoRecibido = o.monto_recibido != null && !isNaN(Number(o.monto_recibido)) ? Number(o.monto_recibido) : null;
+        const montoEntregado = o.monto_entregado != null && !isNaN(Number(o.monto_entregado)) ? Number(o.monto_entregado) : null;
+        const base = { cliente: !!o.cliente_id, intermediario: !!o.intermediario_id, cotizacion: cot, monedaRecibida, monedaEntregada, clienteNombre, montoRecibido, montoEntregado };
         if (!tipoOpId) return { ...base, esCheque: false };
         return client.from('tipos_operacion').select('codigo').eq('id', tipoOpId).single().then((rTipo) => {
           const codigo = (rTipo.data && rTipo.data.codigo) || '';
           return { ...base, esCheque: codigo === 'ARS-ARS' };
         }).catch(() => ({ ...base, esCheque: false }));
       });
-    }).catch(() => ({ cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '' }));
+    }).catch(() => ({ cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '', clienteNombre: '', montoRecibido: null, montoEntregado: null }));
   }
 
   Promise.all([
@@ -3293,7 +3521,7 @@ function openModalTransaccion(registro, instrumentacionId) {
     cargarParticipantesYOrden(),
   ]).then(([r, participantes]) => {
     const sel = document.getElementById('transaccion-modo-pago');
-    if (sel) sel.innerHTML = (r.data || []).map((m) => `<option value="${m.id}" data-codigo="${escapeHtml(m.codigo)}">${escapeHtml(m.nombre)}</option>`).join('');
+    if (sel) sel.innerHTML = '<option value="">Ninguno</option>' + (r.data || []).map((m) => `<option value="${m.id}" data-codigo="${escapeHtml(m.codigo)}">${escapeHtml(m.nombre)}</option>`).join('');
 
     const mapLabel = { pandy: 'Pandy', cliente: 'Cliente', intermediario: 'Intermediario' };
     const allowed = ['pandy'].concat(participantes?.cliente ? ['cliente'] : []).concat(participantes?.intermediario ? ['intermediario'] : []);
@@ -3315,7 +3543,7 @@ function openModalTransaccion(registro, instrumentacionId) {
       titulo.textContent = 'Editar transacción';
       idEl.value = registro.id;
       document.getElementById('transaccion-tipo').value = registro.tipo || 'ingreso';
-      document.getElementById('transaccion-modo-pago').value = registro.modo_pago_id || '';
+      document.getElementById('transaccion-modo-pago').value = registro.modo_pago_id ? String(registro.modo_pago_id) : '';
       document.getElementById('transaccion-moneda').value = esCheque ? 'ARS' : (registro.moneda || 'USD');
       document.getElementById('transaccion-monto').value = formatImporteDisplay(registro.monto);
       document.getElementById('transaccion-cobrador').value = registro.cobrador || 'pandy';
@@ -3325,13 +3553,8 @@ function openModalTransaccion(registro, instrumentacionId) {
       if (!esCheque) {
         const tc = registro.tipo_cambio != null && Number(registro.tipo_cambio) > 0 ? Number(registro.tipo_cambio) : null;
         document.getElementById('transaccion-tipo-cambio').value = tc != null ? formatImporteDisplay(tc) : '';
-        if (registro.moneda === 'ARS' && tc) {
-          const montoBase = Number(registro.monto) / tc;
-          document.getElementById('transaccion-monto-base').value = formatImporteDisplay(montoBase);
-        } else document.getElementById('transaccion-monto-base').value = '';
       } else {
         document.getElementById('transaccion-tipo-cambio').value = '';
-        document.getElementById('transaccion-monto-base').value = '';
       }
     } else {
       titulo.textContent = 'Nueva transacción';
@@ -3340,10 +3563,11 @@ function openModalTransaccion(registro, instrumentacionId) {
       if (elEsCheque) elEsCheque.value = esCheque ? '1' : '0';
       document.getElementById('transaccion-tipo').value = 'ingreso';
       document.getElementById('transaccion-moneda').value = esCheque ? 'ARS' : 'USD';
+      document.getElementById('transaccion-modo-pago').value = '';
       document.getElementById('transaccion-cobrador').value = 'pandy';
       document.getElementById('transaccion-pagador').value = participantes?.cliente ? 'cliente' : (participantes?.intermediario ? 'intermediario' : 'pandy');
       document.getElementById('transaccion-estado').value = 'pendiente';
-      document.getElementById('transaccion-monto-base').value = '';
+      document.getElementById('transaccion-monto').value = '';
       if (!esCheque) {
         const tcAcuerdo = participantes?.cotizacion;
         document.getElementById('transaccion-tipo-cambio').value = tcAcuerdo != null ? formatImporteDisplay(tcAcuerdo) : '';
@@ -3353,12 +3577,20 @@ function openModalTransaccion(registro, instrumentacionId) {
       backdrop.dataset.monedaRecibida = participantes?.monedaRecibida || '';
       backdrop.dataset.monedaEntregada = participantes?.monedaEntregada || '';
     }
+    const elCliente = document.getElementById('transaccion-acuerdo-cliente');
+    const elMontoRec = document.getElementById('transaccion-acuerdo-monto-recibido');
+    const elMonRec = document.getElementById('transaccion-acuerdo-moneda-recibida');
+    const elMontoEnt = document.getElementById('transaccion-acuerdo-monto-entregado');
+    const elMonEnt = document.getElementById('transaccion-acuerdo-moneda-entregada');
+    if (elCliente) elCliente.textContent = participantes?.clienteNombre?.trim() || '–';
+    if (elMontoRec) elMontoRec.textContent = participantes?.montoRecibido != null ? formatImporteDisplay(participantes.montoRecibido) : '–';
+    if (elMonRec) elMonRec.textContent = participantes?.monedaRecibida ? String(participantes.monedaRecibida) : '';
+    if (elMontoEnt) elMontoEnt.textContent = participantes?.montoEntregado != null ? formatImporteDisplay(participantes.montoEntregado) : '–';
+    if (elMonEnt) elMonEnt.textContent = participantes?.monedaEntregada ? String(participantes.monedaEntregada) : '';
     adaptarTransaccionTipoYMoneda();
     toggleTransaccionMonedaArs();
     backdrop.classList.add('activo');
     setupInputImporte(document.getElementById('transaccion-monto'));
-    setupInputImporte(document.getElementById('transaccion-monto-base'));
-    setupInputImporte(document.getElementById('transaccion-tipo-cambio'));
   });
 }
 
@@ -3512,10 +3744,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
         // No llamar loadOrdenes() para no colapsar la fila de transacciones expandida.
       }
       const vistaCc = document.getElementById('vista-cuenta-corriente');
-      if (vistaCc && vistaCc.style.display !== 'none') {
-        if (ccEsIntermediario && document.getElementById('cc-intermediario')?.value) loadCuentaCorrienteIntermediario(document.getElementById('cc-intermediario').value);
-        else if (document.getElementById('cc-cliente')?.value) loadCuentaCorrienteCliente(document.getElementById('cc-cliente').value);
-      }
+      if (vistaCc && vistaCc.style.display !== 'none') loadCuentaCorriente();
       showToast('Estado de la transacción actualizado.', 'success');
     }
   }).catch((err) => {
@@ -3535,7 +3764,11 @@ function saveTransaccion() {
   }
   const esOrdenCheque = document.getElementById('transaccion-es-orden-cheque')?.value === '1';
   const tipo = document.getElementById('transaccion-tipo').value;
-  const modoPagoId = document.getElementById('transaccion-modo-pago').value;
+  const modoPagoId = (document.getElementById('transaccion-modo-pago').value || '').trim();
+  if (!modoPagoId) {
+    showToast('Elegí un modo de pago.', 'error');
+    return;
+  }
   const moneda = esOrdenCheque ? 'ARS' : document.getElementById('transaccion-moneda').value;
   const monto = parseImporteInput(document.getElementById('transaccion-monto').value);
   const cobrador = document.getElementById('transaccion-cobrador').value;
@@ -3551,11 +3784,11 @@ function saveTransaccion() {
   const tipoCambio = esOrdenCheque ? null : (tipoCambioRaw ? parseImporteInput(tipoCambioRaw) : null);
 
   if (isNaN(monto) || monto <= 0) {
-    showToast(esOrdenCheque || moneda !== 'ARS' ? 'Monto debe ser un número positivo.' : 'Completá monto base y tipo de cambio para calcular el monto en ARS.', 'error');
+    showToast(esOrdenCheque || moneda !== 'ARS' ? 'Monto debe ser un número positivo.' : 'Completá el monto en la moneda indicada; el tipo de cambio se toma del acuerdo.', 'error');
     return;
   }
 
-  const transaccionProyectada = { tipo, moneda, monto, tipo_cambio: tipoCambio };
+  const transaccionProyectada = { tipo, moneda, monto, tipo_cambio: tipoCambio, cobrador, pagador };
 
   client.from('instrumentacion').select('orden_id').eq('id', instrumentacionId).single().then((rInst) => {
     const ordenId = rInst.data?.orden_id;
@@ -3576,12 +3809,25 @@ function saveTransaccion() {
           showToast(validacion.mensaje, 'error');
           return;
         }
+        const trActual = id ? list.find((t) => t.id === id) : null;
+        const oldMonto = trActual != null && !isNaN(Number(trActual.monto)) ? Number(trActual.monto) : null;
+        const bajandoImporte = id && oldMonto != null && monto < oldMonto - 1e-6;
+        const diferenciaComp = bajandoImporte ? oldMonto - monto : null;
+        if (bajandoImporte && diferenciaComp > 0) {
+          showConfirm(
+            `Estás bajando el importe. ¿Querés que el sistema genere una transacción compensatoria con los mismos datos por ${formatImporteDisplay(diferenciaComp)} ${moneda} para cerrar el acuerdo?`,
+            'Sí, generar compensatoria',
+            () => guardarTransaccionPayload(diferenciaComp),
+            () => guardarTransaccionPayload()
+          );
+          return;
+        }
         guardarTransaccionPayload();
       });
     });
   });
 
-  function guardarTransaccionPayload() {
+  function guardarTransaccionPayload(montoCompensatorio) {
   const payload = {
     instrumentacion_id: instrumentacionId,
     tipo,
@@ -3603,6 +3849,28 @@ function saveTransaccion() {
     ? client.from('transacciones').update(payload).eq('id', id)
     : client.from('transacciones').insert(payload).select('id');
 
+  function insertarCompensatoria() {
+    if (!montoCompensatorio || montoCompensatorio <= 0) return Promise.resolve();
+    const payloadComp = {
+      instrumentacion_id: instrumentacionId,
+      tipo,
+      modo_pago_id: modoPagoId,
+      moneda,
+      monto: montoCompensatorio,
+      cobrador,
+      pagador,
+      owner: cobrador,
+      estado: 'pendiente',
+      concepto: 'Compensación por reducción de importe',
+      tipo_cambio: tipoCambio,
+      updated_at: new Date().toISOString(),
+    };
+    return client.from('transacciones').insert(payloadComp).then((r) => {
+      if (r.error) showToast('Error al crear la transacción compensatoria: ' + (r.error.message || ''), 'error');
+      else showToast('Transacción compensatoria creada por ' + formatImporteDisplay(montoCompensatorio) + ' ' + moneda + '.', 'success');
+    });
+  }
+
   prom.then((res) => {
     if (res.error) {
       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
@@ -3614,20 +3882,19 @@ function saveTransaccion() {
       refreshTransaccionesModal();
       return;
     }
+    function continuarFlujo() {
     const fecha = new Date().toISOString().slice(0, 10);
     const ahora = new Date().toISOString();
     const conceptoCc = estado === 'ejecutada' ? 'Transacción ejecutada' : 'Transacción pendiente';
 
     function refreshCcView() {
       const vistaCc = document.getElementById('vista-cuenta-corriente');
-      if (vistaCc && vistaCc.style.display !== 'none') {
-        if (ccEsIntermediario) {
-          const selInt = document.getElementById('cc-intermediario');
-          if (selInt && selInt.value) loadCuentaCorrienteIntermediario(selInt.value);
-        } else {
-          const selCc = document.getElementById('cc-cliente');
-          if (selCc && selCc.value) loadCuentaCorrienteCliente(selCc.value);
-        }
+      if (vistaCc && vistaCc.style.display !== 'none') loadCuentaCorriente();
+      if (ccDetalleId && ccDetalleTipo) {
+        fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos }) => {
+          ccDetalleMovimientosList = movimientos;
+          renderCcDetalleTable();
+        });
       }
     }
 
@@ -3739,6 +4006,8 @@ function saveTransaccion() {
         });
       });
     });
+    }
+    (montoCompensatorio ? insertarCompensatoria() : Promise.resolve()).then(continuarFlujo);
   });
   }
 }
@@ -4129,10 +4398,7 @@ function eliminarTransaccion(transaccionId, ordenId) {
     })
     .then(() => {
       const vistaCc = document.getElementById('vista-cuenta-corriente');
-      if (vistaCc && vistaCc.style.display !== 'none') {
-        if (ccEsIntermediario && document.getElementById('cc-intermediario')?.value) loadCuentaCorrienteIntermediario(document.getElementById('cc-intermediario').value);
-        else if (document.getElementById('cc-cliente')?.value) loadCuentaCorrienteCliente(document.getElementById('cc-cliente').value);
-      }
+      if (vistaCc && vistaCc.style.display !== 'none') loadCuentaCorriente();
     });
   });
 }
@@ -4179,8 +4445,7 @@ function setupModalTransaccion() {
   const btnCancel = document.getElementById('modal-transaccion-cancelar');
   const form = document.getElementById('form-transaccion');
   const selMoneda = document.getElementById('transaccion-moneda');
-  const montoBaseEl = document.getElementById('transaccion-monto-base');
-  const tcEl = document.getElementById('transaccion-tipo-cambio');
+  const montoEl = document.getElementById('transaccion-monto');
   if (btnClose) btnClose.addEventListener('click', closeModalTransaccion);
   if (btnCancel) btnCancel.addEventListener('click', closeModalTransaccion);
   if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalTransaccion(); });
@@ -4188,8 +4453,7 @@ function setupModalTransaccion() {
   const selTipo = document.getElementById('transaccion-tipo');
   if (selTipo) selTipo.addEventListener('change', adaptarTransaccionTipoYMoneda);
   if (selMoneda) selMoneda.addEventListener('change', toggleTransaccionMonedaArs);
-  if (montoBaseEl) { montoBaseEl.addEventListener('input', actualizarMontoArsCalculado); montoBaseEl.addEventListener('change', actualizarMontoArsCalculado); }
-  if (tcEl) { tcEl.addEventListener('input', actualizarMontoArsCalculado); tcEl.addEventListener('change', actualizarMontoArsCalculado); }
+  if (montoEl) { montoEl.addEventListener('input', actualizarMontoCalculado); montoEl.addEventListener('change', actualizarMontoCalculado); }
 }
 
 // --- Clientes ABM ---
@@ -4454,6 +4718,133 @@ function setupModalIntermediario() {
   if (btnNuevo) btnNuevo.addEventListener('click', () => openModalIntermediario(null));
 }
 
+// --- Tipos de operación (ABM)
+function loadTiposOperacion() {
+  const loadingEl = document.getElementById('tipos-operacion-loading');
+  const wrapEl = document.getElementById('tipos-operacion-tabla-wrap');
+  const tbody = document.getElementById('tipos-operacion-tbody');
+  const btnNuevo = document.getElementById('btn-nuevo-tipo-operacion');
+  if (!loadingEl || !wrapEl || !tbody) return;
+
+  const canAbm = userPermissions.includes('abm_tipos_operacion');
+  if (btnNuevo) btnNuevo.style.display = canAbm ? '' : 'none';
+
+  loadingEl.style.display = 'block';
+  wrapEl.style.display = 'none';
+  tbody.innerHTML = '';
+
+  client.from('tipos_operacion').select('id, codigo, nombre, moneda_in, moneda_out, activo').order('codigo').then((res) => {
+    loadingEl.style.display = 'none';
+    if (res.error) {
+      tbody.innerHTML = '<tr><td colspan="6">Error: ' + (res.error.message || '') + '</td></tr>';
+      wrapEl.style.display = 'block';
+      return;
+    }
+    const list = res.data || [];
+    tbody.innerHTML = list.map((t) => {
+      const monIn = (t.moneda_in || '').toUpperCase();
+      const monOut = (t.moneda_out || '').toUpperCase();
+      return `<tr data-id="${t.id}">
+        <td>${escapeHtml(t.codigo || '')}</td>
+        <td>${escapeHtml(t.nombre || '')}</td>
+        <td>${escapeHtml(monIn)}</td>
+        <td>${escapeHtml(monOut)}</td>
+        <td>${t.activo !== false ? 'Sí' : 'No'}</td>
+        <td>${canAbm ? `<button type="button" class="btn-editar btn-editar-tipo-operacion" data-id="${t.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('.btn-editar-tipo-operacion').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const row = list.find((r) => r.id === id);
+        if (row) openModalTipoOperacion(row);
+      });
+    });
+    wrapEl.style.display = 'block';
+  });
+}
+
+function openModalTipoOperacion(registro) {
+  const backdrop = document.getElementById('modal-tipo-operacion-backdrop');
+  const titulo = document.getElementById('modal-tipo-operacion-titulo');
+  const idEl = document.getElementById('tipo-operacion-id');
+  const form = document.getElementById('form-tipo-operacion');
+  if (!backdrop || !titulo || !idEl || !form) return;
+
+  if (registro) {
+    titulo.textContent = 'Editar tipo de operación';
+    idEl.value = registro.id;
+    document.getElementById('tipo-operacion-codigo').value = registro.codigo || '';
+    document.getElementById('tipo-operacion-nombre').value = registro.nombre || '';
+    document.getElementById('tipo-operacion-moneda-in').value = (registro.moneda_in || 'USD').toUpperCase();
+    document.getElementById('tipo-operacion-moneda-out').value = (registro.moneda_out || 'USD').toUpperCase();
+    document.getElementById('tipo-operacion-activo').checked = registro.activo !== false;
+  } else {
+    titulo.textContent = 'Nuevo tipo de operación';
+    idEl.value = '';
+    form.reset();
+    document.getElementById('tipo-operacion-moneda-in').value = 'USD';
+    document.getElementById('tipo-operacion-moneda-out').value = 'USD';
+    document.getElementById('tipo-operacion-activo').checked = true;
+  }
+  backdrop.classList.add('activo');
+}
+
+function closeModalTipoOperacion() {
+  const backdrop = document.getElementById('modal-tipo-operacion-backdrop');
+  if (backdrop) backdrop.classList.remove('activo');
+}
+
+function saveTipoOperacion() {
+  const idEl = document.getElementById('tipo-operacion-id');
+  const id = idEl?.value?.trim() || '';
+  const codigo = document.getElementById('tipo-operacion-codigo').value.trim();
+  const nombre = document.getElementById('tipo-operacion-nombre').value.trim();
+  if (!codigo || !nombre) {
+    showToast('Código y nombre son obligatorios.', 'error');
+    return;
+  }
+  const monedaIn = (document.getElementById('tipo-operacion-moneda-in').value || 'USD').toUpperCase();
+  const monedaOut = (document.getElementById('tipo-operacion-moneda-out').value || 'USD').toUpperCase();
+  if (!['USD', 'EUR', 'ARS'].includes(monedaIn) || !['USD', 'EUR', 'ARS'].includes(monedaOut)) {
+    showToast('Moneda IN y OUT deben ser USD, EUR o ARS.', 'error');
+    return;
+  }
+  const payload = {
+    codigo,
+    nombre,
+    moneda_in: monedaIn,
+    moneda_out: monedaOut,
+    activo: document.getElementById('tipo-operacion-activo').checked,
+  };
+  const prom = id
+    ? client.from('tipos_operacion').update(payload).eq('id', id)
+    : client.from('tipos_operacion').insert(payload);
+  prom.then((res) => {
+    if (res.error) {
+      showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+      return;
+    }
+    closeModalTipoOperacion();
+    loadTiposOperacion();
+    showToast(id ? 'Tipo de operación actualizado.' : 'Tipo de operación creado.', 'success');
+  });
+}
+
+function setupModalTipoOperacion() {
+  const backdrop = document.getElementById('modal-tipo-operacion-backdrop');
+  const btnClose = document.getElementById('modal-tipo-operacion-close');
+  const btnCancel = document.getElementById('modal-tipo-operacion-cancelar');
+  const form = document.getElementById('form-tipo-operacion');
+  const btnNuevo = document.getElementById('btn-nuevo-tipo-operacion');
+
+  if (btnClose) btnClose.addEventListener('click', closeModalTipoOperacion);
+  if (btnCancel) btnCancel.addEventListener('click', closeModalTipoOperacion);
+  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalTipoOperacion(); });
+  if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveTipoOperacion(); });
+  if (btnNuevo) btnNuevo.addEventListener('click', () => openModalTipoOperacion(null));
+}
+
 /** Configuración de vistas: [menuId, vistaId, título, permiso de vista]. Orden del menú. */
 const VIEWS_CONFIG = [
   ['menu-inicio', 'vista-inicio', 'Panel de Control', 'ver_inicio'],
@@ -4461,6 +4852,7 @@ const VIEWS_CONFIG = [
   ['menu-cajas', 'vista-cajas', 'Cajas', 'ver_cajas'],
   ['menu-clientes', 'vista-clientes', 'Clientes', 'ver_clientes'],
   ['menu-intermediarios', 'vista-intermediarios', 'Intermediarios', 'ver_intermediarios'],
+  ['menu-tipos-operacion', 'vista-tipos-operacion', 'Tipos de operación', 'abm_tipos_operacion'],
   ['menu-cuenta-corriente', 'vista-cuenta-corriente', 'Cuenta corriente', 'ver_cuenta_corriente'],
   ['menu-seguridad', 'vista-seguridad', 'Seguridad', 'ver_seguridad'],
 ];
@@ -4589,6 +4981,7 @@ function onSessionReady(session) {
       setupPanelControl();
       setupModalCliente();
       setupModalIntermediario();
+      setupModalTipoOperacion();
       setupModalOrden();
       setupModalTransacciones();
       setupModalTransaccion();
@@ -4597,6 +4990,7 @@ function onSessionReady(session) {
       setupCajasToggle();
       setupCuentaCorriente();
       setupModalMovimientoCc();
+      setupModalesDraggable();
       setupHelpPopovers();
       const [defaultVistaId, defaultTitle] = getFirstAllowedView();
       showView(defaultVistaId, defaultTitle);

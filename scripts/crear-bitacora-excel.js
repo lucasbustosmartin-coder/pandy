@@ -59,6 +59,11 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Tiempo de inactividad', 'Cierre de sesión automático tras X minutos sin actividad. Solo Admin ve y edita el parámetro en Seguridad. Tabla app_config, sql/app_config_session_timeout.sql.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Sidebar colapsado más visible', 'Borde derecho y sombra cuando está colapsado; botón expandir con fondo, borde y flecha más grande; title/aria-label dinámicos (Expandir/Contraer menú).', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Iconos y carpeta assets', 'Tarjetas Efectivo y Banco con iconos cash.png y Banco.webp. Carpeta assets/ con favicons, logos, iconos monedas y cajas; referencias /assets/ en index.html y crear_presentacion_pptx.py; regla estructura-proyecto.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Ajustes modal Nueva transacción', 'Campo monto con etiqueta según moneda del tipo (Monto (USD/EUR/ARS)); tipo de cambio solo lectura y gris; modo de pago por defecto Ninguno con validación al guardar; mensajería interna (toast).', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Modal transacción: moneda del tipo y conversión inversa', 'En operación ARS-USD: ingresos en ARS, egresos en USD. Un solo campo Monto (moneda de la transacción); bloque conversión con tipo de cambio (solo lectura) y monto calculado = conversión inversa (ARS→÷TC otra moneda, USD/EUR→×TC ARS).', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Tipos de operación: moneda_in/moneda_out y ABM', 'tipos_operacion con columnas moneda_in y moneda_out; backfill desde código. Permiso abm_tipos_operacion; RLS INSERT/UPDATE/DELETE. Vista Tipos de operación en menú (solo con permiso); listado y modal Nuevo/Editar (código, nombre, moneda IN, moneda OUT, activo). adaptarFormularioOrden usa monedas del tipo.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Cuenta corriente: vista Todos y modal detalle', 'Vista Cuenta corriente con filtro fijo Todos: una sola tabla con Nombre (cliente/intermediario), Saldo a favor y Saldo negativo por moneda (USD, EUR, ARS) con iconos de moneda en encabezados; botón Ver detalle por fila. Modal Detalle: datos del cliente/intermediario, saldos por moneda (cards) y tabla de movimientos (Debe/Haber); Editar movimiento solo para clientes.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'v1.17: Cuenta corriente y modales', 'CC: encabezado por moneda (iconos Panel), Positivo/Negativo, filtro Cliente/Intermediario, solo con saldo; columna Acción; icono Ver detalle limpio. Modales: máximo ancho/alto (95vw, 92vh), arrastrables por header; regla Modales en reglas-pandi.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -79,7 +84,8 @@ const funcionalidades = [
   ['Iconos y botones', 'Iconos por moneda (USA/Euro/Argentina). Todo botón de acción con icono a la izquierda (Entrar, Guardar, Editar, Nuevo, Cancelar, etc.).'],
   ['Vista Órdenes', 'Listado, Nueva orden y Editar. Estados: cotización, cerrada, concertada. Al concertar se generan movimientos de caja y cuenta corriente (evita doble concertación).'],
   ['Edición movimientos de caja', 'Editar movimiento: manual (todos los campos) o por orden (solo concepto y fecha).'],
-  ['Vista Cuenta corriente', 'Selector cliente, saldos USD/EUR/ARS, tabla de movimientos con filtro por moneda. Convención: positivo = cliente nos debe, negativo = nosotros le debemos.'],
+  ['Vista Cuenta corriente', 'Tabla por moneda (USD, EUR, ARS) con iconos del Panel; Positivo/Negativo; filtro Cliente/Intermediario; solo entidades con saldo; columna Acción. Ver detalle abre modal con datos, saldos y movimientos. Editar movimiento solo clientes.'],
+  ['Modales', 'Tamaño amplio (95vw, 92vh). Arrastrables por el header para mover; al cerrar se resetea posición. Estructura .modal-backdrop > .modal > .modal-header + .modal-body.'],
   ['Vista Inicio', 'Saldos de las 3 cajas y accesos rápidos a Órdenes, Cajas, Clientes, Cuenta corriente. Título de vista solo en el header (sin duplicado en el contenido).'],
   ['Panel de Control (Inicio)', 'Tarjetas Efectivo y Banco: Saldo Inicial, Saldo Actual (fila destacada), Var. con icono tendencia; USD/ARS/EUR (Efectivo) y USD/ARS (Banco); iconos por moneda. Cards Órdenes pendientes (por estado, ojo por fila y en título) y Transacciones pendientes (cantidad en círculo); mismo ancho que Efectivo.'],
   ['Convención y corrección CC', 'Signos correctos al concertar. sql/corregir_signos_cuenta_corriente.sql para corregir datos ya cargados.'],
@@ -103,6 +109,8 @@ const funcionalidades = [
   ['Tiempo de inactividad', 'En Seguridad (solo Admin): parámetro en minutos. Tras X minutos sin actividad (clic, teclado, scroll) se cierra la sesión automáticamente. Tabla app_config; script sql/app_config_session_timeout.sql.'],
   ['Sidebar colapsable', 'Menú lateral colapsable. Cuando está colapsado: borde derecho y sombra; botón con fondo, borde y flecha grande para expandir; al expandir, botón con flecha para contraer. Aria-label y title dinámicos.'],
   ['Carpeta assets', 'Logos e iconos en assets/: favicon, logo app, Icono_Dolar/ARS/Euro, cash.png, Banco.webp, SP_logo.svg. En la app se usan como /assets/nombre.ext. Script PPT usa assets/SP_logo.svg.'],
+  ['Modal Nueva/Editar transacción', 'Un solo campo Monto (moneda de la transacción: ingreso = moneda recibida, egreso = moneda entregada). En operaciones con dos monedas: tipo de cambio solo lectura y monto calculado = conversión inversa (ARS→÷TC, USD/EUR→×TC). Modo de pago por defecto Ninguno con validación; mensajería interna.'],
+  ['Tipos de operación: moneda_in/moneda_out y ABM', 'Tabla tipos_operacion con moneda_in y moneda_out (fuente de verdad). Lógica de orden y transacción usa esas columnas; fallback a parsear código. ABM Tipos de operación: vista en menú (permiso abm_tipos_operacion), listado, Nuevo/Editar con código, nombre, moneda IN, moneda OUT, activo. Migración sql/migracion_tipos_operacion_moneda_abm.sql.'],
 ];
 
 const wsResumen = XLSX.utils.aoa_to_sheet(funcionalidades);
@@ -141,6 +149,7 @@ const versiones = [
   ['1.14', '__HOY__', 'Tiempo de inactividad: cierre de sesión automático tras X minutos sin actividad (clic, teclado, scroll). Solo Admin configura en Seguridad. Tabla app_config (sql/app_config_session_timeout.sql).'],
   ['1.15', '__HOY__', 'Sidebar colapsado más visible: borde derecho, botón con fondo y flecha grande para expandir/contraer; aria-label y title dinámicos.'],
   ['1.16', '__HOY__', 'Iconos cash/Banco en tarjetas Efectivo y Banco. Reorganización: carpeta assets/ con todos los logos e iconos; rutas /assets/ en app y script PPT; regla estructura-proyecto actualizada.'],
+  ['1.17', '__HOY__', 'Cuenta corriente: tabla por moneda (USD/EUR/ARS) con iconos del Panel, Positivo/Negativo, filtro Cliente/Intermediario, solo entidades con saldo; columna Acción; modales ampliados al máximo y arrastrables por el header; icono Ver detalle sin contorno/relleno; regla Modales en .cursor/rules.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
