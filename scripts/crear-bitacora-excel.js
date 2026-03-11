@@ -82,7 +82,10 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'v1.22 Despliegue', 'Versión 1.22: Cuenta corriente (compromiso solo no ejecutadas, Refrescar, lista completa y misma lógica intermediario).', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'v1.23 Despliegue', 'Versión 1.23: CC concilia sin doble conteo (pendientes no se restan del compromiso); saldos negativos/positivos visibles aunque haya patas pendientes. Actualiza leyenda y doc.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'Help: popovers expandibles y texto CC', 'Los botones de ayuda ahora soportan contenido largo (scroll), se cierran con Escape y la ayuda de Cuenta corriente muestra la explicación completa del cálculo de saldo.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Help: leyendas colapsadas por defecto', 'La explicación larga ya no se muestra fija en las vistas; queda colapsada por defecto y se ve solo al hacer clic en el icono de ayuda (help).', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Help: modal en toda la app', 'Los íconos de ayuda ahora abren un modal de Help (en lugar de popover). Se actualizó la regla .cursor/rules/help-popovers.mdc para el nuevo patrón.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'v1.24 Despliegue', 'Versión 1.24: patrón estándar para helps (popover expandible/scroll, cierre con Escape). Regla .cursor/rules/help-popovers.mdc.', 'Despliegue'],
+  ['__HOY__', '__AHORA__', 'v1.25 Despliegue', 'Versión 1.25: ayudas (help) se muestran en modal (no popover) para mejor lectura. El modal se cierra con Escape y click en el backdrop.', 'Despliegue'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -176,6 +179,7 @@ const versiones = [
   ['1.22', '__HOY__', 'Cuenta corriente: compromiso solo por órdenes no ejecutadas (ganancia no como saldo del cliente). Refresh del modal con saldos y operaciones; botón Refrescar. Lista incluye todos los clientes/intermediarios y quienes tengan compromiso; misma lógica para intermediario.'],
   ['1.23', '__HOY__', 'Cuenta corriente: concilia sin doble conteo. Movimientos "Transacción pendiente" no se restan del compromiso (solo ejecutados/cierre y manuales), para que saldos por moneda se mantengan visibles cuando falta ejecutar una pata. Leyenda y doc actualizadas.'],
   ['1.24', '__HOY__', 'Ayudas (help): popovers expandibles para textos largos (scroll), cierre con Escape. Regla .cursor/rules/help-popovers.mdc para mantener el patrón en próximos helps.'],
+  ['1.25', '__HOY__', 'Ayudas (help): los íconos de ayuda ahora abren un modal de Help (en lugar de popover) para mostrar textos largos de forma legible. Regla actualizada para el patrón modal.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

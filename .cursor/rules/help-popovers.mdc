@@ -10,13 +10,12 @@ Cuando agregues o modifiques ayudas en la app, **todas** deben seguir este patr�
 - **Markup**: usar `help-inline` con botón `help-icon-btn` y contenido en `help-popover`.
   - Ejemplo: `... <span class="help-inline"><button class="help-icon-btn">?</button><span class="help-popover">...</span></span>`
 - **Interacción**:
-  - Click en `help-icon-btn` **toggle** (mostrar/ocultar) su `help-popover`.
-  - Click fuera del popover **cierra** cualquier help abierto.
-  - Tecla **Escape** cierra cualquier help abierto.
-  - Solo **un** help visible a la vez (al abrir uno, cerrar los otros).
+  - Click en `help-icon-btn` **abre un modal de ayuda** (`#modal-help-backdrop`) con el contenido del `help-popover`.
+  - Click afuera (en el backdrop) o botón cerrar **cierra** el modal.
+  - Tecla **Escape** cierra el modal.
 - **Contenido largo**:
-  - El `help-popover` debe soportar textos largos con **alto máximo + scroll** (no cortar texto).
+  - El modal debe soportar textos largos (scroll vertical en el body del modal).
   - Mantener buena UX móvil (scroll táctil).
 
-Si se agrega un help nuevo, **no inventar otro componente** (modal, tooltip hover-only, etc.): reutilizar este patrón.
+Si se agrega un help nuevo, **no inventar otro componente** (tooltip hover-only, alert, etc.): reutilizar este patrón con **modal**.
 

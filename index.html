@@ -415,7 +415,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.24</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.25</div>
   </aside>
 
   <main class="main-content">
@@ -704,7 +704,6 @@
           Cuenta corriente
           <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Solo se listan clientes e intermediarios con saldo (positivo o negativo). El saldo es el <strong>compromiso por órdenes aún no ejecutadas</strong> (lo que el cliente/intermediario debe por lo que recibimos y nosotros por lo que entregamos) menos los <strong>movimientos ya registrados</strong> (ejecutados/cierre y manuales). Los movimientos de <strong>Transacción pendiente</strong> no se restan para evitar doble conteo (ya están incluidos en el compromiso). Las órdenes cerradas no suman al compromiso: su impacto (incl. tu ganancia) está solo en los movimientos. <strong>Positivo</strong> = nos debe; <strong>Negativo</strong> = nosotros le debemos. Usá el icono de detalle para ver movimientos y operaciones que participan.</span></span>
         </h3>
-        <p style="margin:0 0 0.5rem 0; font-size:0.9rem; color:#555;">Solo se listan clientes e intermediarios con saldo (positivo o negativo). El saldo es el <strong>compromiso por órdenes aún no ejecutadas</strong> (lo que el cliente/intermediario debe por lo que recibimos y nosotros por lo que entregamos) menos los <strong>movimientos ya registrados</strong> (ejecutados/cierre y manuales). Los movimientos de <strong>Transacción pendiente</strong> no se restan para evitar doble conteo (ya están incluidos en el compromiso). Las órdenes cerradas no suman al compromiso: su impacto (incl. tu ganancia) está solo en los movimientos. Positivo = nos debe; Negativo = nosotros le debemos. Usá el icono de detalle para ver movimientos y operaciones que participan.</p>
         <div class="vista-toolbar" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
           <label style="display:flex; align-items:center; gap:0.5rem;">
             <span>Tipo:</span>
@@ -1404,6 +1403,22 @@
             <button type="button" class="btn-secondary" id="modal-movimiento-cc-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de ayuda (help) -->
+  <div id="modal-help-backdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal modal-help">
+      <div class="modal-header">
+        <div class="modal-header-titulo-wrap">
+          <span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></span>
+          <h2 id="modal-help-titulo">Ayuda</h2>
+        </div>
+        <button type="button" class="modal-close" id="modal-help-cerrar" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="modal-help-contenido" style="color:#374151; line-height:1.55; font-size:0.95rem;"></div>
       </div>
     </div>
   </div>

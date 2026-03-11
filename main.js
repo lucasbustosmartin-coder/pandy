@@ -5234,26 +5234,43 @@ function onSessionReady(session) {
     .catch(() => {});
 }
 
-/** Iconos de ayuda: al hacer clic en .help-icon-btn se muestra/oculta el .help-popover; clic fuera cierra. */
+/** Ayudas (help): al hacer clic en .help-icon-btn se abre un modal con el contenido del .help-popover asociado. */
 function setupHelpPopovers() {
+  const backdrop = document.getElementById('modal-help-backdrop');
+  const btnCerrar = document.getElementById('modal-help-cerrar');
+  const tituloEl = document.getElementById('modal-help-titulo');
+  const contenidoEl = document.getElementById('modal-help-contenido');
+  if (!backdrop || !btnCerrar || !contenidoEl || !tituloEl) return;
+
+  function closeHelpModal() {
+    backdrop.classList.remove('activo');
+    backdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  function openHelpModal(html, title) {
+    tituloEl.textContent = title || 'Ayuda';
+    contenidoEl.innerHTML = html || '';
+    backdrop.classList.add('activo');
+    backdrop.setAttribute('aria-hidden', 'false');
+  }
+
+  btnCerrar.addEventListener('click', closeHelpModal);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeHelpModal(); });
+
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.help-icon-btn');
-    if (btn) {
-      e.preventDefault();
-      const popover = btn.parentElement?.querySelector('.help-popover');
-      const wasVisible = popover?.classList.contains('help-popover-visible');
-      document.querySelectorAll('.help-popover-visible').forEach((p) => p.classList.remove('help-popover-visible'));
-      if (popover && !wasVisible) popover.classList.add('help-popover-visible');
-      return;
-    }
-    if (!e.target.closest('.help-popover')) document.querySelectorAll('.help-popover-visible').forEach((p) => p.classList.remove('help-popover-visible'));
+    if (!btn) return;
+    e.preventDefault();
+    const wrap = btn.closest('.help-inline');
+    const popover = wrap?.querySelector('.help-popover');
+    const html = popover ? popover.innerHTML : '';
+    openHelpModal(html, 'Ayuda');
   });
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    const visibles = document.querySelectorAll('.help-popover-visible');
-    if (!visibles || visibles.length === 0) return;
-    visibles.forEach((p) => p.classList.remove('help-popover-visible'));
+    if (!backdrop.classList.contains('activo')) return;
+    closeHelpModal();
   });
 }
 
