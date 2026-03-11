@@ -1,0 +1,22 @@
+---
+description: Patrón obligatorio para botones de ayuda (help) en la UI
+alwaysApply: true
+---
+
+# Help (botones "?") — patrón estándar
+
+Cuando agregues o modifiques ayudas en la app, **todas** deben seguir este patrón para mantener consistencia:
+
+- **Markup**: usar `help-inline` con botón `help-icon-btn` y contenido en `help-popover`.
+  - Ejemplo: `... <span class="help-inline"><button class="help-icon-btn">?</button><span class="help-popover">...</span></span>`
+- **Interacción**:
+  - Click en `help-icon-btn` **toggle** (mostrar/ocultar) su `help-popover`.
+  - Click fuera del popover **cierra** cualquier help abierto.
+  - Tecla **Escape** cierra cualquier help abierto.
+  - Solo **un** help visible a la vez (al abrir uno, cerrar los otros).
+- **Contenido largo**:
+  - El `help-popover` debe soportar textos largos con **alto máximo + scroll** (no cortar texto).
+  - Mantener buena UX móvil (scroll táctil).
+
+Si se agrega un help nuevo, **no inventar otro componente** (modal, tooltip hover-only, etc.): reutilizar este patrón.
+

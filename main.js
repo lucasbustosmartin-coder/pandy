@@ -5248,6 +5248,13 @@ function setupHelpPopovers() {
     }
     if (!e.target.closest('.help-popover')) document.querySelectorAll('.help-popover-visible').forEach((p) => p.classList.remove('help-popover-visible'));
   });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const visibles = document.querySelectorAll('.help-popover-visible');
+    if (!visibles || visibles.length === 0) return;
+    visibles.forEach((p) => p.classList.remove('help-popover-visible'));
+  });
 }
 
 // Inicio
