@@ -76,6 +76,9 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Cajas: tarjeta solo por permiso específico', 'Tarjetas Efectivo/Banco visibles solo con ver_cajas_efectivo y ver_cajas_banco (quitado fallback ver_cajas) para que Encargado con Banco en off no vea la tarjeta.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Intermediarios: Operar en permisos', 'abm_intermediarios agregado a PERMISOS_POR_MENU para que aparezca en Operar del ítem Intermediarios en Seguridad.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Seguridad: cascada al desactivar padre', 'Al desactivar el permiso padre (acceso al menú) se desactivan también los hijos (resto Ver y Operar) de ese ítem y se actualizan los toggles.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'CC: refresh con nueva lógica y botón Refrescar', 'Tras guardar movimiento CC o cerrar transacción, el modal de detalle actualiza saldos y tabla Operaciones que participan (no solo movimientos). Botón Refrescar en vista Cuenta corriente para recalcular saldos (compromiso − movimientos).', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'CC: compromiso solo órdenes no ejecutadas', 'El compromiso para el saldo de CC solo incluye órdenes que no están en estado orden_ejecutada. Las órdenes cerradas no suman al compromiso; la ganancia según tipo de operación queda solo en movimientos, evitando que aparezca como saldo a favor en la CC del cliente. Leyenda y docs actualizados.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'v1.22 Despliegue', 'Versión 1.22: Cuenta corriente (compromiso solo no ejecutadas, Refrescar, lista completa y misma lógica intermediario).', 'Despliegue'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -96,7 +99,7 @@ const funcionalidades = [
   ['Iconos y botones', 'Iconos por moneda (USA/Euro/Argentina). Todo botón de acción con icono a la izquierda (Entrar, Guardar, Editar, Nuevo, Cancelar, etc.).'],
   ['Vista Órdenes', 'Listado, Nueva orden y Editar. Estados: cotización, cerrada, concertada. Al concertar se generan movimientos de caja y cuenta corriente (evita doble concertación).'],
   ['Edición movimientos de caja', 'Editar movimiento: manual (todos los campos) o por orden (solo concepto y fecha).'],
-  ['Vista Cuenta corriente', 'Tabla por moneda (USD, EUR, ARS) con iconos del Panel; Positivo/Negativo; filtro Cliente/Intermediario; solo entidades con saldo; columna Acción. Ver detalle abre modal con datos, saldos y movimientos. Editar movimiento solo clientes.'],
+  ['Vista Cuenta corriente', 'Saldo = compromiso por órdenes no ejecutadas menos movimientos. Órdenes cerradas no suman al compromiso (la ganancia queda solo en movimientos). Tabla por moneda; filtro Cliente/Intermediario; botón Refrescar. Modal detalle: saldos, movimientos y Operaciones que participan.'],
   ['Modales', 'Tamaño amplio (95vw, 92vh). Arrastrables por el header para mover; al cerrar se resetea posición. Estructura .modal-backdrop > .modal > .modal-header + .modal-body.'],
   ['Vista Inicio', 'Saldos de las 3 cajas y accesos rápidos a Órdenes, Cajas, Clientes, Cuenta corriente. Título de vista solo en el header (sin duplicado en el contenido).'],
   ['Panel de Control (Inicio)', 'Tarjetas Efectivo y Banco: Saldo Inicial, Saldo Actual (fila destacada), Var. con icono tendencia; USD/ARS/EUR (Efectivo) y USD/ARS (Banco); iconos por moneda. Cards Órdenes pendientes (por estado, ojo por fila y en título) y Transacciones pendientes (cantidad en círculo); mismo ancho que Efectivo.'],
@@ -166,6 +169,7 @@ const versiones = [
   ['1.19', '__HOY__', 'Wizard nueva orden: corrección paso instrumentación; al guardar la primera transacción se puede seguir agregando en el mismo paso (fix canEditarTr en renderWizardList).'],
   ['1.20', '__HOY__', 'Cuenta corriente: todos los movimientos en cualquier estado; Caja solo ejecutada. Auto-complete instrumentación genera CC; doc CUENTA_CORRIENTE_Y_CAJA.md.'],
   ['1.21', '__HOY__', 'Permisos por menú: menús colapsables (por defecto cerrados), encabezado rol sticky, toggles on/off clicables. Cajas: Ver Efectivo/Banco granular (ver_cajas_efectivo, ver_cajas_banco); tarjetas solo con permiso específico. Intermediarios: Operar (abm_intermediarios) en Seguridad. Cascada: al desactivar acceso al menú se desactivan también los hijos de ese ítem.'],
+  ['1.22', '__HOY__', 'Cuenta corriente: compromiso solo por órdenes no ejecutadas (ganancia no como saldo del cliente). Refresh del modal con saldos y operaciones; botón Refrescar. Lista incluye todos los clientes/intermediarios y quienes tengan compromiso; misma lógica para intermediario.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

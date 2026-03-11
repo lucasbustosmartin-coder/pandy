@@ -415,7 +415,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.21</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.22</div>
   </aside>
 
   <main class="main-content">
@@ -704,7 +704,7 @@
           Cuenta corriente
           <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Saldos por cliente o intermediario y moneda. <strong>Positivo</strong> = nos debe; <strong>Negativo</strong> = nosotros le debemos. La cuenta corriente se actualiza al guardar cada transacción (pendiente o ejecutada). Las cards de caja/banco solo se impactan cuando la transacción está <strong>ejecutada</strong>. Cada moneda se muestra por separado (no se convierte entre monedas).</span></span>
         </h3>
-        <p style="margin:0 0 0.5rem 0; font-size:0.9rem; color:#555;">Solo se listan clientes e intermediarios con saldo (positivo o negativo). Positivo = nos debe; Negativo = nosotros le debemos. Usá el icono de detalle para ver los movimientos.</p>
+        <p style="margin:0 0 0.5rem 0; font-size:0.9rem; color:#555;">Solo se listan clientes e intermediarios con saldo (positivo o negativo). El saldo es el <strong>compromiso por órdenes aún no ejecutadas</strong> (lo que el cliente/intermediario debe por lo que recibimos y nosotros por lo que entregamos) menos todos los movimientos ya registrados. Las órdenes cerradas no suman al compromiso: su impacto (incl. tu ganancia) está solo en los movimientos. Positivo = nos debe; Negativo = nosotros le debemos. Usá el icono de detalle para ver movimientos y operaciones que participan.</p>
         <div class="vista-toolbar" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
           <label style="display:flex; align-items:center; gap:0.5rem;">
             <span>Tipo:</span>
@@ -713,6 +713,9 @@
               <button type="button" data-tipo="intermediario">Intermediario</button>
             </div>
           </label>
+          <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Recalcular saldos (compromiso por órdenes menos movimientos)" aria-label="Refrescar cuenta corriente">
+            <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></span>Refrescar
+          </button>
         </div>
         <div id="cc-loading" class="clientes-loading" style="display:none;">Cargando…</div>
         <div id="cc-contenido" class="tabla-clientes-wrap" style="display:none;">
@@ -1361,6 +1364,18 @@
             </thead>
             <tbody id="cc-detalle-tbody"></tbody>
             <tfoot id="cc-detalle-tfoot"></tfoot>
+          </table>
+        </div>
+        <div id="modal-cc-detalle-operaciones-wrap" class="tabla-clientes-wrap" style="margin-top:1.25rem; display:none; overflow-x:auto;">
+          <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem;">Operaciones que participan del saldo</h4>
+          <p style="margin:0 0 0.5rem 0; font-size:0.85rem; color:#555;">Órdenes (no anuladas) que aportan al compromiso: lo que el cliente/intermediario debe (recibimos) y lo que nosotros debemos (entregamos). El saldo arriba es compromiso menos movimientos ya registrados.</p>
+          <table class="tabla-cc-debe-haber" id="tabla-cc-detalle-operaciones">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Orden</th><th>Mon. rec.</th><th>Monto rec.</th><th>Mon. ent.</th><th>Monto ent.</th><th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="cc-detalle-operaciones-tbody"></tbody>
           </table>
         </div>
       </div>

@@ -996,6 +996,7 @@ let ccEsIntermediario = false;
 let ccDetalleTipo = null;
 let ccDetalleId = null;
 let ccDetalleMovimientosList = [];
+let ccDetalleOrdenesList = [];
 let ccResumenRowsConSaldo = [];
 let ccFiltroTipo = 'cliente';
 
@@ -1038,36 +1039,88 @@ function loadCuentaCorriente() {
   contenido.style.display = 'none';
 
   Promise.all([
-    client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
-    client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
+    client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
+    client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
     client.from('movimientos_cuenta_corriente').select('cliente_id, moneda, monto').or('estado.eq.cerrado,estado.is.null'),
     client.from('movimientos_cuenta_corriente_intermediario').select('intermediario_id, moneda, monto').or('estado.eq.cerrado,estado.is.null'),
-  ]).then(([rClientes, rInt, rMovCli, rMovInt]) => {
+    client.from('ordenes').select('id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').neq('estado', 'anulada'),
+  ]).then(([rClientes, rInt, rMovCli, rMovInt, rOrdenes]) => {
     if (loadingEl) loadingEl.style.display = 'none';
     const clientes = rClientes.data || [];
     const intermediarios = rInt.data || [];
     const movCli = rMovCli.data || [];
     const movInt = rMovInt.data || [];
+    const ordenes = rOrdenes.data || [];
 
-    const saldosCli = {};
+    const compromisoCli = {};
+    const compromisoInt = {};
+    ordenes.forEach((o) => {
+      if (o.estado === 'orden_ejecutada') return;
+      const monR = o.moneda_recibida;
+      const monE = o.moneda_entregada;
+      const mR = Number(o.monto_recibido) || 0;
+      const mE = Number(o.monto_entregado) || 0;
+      if (o.cliente_id) {
+        if (!compromisoCli[o.cliente_id]) compromisoCli[o.cliente_id] = { USD: 0, EUR: 0, ARS: 0 };
+        if (compromisoCli[o.cliente_id][monR] != null) compromisoCli[o.cliente_id][monR] += mR;
+        if (monE && compromisoCli[o.cliente_id][monE] != null) compromisoCli[o.cliente_id][monE] -= mE;
+      }
+      if (o.intermediario_id) {
+        if (!compromisoInt[o.intermediario_id]) compromisoInt[o.intermediario_id] = { USD: 0, EUR: 0, ARS: 0 };
+        if (compromisoInt[o.intermediario_id][monR] != null) compromisoInt[o.intermediario_id][monR] += mR;
+        if (monE && compromisoInt[o.intermediario_id][monE] != null) compromisoInt[o.intermediario_id][monE] -= mE;
+      }
+    });
+
+    const sumMovCli = {};
     movCli.forEach((m) => {
       const id = m.cliente_id;
-      if (!saldosCli[id]) saldosCli[id] = { USD: 0, EUR: 0, ARS: 0 };
-      if (saldosCli[id][m.moneda] != null) saldosCli[id][m.moneda] += Number(m.monto);
+      if (!sumMovCli[id]) sumMovCli[id] = { USD: 0, EUR: 0, ARS: 0 };
+      if (sumMovCli[id][m.moneda] != null) sumMovCli[id][m.moneda] += Number(m.monto);
     });
-    const saldosInt = {};
+    const sumMovInt = {};
     movInt.forEach((m) => {
       const id = m.intermediario_id;
-      if (!saldosInt[id]) saldosInt[id] = { USD: 0, EUR: 0, ARS: 0 };
-      if (saldosInt[id][m.moneda] != null) saldosInt[id][m.moneda] += Number(m.monto);
+      if (!sumMovInt[id]) sumMovInt[id] = { USD: 0, EUR: 0, ARS: 0 };
+      if (sumMovInt[id][m.moneda] != null) sumMovInt[id][m.moneda] += Number(m.monto);
     });
 
+    const saldoFromCompromiso = (comp, sumMov) => {
+      const s = { USD: 0, EUR: 0, ARS: 0 };
+      ['USD', 'EUR', 'ARS'].forEach((mon) => {
+        const c = Number(comp && comp[mon]) || 0;
+        const m = Number(sumMov && sumMov[mon]) || 0;
+        s[mon] = c - m;
+      });
+      return s;
+    };
+
+    const clientesById = Object.fromEntries((clientes || []).map((c) => [c.id, c]));
+    const intermediariosById = Object.fromEntries((intermediarios || []).map((i) => [i.id, i]));
     const rows = [];
+    const addedCli = new Set();
+    const addedInt = new Set();
     clientes.forEach((c) => {
-      rows.push({ tipo: 'cliente', id: c.id, nombre: c.nombre, saldos: saldosCli[c.id] || { USD: 0, EUR: 0, ARS: 0 } });
+      const saldos = saldoFromCompromiso(compromisoCli[c.id], sumMovCli[c.id]);
+      rows.push({ tipo: 'cliente', id: c.id, nombre: c.nombre, saldos });
+      addedCli.add(c.id);
+    });
+    Object.keys(compromisoCli || {}).forEach((id) => {
+      if (addedCli.has(id)) return;
+      const c = clientesById[id];
+      const saldos = saldoFromCompromiso(compromisoCli[id], sumMovCli[id]);
+      rows.push({ tipo: 'cliente', id, nombre: (c && c.nombre) || '–', saldos });
     });
     intermediarios.forEach((i) => {
-      rows.push({ tipo: 'intermediario', id: i.id, nombre: i.nombre, saldos: saldosInt[i.id] || { USD: 0, EUR: 0, ARS: 0 } });
+      const saldos = saldoFromCompromiso(compromisoInt[i.id], sumMovInt[i.id]);
+      rows.push({ tipo: 'intermediario', id: i.id, nombre: i.nombre, saldos });
+      addedInt.add(i.id);
+    });
+    Object.keys(compromisoInt || {}).forEach((id) => {
+      if (addedInt.has(id)) return;
+      const i = intermediariosById[id];
+      const saldos = saldoFromCompromiso(compromisoInt[id], sumMovInt[id]);
+      rows.push({ tipo: 'intermediario', id, nombre: (i && i.nombre) || '–', saldos });
     });
     const conSaldo = (r) => (Number(r.saldos.USD) || 0) !== 0 || (Number(r.saldos.EUR) || 0) !== 0 || (Number(r.saldos.ARS) || 0) !== 0;
     ccResumenRowsConSaldo = rows.filter(conSaldo);
@@ -1121,35 +1174,39 @@ function renderCcResumenTable(rows) {
   }
 }
 
-/** Devuelve Promise<{ movimientos, saldos }> para la entidad (cliente o intermediario). */
+/** Compromiso por moneda desde órdenes (solo no anuladas y no ejecutadas): +monto_recibido en moneda_recibida, -monto_entregado en moneda_entregada. Las ejecutadas ya están realizadas en movimientos (incl. comisión/ganancia). */
+function compromisoDesdeOrdenes(ordenes, entityId, campoId) {
+  const comp = { USD: 0, EUR: 0, ARS: 0 };
+  (ordenes || []).forEach((o) => {
+    if (o.estado === 'orden_ejecutada') return;
+    if (o[campoId] !== entityId) return;
+    const monR = o.moneda_recibida;
+    const monE = o.moneda_entregada;
+    const mR = Number(o.monto_recibido) || 0;
+    const mE = Number(o.monto_entregado) || 0;
+    if (comp[monR] != null) comp[monR] += mR;
+    if (monE && comp[monE] != null) comp[monE] -= mE;
+  });
+  return comp;
+}
+
+/** Devuelve Promise<{ movimientos, saldos, ordenes }>. Saldo = compromiso (solo órdenes no ejecutadas) menos movimientos ya registrados. */
 function fetchMovimientosCcPorEntidad(tipo, entityId) {
-  const saldos = { USD: 0, EUR: 0, ARS: 0 };
-  if (tipo === 'cliente') {
-    return client
-      .from('movimientos_cuenta_corriente')
-      .select('id, moneda, monto, concepto, fecha, estado, estado_fecha')
-      .eq('cliente_id', entityId)
-      .or('estado.eq.cerrado,estado.is.null')
-      .order('fecha', { ascending: false })
-      .order('created_at', { ascending: false })
-      .then((res) => {
-        const movimientos = res.data || [];
-        movimientos.forEach((m) => { if (saldos[m.moneda] != null) saldos[m.moneda] += Number(m.monto); });
-        return { movimientos, saldos };
-      });
-  }
-  return client
-    .from('movimientos_cuenta_corriente_intermediario')
-    .select('id, moneda, monto, concepto, fecha, estado, estado_fecha')
-    .eq('intermediario_id', entityId)
-    .or('estado.eq.cerrado,estado.is.null')
-    .order('fecha', { ascending: false })
-    .order('created_at', { ascending: false })
-    .then((res) => {
-      const movimientos = res.data || [];
-      movimientos.forEach((m) => { if (saldos[m.moneda] != null) saldos[m.moneda] += Number(m.monto); });
-      return { movimientos, saldos };
-    });
+  const campoId = tipo === 'cliente' ? 'cliente_id' : 'intermediario_id';
+  const tablaMov = tipo === 'cliente' ? 'movimientos_cuenta_corriente' : 'movimientos_cuenta_corriente_intermediario';
+  const filtroMov = tipo === 'cliente' ? { cliente_id: entityId } : { intermediario_id: entityId };
+  return Promise.all([
+    client.from(tablaMov).select('id, moneda, monto, concepto, fecha, estado, estado_fecha').match(filtroMov).or('estado.eq.cerrado,estado.is.null').order('fecha', { ascending: false }).order('created_at', { ascending: false }),
+    client.from('ordenes').select('id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').neq('estado', 'anulada').match({ [campoId]: entityId }),
+  ]).then(([rMov, rOrd]) => {
+    const movimientos = rMov.data || [];
+    const ordenes = rOrd.data || [];
+    const sumMov = { USD: 0, EUR: 0, ARS: 0 };
+    movimientos.forEach((m) => { if (sumMov[m.moneda] != null) sumMov[m.moneda] += Number(m.monto); });
+    const compromiso = compromisoDesdeOrdenes(ordenes.filter((o) => o.estado !== 'orden_ejecutada'), entityId, campoId);
+    const saldos = { USD: compromiso.USD - sumMov.USD, EUR: compromiso.EUR - sumMov.EUR, ARS: compromiso.ARS - sumMov.ARS };
+    return { movimientos, saldos, ordenes };
+  });
 }
 
 function openModalCcDetalle(tipo, id, nombre) {
@@ -1174,8 +1231,9 @@ function openModalCcDetalle(tipo, id, nombre) {
   tablaWrap.style.display = 'none';
   backdrop.classList.add('activo');
 
-  fetchMovimientosCcPorEntidad(tipo, id).then(({ movimientos, saldos }) => {
+  fetchMovimientosCcPorEntidad(tipo, id).then(({ movimientos, saldos, ordenes }) => {
     ccDetalleMovimientosList = movimientos;
+    ccDetalleOrdenesList = ordenes || [];
     loadingEl.style.display = 'none';
 
     const monedas = ['USD', 'EUR', 'ARS'];
@@ -1192,7 +1250,35 @@ function openModalCcDetalle(tipo, id, nombre) {
 
     renderCcDetalleTable();
     tablaWrap.style.display = 'block';
+    renderCcDetalleOperaciones();
+    const operacionesWrap = document.getElementById('modal-cc-detalle-operaciones-wrap');
+    if (operacionesWrap) operacionesWrap.style.display = ccDetalleOrdenesList.length > 0 ? 'block' : 'none';
   });
+}
+
+function renderCcDetalleOperaciones() {
+  const wrap = document.getElementById('modal-cc-detalle-operaciones-wrap');
+  const tbody = document.getElementById('cc-detalle-operaciones-tbody');
+  if (!wrap || !tbody) return;
+  const todas = ccDetalleOrdenesList || [];
+  const ordenes = todas.filter((o) => o.estado !== 'orden_ejecutada');
+  const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pend. Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada' }[e] || (e || '–'));
+  if (wrap) wrap.style.display = ordenes.length > 0 ? 'block' : 'none';
+  if (ordenes.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7">No hay órdenes pendientes que aporten al saldo (las ejecutadas ya están saldadas por movimientos).</td></tr>';
+    return;
+  }
+  tbody.innerHTML = ordenes
+    .map((o) => {
+      const fecha = (o.fecha || '').toString().slice(0, 10);
+      const monR = o.moneda_recibida || '–';
+      const mR = formatMonto(Number(o.monto_recibido) || 0, o.moneda_recibida);
+      const monE = o.moneda_entregada || '–';
+      const mE = formatMonto(Number(o.monto_entregado) || 0, o.moneda_entregada);
+      const est = estadoLabel(o.estado);
+      return `<tr><td>${fecha}</td><td><code>${escapeHtml((o.id || '').slice(0, 8))}</code></td><td>${escapeHtml(monR)}</td><td>${mR}</td><td>${escapeHtml(monE)}</td><td>${mE}</td><td>${escapeHtml(est)}</td></tr>`;
+    })
+    .join('');
 }
 
 function closeModalCcDetalle() {
@@ -1201,6 +1287,7 @@ function closeModalCcDetalle() {
   ccDetalleTipo = null;
   ccDetalleId = null;
   ccDetalleMovimientosList = [];
+  ccDetalleOrdenesList = [];
 }
 
 function renderCcDetalleTable() {
@@ -1264,6 +1351,7 @@ function renderCcDetalleTable() {
   }
 }
 
+/** Carga CC de un intermediario: misma lógica que lista/modal (compromiso solo órdenes no ejecutadas − movimientos). */
 function loadCuentaCorrienteIntermediario(intermediarioId) {
   const loadingEl = document.getElementById('cc-loading');
   const wrapEl = document.getElementById('cc-tabla-wrap');
@@ -1273,58 +1361,22 @@ function loadCuentaCorrienteIntermediario(intermediarioId) {
   loadingEl.style.display = 'block';
   wrapEl.style.display = 'none';
 
-  client
-    .from('movimientos_cuenta_corriente_intermediario')
-    .select('id, moneda, monto, concepto, fecha, estado, estado_fecha')
-    .eq('intermediario_id', intermediarioId)
-    .or('estado.eq.cerrado,estado.is.null')
-    .order('fecha', { ascending: false })
-    .order('created_at', { ascending: false })
-    .then((res) => {
+  fetchMovimientosCcPorEntidad('intermediario', intermediarioId)
+    .then(({ movimientos, saldos }) => {
       loadingEl.style.display = 'none';
-      if (res.error) {
-        tbody.innerHTML = '<tr><td colspan="9">Error: ' + (res.error.message || '') + '</td></tr>';
-        wrapEl.style.display = 'block';
-        return;
-      }
-      ccMovimientosList = res.data || [];
-      const saldos = { USD: 0, EUR: 0, ARS: 0 };
-      ccMovimientosList.forEach((m) => {
-        if (saldos[m.moneda] != null) saldos[m.moneda] += Number(m.monto);
-      });
-      setCcSaldoCards(saldos);
+      ccMovimientosList = movimientos || [];
+      setCcSaldoCards(saldos || { USD: 0, EUR: 0, ARS: 0 });
       renderCcTable();
       wrapEl.style.display = 'block';
-      // Backfill: recalcular movimientos de conversión/comisión por orden ejecutada (conciliación: Debe no puede superar Haber por moneda)
-      client.from('ordenes').select('id').eq('intermediario_id', intermediarioId).eq('estado', 'orden_ejecutada').then((rOrd) => {
-        const ordenes = rOrd.data || [];
-        const refetch = () => {
-          client.from('movimientos_cuenta_corriente_intermediario').select('id, moneda, monto, concepto, fecha, estado, estado_fecha').eq('intermediario_id', intermediarioId).or('estado.eq.cerrado,estado.is.null').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((r2) => {
-            if (!r2.error && r2.data) {
-              ccMovimientosList = r2.data;
-              const saldos = { USD: 0, EUR: 0, ARS: 0 };
-              ccMovimientosList.forEach((m) => { if (saldos[m.moneda] != null) saldos[m.moneda] += Number(m.monto); });
-              setCcSaldoCards(saldos);
-              renderCcTable();
-            }
-          });
-        };
-        if (ordenes.length === 0) return;
-        let i = 0;
-        const siguiente = () => {
-          if (i >= ordenes.length) {
-            refetch();
-            return;
-          }
-          const ordenId = ordenes[i].id;
-          i += 1;
-          generarMovimientoConversionCcIntermediario(ordenId).then(siguiente).catch(siguiente);
-        };
-        siguiente();
-      });
+    })
+    .catch((err) => {
+      loadingEl.style.display = 'none';
+      tbody.innerHTML = '<tr><td colspan="9">Error: ' + (err && err.message ? err.message : 'No se pudo cargar.') + '</td></tr>';
+      wrapEl.style.display = 'block';
     });
 }
 
+/** Carga CC de un cliente: misma lógica que lista/modal (compromiso solo órdenes no ejecutadas − movimientos). */
 function loadCuentaCorrienteCliente(clienteId) {
   const loadingEl = document.getElementById('cc-loading');
   const wrapEl = document.getElementById('cc-tabla-wrap');
@@ -1334,56 +1386,18 @@ function loadCuentaCorrienteCliente(clienteId) {
   loadingEl.style.display = 'block';
   wrapEl.style.display = 'none';
 
-  client
-    .from('movimientos_cuenta_corriente')
-    .select('id, moneda, monto, concepto, fecha, estado, estado_fecha')
-    .eq('cliente_id', clienteId)
-    .or('estado.eq.cerrado,estado.is.null')
-    .order('fecha', { ascending: false })
-    .order('created_at', { ascending: false })
-    .then((res) => {
+  fetchMovimientosCcPorEntidad('cliente', clienteId)
+    .then(({ movimientos, saldos }) => {
       loadingEl.style.display = 'none';
-      if (res.error) {
-        tbody.innerHTML = '<tr><td colspan="9">Error: ' + (res.error.message || '') + '</td></tr>';
-        wrapEl.style.display = 'block';
-        return;
-      }
-      ccMovimientosList = res.data || [];
-      const saldos = { USD: 0, EUR: 0, ARS: 0 };
-      ccMovimientosList.forEach((m) => {
-        if (saldos[m.moneda] != null) saldos[m.moneda] += Number(m.monto);
-      });
-      setCcSaldoCards(saldos);
+      ccMovimientosList = movimientos || [];
+      setCcSaldoCards(saldos || { USD: 0, EUR: 0, ARS: 0 });
       renderCcTable();
       wrapEl.style.display = 'block';
-      // Backfill: órdenes ejecutadas sin movimiento de conversión → generarlo para saldo en cero (solo refrescamos datos, sin volver a cargar para evitar loop/parpadeo)
-      client.from('ordenes').select('id').eq('cliente_id', clienteId).eq('estado', 'orden_ejecutada').then((rOrd) => {
-        const ordenes = rOrd.data || [];
-        if (ordenes.length === 0) return;
-        let generado = false;
-        const siguiente = (i) => {
-          if (i >= ordenes.length) {
-            if (generado) {
-              client.from('movimientos_cuenta_corriente').select('id, moneda, monto, concepto, fecha, estado, estado_fecha').eq('cliente_id', clienteId).or('estado.eq.cerrado,estado.is.null').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((r2) => {
-                if (!r2.error && r2.data) {
-                  ccMovimientosList = r2.data;
-                  const saldos = { USD: 0, EUR: 0, ARS: 0 };
-                  ccMovimientosList.forEach((m) => { if (saldos[m.moneda] != null) saldos[m.moneda] += Number(m.monto); });
-                  setCcSaldoCards(saldos);
-                  renderCcTable();
-                }
-              });
-            }
-            return;
-          }
-          const ordenId = ordenes[i].id;
-          client.from('movimientos_cuenta_corriente').select('id').eq('orden_id', ordenId).in('concepto', CONCEPTOS_CC_CONVERSION_TODOS).limit(1).then((rEx) => {
-            if (rEx.data && rEx.data.length > 0) return siguiente(i + 1);
-            generarMovimientoConversionCc(ordenId).then(() => { generado = true; siguiente(i + 1); }).catch(() => siguiente(i + 1));
-          });
-        };
-        siguiente(0);
-      });
+    })
+    .catch((err) => {
+      loadingEl.style.display = 'none';
+      tbody.innerHTML = '<tr><td colspan="9">Error: ' + (err && err.message ? err.message : 'No se pudo cargar.') + '</td></tr>';
+      wrapEl.style.display = 'block';
     });
 }
 
@@ -1487,9 +1501,25 @@ function saveMovimientoCc() {
       }
       closeModalMovimientoCc();
       if (ccDetalleId && ccDetalleTipo) {
-        fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos }) => {
+        fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos, saldos, ordenes }) => {
           ccDetalleMovimientosList = movimientos;
+          ccDetalleOrdenesList = ordenes || [];
           renderCcDetalleTable();
+          const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
+          if (saldosWrap && saldos) {
+            const monedas = ['USD', 'EUR', 'ARS'];
+            const iconUrls = { USD: '/assets/Icono_Dolar.avif', EUR: '/assets/Icono_Euro.avif', ARS: '/assets/Icono_ARS.webp' };
+            saldosWrap.innerHTML = monedas.map((mon) => {
+              const s = Number(saldos[mon]) || 0;
+              const label = s >= 0 ? 'Positivo' : 'Negativo';
+              const val = formatMonto(s >= 0 ? s : -s, mon);
+              const cls = 'valor ' + (s >= 0 ? 'positivo' : 'negativo');
+              return `<div class="card" style="min-width:120px;"><span class="card-titulo"><img src="${iconUrls[mon]}" alt="" class="cc-icono-moneda" width="20" height="20"/> ${mon}</span><span class="cc-saldo-label" aria-hidden="true">${label}</span><span class="${cls}">${val}</span></div>`;
+            }).join('');
+          }
+          renderCcDetalleOperaciones();
+          const operacionesWrap = document.getElementById('modal-cc-detalle-operaciones-wrap');
+          if (operacionesWrap) operacionesWrap.style.display = (ccDetalleOrdenesList.length > 0) ? 'block' : 'none';
         });
       }
       loadCuentaCorriente();
@@ -1568,6 +1598,14 @@ function setupCuentaCorriente() {
         btn.classList.add('activo');
         aplicarFiltroCcResumen();
       });
+    });
+  }
+
+  const ccBtnRefrescar = document.getElementById('cc-btn-refrescar');
+  if (ccBtnRefrescar) {
+    ccBtnRefrescar.addEventListener('click', () => {
+      loadCuentaCorriente();
+      showToast('Saldos recalculados (compromiso por órdenes menos movimientos).', 'info');
     });
   }
 
@@ -4068,9 +4106,25 @@ function saveTransaccion() {
       const vistaCc = document.getElementById('vista-cuenta-corriente');
       if (vistaCc && vistaCc.style.display !== 'none') loadCuentaCorriente();
       if (ccDetalleId && ccDetalleTipo) {
-        fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos }) => {
+        fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos, saldos, ordenes }) => {
           ccDetalleMovimientosList = movimientos;
+          ccDetalleOrdenesList = ordenes || [];
           renderCcDetalleTable();
+          const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
+          if (saldosWrap && saldos) {
+            const monedas = ['USD', 'EUR', 'ARS'];
+            const iconUrls = { USD: '/assets/Icono_Dolar.avif', EUR: '/assets/Icono_Euro.avif', ARS: '/assets/Icono_ARS.webp' };
+            saldosWrap.innerHTML = monedas.map((mon) => {
+              const s = Number(saldos[mon]) || 0;
+              const label = s >= 0 ? 'Positivo' : 'Negativo';
+              const val = formatMonto(s >= 0 ? s : -s, mon);
+              const cls = 'valor ' + (s >= 0 ? 'positivo' : 'negativo');
+              return `<div class="card" style="min-width:120px;"><span class="card-titulo"><img src="${iconUrls[mon]}" alt="" class="cc-icono-moneda" width="20" height="20"/> ${mon}</span><span class="cc-saldo-label" aria-hidden="true">${label}</span><span class="${cls}">${val}</span></div>`;
+            }).join('');
+          }
+          renderCcDetalleOperaciones();
+          const operacionesWrap = document.getElementById('modal-cc-detalle-operaciones-wrap');
+          if (operacionesWrap) operacionesWrap.style.display = (ccDetalleOrdenesList.length > 0) ? 'block' : 'none';
         });
       }
     }
