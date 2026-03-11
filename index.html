@@ -137,6 +137,12 @@
     .chat-orden-log .chat-msg.user { text-align: right; color: #1a1a1a; }
     .chat-orden-log .chat-msg.bot { color: #555; font-size: 0.9rem; }
     .chat-orden-log .chat-msg .chat-msg-label { font-size: 0.75rem; color: #888; margin-bottom: 0.15rem; }
+    .modal-chat-titulo { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 1.25rem; }
+    .chat-orden-input-row { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; flex-wrap: nowrap; margin-top: 0; }
+    .chat-orden-input-wrap { flex: 1; min-width: 0; }
+    .chat-orden-input-wrap input { width: 100%; }
+    #modal-chat-orden-backdrop .btn-primary { padding: 0.5rem 1rem; background: #0d7d3d; color: #fff; border: 1px solid #0d7d3d; border-radius: 6px; cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.45rem; flex-shrink: 0; }
+    #modal-chat-orden-backdrop .btn-primary:hover { background: #0a5c2e; border-color: #0a5c2e; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
     .modal { background: #fff; border-radius: 12px; max-width: min(95vw, 1280px); width: 95%; max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
     .modal .modal-body { overflow-y: auto; flex: 1; min-height: 0; }
@@ -424,7 +430,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.26</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.27</div>
   </aside>
 
   <main class="main-content">
@@ -1006,17 +1012,17 @@
   <div id="modal-chat-orden-backdrop" class="modal-backdrop">
     <div class="modal modal-ancho" style="max-width: 480px;">
       <div class="modal-header">
-        <h2>Cargar orden por chat</h2>
+        <h2 class="modal-chat-titulo"><span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>Cargar orden por chat</h2>
         <button type="button" class="modal-close" id="modal-chat-orden-close" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
         <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Escribí la orden en lenguaje natural. Ej.: &quot;Para Alvarito, recibo 3000 USD, a tc 1500, y entrego ARS&quot; (si ponés un monto y el TC, el otro monto se calcula solo). Al confirmar se crean la orden y la instrumentación.</p>
         <div id="chat-orden-log" class="chat-orden-log" style="min-height: 120px; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem; background: #fafafa;"></div>
         <div id="chat-orden-preview" style="display:none; margin-bottom: 0.75rem; padding: 0.75rem; background: #e8f4ea; border-radius: 8px; font-size: 0.9rem;"></div>
-        <div class="form-row" style="gap: 0.5rem; align-items: flex-end;">
-          <div class="form-group" style="flex:1; margin:0;">
+        <div class="chat-orden-input-row">
+          <div class="chat-orden-input-wrap">
             <label for="chat-orden-input" class="sr-only">Mensaje</label>
-            <input type="text" id="chat-orden-input" placeholder="Escribí la orden…" autocomplete="off" style="width:100%;" />
+            <input type="text" id="chat-orden-input" placeholder="Escribí la orden…" autocomplete="off" />
           </div>
           <button type="button" id="chat-orden-enviar" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg></span>Enviar</button>
         </div>

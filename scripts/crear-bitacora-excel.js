@@ -91,6 +91,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Chat orden: un monto + TC calcula el otro', 'Si escribís "recibo 3000 USD a tc 1500 y entrego ARS" el parser calcula los ARS (3000×1500). Soporta "recibo X moneda" y "entrego moneda" sin monto cuando hay tipo de cambio.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Botón Cargar por chat: estilo y Panel de Control', 'Botón con clase btn-chat (mismo estilo que Nueva orden, color azul #0c6ea8). Cargar por chat también en Panel de Control (Accesos rápidos), visible solo con permiso ingresar_orden.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Chat orden: auto-generar transacciones al confirmar', 'Al confirmar desde el chat se llama a autoCompletarInstrumentacionSinIntermediario tras crear la instrumentación, para generar las dos transacciones (ingreso/egreso) según tipo de operación.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Modal chat: icono en título, Enviar a la derecha del input', 'Título del modal con icono de chat; botón Enviar con mismo estilo que el resto (btn-primary); input y Enviar en la misma fila (Enviar a la derecha).', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -187,6 +188,7 @@ const versiones = [
   ['1.24', '__HOY__', 'Ayudas (help): popovers expandibles para textos largos (scroll), cierre con Escape. Regla .cursor/rules/help-popovers.mdc para mantener el patrón en próximos helps.'],
   ['1.25', '__HOY__', 'Ayudas (help): los íconos de ayuda ahora abren un modal de Help (en lugar de popover) para mostrar textos largos de forma legible. Regla actualizada para el patrón modal.'],
   ['1.26', '__HOY__', 'Cargar orden por chat: botón azul (btn-chat) en Órdenes y Panel de Control; tipo de cambio y cálculo del otro monto; al confirmar se crean orden, instrumentación y transacciones automáticas; desde Panel redirige a Órdenes al finalizar.'],
+  ['1.27', '__HOY__', 'Modal Cargar por chat: icono en el título, botón Enviar con estilo unificado y a la derecha del campo de texto.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
