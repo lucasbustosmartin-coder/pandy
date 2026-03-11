@@ -2661,8 +2661,8 @@ function renderOrdenWizardInstrumentacion(instId) {
         const ownerL = (o) => ({ pandy: 'Pandy', cliente: 'Cliente', intermediario: 'Intermediario' }[o] || o);
         const cobradorL = (t) => ownerL(t.cobrador || (t.tipo === 'ingreso' ? t.owner : 'pandy'));
         const pagadorL = (t) => ownerL(t.pagador || (t.tipo === 'egreso' ? t.owner : 'pandy'));
-  const canEditarTransacciones = userPermissions.includes('editar_transacciones');
-  const estadoTrxCombo = (t) => { const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente'; return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`; };
+        const canEditarTr = userPermissions.includes('editar_transacciones');
+        const estadoTrxCombo = (t) => { const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente'; return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`; };
         const estadoTexto = (t) => (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente');
         if (lista.length === 0) {
           tbody.innerHTML = '<tr><td colspan="8">Todavía no hay transacciones.</td></tr>';
