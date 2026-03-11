@@ -559,6 +559,10 @@ function loadInicio() {
   const elBanco = document.getElementById('inicio-card-banco');
   const elSaldos = document.getElementById('inicio-saldos');
   const elPendientes = document.getElementById('inicio-cards-pendientes');
+  const canIngresarOrden = userPermissions.includes('ingresar_orden');
+  const btnChatInicio = document.getElementById('btn-orden-por-chat-inicio');
+  if (btnChatInicio) btnChatInicio.style.display = canIngresarOrden ? '' : 'none';
+
   const hasEfectivoPerm = userPermissions.includes('ver_inicio_efectivo');
   const hasBancoPerm = userPermissions.includes('ver_inicio_banco');
   const hasPendientesPerm = userPermissions.includes('ver_inicio_pendientes');
@@ -2052,6 +2056,8 @@ function loadOrdenes() {
   const canEliminarTransacciones = userPermissions.includes('eliminar_transacciones');
   const canVerAccionesOrden = canEditarOrden || canAnularOrden || canEditarEstadoOrden || canIngresarTransacciones || canEditarTransacciones || canEliminarTransacciones;
   if (btnNuevo) btnNuevo.style.display = canIngresarOrden ? '' : 'none';
+  const btnOrdenPorChat = document.getElementById('btn-orden-por-chat');
+  if (btnOrdenPorChat) btnOrdenPorChat.style.display = canIngresarOrden ? '' : 'none';
 
   loadingEl.style.display = 'block';
   wrapEl.style.display = 'none';
@@ -3123,6 +3129,326 @@ function setupModalOrden() {
       el.addEventListener('blur', () => el.classList.remove('orden-field-editing'));
     }
   });
+}
+
+// --- Cargar orden por chat (solo local / MVP) ---
+let chatOrdenClientes = [];
+let chatOrdenTipos = [];
+let chatOrdenUltimaInterpretacion = null;
+let chatOrdenAbiertoDesdePanel = false;
+
+function interpretarTextoOrden(texto, clientes, tipos) {
+  const t = (texto || '').trim();
+  if (!t) return { error: 'Escribí algo para interpretar.' };
+
+  const normalizarMoneda = (s) => {
+    if (!s) return null;
+    const u = (s + '').toUpperCase().replace(/Ó/g, 'O');
+    if (u.includes('ARS') || u.includes('PESO')) return 'ARS';
+    if (u.includes('USD') || u.includes('DOLAR')) return 'USD';
+    if (u.includes('EUR') || u.includes('EURO')) return 'EUR';
+    return null;
+  };
+
+  const parseNum = (str) => {
+    if (!str) return NaN;
+    const s = (str + '').trim().replace(/\./g, '').replace(',', '.');
+    const n = parseFloat(s, 10);
+    return isNaN(n) ? NaN : n;
+  };
+
+  // Tipo de cambio: "a tc 1500", "tc 1500", "a 1500", "cotización 1500" (evitar capturar el monto de "recibo 3000")
+  let cotizacion = null;
+  const reTc = /(?:a\s+tc\s+|tc\s+|tipo\s+(?:de\s+cambio\s+)?|cotización\s+|a\s+)(\d[\d.,]*)/gi;
+  const matchTc = reTc.exec(t);
+  if (matchTc && matchTc[1]) {
+    const n = parseImporteInput(matchTc[1]);
+    if (!isNaN(n) && n > 0) cotizacion = n;
+  }
+
+  // "recibo 3000 usd" / "recibimos 1500000 ars"
+  const reRecibo = /\brecib(o|imos|í|en)?\s+(\d[\d.,]*)\s*(ARS|USD|EUR|pesos?|dólares?|dolares?|euros?)?/gi;
+  const reciboMatch = reRecibo.exec(t);
+  let montoRecibido = null, monedaRecibida = null;
+  if (reciboMatch && reciboMatch[2]) {
+    montoRecibido = parseNum(reciboMatch[2]);
+    monedaRecibida = normalizarMoneda(reciboMatch[3] || '');
+  }
+
+  // "entrego 4500000 ars" / "entregamos ars" (sin número: se calcula con TC)
+  const reEntregoMonto = /\bentreg(o|amos|á|an)?\s+(\d[\d.,]*)\s*(ARS|USD|EUR|pesos?|dólares?|dolares?|euros?)/gi;
+  const reEntregoSoloMoneda = /\bentreg(o|amos|á|an)?\s+(ARS|USD|EUR|pesos?|dólares?|dolares?|euros?)\b/gi;
+  let montoEntregado = null, monedaEntregada = null;
+  const entregoMontoMatch = reEntregoMonto.exec(t);
+  const entregoSoloMatch = reEntregoSoloMoneda.exec(t);
+  if (entregoMontoMatch && entregoMontoMatch[2]) {
+    montoEntregado = parseNum(entregoMontoMatch[2]);
+    monedaEntregada = normalizarMoneda(entregoMontoMatch[3] || '');
+  } else if (entregoSoloMatch && entregoSoloMatch[2]) {
+    monedaEntregada = normalizarMoneda(entregoSoloMatch[2] || '');
+  }
+
+  // Si tenemos recibo + entrego (moneda) pero sin monto entregado, intentar con TC
+  if (montoRecibido != null && montoRecibido > 0 && monedaRecibida && monedaEntregada && (montoEntregado == null || montoEntregado <= 0) && cotizacion != null && cotizacion > 0) {
+    const codigo = monedaRecibida + '-' + monedaEntregada;
+    if (codigo === 'USD-ARS') montoEntregado = montoRecibido * cotizacion;
+    else if (codigo === 'ARS-USD') montoEntregado = montoRecibido / cotizacion;
+  }
+
+  // Fallback: dos números en el texto (primero = recibido, segundo = entregado)
+  if ((montoRecibido == null || montoEntregado == null) || (!monedaRecibida || !monedaEntregada)) {
+    const reMonto = /(\d[\d.,]*)\s*(ARS|USD|EUR|pesos?|dólares?|dolares?|euros?)?/gi;
+    const montos = [];
+    let match;
+    while ((match = reMonto.exec(t)) !== null) {
+      const n = parseNum(match[1]);
+      if (!isNaN(n) && n > 0) {
+        const moneda = normalizarMoneda(match[2] || '');
+        montos.push({ monto: n, moneda: moneda || null });
+      }
+    }
+    if (montos.length >= 2 && !monedaRecibida) {
+      montoRecibido = montos[0].monto;
+      monedaRecibida = montos[0].moneda;
+      montoEntregado = montos[1].monto;
+      monedaEntregada = montos[1].moneda;
+    }
+  }
+
+  if (!montoRecibido || montoRecibido <= 0 || !montoEntregado || montoEntregado <= 0) {
+    return { error: 'Indicá qué recibís y qué entregás (montos y monedas). Si ponés un solo monto y tipo de cambio (ej. "a tc 1500"), calculo el otro.' };
+  }
+  if (!monedaRecibida || !monedaEntregada) {
+    return { error: 'Indicá las monedas (ARS, USD o EUR) para recibir y entregar.' };
+  }
+
+  const codigoTipo = monedaRecibida + '-' + monedaEntregada;
+  const tipo = Array.isArray(tipos) && tipos.find((x) => (x.codigo || '') === codigoTipo);
+  if (!tipo) {
+    return { error: 'No hay tipo de operación ' + codigoTipo + '. Revisá las monedas.' };
+  }
+
+  const requiereCotizacion = codigoTipo === 'ARS-USD' || codigoTipo === 'USD-ARS';
+  if (requiereCotizacion && (!cotizacion || cotizacion <= 0)) {
+    return { error: 'Para ' + codigoTipo + ' indicá el tipo de cambio (ej. "a tc 1500").' };
+  }
+
+  let cliente_id = null;
+  let cliente_nombre = '';
+  const paraMatch = t.match(/\bpara\s+([^,.\d]+?)(?=\s*,|\s+recib|\s+entrega|$)/i);
+  const clienteMatch = t.match(/\bcliente\s+([^,.\d]+?)(?=\s*,|\s+recib|\s+entrega|$)/i);
+  const nombreBuscar = (paraMatch && paraMatch[1].trim()) || (clienteMatch && clienteMatch[1].trim());
+  if (nombreBuscar && Array.isArray(clientes) && clientes.length) {
+    const nombreNorm = nombreBuscar.toLowerCase().trim();
+    const encontrado = clientes.find((c) => (c.nombre || '').toLowerCase().trim() === nombreNorm ||
+      (c.nombre || '').toLowerCase().includes(nombreNorm) ||
+      nombreNorm.includes((c.nombre || '').toLowerCase().trim()));
+    if (encontrado) {
+      cliente_id = encontrado.id;
+      cliente_nombre = encontrado.nombre || '';
+    }
+  }
+
+  let fecha = new Date();
+  if (/\bhoy\b/i.test(t)) fecha = new Date();
+  else if (/\bmañana\b/i.test(t)) { fecha = new Date(); fecha.setDate(fecha.getDate() + 1); }
+  const fechaStr = fecha.getFullYear() + '-' + String(fecha.getMonth() + 1).padStart(2, '0') + '-' + String(fecha.getDate()).padStart(2, '0');
+
+  return {
+    cliente_id,
+    cliente_nombre,
+    tipo_operacion_id: tipo.id,
+    tipo_codigo: tipo.codigo,
+    moneda_recibida: monedaRecibida,
+    moneda_entregada: monedaEntregada,
+    monto_recibido: montoRecibido,
+    monto_entregado: montoEntregado,
+    fecha: fechaStr,
+    cotizacion: cotizacion,
+  };
+}
+
+function openModalChatOrden() {
+  const backdrop = document.getElementById('modal-chat-orden-backdrop');
+  const logEl = document.getElementById('chat-orden-log');
+  const previewEl = document.getElementById('chat-orden-preview');
+  const confirmWrap = document.getElementById('chat-orden-confirmar-wrap');
+  const inputEl = document.getElementById('chat-orden-input');
+  if (!backdrop || !logEl) return;
+  logEl.innerHTML = '';
+  previewEl.style.display = 'none';
+  previewEl.innerHTML = '';
+  confirmWrap.style.display = 'none';
+  chatOrdenUltimaInterpretacion = null;
+  if (inputEl) inputEl.value = '';
+  backdrop.classList.add('activo');
+  if (inputEl) inputEl.focus();
+  Promise.all([
+    client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
+    client.from('tipos_operacion').select('id, codigo, nombre').eq('activo', true).order('codigo'),
+  ]).then(([rC, rT]) => {
+    chatOrdenClientes = rC.data || [];
+    chatOrdenTipos = rT.data || [];
+  });
+}
+
+function closeModalChatOrden() {
+  const backdrop = document.getElementById('modal-chat-orden-backdrop');
+  if (backdrop) backdrop.classList.remove('activo');
+}
+
+function setupModalChatOrden() {
+  const backdrop = document.getElementById('modal-chat-orden-backdrop');
+  const btnClose = document.getElementById('modal-chat-orden-close');
+  const btnEnviar = document.getElementById('chat-orden-enviar');
+  const inputEl = document.getElementById('chat-orden-input');
+  const logEl = document.getElementById('chat-orden-log');
+  const previewEl = document.getElementById('chat-orden-preview');
+  const confirmWrap = document.getElementById('chat-orden-confirmar-wrap');
+  const btnConfirmar = document.getElementById('chat-orden-confirmar');
+  const btnAbrirChat = document.getElementById('btn-orden-por-chat');
+
+  if (btnAbrirChat) btnAbrirChat.addEventListener('click', () => { chatOrdenAbiertoDesdePanel = false; openModalChatOrden(); });
+  const btnChatInicio = document.getElementById('btn-orden-por-chat-inicio');
+  if (btnChatInicio) btnChatInicio.addEventListener('click', () => { chatOrdenAbiertoDesdePanel = true; openModalChatOrden(); });
+  if (btnClose) btnClose.addEventListener('click', closeModalChatOrden);
+  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalChatOrden(); });
+
+  function appendMsg(role, text, label) {
+    if (!logEl) return;
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + role;
+    if (label) {
+      const l = document.createElement('div');
+      l.className = 'chat-msg-label';
+      l.textContent = label;
+      div.appendChild(l);
+    }
+    div.appendChild(document.createTextNode(text));
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  if (btnEnviar && inputEl) {
+    btnEnviar.addEventListener('click', () => {
+      const texto = inputEl.value.trim();
+      if (!texto) return;
+      appendMsg('user', texto, 'Vos');
+      inputEl.value = '';
+      const result = interpretarTextoOrden(texto, chatOrdenClientes, chatOrdenTipos);
+      if (result.error) {
+        appendMsg('bot', result.error, 'Sistema');
+        previewEl.style.display = 'none';
+        confirmWrap.style.display = 'none';
+        chatOrdenUltimaInterpretacion = null;
+        return;
+      }
+      const clienteTexto = result.cliente_nombre || (result.cliente_id ? 'Cliente asignado' : 'Sin cliente');
+      let previewTexto = 'Cliente: ' + clienteTexto + ' · Recibimos ' + result.moneda_recibida + ' ' + formatMonto(result.monto_recibido) + ' · Entregamos ' + result.moneda_entregada + ' ' + formatMonto(result.monto_entregado);
+      if (result.cotizacion != null && result.cotizacion > 0) previewTexto += ' · TC: ' + formatMonto(result.cotizacion);
+      previewTexto += ' · Fecha: ' + result.fecha;
+      appendMsg('bot', previewTexto, 'Preview');
+      previewEl.textContent = previewTexto;
+      previewEl.style.display = 'block';
+      confirmWrap.style.display = 'block';
+      chatOrdenUltimaInterpretacion = result;
+      logEl.scrollTop = logEl.scrollHeight;
+    });
+  }
+
+  if (inputEl) {
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (btnEnviar) btnEnviar.click();
+      }
+    });
+  }
+
+  if (btnConfirmar && confirmWrap) {
+    btnConfirmar.addEventListener('click', () => {
+      const r = chatOrdenUltimaInterpretacion;
+      if (!r) return;
+      if (!userPermissions.includes('ingresar_orden')) {
+        showToast('No tenés permiso para crear órdenes.', 'error');
+        return;
+      }
+      if (!r.cliente_id) {
+        showToast('Indicá un cliente en el mensaje (ej. "para Adriana").', 'error');
+        return;
+      }
+      const requiereTc = r.tipo_codigo === 'ARS-USD' || r.tipo_codigo === 'USD-ARS';
+      if (requiereTc && (!r.cotizacion || r.cotizacion <= 0)) {
+        showToast('Para ' + r.tipo_codigo + ' el tipo de cambio es obligatorio.', 'error');
+        return;
+      }
+      const payload = {
+        cliente_id: r.cliente_id || null,
+        fecha: r.fecha,
+        estado: 'pendiente_instrumentar',
+        tipo_operacion_id: r.tipo_operacion_id,
+        operacion_directa: true,
+        intermediario_id: null,
+        moneda_recibida: r.moneda_recibida,
+        moneda_entregada: r.moneda_entregada,
+        monto_recibido: r.monto_recibido,
+        monto_entregado: r.monto_entregado,
+        cotizacion: r.cotizacion || null,
+        tasa_descuento_intermediario: null,
+        observaciones: null,
+        usuario_id: currentUserId,
+        updated_at: new Date().toISOString(),
+      };
+      client.from('ordenes').insert(payload).select('id').then((res) => {
+        if (res.error) {
+          showToast('Error al crear la orden: ' + (res.error.message || ''), 'error');
+          return;
+        }
+        const ordenId = res.data && res.data[0] && res.data[0].id;
+        if (!ordenId) {
+          showToast('Error: no se obtuvo el id de la orden.', 'error');
+          return;
+        }
+        const ordenParaAuto = {
+          intermediario_id: null,
+          tipo_operacion_id: r.tipo_operacion_id,
+          monto_recibido: r.monto_recibido,
+          monto_entregado: r.monto_entregado,
+          moneda_recibida: r.moneda_recibida,
+          moneda_entregada: r.moneda_entregada,
+          cotizacion: r.cotizacion || null,
+        };
+        client.from('instrumentacion').insert({ orden_id: ordenId }).select('id').then((rInst) => {
+          function alFinalizar() {
+            closeModalChatOrden();
+            loadOrdenes();
+            if (chatOrdenAbiertoDesdePanel) {
+              chatOrdenAbiertoDesdePanel = false;
+              showView('vista-ordenes', 'Órdenes');
+            }
+          }
+          if (rInst.error) {
+            showToast('Orden creada pero falló la instrumentación: ' + (rInst.error.message || ''), 'error');
+            alFinalizar();
+            return;
+          }
+          const instId = rInst.data && rInst.data[0] && rInst.data[0].id;
+          if (!instId) {
+            showToast('Orden e instrumentación creadas.', 'success');
+            alFinalizar();
+            return;
+          }
+          autoCompletarInstrumentacionSinIntermediario(ordenId, instId, ordenParaAuto).then(() => {
+            showToast('Orden e instrumentación creadas (con transacciones).', 'success');
+            alFinalizar();
+          }).catch(() => {
+            showToast('Orden e instrumentación creadas; no se pudieron generar las transacciones automáticas.', 'info');
+            alFinalizar();
+          });
+        });
+      });
+    });
+  }
 }
 
 // --- Transacciones (panel debajo de la orden) ---
@@ -5219,6 +5545,7 @@ function onSessionReady(session) {
       setupModalIntermediario();
       setupModalTipoOperacion();
       setupModalOrden();
+      setupModalChatOrden();
       setupModalTransacciones();
       setupModalTransaccion();
       setupModalMovimientoCaja();

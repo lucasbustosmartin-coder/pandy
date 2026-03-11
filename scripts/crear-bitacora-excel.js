@@ -86,6 +86,11 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Help: modal en toda la app', 'Los íconos de ayuda ahora abren un modal de Help (en lugar de popover). Se actualizó la regla .cursor/rules/help-popovers.mdc para el nuevo patrón.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'v1.24 Despliegue', 'Versión 1.24: patrón estándar para helps (popover expandible/scroll, cierre con Escape). Regla .cursor/rules/help-popovers.mdc.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'v1.25 Despliegue', 'Versión 1.25: ayudas (help) se muestran en modal (no popover) para mejor lectura. El modal se cierra con Escape y click en el backdrop.', 'Despliegue'],
+  ['__HOY__', '__AHORA__', 'Cargar orden por chat (MVP local)', 'Botón "Cargar por chat" en vista Órdenes. Modal con input de texto; interpretación por reglas (montos con moneda, cliente "para X", fecha hoy/mañana). Preview y botón "Confirmar y abrir orden" que rellena el formulario de nueva orden y abre el modal. Solo usuarios con ingresar_orden.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Chat orden: tipo de cambio y alta directa', 'En ARS-USD/USD-ARS el parser acepta tipo de cambio ("a 1500", "tc 1500", "cotización 1500"). Al confirmar se crean la orden y la instrumentación en Supabase (sin abrir el modal); toast de éxito y recarga del listado.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Chat orden: un monto + TC calcula el otro', 'Si escribís "recibo 3000 USD a tc 1500 y entrego ARS" el parser calcula los ARS (3000×1500). Soporta "recibo X moneda" y "entrego moneda" sin monto cuando hay tipo de cambio.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Botón Cargar por chat: estilo y Panel de Control', 'Botón con clase btn-chat (mismo estilo que Nueva orden, color azul #0c6ea8). Cargar por chat también en Panel de Control (Accesos rápidos), visible solo con permiso ingresar_orden.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Chat orden: auto-generar transacciones al confirmar', 'Al confirmar desde el chat se llama a autoCompletarInstrumentacionSinIntermediario tras crear la instrumentación, para generar las dos transacciones (ingreso/egreso) según tipo de operación.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -133,6 +138,7 @@ const funcionalidades = [
   ['Carpeta assets', 'Logos e iconos en assets/: favicon, logo app, Icono_Dolar/ARS/Euro, cash.png, Banco.webp, SP_logo.svg. En la app se usan como /assets/nombre.ext. Script PPT usa assets/SP_logo.svg.'],
   ['Modal Nueva/Editar transacción', 'Un solo campo Monto (moneda de la transacción: ingreso = moneda recibida, egreso = moneda entregada). En operaciones con dos monedas: tipo de cambio solo lectura y monto calculado = conversión inversa (ARS→÷TC, USD/EUR→×TC). Modo de pago por defecto Ninguno con validación; mensajería interna.'],
   ['Tipos de operación: moneda_in/moneda_out y ABM', 'Tabla tipos_operacion con moneda_in y moneda_out (fuente de verdad). Lógica de orden y transacción usa esas columnas; fallback a parsear código. ABM Tipos de operación: vista en menú (permiso abm_tipos_operacion), listado, Nuevo/Editar con código, nombre, moneda IN, moneda OUT, activo. Migración sql/migracion_tipos_operacion_moneda_abm.sql.'],
+  ['Cargar orden por chat', 'Botón Cargar por chat (estilo btn-chat, azul) en vista Órdenes y en Panel de Control (Accesos rápidos); visible solo con permiso ingresar_orden. Mensaje en lenguaje natural; con un monto y TC se calcula el otro. Al confirmar se crean orden e instrumentación.'],
 ];
 
 const wsResumen = XLSX.utils.aoa_to_sheet(funcionalidades);
@@ -180,6 +186,7 @@ const versiones = [
   ['1.23', '__HOY__', 'Cuenta corriente: concilia sin doble conteo. Movimientos "Transacción pendiente" no se restan del compromiso (solo ejecutados/cierre y manuales), para que saldos por moneda se mantengan visibles cuando falta ejecutar una pata. Leyenda y doc actualizadas.'],
   ['1.24', '__HOY__', 'Ayudas (help): popovers expandibles para textos largos (scroll), cierre con Escape. Regla .cursor/rules/help-popovers.mdc para mantener el patrón en próximos helps.'],
   ['1.25', '__HOY__', 'Ayudas (help): los íconos de ayuda ahora abren un modal de Help (en lugar de popover) para mostrar textos largos de forma legible. Regla actualizada para el patrón modal.'],
+  ['1.26', '__HOY__', 'Cargar orden por chat: botón azul (btn-chat) en Órdenes y Panel de Control; tipo de cambio y cálculo del otro monto; al confirmar se crean orden, instrumentación y transacciones automáticas; desde Panel redirige a Órdenes al finalizar.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

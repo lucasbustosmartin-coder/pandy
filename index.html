@@ -123,12 +123,21 @@
     .btn-nuevo .btn-icon svg, .btn-editar .btn-icon svg, .btn-primary .btn-icon svg, .btn-secondary .btn-icon svg, .btn-login .btn-icon svg, .btn-cerrar .btn-icon svg { width: 100%; height: 100%; stroke: currentColor; }
     .btn-nuevo { padding: 0.5rem 1rem; border: 1px solid #0d7d3d; background: #0d7d3d; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
     .btn-nuevo:hover { background: #0a5c2e; border-color: #0a5c2e; }
+    .btn-chat { padding: 0.5rem 1rem; border: 1px solid #0c6ea8; background: #0c6ea8; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; }
+    .btn-chat:hover { background: #0a5488; border-color: #0a5488; }
+    .btn-chat .btn-icon { width: 18px; height: 18px; flex-shrink: 0; }
+    .btn-chat .btn-icon svg { width: 100%; height: 100%; stroke: currentColor; }
     .btn-editar { padding: 0.25rem 0.5rem; font-size: 0.85rem; background: #fff; color: #555; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
     .btn-editar:hover { background: #f0f0f0; border-color: #999; }
     .btn-icon-only { padding: 0.4rem; min-width: 0; border-radius: 6px; }
     .btn-icon-only .btn-icon { width: 18px; height: 18px; }
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
     .modal-backdrop.activo { display: flex; }
+    .chat-orden-log .chat-msg { margin-bottom: 0.5rem; }
+    .chat-orden-log .chat-msg.user { text-align: right; color: #1a1a1a; }
+    .chat-orden-log .chat-msg.bot { color: #555; font-size: 0.9rem; }
+    .chat-orden-log .chat-msg .chat-msg-label { font-size: 0.75rem; color: #888; margin-bottom: 0.15rem; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
     .modal { background: #fff; border-radius: 12px; max-width: min(95vw, 1280px); width: 95%; max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
     .modal .modal-body { overflow-y: auto; flex: 1; min-height: 0; }
     .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: move; user-select: none; flex-shrink: 0; }
@@ -415,7 +424,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.25</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.26</div>
   </aside>
 
   <main class="main-content">
@@ -552,6 +561,7 @@
         <div class="inicio-accesos">
           <p style="margin:0 0 0.5rem 0; font-size:0.9rem; color:#555;">Accesos rápidos</p>
           <div class="vista-toolbar" style="flex-wrap:wrap;">
+            <button type="button" id="btn-orden-por-chat-inicio" class="btn-chat" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>Cargar por chat</button>
             <a href="#" class="btn-secondary link-inicio" data-vista="vista-ordenes"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>Órdenes</a>
             <a href="#" class="btn-secondary link-inicio" data-vista="vista-cajas"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg></span>Cajas</a>
             <a href="#" class="btn-secondary link-inicio" data-vista="vista-clientes"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span>Clientes</a>
@@ -567,6 +577,7 @@
         <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Acuerdo comercial con instrumentación (transacciones). Estado: Abierta / Parcialmente cerrada / Cerrada según transacciones ejecutadas.</p>
         <div class="vista-toolbar">
           <button type="button" id="btn-nueva-orden" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva orden</button>
+          <button type="button" id="btn-orden-por-chat" class="btn-chat" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>Cargar por chat</button>
         </div>
         <div id="ordenes-loading" class="clientes-loading">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
@@ -988,6 +999,30 @@
             <button type="button" class="btn-secondary" id="modal-tipo-movimiento-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-chat-orden-backdrop" class="modal-backdrop">
+    <div class="modal modal-ancho" style="max-width: 480px;">
+      <div class="modal-header">
+        <h2>Cargar orden por chat</h2>
+        <button type="button" class="modal-close" id="modal-chat-orden-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Escribí la orden en lenguaje natural. Ej.: &quot;Para Alvarito, recibo 3000 USD, a tc 1500, y entrego ARS&quot; (si ponés un monto y el TC, el otro monto se calcula solo). Al confirmar se crean la orden y la instrumentación.</p>
+        <div id="chat-orden-log" class="chat-orden-log" style="min-height: 120px; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem; background: #fafafa;"></div>
+        <div id="chat-orden-preview" style="display:none; margin-bottom: 0.75rem; padding: 0.75rem; background: #e8f4ea; border-radius: 8px; font-size: 0.9rem;"></div>
+        <div class="form-row" style="gap: 0.5rem; align-items: flex-end;">
+          <div class="form-group" style="flex:1; margin:0;">
+            <label for="chat-orden-input" class="sr-only">Mensaje</label>
+            <input type="text" id="chat-orden-input" placeholder="Escribí la orden…" autocomplete="off" style="width:100%;" />
+          </div>
+          <button type="button" id="chat-orden-enviar" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg></span>Enviar</button>
+        </div>
+        <div id="chat-orden-confirmar-wrap" style="display:none; margin-top: 0.75rem;">
+          <button type="button" id="chat-orden-confirmar" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>Confirmar y cargar orden</button>
+        </div>
       </div>
     </div>
   </div>
