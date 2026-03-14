@@ -69,6 +69,11 @@
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee; }
     th { font-weight: 600; color: #555; }
+    .participante-pandy { color: #0ea5e9; font-weight: 700; }
+    .participante-cliente { color: #1a1a1a; font-weight: normal; }
+    .participante-intermediario { color: #7c3aed; font-weight: normal; }
+    .tipo-ingreso { color: #15803d; font-weight: 700; }
+    .tipo-egreso { color: #b91c1c; font-weight: 700; }
     .panel-seguridad table { margin-top: 0.75rem; }
     .panel-seguridad th { background: #1a1a1a; color: #fff; }
     .panel-seguridad select { padding: 0.35rem 0.5rem; border-radius: 6px; border: 1px solid #ccc; }
@@ -165,6 +170,9 @@
     .modal-confirm .modal-confirm-texto { margin: 0; color: #333; line-height: 1.5; }
     .orden-field-editing { box-shadow: 0 0 0 2px #0ea5e9; outline: none; }
     .form-row.dos-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .form-row.tres-columnas { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
+    .form-group.tasa-intermediario-cell { padding: 0.5rem 0.75rem; border-radius: 8px; background: #f5f0ff; border: 1px solid #d4c8f0; }
+    .form-group.tasa-intermediario-cell label { color: #4a3f6b; }
     .form-hint { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
     .form-hint-block { margin-bottom: 0.75rem; padding: 0.5rem; background: #f5f5f5; border-radius: 6px; }
     .help-inline { display: inline-flex; align-items: center; vertical-align: middle; position: relative; }
@@ -182,6 +190,7 @@
     .inicio-accesos { margin-top: 1.5rem; }
     .link-inicio { text-decoration: none; color: inherit; }
     .modal.modal-ancho { max-width: 920px; width: 95%; }
+    .modal.modal-orden { max-width: min(95vw, 1400px); width: 95%; }
     .modal.modal-transacciones-pendientes,
     .modal.modal-ordenes-pendientes { max-width: min(95vw, 1400px); width: 95%; margin-left: 4rem; }
     .form-actions { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -308,6 +317,10 @@
     .combo-estado-transaccion { border: 1px solid #ccc; border-radius: 6px; padding: 0.35rem 0.5rem; font-size: 0.9rem; font-weight: 500; cursor: pointer; min-width: 7rem; }
     .combo-estado-transaccion.combo-estado-pendiente { background: #fef3c7; color: #b45309; }
     .combo-estado-transaccion.combo-estado-ejecutada { background: #bbf7d0; color: #15803d; }
+    .input-monto-transaccion-tabla { width: 100%; max-width: 8rem; padding: 0.35rem 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; }
+    .input-monto-transaccion-tabla:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
+    .combo-modo-pago-transaccion-tabla { min-width: 8rem; max-width: 12rem; padding: 0.35rem 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
+    .combo-modo-pago-transaccion-tabla:focus { outline: none; border-color: #3b82f6; }
     .toast-container { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; max-width: 90vw; }
     .toast { padding: 0.85rem 1.25rem; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); font-size: 0.95rem; font-weight: 500; color: #fff; pointer-events: auto; animation: toast-in 0.3s ease; display: flex; align-items: center; gap: 0.6rem; min-width: 280px; max-width: 420px; transition: opacity 0.2s ease, transform 0.2s ease; }
     .toast.toast-success { background: #0d7d3d; }
@@ -337,7 +350,7 @@
       .btn-nuevo, .btn-editar { min-height: 44px; padding: 0.5rem 0.75rem; }
       .btn-primary, .btn-secondary { min-height: 44px; }
       .toggle-moneda button { min-height: 44px; padding: 0.5rem 0.85rem; }
-      .form-row.dos-columnas { grid-template-columns: 1fr; }
+      .form-row.dos-columnas, .form-row.tres-columnas { grid-template-columns: 1fr; }
       .form-actions { gap: 0.5rem; }
       .modal-backdrop { padding: 0.5rem; padding-left: max(0.5rem, env(safe-area-inset-left)); padding-right: max(0.5rem, env(safe-area-inset-right)); padding-top: max(0.5rem, env(safe-area-inset-top)); align-items: flex-start; }
       .modal { max-height: 90vh; width: 96%; max-width: min(96vw, 1280px); }
@@ -375,6 +388,7 @@
       .card { padding: 0.85rem; }
       .modal { max-width: 98vw; width: 98%; border-radius: 10px; margin: 0; }
       .modal.modal-ancho { max-width: 100%; }
+      .modal.modal-orden { max-width: 98vw; width: 98%; }
       .modal.modal-transacciones-pendientes,
       .modal.modal-ordenes-pendientes { max-width: 100%; width: 100%; margin-left: 0; }
       .modal-header, .modal-body { padding: 0.85rem 1rem; }
@@ -597,7 +611,7 @@
         <div id="ordenes-loading" class="clientes-loading">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
           <table id="tabla-ordenes">
-            <thead><tr><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Recibido</th><th>Entregado</th><th></th></tr></thead>
+            <thead><tr><th>Nº</th><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Recibido</th><th>Entregado</th><th></th></tr></thead>
             <tbody id="ordenes-tbody"></tbody>
           </table>
         </div>
@@ -728,7 +742,7 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
           Cuenta corriente
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Solo se listan clientes e intermediarios con saldo (positivo o negativo). El saldo es el <strong>compromiso por órdenes aún no ejecutadas</strong> (lo que el cliente/intermediario debe por lo que recibimos y nosotros por lo que entregamos) menos los <strong>movimientos ya registrados</strong> (ejecutados/cierre y manuales). Los movimientos de <strong>Transacción pendiente</strong> no se restan para evitar doble conteo (ya están incluidos en el compromiso). Las órdenes cerradas no suman al compromiso: su impacto (incl. tu ganancia) está solo en los movimientos. <strong>Positivo</strong> = nos debe; <strong>Negativo</strong> = nosotros le debemos. Usá el icono de detalle para ver movimientos y operaciones que participan.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de Pandy</strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. El <strong>saldo</strong> se calcula solo con <strong>movimientos ya ejecutados</strong> (cobros y pagos realizados). Si todo está pendiente, el saldo es cero. Cobro por = Pandy cobró (positivo); Deuda por = Pandy debe entregar (negativo). En el detalle podés ver también compromisos pendientes. Usá el icono de detalle para ver movimientos y operaciones vinculadas.</span></span>
         </h3>
         <div class="vista-toolbar" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
           <label style="display:flex; align-items:center; gap:0.5rem;">
@@ -738,7 +752,7 @@
               <button type="button" data-tipo="intermediario">Intermediario</button>
             </div>
           </label>
-          <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Recalcular saldos (compromiso por órdenes menos movimientos)" aria-label="Refrescar cuenta corriente">
+          <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Recalcular saldos (solo movimientos ejecutados)" aria-label="Refrescar cuenta corriente">
             <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></span>Refrescar
           </button>
         </div>
@@ -746,26 +760,15 @@
         <div id="cc-contenido" class="tabla-clientes-wrap" style="display:none;">
           <table id="tabla-cc-resumen" class="tabla-cc-resumen">
             <colgroup>
-              <col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/>
+              <col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/>
             </colgroup>
             <thead>
               <tr>
-                <th rowspan="2" class="th-nombre">Nombre</th>
-                <th colspan="2" class="th-moneda">
-                  <span class="th-moneda-icon"><img src="/assets/Icono_Dolar.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span> USD
-                </th>
-                <th colspan="2" class="th-moneda">
-                  <span class="th-moneda-icon"><img src="/assets/Icono_Euro.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span> EUR
-                </th>
-                <th colspan="2" class="th-moneda">
-                  <span class="th-moneda-icon"><img src="/assets/Icono_ARS.webp" alt="" class="cc-icono-moneda" width="20" height="20"/></span> ARS
-                </th>
-                <th rowspan="2" class="th-ver">Acción</th>
-              </tr>
-              <tr>
-                <th class="th-sub">Positivo</th><th class="th-sub">Negativo</th>
-                <th class="th-sub">Positivo</th><th class="th-sub">Negativo</th>
-                <th class="th-sub">Positivo</th><th class="th-sub">Negativo</th>
+                <th class="th-nombre">Nombre</th>
+                <th class="th-moneda"><span class="th-moneda-icon"><img src="/assets/Icono_Dolar.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span> USD</th>
+                <th class="th-moneda"><span class="th-moneda-icon"><img src="/assets/Icono_Euro.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span> EUR</th>
+                <th class="th-moneda"><span class="th-moneda-icon"><img src="/assets/Icono_ARS.webp" alt="" class="cc-icono-moneda" width="20" height="20"/></span> ARS</th>
+                <th class="th-ver">Acción</th>
               </tr>
             </thead>
             <tbody id="cc-resumen-tbody"></tbody>
@@ -967,7 +970,7 @@
           </div>
           <div class="form-group">
             <label for="mov-caja-monto">Monto (siempre positivo) *</label>
-            <input type="text" id="mov-caja-monto" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+            <input type="text" id="mov-caja-monto" inputmode="decimal" class="input-importe" placeholder="0" autocomplete="off" />
           </div>
           <div class="form-group">
             <label for="mov-caja-concepto">Concepto</label>
@@ -1043,7 +1046,7 @@
   </div>
 
   <div id="modal-orden-backdrop" class="modal-backdrop">
-    <div class="modal modal-ancho">
+    <div class="modal modal-ancho modal-orden">
       <div class="modal-header">
         <h2 id="modal-orden-titulo">Nueva orden</h2>
         <button type="button" class="modal-close" id="modal-orden-close" aria-label="Cerrar">×</button>
@@ -1061,7 +1064,7 @@
               <div class="form-row dos-columnas">
                 <div class="form-group">
                   <label>Participante fijo</label>
-                  <input type="text" value="Pandy" readonly style="background:#eee; color:#555;" />
+                  <input type="text" value="Pandy" readonly class="participante-pandy" style="background:#eee;" />
                 </div>
                 <div class="form-group">
                   <label for="orden-cliente">Cliente (opcional)</label>
@@ -1081,10 +1084,37 @@
               <div class="form-actions" style="justify-content:flex-start; margin-top:0; margin-bottom:0.5rem;">
                 <button type="button" class="btn-secondary" id="orden-btn-back"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M11 18l-6-6 6-6"/></svg></span>Participantes</button>
               </div>
+              <div id="orden-wrap-primeros-datos" style="display:none; margin-bottom:1rem; padding:0.75rem 1rem; background:#f0f7ff; border-radius:8px; border:1px solid #cce0ff;">
+                <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Completá primero estos datos; el resto se calculará y desbloqueará.</p>
+                <div class="form-row tres-columnas">
+                  <div class="form-group">
+                    <label for="orden-importe-cheque" id="orden-label-importe-cheque">Importe en Cheque (ARS) *</label>
+                    <input type="text" id="orden-importe-cheque" inputmode="decimal" class="input-importe" placeholder="0" autocomplete="off" />
+                  </div>
+                  <div class="form-group">
+                    <label for="orden-tasa-descuento-cliente">Tasa de descuento al cliente (%) *</label>
+                    <input type="text" id="orden-tasa-descuento-cliente" inputmode="decimal" class="input-importe" placeholder="1,50" autocomplete="off" />
+                  </div>
+                  <div class="form-group tasa-intermediario-cell" id="orden-wrap-tasa-descuento-intermediario" style="display:none;">
+                    <label for="orden-tasa-descuento-intermediario">Tasa de descuento del intermediario (%) * <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Ej. 1,50 = 1,5%. Acepta hasta dos decimales. Con 10.000.000 nominal y 1%, Pandy recibe 9.900.000 en efectivo del intermediario.</span></span></label>
+                    <input type="text" id="orden-tasa-descuento-intermediario" inputmode="decimal" class="input-importe" placeholder="1,50" autocomplete="off" />
+                  </div>
+                </div>
+                <div class="form-row dos-columnas" id="orden-wrap-montos-calculados" style="display:none;">
+                  <div class="form-group">
+                    <label for="orden-monto-recibido-display">Monto a Recibir</label>
+                    <input type="text" id="orden-monto-recibido-display" readonly class="input-importe" placeholder="0" style="background:#eee; color:#555;" />
+                  </div>
+                  <div class="form-group">
+                    <label for="orden-monto-entregado-display">Monto a Entregar</label>
+                    <input type="text" id="orden-monto-entregado-display" readonly class="input-importe" placeholder="0" style="background:#eee; color:#555;" />
+                  </div>
+                </div>
+              </div>
               <div id="orden-form-resto">
           <div class="form-group" id="orden-wrap-cotizacion">
             <label for="orden-cotizacion" id="orden-label-cotizacion">Cotización (opcional)</label>
-            <input type="text" id="orden-cotizacion" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+            <input type="text" id="orden-cotizacion" inputmode="decimal" class="input-importe" placeholder="0" autocomplete="off" />
           </div>
           <div class="form-group">
             <label for="orden-fecha">Fecha *</label>
@@ -1101,7 +1131,7 @@
             </div>
             <div class="form-group">
               <label for="orden-monto-recibido" id="orden-label-monto-recibido">Monto recibido *</label>
-              <input type="text" id="orden-monto-recibido" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+              <input type="text" id="orden-monto-recibido" inputmode="decimal" class="input-importe" placeholder="0" autocomplete="off" />
             </div>
           </div>
           <div class="form-row dos-columnas">
@@ -1115,16 +1145,12 @@
             </div>
             <div class="form-group">
               <label for="orden-monto-entregado" id="orden-label-monto-entregado">Monto entregado *</label>
-              <input type="text" id="orden-monto-entregado" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+              <input type="text" id="orden-monto-entregado" inputmode="decimal" class="input-importe" placeholder="0" autocomplete="off" />
             </div>
           </div>
           <div class="form-group" id="orden-wrap-comision" style="display:none;">
             <label for="orden-comision-display">Comisión a Recibir</label>
-            <input type="text" id="orden-comision-display" readonly class="input-importe" placeholder="0,00" style="background:#eee; color:#555;" />
-          </div>
-          <div class="form-group" id="orden-wrap-tasa-descuento-intermediario" style="display:none;">
-            <label for="orden-tasa-descuento-intermediario">Tasa de descuento del intermediario (%) * <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Ej. 1,50 = 1,5%. Acepta hasta dos decimales. Con 10.000.000 nominal y 1%, Pandy recibe 9.900.000 en efectivo del intermediario.</span></span></label>
-            <input type="text" id="orden-tasa-descuento-intermediario" inputmode="decimal" class="input-importe" placeholder="1,50" autocomplete="off" />
+            <input type="text" id="orden-comision-display" readonly class="input-importe" placeholder="0" style="background:#eee; color:#555;" />
           </div>
           <div class="form-row dos-columnas" id="orden-wrap-comision-split" style="display:none;">
             <div class="form-group">
@@ -1153,8 +1179,8 @@
             <textarea id="orden-observaciones" rows="2" maxlength="500" placeholder="Opcional"></textarea>
           </div>
           <div class="form-actions">
-            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
-            <button type="button" class="btn-secondary" id="orden-btn-ir-instrumentacion" title="Guardar y cargar transacciones">Instrumentación</button>
+            <button type="submit" id="orden-btn-guardar" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="orden-btn-ir-instrumentacion" title="Guardar y cargar transacciones"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>Instrumentación</button>
             <button type="button" class="btn-secondary btn-anular-orden" id="orden-btn-anular" title="Anular esta orden" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span>Anular orden</button>
             <button type="button" class="btn-secondary" id="modal-orden-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
           </div>
@@ -1187,10 +1213,10 @@
             <div class="vista-toolbar" style="margin-bottom:0.75rem; justify-content:flex-start;">
               <button type="button" id="orden-btn-nueva-transaccion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
             </div>
-            <div id="orden-inst-loading" class="clientes-loading" style="display:none;">Cargando transacciones…</div>
+            <div id="orden-inst-loading" class="clientes-loading" style="display:none;">Cargando instrumentación…</div>
             <div id="orden-inst-tabla-wrap" style="display:none;">
               <table id="orden-inst-tabla">
-                <thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Cobrador</th><th>Pagador</th><th>Estado</th><th></th></tr></thead>
+                <thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
                 <tbody id="orden-inst-tbody"></tbody>
               </table>
             </div>
@@ -1218,7 +1244,7 @@
         <div id="transacciones-loading" class="clientes-loading">Cargando…</div>
         <div id="transacciones-tabla-wrap" style="display:none;">
           <table id="tabla-transacciones">
-            <thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Cobrador</th><th>Pagador</th><th>Estado</th><th></th></tr></thead>
+            <thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
             <tbody id="transacciones-tbody"></tbody>
           </table>
         </div>
@@ -1263,31 +1289,31 @@
           </div>
           <div class="form-group">
             <label for="transaccion-monto">Monto (<span id="transaccion-monto-currency-label">USD</span>) *</label>
-            <input type="text" id="transaccion-monto" inputmode="decimal" class="input-importe" placeholder="0,00" autocomplete="off" />
+            <input type="text" id="transaccion-monto" inputmode="decimal" class="input-importe" placeholder="0" autocomplete="off" />
           </div>
           <div class="form-group" id="transaccion-wrap-conversion" style="display:none;">
             <p style="margin-bottom:0.5rem;" class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Conversión inversa según tipo de cambio del acuerdo: si cargás ARS se muestra el equivalente en la otra moneda (÷ TC); si cargás USD/EUR se muestra el equivalente en ARS (× TC).</span></span></p>
             <div class="form-group">
               <label for="transaccion-tipo-cambio">Tipo de cambio</label>
-              <input type="text" id="transaccion-tipo-cambio" readonly class="input-importe input-readonly" placeholder="0,00" tabindex="-1" aria-readonly="true" style="background:#eee; color:#555;" />
+              <input type="text" id="transaccion-tipo-cambio" readonly class="input-importe input-readonly" placeholder="0" tabindex="-1" aria-readonly="true" style="background:#eee; color:#555;" />
             </div>
             <div class="form-group">
               <label for="transaccion-monto-calculado-display">Monto (<span id="transaccion-monto-calculado-currency-label">USD</span>) calculado</label>
-              <input type="text" id="transaccion-monto-calculado-display" readonly class="input-importe" placeholder="0,00" style="background:#eee; color:#555;" />
+              <input type="text" id="transaccion-monto-calculado-display" readonly class="input-importe" placeholder="0" style="background:#eee; color:#555;" />
             </div>
           </div>
           <div class="form-group form-row dos-columnas">
             <div>
-              <label for="transaccion-cobrador">Cobrador *</label>
-              <select id="transaccion-cobrador" required>
+              <label for="transaccion-pagador">Pagador *</label>
+              <select id="transaccion-pagador" required>
                 <option value="pandy">Pandy</option>
                 <option value="cliente">Cliente</option>
                 <option value="intermediario">Intermediario</option>
               </select>
             </div>
             <div>
-              <label for="transaccion-pagador">Pagador *</label>
-              <select id="transaccion-pagador" required>
+              <label for="transaccion-cobrador">Cobrador *</label>
+              <select id="transaccion-cobrador" required>
                 <option value="pandy">Pandy</option>
                 <option value="cliente">Cliente</option>
                 <option value="intermediario">Intermediario</option>
@@ -1381,7 +1407,7 @@
         <div id="transacciones-pendientes-tabla-wrap" style="display:none;">
           <div class="tabla-clientes-wrap">
             <table class="tabla-clientes">
-              <thead><tr><th>Orden</th><th>Cliente</th><th>Intermediario</th><th>Tipo</th><th>Moneda</th><th>Monto</th><th>Cobrador</th><th>Pagador</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>Orden</th><th>Cliente</th><th>Intermediario</th><th>Tipo</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
               <tbody id="transacciones-pendientes-tbody"></tbody>
             </table>
           </div>
@@ -1401,14 +1427,10 @@
         <div id="modal-cc-detalle-saldos" class="resumen-cajas modal-cc-saldos" style="margin-bottom:1rem; display:flex; flex-wrap:wrap; gap:0.5rem;"></div>
         <div id="modal-cc-detalle-loading" class="clientes-loading" style="display:none;">Cargando movimientos…</div>
         <div id="modal-cc-detalle-tabla-wrap" class="tabla-clientes-wrap" style="display:none; overflow-x:auto;">
-          <table id="tabla-cc-detalle" class="tabla-cc-debe-haber">
+          <table id="tabla-cc-detalle" class="tabla-cc-movimientos">
             <thead>
               <tr>
-                <th>Fecha</th><th>Concepto</th>
-                <th>Debe (USD)</th><th>Haber (USD)</th>
-                <th>Debe (EUR)</th><th>Haber (EUR)</th>
-                <th>Debe (ARS)</th><th>Haber (ARS)</th>
-                <th></th>
+                <th>Fecha</th><th>Concepto</th><th>USD</th><th>ARS</th><th>EUR</th><th>Estado</th><th></th>
               </tr>
             </thead>
             <tbody id="cc-detalle-tbody"></tbody>
@@ -1416,8 +1438,8 @@
           </table>
         </div>
         <div id="modal-cc-detalle-operaciones-wrap" class="tabla-clientes-wrap" style="margin-top:1.25rem; display:none; overflow-x:auto;">
-          <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem;">Operaciones que participan del saldo</h4>
-          <p style="margin:0 0 0.5rem 0; font-size:0.85rem; color:#555;">Órdenes (no anuladas) que aportan al compromiso: lo que el cliente/intermediario debe (recibimos) y lo que nosotros debemos (entregamos). El saldo arriba es compromiso menos movimientos ya registrados.</p>
+          <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem;">Operaciones vinculadas</h4>
+          <p style="margin:0 0 0.5rem 0; font-size:0.85rem; color:#555;">Órdenes (no anuladas) en las que participa este cliente/intermediario. El saldo de arriba es solo por movimientos ya ejecutados; si todo está pendiente, el saldo es cero. En la tabla podés ver además los compromisos pendientes (Deuda por…).</p>
           <table class="tabla-cc-debe-haber" id="tabla-cc-detalle-operaciones">
             <thead>
               <tr>

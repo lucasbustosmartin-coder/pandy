@@ -15,6 +15,11 @@ alwaysApply: true
 
 - Si se agregan o cambian tablas en Supabase: actualizar `sql/` con los DDL correspondientes, el código que las use y la documentación en `docs/` si aplica.
 
+## Cuenta corriente (regla conceptual)
+
+- **La cuenta corriente siempre tiene que cerrar** con la regla conceptual (saldo = suma de movimientos; cada movimiento por el monto realmente ejecutado; sin doble conteo). Referencia: `docs/FLUJOS_CC_REGLA.md`.
+- En todo cambio que toque movimientos de CC, flujos de ejecución o cálculo de saldo, verificar que el saldo cierre. **Si no cierra, preguntar al usuario** antes de dar por cerrada la tarea.
+
 ## Mensajería interna (no usar diálogos del navegador)
 
 - **Toda comunicación con el usuario** debe usar la **mensajería interna** de la app:
@@ -33,6 +38,10 @@ alwaysApply: true
 ## Responsive / móvil
 
 - **Desde ahora en más:** al agregar o modificar vistas, formularios, tablas o modales en la app, tener **siempre en cuenta la responsividad en móviles**. Incluir o ajustar estilos para pantallas pequeñas: breakpoints típicos 768px (tablet/móvil grande) y 480px (móvil chico), touch targets mínimos 44px, padding y fuentes reducidos, scroll horizontal con `-webkit-overflow-scrolling: touch` donde haga falta, y `viewport-fit=cover` si aplica. No dejar que nuevos componentes rompan el layout en celulares.
+
+## No fallar en terminal local
+
+- **El proyecto no debe fallar en terminal local.** Tras cambios relevantes en el frontend (p. ej. en `main.js` o en la app), comprobar que no haya errores de sintaxis o de build: ejecutar `node --check main.js` y/o `npx vite build` (o `npm run dev`) desde la raíz y asegurarse de que terminan sin error. Si falla, corregir antes de dar por cerrada la tarea.
 
 ## Despliegue
 
