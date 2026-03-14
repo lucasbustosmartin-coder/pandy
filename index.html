@@ -121,6 +121,12 @@
     .toggle-switch .slider::before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
     .toggle-switch input:checked + .slider { background: #0d7d3d; }
     .toggle-switch input:checked + .slider::before { transform: translateX(22px); }
+    .toggle-switch input:disabled { cursor: not-allowed; }
+    .toggle-switch input:disabled + .slider { opacity: 0.65; }
+    .tipo-op-toggle-cell { display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0.5rem 0; }
+    #tabla-tipos-operacion td:nth-child(5), #tabla-tipos-operacion td:nth-child(6) { vertical-align: middle; }
+    #tabla-tipos-operacion .tipo-op-toggle-cell .toggle-switch { flex-shrink: 0; display: inline-block; width: 48px; height: 26px; }
+    #tabla-tipos-operacion .tipo-op-toggle-cell .toggle-switch .slider { border: 1px solid #9ca3af; box-sizing: border-box; }
     .vista-placeholder { color: #666; padding: 1rem 0; }
     .vista-toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
     .btn-nuevo, .btn-editar, .btn-primary, .btn-secondary, .btn-login, .btn-cerrar { display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; }
@@ -199,6 +205,9 @@
     .form-actions .btn-secondary { padding: 0.5rem 1rem; background: #fff; color: #333; border: 1px solid #999; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
     .form-actions .btn-secondary:hover { background: #f0f0f0; }
     .clientes-loading { color: #666; }
+    .vista-loading-spinner { display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 1.5rem; min-height: 3rem; }
+    .vista-loading-spinner::before { content: ''; display: inline-block; width: 26px; height: 26px; border: 2px solid #e5e7eb; border-top-color: #0d7d3d; border-radius: 50%; animation: vista-spin 0.7s linear infinite; flex-shrink: 0; }
+    @keyframes vista-spin { to { transform: rotate(360deg); } }
     .tabla-clientes-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .resumen-cajas { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
     .resumen-cajas .card { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 0.25rem; }
@@ -295,6 +304,7 @@
     .toggle-moneda button { padding: 0.5rem 1rem; border: none; background: transparent; cursor: pointer; font-size: 0.9rem; }
     .toggle-moneda button.activo { background: #1a1a1a; color: #fff; font-weight: 600; }
     .cajas-loading { color: #666; }
+    .cajas-loading.vista-loading-spinner { padding: 1.5rem; }
     .tabla-movimientos-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 0.75rem; }
     .tabla-movimientos .monto-positivo { color: #0d7d3d; }
     .tabla-movimientos .monto-negativo { color: #b91c1c; }
@@ -448,7 +458,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.28</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.29</div>
   </aside>
 
   <main class="main-content">
@@ -608,7 +618,7 @@
           <label class="ordenes-filtro-label"><span>Intermediario:</span><select id="ordenes-filtro-intermediario" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select></label>
           <label class="ordenes-filtro-label"><span>Estado:</span><select id="ordenes-filtro-estado" class="select-filtro" style="min-width:180px;"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option><option value="orden_ejecutada">Orden Ejecutada</option><option value="anulada">Anulada</option></select></label>
         </div>
-        <div id="ordenes-loading" class="clientes-loading">Cargando órdenes…</div>
+        <div id="ordenes-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
           <table id="tabla-ordenes">
             <thead><tr><th>Nº</th><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Recibido</th><th>Entregado</th><th></th></tr></thead>
@@ -663,10 +673,10 @@
           </label>
           <button type="button" id="btn-nuevo-movimiento-caja" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo movimiento</button>
         </div>
-        <div id="cajas-loading" class="cajas-loading">Cargando movimientos…</div>
+        <div id="cajas-loading" class="cajas-loading vista-loading-spinner" style="display:none;">Cargando movimientos…</div>
         <div id="cajas-tabla-wrap" class="tabla-movimientos-wrap" style="display:none;">
           <table class="tabla-movimientos" id="tabla-movimientos-caja">
-            <thead><tr><th>Fecha</th><th>Tipo de movimiento</th><th>Caja</th><th>Tipo</th><th>Moneda</th><th>Monto</th><th></th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Origen</th><th>Nro orden</th><th>Nro transacción</th><th>Tipo</th><th>Moneda</th><th>Monto</th><th>Caja</th><th>Concepto</th><th></th></tr></thead>
             <tbody id="movimientos-caja-tbody"></tbody>
           </table>
         </div>
@@ -733,7 +743,7 @@
         <div id="tipos-operacion-loading" class="clientes-loading">Cargando tipos…</div>
         <div id="tipos-operacion-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
           <table id="tabla-tipos-operacion">
-            <thead><tr><th>Código</th><th>Nombre</th><th>Moneda IN</th><th>Moneda OUT</th><th>Activo</th><th></th></tr></thead>
+            <thead><tr><th>Código</th><th>Nombre</th><th>Moneda IN</th><th>Moneda OUT</th><th>Intermediario</th><th>Activo</th><th></th></tr></thead>
             <tbody id="tipos-operacion-tbody"></tbody>
           </table>
         </div>
@@ -756,7 +766,7 @@
             <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></span>Refrescar
           </button>
         </div>
-        <div id="cc-loading" class="clientes-loading" style="display:none;">Cargando…</div>
+        <div id="cc-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando…</div>
         <div id="cc-contenido" class="tabla-clientes-wrap" style="display:none;">
           <table id="tabla-cc-resumen" class="tabla-cc-resumen">
             <colgroup>
@@ -884,6 +894,9 @@
               <option value="EUR">EUR</option>
               <option value="ARS">ARS</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="tipo-operacion-usa-intermediario" /> Usa intermediario</label>
           </div>
           <div class="form-group">
             <label><input type="checkbox" id="tipo-operacion-activo" checked /> Activo</label>
@@ -1071,7 +1084,7 @@
                   <select id="orden-cliente"><option value="">Sin asignar</option></select>
                 </div>
               </div>
-              <div class="form-group">
+              <div class="form-group" id="orden-wrap-intermediario">
                 <label for="orden-intermediario">Intermediario (opcional) <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Puede haber operaciones Pandy ↔ Intermediario sin cliente.</span></span></label>
                 <select id="orden-intermediario"><option value="">Sin asignar</option></select>
               </div>
@@ -1216,7 +1229,7 @@
             <div id="orden-inst-loading" class="clientes-loading" style="display:none;">Cargando instrumentación…</div>
             <div id="orden-inst-tabla-wrap" style="display:none;">
               <table id="orden-inst-tabla">
-                <thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
+                <thead><tr><th>Nro</th><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
                 <tbody id="orden-inst-tbody"></tbody>
               </table>
             </div>
