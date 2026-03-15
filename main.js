@@ -8003,6 +8003,8 @@ function loadClientes() {
       }
       const list = res.data || [];
       const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+      const switchCellCliente = (id, checked) =>
+        `<div class="tipo-op-toggle-cell"><span class="toggle-switch"><input type="checkbox" class="cliente-activo-toggle" data-id="${id}"${checked ? ' checked' : ''}${canAbm ? '' : ' disabled'} /><span class="slider"></span></span></div>`;
       tbody.innerHTML = list
         .map(
           (c) =>
@@ -8011,12 +8013,23 @@ function loadClientes() {
               <td>${esc(c.documento)}</td>
               <td>${esc(c.email)}</td>
               <td>${esc(c.telefono)}</td>
-              <td>${c.activo ? 'Sí' : 'No'}</td>
-              <td>${canAbm ? `<button type="button" class="btn-editar" data-id="${c.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : ''}</td>
+              <td>${switchCellCliente(c.id, c.activo !== false)}</td>
+              <td>${canAbm ? `<button type="button" class="btn-editar btn-editar-cliente" data-id="${c.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : ''}</td>
             </tr>`
         )
         .join('');
-      tbody.querySelectorAll('.btn-editar').forEach((btn) => {
+      tbody.querySelectorAll('.cliente-activo-toggle').forEach((chk) => {
+        if (chk.disabled) return;
+        chk.addEventListener('change', function () {
+          const id = this.getAttribute('data-id');
+          const newVal = this.checked;
+          client.from('clientes').update({ activo: newVal, updated_at: new Date().toISOString() }).eq('id', id).then((res) => {
+            if (res.error) showToast('Error: ' + (res.error.message || 'No se pudo actualizar.'), 'error');
+            else showToast('Actualizado.');
+          });
+        });
+      });
+      tbody.querySelectorAll('.btn-editar-cliente').forEach((btn) => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-id');
           const row = list.find((r) => r.id === id);
@@ -8139,6 +8152,8 @@ function loadIntermediarios() {
       }
       const list = res.data || [];
       const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+      const switchCellInt = (id, checked) =>
+        `<div class="tipo-op-toggle-cell"><span class="toggle-switch"><input type="checkbox" class="intermediario-activo-toggle" data-id="${id}"${checked ? ' checked' : ''}${canAbm ? '' : ' disabled'} /><span class="slider"></span></span></div>`;
       tbody.innerHTML = list
         .map(
           (i) =>
@@ -8147,11 +8162,22 @@ function loadIntermediarios() {
               <td>${esc(i.documento)}</td>
               <td>${esc(i.email)}</td>
               <td>${esc(i.telefono)}</td>
-              <td>${i.activo ? 'Sí' : 'No'}</td>
+              <td>${switchCellInt(i.id, i.activo !== false)}</td>
               <td>${canAbm ? `<button type="button" class="btn-editar btn-editar-intermediario" data-id="${i.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : ''}</td>
             </tr>`
         )
         .join('');
+      tbody.querySelectorAll('.intermediario-activo-toggle').forEach((chk) => {
+        if (chk.disabled) return;
+        chk.addEventListener('change', function () {
+          const id = this.getAttribute('data-id');
+          const newVal = this.checked;
+          client.from('intermediarios').update({ activo: newVal, updated_at: new Date().toISOString() }).eq('id', id).then((res) => {
+            if (res.error) showToast('Error: ' + (res.error.message || 'No se pudo actualizar.'), 'error');
+            else showToast('Actualizado.');
+          });
+        });
+      });
       tbody.querySelectorAll('.btn-editar-intermediario').forEach((btn) => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-id');

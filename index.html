@@ -124,9 +124,15 @@
     .toggle-switch input:disabled { cursor: not-allowed; }
     .toggle-switch input:disabled + .slider { opacity: 0.65; }
     .tipo-op-toggle-cell { display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0.5rem 0; }
-    #tabla-tipos-operacion td:nth-child(5), #tabla-tipos-operacion td:nth-child(6) { vertical-align: middle; }
+    #tabla-tipos-operacion th:nth-child(5), #tabla-tipos-operacion th:nth-child(6), #tabla-tipos-operacion td:nth-child(5), #tabla-tipos-operacion td:nth-child(6) { text-align: center; vertical-align: middle; }
     #tabla-tipos-operacion .tipo-op-toggle-cell .toggle-switch { flex-shrink: 0; display: inline-block; width: 48px; height: 26px; }
     #tabla-tipos-operacion .tipo-op-toggle-cell .toggle-switch .slider { border: 1px solid #9ca3af; box-sizing: border-box; }
+    #tabla-clientes th:nth-child(5), #tabla-clientes td:nth-child(5), #tabla-intermediarios th:nth-child(5), #tabla-intermediarios td:nth-child(5) { text-align: center; vertical-align: middle; }
+    #tabla-clientes .tipo-op-toggle-cell .toggle-switch, #tabla-intermediarios .tipo-op-toggle-cell .toggle-switch { flex-shrink: 0; display: inline-block; width: 48px; height: 26px; }
+    #tabla-clientes .tipo-op-toggle-cell .toggle-switch .slider, #tabla-intermediarios .tipo-op-toggle-cell .toggle-switch .slider { border: 1px solid #9ca3af; box-sizing: border-box; }
+    .form-group-toggle { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+    .form-group-toggle .label-with-toggle { margin-bottom: 0; flex-shrink: 0; font-weight: 500; }
+    .form-group-toggle .toggle-switch { flex-shrink: 0; }
     .vista-placeholder { color: #666; padding: 1rem 0; }
     .vista-toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
     .btn-nuevo, .btn-editar, .btn-primary, .btn-secondary, .btn-login, .btn-cerrar { display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; }
@@ -483,7 +489,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.31</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.32</div>
   </aside>
 
   <main class="main-content">
@@ -875,8 +881,12 @@
             <label for="cliente-direccion">Dirección</label>
             <input type="text" id="cliente-direccion" maxlength="500" placeholder="" />
           </div>
-          <div class="form-group">
-            <label><input type="checkbox" id="cliente-activo" checked /> Activo</label>
+          <div class="form-group form-group-toggle">
+            <label for="cliente-activo" class="label-with-toggle">Activo</label>
+            <span class="toggle-switch">
+              <input type="checkbox" id="cliente-activo" checked />
+              <span class="slider"></span>
+            </span>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
@@ -964,8 +974,12 @@
             <label for="intermediario-direccion">Dirección</label>
             <input type="text" id="intermediario-direccion" maxlength="500" placeholder="" />
           </div>
-          <div class="form-group">
-            <label><input type="checkbox" id="intermediario-activo" checked /> Activo</label>
+          <div class="form-group form-group-toggle">
+            <label for="intermediario-activo" class="label-with-toggle">Activo</label>
+            <span class="toggle-switch">
+              <input type="checkbox" id="intermediario-activo" checked />
+              <span class="slider"></span>
+            </span>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
