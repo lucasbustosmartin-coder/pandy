@@ -16,7 +16,7 @@ let currentUserId = null;
 let ordenWizardOrdenIdActual = null;
 /** Si la columna ordenes.numero no existe (migración no ejecutada), se pone en false tras el primer error. */
 let ordenesTieneNumeroColumn = true;
-/** Al abrir "Nueva orden" se crea un borrador; si el usuario cierra sin guardar, se elimina. */
+/** Ya no se crea borrador al abrir "Nueva orden"; la orden se inserta solo al guardar o ir a Instrumentación (se preserva la correlación del número). */
 let ordenIdBorradorParaEliminar = null;
 let ordenWizardInstrumentacionIdActual = null;
 
@@ -34,6 +34,10 @@ function delayMinLoading(shownAt, minMs) {
 let lastActivityTime = 0;
 let sessionTimeoutMinutes = 60;
 let sessionCheckIntervalId = null;
+/** Vista actual para el refresco automático de datos cada 30 s. */
+let currentVistaId = 'vista-inicio';
+let refreshDataIntervalId = null;
+const REFRESH_DATA_INTERVAL_MS = 30000;
 const SESSION_ACTIVITY_THROTTLE_MS = 30000; // actualizar lastActivityTime como máximo cada 30 s
 let lastActivityUpdate = 0;
 
@@ -149,6 +153,7 @@ function showView(vistaId, pageTitle) {
     showView(firstId, firstTitle);
     return;
   }
+  currentVistaId = vistaId;
   ['vista-inicio', 'vista-ordenes', 'vista-cajas', 'vista-clientes', 'vista-intermediarios', 'vista-tipos-operacion', 'vista-cuenta-corriente', 'vista-seguridad'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.display = id === vistaId ? 'block' : 'none';
@@ -2835,9 +2840,13 @@ function openModalOrden(registro) {
   ]);
   const promRegistro = registro
     ? Promise.resolve(registro)
-    : crearOrdenBorrador().then((draft) => {
-        ordenIdBorradorParaEliminar = draft.id;
-        return draft;
+    : Promise.resolve({
+        fecha: new Date().toISOString().slice(0, 10),
+        estado: 'pendiente_instrumentar',
+        moneda_recibida: 'USD',
+        moneda_entregada: 'USD',
+        monto_recibido: 0,
+        monto_entregado: 0,
       });
 
   Promise.all([promDatos, promRegistro])
@@ -2855,6 +2864,7 @@ function openModalOrden(registro) {
 
     const selTipoEl = document.getElementById('orden-tipo-operacion');
     const selIntEl = document.getElementById('orden-intermediario');
+    const wrapIntermediario = document.getElementById('orden-wrap-intermediario');
     const wrapSplit = document.getElementById('orden-wrap-comision-split');
     const pctPandyEl = document.getElementById('orden-comision-pandy-pct');
     const pctIntEl = document.getElementById('orden-comision-intermediario-pct');
@@ -2904,11 +2914,14 @@ function openModalOrden(registro) {
       const codigo = opt ? (opt.getAttribute('data-codigo') || '') : '';
       if (codigo) {
         if (wizard) wizard.style.display = 'block';
+        if (selCliente) selCliente.disabled = false;
         adaptarFormularioOrden(codigo, tipos);
         showStep('participantes');
         toggleComisionSplit();
       } else {
         if (wizard) wizard.style.display = 'none';
+        if (selCliente) selCliente.disabled = true;
+        if (wrapIntermediario) wrapIntermediario.style.display = 'none';
       }
     }
     if (selTipoEl) selTipoEl.addEventListener('change', onTipoChange);
@@ -2918,12 +2931,28 @@ function openModalOrden(registro) {
     if (pctIntEl) pctIntEl.addEventListener('change', () => syncComisionPctOtro('intermediario'));
     if (pctIntEl) pctIntEl.addEventListener('input', () => syncComisionPctOtro('intermediario'));
     if (btnNext) btnNext.onclick = () => {
-      showStep('detalles');
-      const opt = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+      const optTipo = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+      const usaIntermediario = optTipo ? (optTipo.getAttribute('data-usa-intermediario') === 'true') : false;
+      const valorIntermediario = document.getElementById('orden-intermediario')?.value?.trim() || '';
+      if (usaIntermediario && !valorIntermediario) {
+        showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
+        return;
+      }
+      showOrdenWizardStep('detalles');
+      const opt = optTipo;
       const codigo = opt?.getAttribute('data-codigo') || '';
-      if (codigo === 'ARS-USD' || codigo === 'USD-ARS') {
+      if (codigo === 'ARS-USD') {
         setTimeout(() => {
           const el = document.getElementById('orden-monto-entregado');
+          if (el) {
+            el.focus();
+            setTimeout(() => { el.setSelectionRange(0, 0); }, 0);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }, 150);
+      } else if (codigo === 'USD-ARS') {
+        setTimeout(() => {
+          const el = document.getElementById('orden-monto-recibido');
           if (el) {
             el.focus();
             setTimeout(() => { el.setSelectionRange(0, 0); }, 0);
@@ -2940,7 +2969,7 @@ function openModalOrden(registro) {
         }, 150);
       }
     };
-    if (btnBack) btnBack.onclick = () => showStep('participantes');
+    if (btnBack) btnBack.onclick = () => showOrdenWizardStep('participantes');
     if (btnBackDetalles) btnBackDetalles.onclick = () => showOrdenWizardStep('detalles');
     if (btnCerrarWizard) btnCerrarWizard.onclick = () => { closeModalOrden(); loadOrdenes(); };
     if (btnCancelarWizard) btnCancelarWizard.onclick = () => closeModalOrden();
@@ -2968,9 +2997,8 @@ function openModalOrden(registro) {
       });
     };
 
-    const esBorrador = ordenIdBorradorParaEliminar !== null && registroActual && registroActual.id === ordenIdBorradorParaEliminar;
     let promContinuar = Promise.resolve();
-    if (registroActual && !esBorrador) {
+    if (registroActual && registroActual.id) {
       titulo.textContent = registroActual.numero != null ? 'Editar orden #' + registroActual.numero : 'Editar orden';
       idEl.value = registroActual.id;
       document.getElementById('orden-cliente').value = registroActual.cliente_id || '';
@@ -3029,7 +3057,7 @@ function openModalOrden(registro) {
       });
     } else {
       titulo.textContent = registroActual && registroActual.numero != null ? 'Orden #' + registroActual.numero : 'Nueva orden';
-      idEl.value = registroActual ? registroActual.id : '';
+      idEl.value = (registroActual && registroActual.id) ? registroActual.id : '';
       if (!registroActual) form.reset();
       document.getElementById('orden-fecha').value = (registroActual && registroActual.fecha) ? (registroActual.fecha || '').toString().slice(0, 10) : new Date().toISOString().slice(0, 10);
       document.getElementById('orden-estado').value = 'pendiente_instrumentar';
@@ -3039,7 +3067,10 @@ function openModalOrden(registro) {
         document.getElementById('orden-monto-recibido').value = formatImporteParaInput(registroActual.monto_recibido);
         document.getElementById('orden-monto-entregado').value = formatImporteParaInput(registroActual.monto_entregado);
       }
-      if (wizard) wizard.style.display = registroActual ? 'block' : 'none';
+      const esNuevaOrden = !registroActual || !registroActual.id;
+      if (wizard) wizard.style.display = esNuevaOrden ? 'none' : 'block';
+      if (selCliente) selCliente.disabled = esNuevaOrden;
+      if (esNuevaOrden && wrapIntermediario) wrapIntermediario.style.display = 'none';
       ordenWizardOrdenIdActual = registroActual ? registroActual.id : null;
       const btnAnular = document.getElementById('orden-btn-anular');
       if (btnAnular) btnAnular.style.display = 'none';
@@ -3049,6 +3080,9 @@ function openModalOrden(registro) {
       if (pctIntEl && !pctIntEl.value) pctIntEl.value = '0';
       backdrop.classList.add('activo');
       showOrdenWizardStep('participantes');
+      if (wizard && wizard.style.display === 'none') {
+        setTimeout(() => { selTipoEl?.focus(); }, 120);
+      }
       setupInputImporte(document.getElementById('orden-monto-recibido'));
       setupInputImporte(document.getElementById('orden-monto-entregado'));
       setupInputImporte(document.getElementById('orden-tasa-descuento-intermediario'), 2, true);
@@ -3122,12 +3156,16 @@ function adaptarFormularioOrden(codigo, tipos) {
     }
   }
   if (labelMontoRecibido) {
-    if (isTipoDosMonedas) labelMontoRecibido.textContent = 'El cliente vende ' + (recibidaDesdeTipo || '') + ' (calculado)';
-    else labelMontoRecibido.textContent = (isUsdUsd || isTipoConTc || isArsArs) ? 'Monto a Recibir *' : 'Monto recibido *';
+    if (isTipoDosMonedas) {
+      if (isUsdArs) labelMontoRecibido.textContent = 'El cliente vende ' + (recibidaDesdeTipo || '') + ' *';
+      else labelMontoRecibido.innerHTML = 'El cliente <span class="orden-label-verb-destacado">entregará</span> ' + escapeHtml(recibidaDesdeTipo || '') + ' (calculado)';
+    } else labelMontoRecibido.textContent = (isUsdUsd || isTipoConTc || isArsArs) ? 'Monto a Recibir *' : 'Monto recibido *';
   }
   if (labelMontoEntregado) {
-    if (isTipoDosMonedas) labelMontoEntregado.textContent = 'El cliente compra ' + (entregadaDesdeTipo || '') + ' *';
-    else labelMontoEntregado.textContent = (isUsdUsd || isTipoConTc || isArsArs) ? 'Monto a Entregar *' : 'Monto entregado *';
+    if (isTipoDosMonedas) {
+      if (isUsdArs) labelMontoEntregado.innerHTML = 'El cliente <span class="orden-label-verb-destacado">recibirá</span> ' + escapeHtml(entregadaDesdeTipo || '') + ' (calculado)';
+      else labelMontoEntregado.textContent = 'El cliente compra ' + (entregadaDesdeTipo || '') + ' *';
+    } else labelMontoEntregado.textContent = (isUsdUsd || isTipoConTc || isArsArs) ? 'Monto a Entregar *' : 'Monto entregado *';
   }
   const wrapTasaDescuentoInt = document.getElementById('orden-wrap-tasa-descuento-intermediario');
   const wrapComisionSplit = document.getElementById('orden-wrap-comision-split');
@@ -3162,15 +3200,20 @@ function adaptarFormularioOrden(codigo, tipos) {
     const rowRecibido = document.getElementById('orden-monto-recibido')?.closest('.form-row');
     const fechaGroup = document.getElementById('orden-fecha')?.closest('.form-group');
     if (formResto && wrapCotizacionEl && rowEntregado && rowRecibido && fechaGroup) {
-      formResto.insertBefore(rowEntregado, wrapCotizacionEl);
-      formResto.insertBefore(rowRecibido, fechaGroup);
+      if (codigo === 'USD-ARS') {
+        formResto.insertBefore(rowRecibido, wrapCotizacionEl);
+        formResto.insertBefore(rowEntregado, fechaGroup);
+      } else {
+        formResto.insertBefore(rowEntregado, wrapCotizacionEl);
+        formResto.insertBefore(rowRecibido, fechaGroup);
+      }
     }
     [rowRecibido, rowEntregado].forEach((row) => {
       const firstGroup = row?.querySelector('.form-group:first-child');
       if (firstGroup) firstGroup.style.display = 'none';
     });
     const montoRecibidoElEarly = document.getElementById('orden-monto-recibido');
-    if (montoRecibidoElEarly) {
+    if (montoRecibidoElEarly && codigo !== 'USD-ARS') {
       montoRecibidoElEarly.readOnly = true;
       montoRecibidoElEarly.style.background = '#eee';
       montoRecibidoElEarly.style.color = '#555';
@@ -3190,8 +3233,12 @@ function adaptarFormularioOrden(codigo, tipos) {
     }
   }
   const labelComision = document.querySelector('#orden-wrap-comision label[for="orden-comision-display"]');
-  if (labelComision) labelComision.textContent = isArsArs ? 'Diferencia (descuento acuerdo)' : 'Comisión a Recibir';
-  if (comisionDisplay) comisionDisplay.value = '';
+  if (labelComision) labelComision.textContent = isArsArs ? 'Beneficio del Acuerdo' : 'Comisión a Recibir';
+  if (comisionDisplay) {
+    comisionDisplay.value = '';
+    if (isArsArs) comisionDisplay.classList.add('orden-beneficio-acuerdo');
+    else comisionDisplay.classList.remove('orden-beneficio-acuerdo');
+  }
 
   if (estadoSelect) {
     const optPI = estadoSelect.querySelector('option[value="pendiente_instrumentar"]');
@@ -3357,19 +3404,32 @@ function adaptarFormularioOrden(codigo, tipos) {
       const tasaInt = el('orden-tasa-descuento-intermediario');
       if (tasaInt) tasaInt.disabled = !(editable && tieneIntermediario);
     } else if (isTipoDosMonedas) {
-      // Dos monedas: solo editable "El cliente compra" (monto entregado) y tipo de cambio; monto recibido, fecha y estado no editables
+      // ARS-USD: editable "El cliente compra" USD (monto entregado); USD-ARS: editable "El cliente vende" USD (monto recibido), ARS calculado
       if (fechaEl) fechaEl.disabled = true;
       if (estadoSelect) estadoSelect.disabled = true;
       if (observacionesEl) observacionesEl.disabled = !editable;
-      if (montoRecibidoEl) {
-        montoRecibidoEl.readOnly = true;
-        montoRecibidoEl.style.background = '#eee';
-        montoRecibidoEl.style.color = '#555';
-      }
-      if (montoEntregadoEl) {
-        montoEntregadoEl.readOnly = !editable;
-        montoEntregadoEl.style.background = '';
-        montoEntregadoEl.style.color = '';
+      if (codigo === 'USD-ARS') {
+        if (montoRecibidoEl) {
+          montoRecibidoEl.readOnly = !editable;
+          montoRecibidoEl.style.background = '';
+          montoRecibidoEl.style.color = '';
+        }
+        if (montoEntregadoEl) {
+          montoEntregadoEl.readOnly = true;
+          montoEntregadoEl.style.background = '#eee';
+          montoEntregadoEl.style.color = '#555';
+        }
+      } else {
+        if (montoRecibidoEl) {
+          montoRecibidoEl.readOnly = true;
+          montoRecibidoEl.style.background = '#eee';
+          montoRecibidoEl.style.color = '#555';
+        }
+        if (montoEntregadoEl) {
+          montoEntregadoEl.readOnly = !editable;
+          montoEntregadoEl.style.background = '';
+          montoEntregadoEl.style.color = '';
+        }
       }
       const cotEl = el('orden-cotizacion');
       if (cotEl) cotEl.readOnly = !editable;
@@ -3483,6 +3543,50 @@ function showOrdenWizardStep(which) {
   if (stepParticipantes) stepParticipantes.style.display = which === 'participantes' ? 'block' : 'none';
   if (stepDetalles) stepDetalles.style.display = which === 'detalles' ? 'block' : 'none';
   if (stepInst) stepInst.style.display = which === 'instrumentacion' ? 'block' : 'none';
+  const modalOrden = document.querySelector('#modal-orden-backdrop .modal.modal-orden');
+  if (modalOrden) {
+    if (which === 'detalles' || which === 'instrumentacion') modalOrden.classList.add('modal-orden-con-instrumentacion');
+    else modalOrden.classList.remove('modal-orden-con-instrumentacion');
+  }
+}
+
+/** Devuelve el próximo número de orden: MAX(numero)+1 (o 1 si no hay órdenes). Solo si ordenesTieneNumeroColumn. */
+function getProximoNumeroOrden() {
+  if (!ordenesTieneNumeroColumn) return Promise.resolve(1);
+  return client.from('ordenes').select('numero').order('numero', { ascending: false }).limit(1).maybeSingle()
+    .then((r) => {
+      if (r.error) return 1;
+      const max = r.data && r.data.numero != null ? Number(r.data.numero) : 0;
+      return (typeof max === 'number' && !isNaN(max) ? max : 0) + 1;
+    });
+}
+
+/** Inserta una orden con numero = MAX+1 atómico (función en DB con lock). Si la columna numero no existe, hace INSERT normal. */
+function insertOrdenConProximoNumero(payload) {
+  if (!ordenesTieneNumeroColumn) {
+    return client.from('ordenes').insert(payload).select('id, numero');
+  }
+  return client.rpc('ordenes_insertar_con_proximo_numero', {
+    p_cliente_id: payload.cliente_id,
+    p_fecha: payload.fecha,
+    p_estado: payload.estado,
+    p_tipo_operacion_id: payload.tipo_operacion_id,
+    p_operacion_directa: payload.operacion_directa,
+    p_intermediario_id: payload.intermediario_id,
+    p_moneda_recibida: payload.moneda_recibida,
+    p_moneda_entregada: payload.moneda_entregada,
+    p_monto_recibido: payload.monto_recibido,
+    p_monto_entregado: payload.monto_entregado,
+    p_cotizacion: payload.cotizacion,
+    p_tasa_descuento_intermediario: payload.tasa_descuento_intermediario,
+    p_observaciones: payload.observaciones,
+    p_usuario_id: payload.usuario_id,
+    p_updated_at: payload.updated_at,
+  }).then((res) => {
+    if (res.error) return res;
+    const row = res.data && (Array.isArray(res.data) ? res.data[0] : res.data);
+    return { data: row ? [row] : [], error: null };
+  });
 }
 
 /** Guarda la orden según el form, pero sin cerrar el modal. Devuelve Promise<ordenId>. */
@@ -3508,6 +3612,10 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
 
   if (!clienteId && !intermediarioId) {
     showToast('Definí participantes: elegí un cliente, un intermediario o ambos.', 'error');
+    return Promise.resolve(null);
+  }
+  if (!tipoOperacionId) {
+    showToast('Elegí un tipo de operación.', 'error');
     return Promise.resolve(null);
   }
   if (!fecha || isNaN(montoRecibido) || montoRecibido <= 0 || isNaN(montoEntregado) || montoEntregado <= 0) {
@@ -3600,7 +3708,7 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
           return hacerUpdate(estadoCalculado);
         });
       })
-    : client.from('ordenes').insert(payload).select('id, numero');
+    : insertOrdenConProximoNumero(payload);
 
   return prom.then((res) => {
     if (res.error) {
@@ -3830,7 +3938,7 @@ function renderOrdenWizardInstrumentacion(instId) {
           }
           return Promise.resolve();
         }).then(() =>
-          client.from('transacciones').select('id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio').eq('instrumentacion_id', instId).order('created_at', { ascending: true })
+          client.from('transacciones').select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio').eq('instrumentacion_id', instId).order('created_at', { ascending: true })
         ).then((r2) => {
           list = r2.data || [];
           renderWizardList(list);
@@ -3880,7 +3988,10 @@ function saveOrden(aceptaComisionCero = false) {
     showToast('Definí participantes: elegí un cliente, un intermediario o ambos.', 'error');
     return;
   }
-
+  if (!tipoOperacionId) {
+    showToast('Elegí un tipo de operación.', 'error');
+    return;
+  }
   if (!fecha || isNaN(montoRecibido) || montoRecibido <= 0 || isNaN(montoEntregado) || montoEntregado <= 0) {
     showToast('Completá fecha, monto recibido y monto entregado (números positivos).', 'error');
     return;
@@ -3975,7 +4086,7 @@ function saveOrden(aceptaComisionCero = false) {
           return hacerUpdateOrden(estadoCalculado);
         });
       })
-    : client.from('ordenes').insert(payload).select('id, numero');
+    : insertOrdenConProximoNumero(payload);
 
   prom.then((res) => {
     if (res.error) {
@@ -4346,6 +4457,10 @@ function setupModalChatOrden() {
         showToast('Indicá un cliente en el mensaje (ej. "para Adriana").', 'error');
         return;
       }
+      if (!r.tipo_operacion_id) {
+        showToast('No se pudo identificar el tipo de operación. Indicá en el mensaje (ej. "recibo USD y entrego ARS" o "ARS-USD").', 'error');
+        return;
+      }
       const requiereTc = r.tipo_codigo === 'ARS-USD' || r.tipo_codigo === 'USD-ARS';
       if (requiereTc && (!r.cotizacion || r.cotizacion <= 0)) {
         showToast('Para ' + r.tipo_codigo + ' el tipo de cambio es obligatorio.', 'error');
@@ -4368,7 +4483,7 @@ function setupModalChatOrden() {
         usuario_id: currentUserId,
         updated_at: new Date().toISOString(),
       };
-      client.from('ordenes').insert(payload).select('id, numero').then((res) => {
+      insertOrdenConProximoNumero(payload).then((res) => {
         if (res.error) {
           showToast('Error al crear la orden: ' + (res.error.message || ''), 'error');
           return;
@@ -8113,6 +8228,23 @@ function updateSessionActivity() {
   lastActivityTime = now;
 }
 
+/** Refresco suave de la vista actual cada REFRESH_DATA_INTERVAL_MS. No recarga la página; solo vuelve a pedir los datos de la vista. No se ejecuta si hay un modal abierto. */
+function refreshCurrentViewData() {
+  if (document.querySelector('.modal-backdrop.activo')) return;
+  const loaders = {
+    'vista-inicio': loadInicio,
+    'vista-ordenes': loadOrdenes,
+    'vista-cajas': loadCajas,
+    'vista-clientes': loadClientes,
+    'vista-intermediarios': loadIntermediarios,
+    'vista-tipos-operacion': loadTiposOperacion,
+    'vista-cuenta-corriente': loadCuentaCorriente,
+    'vista-seguridad': loadSeguridad,
+  };
+  const fn = loaders[currentVistaId];
+  if (typeof fn === 'function') fn();
+}
+
 function startSessionTimeoutCheck() {
   if (sessionCheckIntervalId) clearInterval(sessionCheckIntervalId);
   lastActivityTime = Date.now();
@@ -8125,6 +8257,8 @@ function startSessionTimeoutCheck() {
     if (inactiveMin >= sessionTimeoutMinutes) {
       clearInterval(sessionCheckIntervalId);
       sessionCheckIntervalId = null;
+      if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
+      refreshDataIntervalId = null;
       events.forEach((ev) => document.removeEventListener(ev, updateSessionActivity));
       client.auth.signOut().then(() => {
         showLogin();
@@ -8166,6 +8300,8 @@ function onSessionReady(session) {
       document.getElementById('btn-cerrar-sesion').addEventListener('click', () => {
         if (sessionCheckIntervalId) clearInterval(sessionCheckIntervalId);
         sessionCheckIntervalId = null;
+        if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
+        refreshDataIntervalId = null;
         ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach((ev) => document.removeEventListener(ev, updateSessionActivity));
         client.auth.signOut().then(() => showLogin());
       });
@@ -8210,6 +8346,8 @@ function onSessionReady(session) {
       setupHelpPopovers();
       const [defaultVistaId, defaultTitle] = getFirstAllowedView();
       showView(defaultVistaId, defaultTitle);
+      if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
+      refreshDataIntervalId = setInterval(refreshCurrentViewData, REFRESH_DATA_INTERVAL_MS);
     })
     .catch(() => {});
 }

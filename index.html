@@ -173,6 +173,9 @@
     .modal-body input[type="checkbox"] { width: auto; margin-right: 0.5rem; }
     .modal-body select { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
     .modal-body select:disabled { background: #e9ecef; color: #6c757d; cursor: not-allowed; }
+    /* Modal de confirmación (showConfirm): ajuste al contenido en toda la app */
+    #modal-confirm-backdrop .modal,
+    .modal.modal-confirm { width: max-content; max-width: min(95vw, 480px); min-width: 200px; }
     .modal-confirm .modal-confirm-texto { margin: 0; color: #333; line-height: 1.5; }
     .orden-field-editing { box-shadow: 0 0 0 2px #0ea5e9; outline: none; }
     .form-row.dos-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
@@ -196,7 +199,27 @@
     .inicio-accesos { margin-top: 1.5rem; }
     .link-inicio { text-decoration: none; color: inherit; }
     .modal.modal-ancho { max-width: 920px; width: 95%; }
-    .modal.modal-orden { max-width: min(95vw, 1400px); width: 95%; }
+    .modal.modal-orden { max-width: min(90vw, 720px); width: 90%; margin-left: auto; margin-right: auto; }
+    .modal.modal-orden.modal-orden-con-instrumentacion { max-width: min(95vw, 1020px); width: 95%; }
+    .orden-beneficio-acuerdo { color: #0066cc !important; font-weight: 700 !important; background: #f0f0f0 !important; }
+    .orden-label-verb-destacado { color: #b91c1c; font-weight: 700; }
+    #orden-step-detalles .form-row.dos-columnas,
+    #orden-step-detalles .form-row.tres-columnas { display: grid; gap: 0.75rem 1rem; align-items: end; }
+    #orden-step-detalles .form-row.dos-columnas { grid-template-columns: 1fr 1fr; }
+    #orden-step-detalles .form-row.tres-columnas { grid-template-columns: 1fr 1fr 1fr; }
+    #orden-step-detalles .form-row.tres-columnas .form-group { min-width: 0; }
+    #orden-step-detalles .orden-primeros-datos-row { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto auto; gap: 0.35rem 1rem 0.75rem; align-items: end; }
+    #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-label { grid-row: 1; min-width: 0; }
+    #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-input { grid-row: 2; min-width: 0; width: 100%; box-sizing: border-box; }
+    #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-col3 { grid-column: 3; grid-row: 1 / span 2; display: grid; grid-template-rows: auto auto; gap: 0.35rem; align-items: end; min-width: 0; }
+    #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-col3 .orden-primeros-datos-input { grid-row: 2; width: 100%; box-sizing: border-box; }
+    #orden-step-detalles .form-group input,
+    #orden-step-detalles .form-group select,
+    #orden-step-detalles .form-group textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+    #orden-step-detalles input:disabled,
+    #orden-step-detalles select:disabled,
+    #orden-step-detalles input[readonly],
+    #orden-step-detalles textarea:disabled { background: #eee; color: #555; cursor: default; }
     .modal.modal-transacciones-pendientes,
     .modal.modal-ordenes-pendientes { max-width: min(95vw, 1400px); width: 95%; margin-left: 4rem; }
     .form-actions { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -361,6 +384,7 @@
       .btn-primary, .btn-secondary { min-height: 44px; }
       .toggle-moneda button { min-height: 44px; padding: 0.5rem 0.85rem; }
       .form-row.dos-columnas, .form-row.tres-columnas { grid-template-columns: 1fr; }
+      #orden-step-detalles .form-row.tres-columnas.orden-primeros-datos-row { grid-template-columns: 1fr 1fr 1fr; }
       .form-actions { gap: 0.5rem; }
       .modal-backdrop { padding: 0.5rem; padding-left: max(0.5rem, env(safe-area-inset-left)); padding-right: max(0.5rem, env(safe-area-inset-right)); padding-top: max(0.5rem, env(safe-area-inset-top)); align-items: flex-start; }
       .modal { max-height: 90vh; width: 96%; max-width: min(96vw, 1280px); }
@@ -398,7 +422,8 @@
       .card { padding: 0.85rem; }
       .modal { max-width: 98vw; width: 98%; border-radius: 10px; margin: 0; }
       .modal.modal-ancho { max-width: 100%; }
-      .modal.modal-orden { max-width: 98vw; width: 98%; }
+      .modal.modal-orden { max-width: min(95vw, 720px); width: 95%; margin-left: auto; margin-right: auto; }
+      .modal.modal-orden.modal-orden-con-instrumentacion { max-width: min(95vw, 1020px); width: 98%; }
       .modal.modal-transacciones-pendientes,
       .modal.modal-ordenes-pendientes { max-width: 100%; width: 100%; margin-left: 0; }
       .modal-header, .modal-body { padding: 0.85rem 1rem; }
@@ -458,7 +483,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.29</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.30</div>
   </aside>
 
   <main class="main-content">
@@ -1061,7 +1086,10 @@
   <div id="modal-orden-backdrop" class="modal-backdrop">
     <div class="modal modal-ancho modal-orden">
       <div class="modal-header">
-        <h2 id="modal-orden-titulo">Nueva orden</h2>
+        <div class="modal-header-titulo-wrap">
+          <span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
+          <h2 id="modal-orden-titulo">Nueva orden</h2>
+        </div>
         <button type="button" class="modal-close" id="modal-orden-close" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
@@ -1099,19 +1127,15 @@
               </div>
               <div id="orden-wrap-primeros-datos" style="display:none; margin-bottom:1rem; padding:0.75rem 1rem; background:#f0f7ff; border-radius:8px; border:1px solid #cce0ff;">
                 <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Completá primero estos datos; el resto se calculará y desbloqueará.</p>
-                <div class="form-row tres-columnas">
-                  <div class="form-group">
-                    <label for="orden-importe-cheque" id="orden-label-importe-cheque">Importe en Cheque (ARS) *</label>
-                    <input type="text" id="orden-importe-cheque" inputmode="decimal" class="input-importe" placeholder="0" autocomplete="off" />
+                <div class="form-row tres-columnas orden-primeros-datos-row">
+                  <label for="orden-importe-cheque" id="orden-label-importe-cheque" class="orden-primeros-datos-label">Importe en Cheque (ARS) *</label>
+                  <label for="orden-tasa-descuento-cliente" class="orden-primeros-datos-label">Tasa al Cliente (%) *</label>
+                  <div id="orden-wrap-tasa-descuento-intermediario" class="orden-primeros-datos-col3" style="display:none;">
+                    <label for="orden-tasa-descuento-intermediario" class="orden-primeros-datos-label">Tasa del Intermediario (%) * <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Ej. 1,50 = 1,5%. Acepta hasta dos decimales. Con 10.000.000 nominal y 1%, Pandy recibe 9.900.000 en efectivo del intermediario.</span></span></label>
+                    <input type="text" id="orden-tasa-descuento-intermediario" inputmode="decimal" class="input-importe orden-primeros-datos-input" placeholder="1,50" autocomplete="off" />
                   </div>
-                  <div class="form-group">
-                    <label for="orden-tasa-descuento-cliente">Tasa de descuento al cliente (%) *</label>
-                    <input type="text" id="orden-tasa-descuento-cliente" inputmode="decimal" class="input-importe" placeholder="1,50" autocomplete="off" />
-                  </div>
-                  <div class="form-group tasa-intermediario-cell" id="orden-wrap-tasa-descuento-intermediario" style="display:none;">
-                    <label for="orden-tasa-descuento-intermediario">Tasa de descuento del intermediario (%) * <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Ej. 1,50 = 1,5%. Acepta hasta dos decimales. Con 10.000.000 nominal y 1%, Pandy recibe 9.900.000 en efectivo del intermediario.</span></span></label>
-                    <input type="text" id="orden-tasa-descuento-intermediario" inputmode="decimal" class="input-importe" placeholder="1,50" autocomplete="off" />
-                  </div>
+                  <input type="text" id="orden-importe-cheque" inputmode="decimal" class="input-importe orden-primeros-datos-input" placeholder="0" autocomplete="off" />
+                  <input type="text" id="orden-tasa-descuento-cliente" inputmode="decimal" class="input-importe orden-primeros-datos-input" placeholder="1,50" autocomplete="off" />
                 </div>
                 <div class="form-row dos-columnas" id="orden-wrap-montos-calculados" style="display:none;">
                   <div class="form-group">

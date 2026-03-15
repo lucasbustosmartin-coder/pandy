@@ -181,6 +181,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Log E2E Caja: transacción por transacción y saldos no en blanco', 'Helper irACajasYLeerSaldos: va a Cajas, espera #cajas-loading hidden (20s) y lee saldos para que no queden –. En cada test se llama logCajaControl tras cada transacción ejecutada (una fila por paso) y una fila final. Hoja Caja en Excel: múltiples filas mostrando cómo se mueve la caja. Fix SheetNames para que la hoja Caja se persista al actualizar Excel existente.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Caja: movimiento por comisión Pandy (sin transacción Ganancia)', 'En sincronizarCcYCajaDesdeOrden, cuando hay comisión Pandy (mr > me, misma moneda), no hay transacción Ganancia y el ingreso cliente→Pandy está ejecutado, se agrega un movimiento de caja: ingreso efectivo por el monto de la comisión (transaccion_id null). Al re-sincronizar se borran movimientos de caja de la orden con transaccion_id null para no duplicar. Así la caja cierra en cero en operaciones de cobro de cheques.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Tipos de operación: Intermediario Sí/No', 'Columna usa_intermediario en tipos_operacion (migración sql). ABM Tipos de operación: columna Intermediario (Sí/No) y checkbox Usa intermediario en modal. Modal de orden: si el tipo no usa intermediario se oculta el selector de intermediario y no se menciona; al guardar se fuerza intermediario_id = null. Tasa descuento intermediario y split comisión solo visibles cuando el tipo usa intermediario.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Número de orden MAX+1 atómico en DB', 'Función ordenes_insertar_con_proximo_numero en Supabase: asigna numero = MAX(numero)+1 bajo pg_advisory_xact_lock para evitar huecos y colisiones. La app llama a la RPC al crear orden nueva (wizard, saveOrden, chat); fallback a INSERT sin numero si la columna no existe. sql/ordenes_insertar_con_proximo_numero.sql.', 'Desarrollo'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -238,6 +239,7 @@ const funcionalidades = [
   ['Movimientos de caja estructurados', 'Tabla movimientos_caja con orden_numero y transaccion_numero; vista Cajas: columnas Origen, Nro orden, Nro transacción, Tipo (Ingreso/Egreso), Caja, Concepto. sql/migracion_movimientos_caja_orden_transaccion_numero.sql.'],
   ['Caja: movimiento por comisión Pandy', 'Cuando hay comisión Pandy (misma moneda, sin transacción Ganancia) la sincronización agrega un movimiento de caja (ingreso efectivo por la comisión) para que la caja cierre en cero en operaciones de cobro de cheques. transaccion_id null; al re-sincronizar se borran esos movimientos por orden.'],
   ['Tipos de operación: Intermediario Sí/No', 'Columna usa_intermediario en tipos_operacion. En ABM Tipos de operación: columna Intermediario (Sí/No) y checkbox "Usa intermediario" en modal Nuevo/Editar. En modal de orden: si el tipo no usa intermediario, el selector de intermediario no se muestra ni se menciona; si usa intermediario se muestra como antes. Al guardar orden se fuerza intermediario_id = null cuando el tipo no usa intermediario. sql/migracion_tipos_operacion_usa_intermediario.sql.'],
+  ['Número de orden atómico (MAX+1)', 'Al crear orden nueva la app llama a la RPC ordenes_insertar_con_proximo_numero: en la DB se asigna numero = MAX(numero)+1 bajo pg_advisory_xact_lock para evitar huecos y colisiones por concurrencia. Fallback a INSERT sin numero si la columna no existe. sql/ordenes_insertar_con_proximo_numero.sql.'],
 ];
 
 const wsResumen = XLSX.utils.aoa_to_sheet(funcionalidades);
@@ -289,6 +291,7 @@ const versiones = [
   ['1.27', '__HOY__', 'Modal Cargar por chat: icono en el título, botón Enviar con estilo unificado y a la derecha del campo de texto.'],
   ['1.28', '__HOY__', 'Vista Órdenes: filtros Cliente, Intermediario y Estado. Combos de filtros con estilo moderno (select-filtro, puntas redondeadas). Quitar Cotización y Concertada del filtro Estado.'],
   ['1.29', '__HOY__', 'Tipos de operación: columna usa_intermediario (Intermediario Sí/No). ABM con columnas Intermediario y Activo como switches (mismo estilo que Seguridad). Modal de orden: si el tipo no usa intermediario no se muestra el selector de intermediario. sql/migracion_tipos_operacion_usa_intermediario.sql.'],
+  ['1.30', '__HOY__', 'Número de orden atómico: función ordenes_insertar_con_proximo_numero en DB (MAX+1 con lock). La app llama a la RPC al crear orden nueva; sin huecos ni colisiones por concurrencia. sql/ordenes_insertar_con_proximo_numero.sql.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
