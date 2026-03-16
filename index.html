@@ -340,6 +340,15 @@
     .tabla-cc-detalle-sortable th.th-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
     .tabla-cc-detalle-sortable th.th-sortable:hover { background: #f0f0f0; }
     .tabla-cc-detalle-sortable th.th-sortable .sort-indicator { margin-left: 0.25rem; opacity: 0.6; font-size: 0.75em; }
+    /* Columnas fijas (Fecha y Tipo op.) en scroll horizontal — modal y vista detalle CC */
+    .tabla-cc-movimientos .cc-col-fija.cc-col-fija-1,
+    .tabla-cc-resumen.tabla-cc-detalle-sortable .cc-col-fija.cc-col-fija-1 { position: sticky; left: 0; z-index: 2; background: #fff; box-shadow: 2px 0 4px -2px rgba(0,0,0,0.08); min-width: 5.5rem; }
+    .tabla-cc-movimientos thead th.cc-col-fija.cc-col-fija-1,
+    .tabla-cc-resumen.tabla-cc-detalle-sortable thead th.cc-col-fija.cc-col-fija-1 { background: #f9fafb; z-index: 3; }
+    .tabla-cc-movimientos .cc-col-fija.cc-col-fija-2,
+    .tabla-cc-resumen.tabla-cc-detalle-sortable .cc-col-fija.cc-col-fija-2 { position: sticky; left: 5.5rem; z-index: 2; background: #fff; box-shadow: 2px 0 4px -2px rgba(0,0,0,0.08); min-width: 5rem; }
+    .tabla-cc-movimientos thead th.cc-col-fija.cc-col-fija-2,
+    .tabla-cc-resumen.tabla-cc-detalle-sortable thead th.cc-col-fija.cc-col-fija-2 { background: #f9fafb; z-index: 3; }
     .btn-ver-detalle { padding: 0.35rem 0.5rem; min-height: 44px; min-width: 44px; background: none; border: none; color: #555; cursor: pointer; border-radius: 8px; }
     .btn-ver-detalle:hover { color: #0ea5e9; background: rgba(0,0,0,0.04); }
     .btn-ver-detalle .btn-icon { display: inline-flex; }
@@ -505,7 +514,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.36</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.37</div>
   </aside>
 
   <main class="main-content">
@@ -849,7 +858,8 @@
           <table id="tabla-cc-detalle" class="tabla-cc-resumen tabla-cc-detalle-sortable" style="table-layout:auto;">
             <thead>
               <tr>
-                <th class="th-nombre th-sortable" data-sort="fecha" scope="col">Fecha</th>
+                <th class="th-nombre th-sortable cc-col-fija cc-col-fija-1" data-sort="fecha" scope="col">Fecha</th>
+                <th class="th-sub th-sortable cc-col-fija cc-col-fija-2" data-sort="tipo_operacion" scope="col">Tipo op.</th>
                 <th class="th-sub th-sortable" data-sort="nroOrden" scope="col">Orden</th>
                 <th class="th-sub th-sortable" data-sort="nroTrans" scope="col">Trans.</th>
                 <th class="th-nombre cc-detalle-concepto-th th-sortable" data-sort="concepto" scope="col">Concepto</th>
@@ -1530,7 +1540,8 @@
           <table id="tabla-cc-detalle-modal" class="tabla-cc-movimientos tabla-cc-detalle-sortable">
             <thead>
               <tr>
-                <th class="th-sortable" data-sort="fecha">Fecha</th>
+                <th class="th-sortable cc-col-fija cc-col-fija-1" data-sort="fecha">Fecha</th>
+                <th class="th-sortable cc-col-fija cc-col-fija-2" data-sort="tipo_operacion">Tipo op.</th>
                 <th class="th-sortable" data-sort="nroOrden">Nro Orden</th>
                 <th class="th-sortable" data-sort="nroTrans">Nro Trans.</th>
                 <th class="cc-detalle-concepto-th th-sortable" data-sort="concepto">Concepto</th>

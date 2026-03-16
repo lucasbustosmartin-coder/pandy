@@ -492,6 +492,7 @@ function conceptoCcLeyenda(tipo, ordenNumero, transNumero) {
   if (tipo === 'pago_realizado') return 'Pago Realizado' + suf;
   if (tipo === 'compromiso_pago') return 'Compromiso de Pago' + suf;
   if (tipo === 'compromiso_cobrar') return 'Compromiso a Cobrar' + suf;
+  if (tipo === 'comision_acuerdo') return 'Comisión del acuerdo' + suf;
   return 'Movimiento' + suf;
 }
 
@@ -1148,8 +1149,8 @@ function setupPanelControl() {
   if (closeTrans) closeTrans.addEventListener('click', () => document.getElementById('modal-transacciones-pendientes-backdrop')?.classList.remove('activo'));
   const backdropOrdenes = document.getElementById('modal-ordenes-pendientes-backdrop');
   const backdropTrans = document.getElementById('modal-transacciones-pendientes-backdrop');
-  if (backdropOrdenes) backdropOrdenes.addEventListener('click', (e) => { if (e.target === backdropOrdenes) backdropOrdenes.classList.remove('activo'); });
-  if (backdropTrans) backdropTrans.addEventListener('click', (e) => { if (e.target === backdropTrans) backdropTrans.classList.remove('activo'); });
+  if (backdropOrdenes) setupBackdropCloseOnlyOnRealClick(backdropOrdenes, () => backdropOrdenes.classList.remove('activo'));
+  if (backdropTrans) setupBackdropCloseOnlyOnRealClick(backdropTrans, () => backdropTrans.classList.remove('activo'));
   const selCliente = document.getElementById('transacciones-pendientes-filtro-cliente');
   const selIntermediario = document.getElementById('transacciones-pendientes-filtro-intermediario');
   const chkPandy = document.getElementById('transacciones-pendientes-filtro-pandy');
@@ -1237,14 +1238,13 @@ function loadCuentaCorriente() {
   const loadingShownAtCc = Date.now();
   contenido.style.display = 'none';
 
-  sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().then(() =>
-    Promise.all([
-      client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
-      client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
-      client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado'),
-      client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado'),
-    ])
-  ).then(([rClientes, rInt, rMovCli, rMovInt]) => {
+  // Cargar desde tablas de movimientos (fuente de verdad); no borrar/repoblar para ser eficiente.
+  Promise.all([
+    client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
+    client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
+    client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado'),
+    client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado'),
+  ]).then(([rClientes, rInt, rMovCli, rMovInt]) => {
     const clientes = rClientes.data || [];
     const intermediarios = rInt.data || [];
     const movCliRaw = rMovCli.data || [];
@@ -1254,7 +1254,7 @@ function loadCuentaCorriente() {
     return Promise.all([
       transaccionIds.length > 0 ? client.from('transacciones').select('id, estado, pagador').in('id', transaccionIds) : Promise.resolve({ data: [] }),
       ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
-      ordenIds.length > 0 ? client.from('ordenes').select('id, numero, cliente_id, intermediario_id').in('id', ordenIds) : Promise.resolve({ data: [] }),
+      ordenIds.length > 0 ? client.from('ordenes').select('id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo)').in('id', ordenIds) : Promise.resolve({ data: [] }),
     ]).then(([rTr, rInst, rOrdenes]) => {
       const trById = {};
       const trPagadorById = {};
@@ -1303,6 +1303,13 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
   ordenNumeroById = ordenNumeroById || {};
   trPagadorById = trPagadorById || {};
   ordenById = ordenById || {};
+  const ordenTipoOpById = {};
+  Object.keys(ordenById).forEach((oid) => {
+    const o = ordenById[oid];
+    const to = o && o.tipos_operacion;
+    const codigo = (to && (typeof to === 'object' && !Array.isArray(to) ? to.codigo : (Array.isArray(to) && to[0] ? to[0].codigo : null))) || null;
+    ordenTipoOpById[oid] = codigo != null ? codigo : '–';
+  });
   function nombreOriginante(mov, tipo, clientesById, intermediariosById) {
     const pagador = trPagadorById[mov.transaccion_id];
     const orden = ordenById[mov.orden_id];
@@ -1417,6 +1424,7 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
       nombre: (clientesById[m.cliente_id] && clientesById[m.cliente_id].nombre) || '–',
       originante: nombreOriginante(m, 'cliente', clientesById, intermediariosById),
       orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : (m.orden_numero != null ? m.orden_numero : null),
+      tipo_operacion: ordenTipoOpById[m.orden_id] != null ? ordenTipoOpById[m.orden_id] : '–',
     });
   });
   (movInt || []).forEach((m) => {
@@ -1426,6 +1434,7 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
       nombre: (intermediariosById[m.intermediario_id] && intermediariosById[m.intermediario_id].nombre) || '–',
       originante: nombreOriginante(m, 'intermediario', clientesById, intermediariosById),
       orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : (m.orden_numero != null ? m.orden_numero : null),
+      tipo_operacion: ordenTipoOpById[m.orden_id] != null ? ordenTipoOpById[m.orden_id] : '–',
     });
   });
   ccMovimientosDetalleList = detalleList.sort((a, b) => {
@@ -1551,6 +1560,10 @@ function compareCcDetalleRow(a, b, col, dir) {
       va = a.transaccion_numero != null ? Number(a.transaccion_numero) : -Infinity;
       vb = b.transaccion_numero != null ? Number(b.transaccion_numero) : -Infinity;
       return dir * (va - vb);
+    case 'tipo_operacion':
+      va = (a.tipo_operacion || '–').toString();
+      vb = (b.tipo_operacion || '–').toString();
+      return dir * (va.localeCompare(vb));
     case 'concepto':
       va = (a.concepto || '').toString();
       vb = (b.concepto || '').toString();
@@ -1612,8 +1625,10 @@ function renderCcVistaDetalle(filtrados) {
       const estadoLabel = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
       const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
       const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
+      const tipoOp = (m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–';
       return `<tr>
-          <td>${(m.fecha || '').toString().slice(0, 10)}</td>
+          <td class="cc-col-fija cc-col-fija-1">${(m.fecha || '').toString().slice(0, 10)}</td>
+          <td class="cc-col-fija cc-col-fija-2">${escapeHtml(tipoOp)}</td>
           <td>${escapeHtml(nroOrden)}</td>
           <td>${escapeHtml(nroTrans)}</td>
           <td class="td-concepto">${escapeHtml(m.concepto || '–')}</td>
@@ -1628,7 +1643,7 @@ function renderCcVistaDetalle(filtrados) {
     .join('');
 
   if (filtrados.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10">No hay movimientos para el filtro seleccionado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11">No hay movimientos para el filtro seleccionado.</td></tr>';
   } else {
     setupCcDetalleVistaSortHeaders();
   }
@@ -1671,7 +1686,7 @@ function exportarCcResumenExcel() {
       return;
     }
     const entityHeader = ccFiltroTipo === 'cliente' ? 'Cliente' : 'Intermediario';
-    const header = ['Fecha', 'Orden', 'Trans.', 'Concepto', 'USD', 'ARS', 'EUR', 'Estado', entityHeader, 'Originante'];
+    const header = ['Fecha', 'Tipo op.', 'Orden', 'Trans.', 'Concepto', 'USD', 'ARS', 'EUR', 'Estado', entityHeader, 'Originante'];
     const rows = filtrados.map((m) => {
       const tienePorMoneda = m.monto_usd != null || m.monto_ars != null || m.monto_eur != null;
       let usd = null, ars = null, eur = null;
@@ -1688,7 +1703,8 @@ function exportarCcResumenExcel() {
       const estado = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
       const nroOrden = m.orden_numero != null ? Number(m.orden_numero) : null;
       const nroTrans = m.transaccion_numero != null ? Number(m.transaccion_numero) : null;
-      return [(m.fecha || '').toString().slice(0, 10), nroOrden, nroTrans, m.concepto || '', usd, ars, eur, estado, m.nombre || '', m.originante || ''];
+      const tipoOp = (m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–';
+      return [(m.fecha || '').toString().slice(0, 10), tipoOp, nroOrden, nroTrans, m.concepto || '', usd, ars, eur, estado, m.nombre || '', m.originante || ''];
     });
     const aoa = [header, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -1753,7 +1769,7 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
     : 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero';
   return Promise.all([
     client.from(tablaMov).select(selectMov).match(filtroMov).order('fecha', { ascending: false }).order('created_at', { ascending: false }),
-    client.from('ordenes').select(ordenesTieneNumeroColumn ? 'id, numero, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado' : 'id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').neq('estado', 'anulada').match({ [campoId]: entityId }),
+    client.from('ordenes').select(ordenesTieneNumeroColumn ? 'id, numero, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo)' : 'id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo)').neq('estado', 'anulada').match({ [campoId]: entityId }),
   ]).then(([rMov, rOrd]) => {
     const movimientos = rMov.data || [];
     const ordenes = rOrd.data || [];
@@ -1831,7 +1847,16 @@ function openModalCcDetalle(tipo, id, nombre) {
 
   fetchMovimientosCcPorEntidad(tipo, id).then(({ movimientos, saldos, ordenes }) => {
     const ordenNumeroById = Object.fromEntries((ordenes || []).map((o) => [o.id, o.numero]).filter(([, n]) => n != null));
-    ccDetalleMovimientosList = movimientos.map((m) => ({ ...m, orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : null }));
+    const ordenTipoOpById = Object.fromEntries((ordenes || []).map((o) => {
+      const to = o.tipos_operacion;
+      const codigo = (to && (typeof to === 'object' && !Array.isArray(to) ? to.codigo : (Array.isArray(to) && to[0] ? to[0].codigo : null))) || null;
+      return [o.id, codigo != null ? codigo : '–'];
+    }));
+    ccDetalleMovimientosList = movimientos.map((m) => ({
+      ...m,
+      orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : null,
+      tipo_operacion: ordenTipoOpById[m.orden_id] != null ? ordenTipoOpById[m.orden_id] : '–'
+    }));
     ccDetalleOrdenesList = ordenes || [];
     loadingEl.style.display = 'none';
 
@@ -1917,8 +1942,10 @@ function renderCcDetalleTable() {
       const estadoLabel = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
       const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
       const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
+      const tipoOp = (m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–';
       return `<tr>
-          <td>${(m.fecha || '').toString().slice(0, 10)}</td>
+          <td class="cc-col-fija cc-col-fija-1">${(m.fecha || '').toString().slice(0, 10)}</td>
+          <td class="cc-col-fija cc-col-fija-2">${escapeHtml(tipoOp)}</td>
           <td>${escapeHtml(nroOrden)}</td>
           <td>${escapeHtml(nroTrans)}</td>
           <td class="td-concepto">${escapeHtml(m.concepto || '–')}</td>
@@ -1931,7 +1958,7 @@ function renderCcDetalleTable() {
     .join('');
 
   if (tfoot) tfoot.innerHTML = filtrados.length === 0 ? '' : '';
-  if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="8">No hay movimientos.</td></tr>';
+  if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="9">No hay movimientos.</td></tr>';
   else setupCcDetalleModalSortHeaders();
 }
 
@@ -2105,7 +2132,17 @@ function saveMovimientoCc() {
       closeModalMovimientoCc();
       if (ccDetalleId && ccDetalleTipo) {
         fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos, saldos, ordenes }) => {
-          ccDetalleMovimientosList = movimientos;
+          const ordenNumeroById = Object.fromEntries((ordenes || []).map((o) => [o.id, o.numero]).filter(([, n]) => n != null));
+          const ordenTipoOpById = Object.fromEntries((ordenes || []).map((o) => {
+            const to = o.tipos_operacion;
+            const codigo = (to && (typeof to === 'object' && !Array.isArray(to) ? to.codigo : (Array.isArray(to) && to[0] ? to[0].codigo : null))) || null;
+            return [o.id, codigo != null ? codigo : '–'];
+          }));
+          ccDetalleMovimientosList = movimientos.map((m) => ({
+            ...m,
+            orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : null,
+            tipo_operacion: ordenTipoOpById[m.orden_id] != null ? ordenTipoOpById[m.orden_id] : '–'
+          }));
           ccDetalleOrdenesList = ordenes || [];
           renderCcDetalleTable();
           const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
@@ -2136,8 +2173,25 @@ function setupModalMovimientoCc() {
   const form = document.getElementById('form-movimiento-cc');
   if (btnClose) btnClose.addEventListener('click', closeModalMovimientoCc);
   if (btnCancel) btnCancel.addEventListener('click', closeModalMovimientoCc);
-  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalMovimientoCc(); });
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalMovimientoCc);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveMovimientoCc(); });
+}
+
+/**
+ * Cierra el modal solo cuando el usuario hizo clic realmente en el backdrop (mousedown + click en backdrop).
+ * Evita que se cierre al elegir una opción de un <select> u otro control nativo, donde el click
+ * a veces se reporta en el backdrop.
+ */
+function setupBackdropCloseOnlyOnRealClick(backdrop, onClose) {
+  if (!backdrop || typeof onClose !== 'function') return;
+  let mousedownOnBackdrop = false;
+  backdrop.addEventListener('mousedown', function _md(e) {
+    mousedownOnBackdrop = (e.target === backdrop);
+  }, true);
+  backdrop.addEventListener('click', function _cl(e) {
+    if (e.target === backdrop && mousedownOnBackdrop) onClose();
+    mousedownOnBackdrop = false;
+  }, true);
 }
 
 /** Modales: arrastrar por el header para mover; al cerrar se resetea la posición. */
@@ -2188,7 +2242,7 @@ function setupCuentaCorriente() {
   const backdropDetalle = document.getElementById('modal-cc-detalle-backdrop');
   const btnCloseDetalle = document.getElementById('modal-cc-detalle-close');
   if (btnCloseDetalle) btnCloseDetalle.addEventListener('click', closeModalCcDetalle);
-  if (backdropDetalle) backdropDetalle.addEventListener('click', (e) => { if (e.target === backdropDetalle) closeModalCcDetalle(); });
+  if (backdropDetalle) setupBackdropCloseOnlyOnRealClick(backdropDetalle, closeModalCcDetalle);
 
   const ccVistaToggleEl = document.getElementById('cc-vista-toggle');
   if (ccVistaToggleEl) {
@@ -2745,7 +2799,7 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
               concepto, fecha, usuario_id: currentUserId,
             });
           });
-          return prom.then(() => sincronizarCcYCajaDesdeOrden(ordenId)).then(() => { if (onSuccess) onSuccess(); }).catch((err) => { showToast('Error al reajustar CC/caja: ' + (err?.message || ''), 'error'); });
+          return prom.then(() => { if (onSuccess) onSuccess(); }).catch((err) => { showToast('Error al reajustar CC/caja: ' + (err?.message || ''), 'error'); });
         });
       });
     });
@@ -2968,15 +3022,22 @@ function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar
     btnAceptar.onclick = null;
     btnCancelar.onclick = null;
     btnCerrar.onclick = null;
-    if (backdrop._confirmAbort) backdrop.removeEventListener('click', backdrop._confirmAbort);
+    if (backdrop._confirmMousedown) backdrop.removeEventListener('mousedown', backdrop._confirmMousedown, true);
+    if (backdrop._confirmAbort) backdrop.removeEventListener('click', backdrop._confirmAbort, true);
+    backdrop._confirmMousedown = null;
     backdrop._confirmAbort = null;
     if (!ejecutado && typeof onCancel === 'function') onCancel();
   };
   btnAceptar.onclick = () => { if (typeof onConfirm === 'function') onConfirm(); cerrar(true); };
   btnCancelar.onclick = () => cerrar(false);
   btnCerrar.onclick = () => cerrar(false);
-  backdrop._confirmAbort = (e) => { if (e.target === backdrop) cerrar(false); };
-  backdrop.addEventListener('click', backdrop._confirmAbort);
+  backdrop._confirmMousedown = (e) => { backdrop._confirmMouseOnBackdrop = (e.target === backdrop); };
+  backdrop._confirmAbort = (e) => {
+    if (e.target === backdrop && backdrop._confirmMouseOnBackdrop) cerrar(false);
+    backdrop._confirmMouseOnBackdrop = false;
+  };
+  backdrop.addEventListener('mousedown', backdrop._confirmMousedown, true);
+  backdrop.addEventListener('click', backdrop._confirmAbort, true);
 }
 
 function setupModalMovimientoCaja() {
@@ -2987,7 +3048,7 @@ function setupModalMovimientoCaja() {
   const btnNuevo = document.getElementById('btn-nuevo-movimiento-caja');
   if (btnClose) btnClose.addEventListener('click', closeModalMovimientoCaja);
   if (btnCancel) btnCancel.addEventListener('click', closeModalMovimientoCaja);
-  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalMovimientoCaja(); });
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalMovimientoCaja);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveMovimientoCaja(); });
   if (btnNuevo) btnNuevo.addEventListener('click', () => openModalMovimientoCaja(null));
   setupInputImporte(document.getElementById('mov-caja-monto'));
@@ -3001,7 +3062,7 @@ function setupModalTipoMovimientoCaja() {
   const btnNuevo = document.getElementById('btn-nuevo-tipo-movimiento');
   if (btnClose) btnClose.addEventListener('click', closeModalTipoMovimientoCaja);
   if (btnCancel) btnCancel.addEventListener('click', closeModalTipoMovimientoCaja);
-  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalTipoMovimientoCaja(); });
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalTipoMovimientoCaja);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveTipoMovimientoCaja(); });
   if (btnNuevo) btnNuevo.addEventListener('click', () => openModalTipoMovimientoCaja(null));
 }
@@ -4642,7 +4703,7 @@ function setupModalOrden() {
   if (btnCancel) btnCancel.addEventListener('click', () => {
     showConfirm('Los datos se perderán. ¿Continuar?', 'Sí, salir', () => closeModalOrden());
   });
-  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalOrden(); });
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalOrden);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveOrden(); });
   if (btnNuevo) btnNuevo.addEventListener('click', () => openModalOrden(null));
   ['orden-cotizacion', 'orden-monto-recibido', 'orden-monto-entregado', 'orden-importe-cheque', 'orden-tasa-descuento-cliente', 'orden-tasa-descuento-intermediario', 'orden-comision-pandy-pct', 'orden-comision-intermediario-pct'].forEach((id) => {
@@ -4835,7 +4896,7 @@ function setupModalChatOrden() {
   const btnChatInicio = document.getElementById('btn-orden-por-chat-inicio');
   if (btnChatInicio) btnChatInicio.addEventListener('click', () => { chatOrdenAbiertoDesdePanel = true; openModalChatOrden(); });
   if (btnClose) btnClose.addEventListener('click', closeModalChatOrden);
-  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalChatOrden(); });
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalChatOrden);
 
   function appendMsg(role, text, label) {
     if (!logEl) return;
@@ -5127,17 +5188,19 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
   const montosDeuda = montosCcPorOrden(monR, monE, mr, me, mon, -monto);
   const inserts = [];
   // Cliente: Cobro = cliente pagó (Pandy cobró). Deuda = Pandy debe. Ambas monedas de la orden en la fila (nunca 0 en participante).
+  const transNumero = t.numero != null ? t.numero : null;
+  const ordenNumero = orden.numero != null ? orden.numero : null;
   if (pag === 'cliente' && cob !== 'intermediario' && clienteId) {
     inserts.push(client.from('movimientos_cuenta_corriente').insert({
-      cliente_id: clienteId, moneda: mon, monto, orden_id: ordenId, transaccion_id: transaccionId,
-      concepto: conceptoCcMovimiento(mon, monto, 'cobro'), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+      cliente_id: clienteId, moneda: mon, monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
+      concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
       ...montosCobro,
     }));
   }
   if (cob === 'cliente' && pag !== 'intermediario' && clienteId) {
     inserts.push(client.from('movimientos_cuenta_corriente').insert({
-      cliente_id: clienteId, moneda: mon, monto: -monto, orden_id: ordenId, transaccion_id: transaccionId,
-      concepto: conceptoCcMovimiento(mon, monto, 'deuda'), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+      cliente_id: clienteId, moneda: mon, monto: -monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
+      concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
       ...montosDeuda,
     }));
   }
@@ -5148,8 +5211,8 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
       client.from('movimientos_cuenta_corriente_intermediario').update({ estado: 'cerrado', estado_fecha: ahora })
         .eq('orden_id', ordenId).eq('intermediario_id', intermediarioId).eq('transaccion_id', transaccionId).eq('estado', 'pendiente')
         .then(() => client.from('movimientos_cuenta_corriente_intermediario').insert({
-          intermediario_id: intermediarioId, moneda: mon, monto, orden_id: ordenId, transaccion_id: transaccionId,
-          concepto: conceptoCcMovimiento(mon, monto, 'cobro'), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+          intermediario_id: intermediarioId, moneda: mon, monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
+          concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
           ...montosCcPorMoneda(mon, monto),
         }))
     );
@@ -5166,8 +5229,8 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
           return Promise.resolve();
         })
         .then(() => client.from('movimientos_cuenta_corriente_intermediario').insert({
-          intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, moneda: monInt, monto: -montoEfectivoInt,
-          concepto: 'Deuda del intermediario con Pandy', fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+          intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero, moneda: monInt, monto: -montoEfectivoInt,
+          concepto: conceptoCcLeyenda('compromiso_cobrar', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
           ...montosCcPorMoneda(monInt, -montoEfectivoInt),
         }))
         .then(() => {
@@ -5178,10 +5241,10 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
               if (comMonto >= 1e-6) {
                 const monCom = (rCom.data.moneda || 'ARS').toUpperCase();
                 return client.from('movimientos_cuenta_corriente_intermediario').insert({
-                  intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, moneda: monCom, monto: comMonto,
-                  concepto: 'Comisión del acuerdo', fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                  intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero, moneda: monCom, monto: comMonto,
+                  concepto: conceptoCcLeyenda('comision_acuerdo', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                   ...montosCcPorMoneda(monCom, comMonto),
-                }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom));
+                }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, ordenNumero));
               }
               return Promise.resolve();
             });
@@ -5191,15 +5254,15 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
   // Cliente ↔ Intermediario: se refleja en Pandy-Intermediario
   if (cob === 'cliente' && pag === 'intermediario' && intermediarioId) {
     inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
-      intermediario_id: intermediarioId, moneda: mon, monto: -monto, orden_id: ordenId, transaccion_id: transaccionId,
-      concepto: conceptoCcMovimiento(mon, monto, 'deuda'), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+      intermediario_id: intermediarioId, moneda: mon, monto: -monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
+      concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
       ...montosCcPorMoneda(mon, -monto),
     }));
   }
   if (cob === 'intermediario' && pag === 'cliente' && intermediarioId) {
     inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
-      intermediario_id: intermediarioId, moneda: mon, monto, orden_id: ordenId, transaccion_id: transaccionId,
-      concepto: conceptoCcMovimiento(mon, monto, 'cobro'), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+      intermediario_id: intermediarioId, moneda: mon, monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
+      concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
       ...montosCcPorMoneda(mon, monto),
     }));
   }
@@ -5374,7 +5437,8 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 cliente_id: clienteId,
                 orden_id: ordenId,
                 transaccion_id: transaccionId,
-                concepto: conceptoConOrden('Comisión Pandy', ordenLabel),
+                transaccion_numero: t.numero != null ? t.numero : null,
+                concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, t.numero),
                 moneda: mon,
                 monto: -monto,
                 fecha,
@@ -5493,9 +5557,10 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 intermediario_id: intermediarioId,
                 orden_id: ordenId,
                 transaccion_id: transaccionId,
+                transaccion_numero: t.numero != null ? t.numero : null,
                 moneda: monInt,
                 monto: -monto,
-                concepto: conceptoConOrden('Pandy a Intermediario', ordenLabel),
+                concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
                 fecha,
                 usuario_id: currentUserId,
                 estado: estadoMov,
@@ -5508,9 +5573,10 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   intermediario_id: intermediarioId,
                   orden_id: ordenId,
                   transaccion_id: transaccionId,
+                  transaccion_numero: t.numero != null ? t.numero : null,
                   moneda: comisionIntMon,
                   monto: comisionIntMonto,
-                  concepto: conceptoConOrden('Comisión Intermediario', ordenLabel),
+                  concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, t.numero),
                   fecha,
                   usuario_id: currentUserId,
                   estado: estadoMov,
@@ -5526,7 +5592,8 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 monto: -monto,
                 orden_id: ordenId,
                 transaccion_id: transaccionId,
-                concepto: conceptoConOrden(conceptoCcMovimiento(mon, monto, 'deuda'), ordenLabel),
+                transaccion_numero: t.numero != null ? t.numero : null,
+                concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, t.numero),
                 fecha,
                 usuario_id: currentUserId,
                 estado: estadoMov,
@@ -5541,7 +5608,8 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 monto,
                 orden_id: ordenId,
                 transaccion_id: transaccionId,
-                concepto: conceptoConOrden(conceptoCcMovimiento(mon, monto, 'cobro'), ordenLabel),
+                transaccion_numero: t.numero != null ? t.numero : null,
+                concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero),
                 fecha,
                 usuario_id: currentUserId,
                 estado: estadoMov,
@@ -5573,6 +5641,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             const trEgr = egresoPandyCliente || transacciones.find((t) => String(t.tipo || '').toLowerCase() === 'egreso');
             const monEgr = (trEgr && trEgr.moneda) ? String(trEgr.moneda).toUpperCase() : monE;
             const trIdDeuda = (trEgr && trEgr.id) || (transacciones[0] && transacciones[0].id);
+            const trNumeroEgr = trEgr && trEgr.numero != null ? trEgr.numero : null;
             for (let i = 0; i < cuantasFaltan; i++) {
               const montosDeudaEgr = montosCcPorOrden(monR, monE, mr, me, monEgr, -montoDeudaPandy);
               rowsCcCliente.push({
@@ -5581,7 +5650,8 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 monto: -montoDeudaPandy,
                 orden_id: ordenId,
                 transaccion_id: trIdDeuda,
-                concepto: conceptoConOrden('Pandy debe al cliente', ordenLabel),
+                transaccion_numero: trNumeroEgr,
+                concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, trNumeroEgr),
                 fecha,
                 usuario_id: currentUserId,
                 estado: trEgr && trEgr.estado === 'ejecutada' ? 'cerrado' : 'pendiente',
@@ -5594,19 +5664,21 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           // Regla: un evento en CC por transacción. El egreso Pandy→Cliente ya tiene su único evento en el forEach: "Deuda" -monto (cob === 'cliente' && t.estado === 'ejecutada'). No agregar "Pago Pandy al cliente" para no duplicar el efecto de la misma transacción.
 
           // Asegurar fila "Comisión Intermediario" (+750) en CC intermediario: parte de los 50.000 que se queda el intermediario; -50.000 + 49.250 + 750 = 0.
-          const tienePandyAInt = rowsCcInt.some((r) => (r.concepto || '').includes('Pandy a Intermediario'));
-          const tieneComisionIntRow = rowsCcInt.some((r) => (r.concepto || '').includes('Comisión Intermediario'));
+          const tienePandyAInt = rowsCcInt.some((r) => (r.concepto || '').includes('Pago Realizado'));
+          const tieneComisionIntRow = rowsCcInt.some((r) => (r.concepto || '').includes('Comisión del acuerdo'));
           if (intermediarioId && comisionIntMonto >= 1e-6 && tienePandyAInt && !tieneComisionIntRow) {
             const egresoTr = transacciones.find((t) => (t.cobrador === 'intermediario' && t.pagador === 'pandy') || (t.tipo === 'egreso' && t.pagador === 'pandy' && (t.cobrador || '') === 'intermediario'));
             const transaccionIdCom = egresoTr ? egresoTr.id : (transacciones[0] ? transacciones[0].id : null);
             const estadoMovCom = egresoTr && egresoTr.estado === 'ejecutada' ? 'cerrado' : 'pendiente';
+            const transNumeroCom = egresoTr && egresoTr.numero != null ? egresoTr.numero : (transacciones[0] && transacciones[0].numero != null ? transacciones[0].numero : null);
             rowsCcInt.push({
               intermediario_id: intermediarioId,
               orden_id: ordenId,
               transaccion_id: transaccionIdCom,
+              transaccion_numero: transNumeroCom,
               moneda: comisionIntMon,
               monto: comisionIntMonto,
-              concepto: conceptoConOrden('Comisión Intermediario', ordenLabel),
+              concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, transNumeroCom),
               fecha,
               usuario_id: currentUserId,
               estado: estadoMovCom,
@@ -5615,7 +5687,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             });
           }
 
-          // CC intermediario: momento cero 1 fila +49.250 (suma 0 con -50.000 y +750). Cuando egreso Pandy→Int ejecutada, segunda fila +49.250 para que el saldo muestre +49.250 (intermediario nos debe).
+          // CC intermediario: una sola fila "+montoEfectivoInt" (Compromiso a Cobrar) por transacción; no duplicar (regla: un movimiento por evento/transacción).
           const egresoPandyIntTrx = transacciones.find((t) => {
             const cob = String(t.cobrador || '').toLowerCase();
             const pag = String(t.pagador || '').toLowerCase();
@@ -5626,7 +5698,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             const rm = Number(r.monto) || 0;
             return rm > 0 && Math.abs(rm - montoEfectivoInt) < 1e-6;
           }).length;
-          const cuantasQueremos = egresoPandyIntEjecutada ? 2 : 1;
+          const cuantasQueremos = 1; // Una sola fila por transacción (evitar duplicados en detalle CC).
           const cuantasFaltanInt = intermediarioId && montoEfectivoInt >= 1e-6 && tienePandyAInt && cuantasCobroInt < cuantasQueremos ? (cuantasQueremos - cuantasCobroInt) : 0;
           if (cuantasFaltanInt > 0 && transacciones.length > 0) {
             const ingresoIntPandy = transacciones.find((t) => String(t.tipo || '').toLowerCase() === 'ingreso' && String(t.cobrador || '').toLowerCase() === 'pandy' && String(t.pagador || '').toLowerCase() === 'intermediario');
@@ -5635,14 +5707,16 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             const monInt = (trInt && trInt.moneda) ? String(trInt.moneda).toUpperCase() : monR;
             const trIdInt = (egresoPandyIntTrx && egresoPandyIntTrx.id) || (trInt && trInt.id) || (transacciones[0] && transacciones[0].id);
             const estadoMovInt = ingresoIntPandyEjecutada ? 'cerrado' : (egresoPandyIntEjecutada ? 'cerrado' : 'pendiente');
+            const trNumeroInt = trInt && trInt.numero != null ? trInt.numero : null;
             for (let i = 0; i < cuantasFaltanInt; i++) {
               rowsCcInt.push({
                 intermediario_id: intermediarioId,
                 orden_id: ordenId,
                 transaccion_id: trIdInt,
+                transaccion_numero: trNumeroInt,
                 moneda: monInt,
                 monto: montoEfectivoInt,
-                concepto: conceptoConOrden('Intermediario debe a Pandy', ordenLabel),
+                concepto: conceptoCcLeyenda('compromiso_cobrar', orden.numero, trNumeroInt),
                 fecha,
                 usuario_id: currentUserId,
                 estado: estadoMovInt,
@@ -5655,17 +5729,19 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           // Cuando el ingreso Int→Pandy está ejecutada, agregar -49.250 "Pago Intermediario a Pandy" para cerrar la CC en 0 (saldo pasó de +49.250 a 0).
           const ingresoIntPandyTrx = transacciones.find((t) => String(t.tipo || '').toLowerCase() === 'ingreso' && String(t.cobrador || '').toLowerCase() === 'pandy' && String(t.pagador || '').toLowerCase() === 'intermediario');
           const ingresoIntPandyEjecutadaTrx = ingresoIntPandyTrx && ingresoIntPandyTrx.estado === 'ejecutada';
-          const tienePagoIntPandy = rowsCcInt.some((r) => (r.concepto || '').includes('Pago Intermediario a Pandy'));
+          const tienePagoIntPandy = rowsCcInt.some((r) => (r.concepto || '').includes('Cobro Realizado') && Number(r.monto) < 0 && Math.abs(Number(r.monto) + montoEfectivoInt) < 1e-6);
           if (intermediarioId && montoEfectivoInt >= 1e-6 && tienePandyAInt && ingresoIntPandyEjecutadaTrx && !tienePagoIntPandy) {
             const trRefInt = ingresoIntPandyTrx || transacciones[0];
             const monRefInt = (trRefInt && trRefInt.moneda) ? String(trRefInt.moneda).toUpperCase() : monR;
+            const trNumeroRef = ingresoIntPandyTrx && ingresoIntPandyTrx.numero != null ? ingresoIntPandyTrx.numero : (transacciones[0] && transacciones[0].numero != null ? transacciones[0].numero : null);
             rowsCcInt.push({
               intermediario_id: intermediarioId,
               orden_id: ordenId,
               transaccion_id: ingresoIntPandyTrx ? ingresoIntPandyTrx.id : (transacciones[0] && transacciones[0].id),
+              transaccion_numero: trNumeroRef,
               moneda: monRefInt,
               monto: -montoEfectivoInt,
-              concepto: conceptoConOrden('Pago Intermediario a Pandy', ordenLabel),
+              concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, trNumeroRef),
               fecha,
               usuario_id: currentUserId,
               estado: 'cerrado',
@@ -5686,7 +5762,8 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 cliente_id: clienteId,
                 orden_id: ordenId,
                 transaccion_id: egresoPandyCliente.id,
-                concepto: conceptoConOrden('Comisión Pandy', ordenLabel),
+                transaccion_numero: egresoPandyCliente.numero != null ? egresoPandyCliente.numero : null,
+                concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, egresoPandyCliente.numero),
                 moneda: monR,
                 monto: -comisionPandy,
                 fecha,
@@ -5801,17 +5878,20 @@ function asegurarGananciaPandy(ordenId, instrumentacionId, orden, clienteId, com
             const montosNeg = montosCcPorMoneda(monedaCom, -comisionPandyMonto);
             if (monR === monE) {
               return client.from('movimientos_cuenta_corriente').insert({
-                cliente_id: clienteId, orden_id: ordenId, transaccion_id: trId, concepto: 'Ganancia del acuerdo',
+                cliente_id: clienteId, orden_id: ordenId, transaccion_id: trId, transaccion_numero: trNumero != null ? trNumero : null,
+                concepto: 'Ganancia del acuerdo',
                 moneda: monedaCom, monto: comisionPandyMonto, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                 monto_usd: montosPos.monto_usd, monto_ars: montosPos.monto_ars, monto_eur: montosPos.monto_eur,
               }).then(() => client.from('movimientos_cuenta_corriente').insert({
-                cliente_id: clienteId, orden_id: ordenId, transaccion_id: trId, concepto: 'Comisión Pandy',
+                cliente_id: clienteId, orden_id: ordenId, transaccion_id: trId, transaccion_numero: trNumero != null ? trNumero : null,
+                concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, trNumero),
                 moneda: monedaCom, monto: -comisionPandyMonto, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                 monto_usd: montosNeg.monto_usd, monto_ars: montosNeg.monto_ars, monto_eur: montosNeg.monto_eur,
               }));
             }
             return client.from('movimientos_cuenta_corriente').insert({
-              cliente_id: clienteId, orden_id: ordenId, transaccion_id: trId, concepto: 'Ganancia del acuerdo',
+              cliente_id: clienteId, orden_id: ordenId, transaccion_id: trId, transaccion_numero: trNumero != null ? trNumero : null,
+              concepto: 'Ganancia del acuerdo',
               moneda: monedaCom, monto: comisionPandyMonto, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
               monto_usd: montosPos.monto_usd, monto_ars: montosPos.monto_ars, monto_eur: montosPos.monto_eur,
             });
@@ -5896,8 +5976,9 @@ function revertirGananciaPandy(ordenId, orden, clienteId, comisionPandyMonto) {
     });
 }
 
-function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, montoCom, monCom) {
+function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, montoCom, monCom, ordenNumero) {
   if (!ordenId || !instrumentacionId || !intermediarioId || !montoCom || montoCom < 1e-6) return Promise.resolve();
+  const ordNum = ordenNumero != null ? ordenNumero : null;
   return client.from('orden_comisiones_generadas').select('id').eq('orden_id', ordenId).eq('tipo', 'comision_intermediario').maybeSingle()
     .then((r) => {
       if (r.data && r.data.id) return Promise.resolve();
@@ -5916,16 +5997,17 @@ function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediario
           const trComId = rNew.data && rNew.data.id;
           const trComNumero = rNew.data && rNew.data.numero;
           if (!trComId) return Promise.resolve();
-          const conceptoCom = conceptoCajaTransaccionEspecial('Comisión del acuerdo', monCom, montoCom, orden.numero, trComNumero);
+          const conceptoCom = conceptoCajaTransaccionEspecial('Comisión del acuerdo', monCom, montoCom, ordNum, trComNumero);
           return client.from('movimientos_caja').insert({
             moneda: monCom, monto: -montoCom, caja_tipo: 'efectivo', transaccion_id: trComId,
-            orden_numero: orden.numero != null ? orden.numero : null, transaccion_numero: trComNumero != null ? trComNumero : null,
+            orden_numero: ordNum, transaccion_numero: trComNumero != null ? trComNumero : null,
             concepto: conceptoCom, fecha, usuario_id: currentUserId,
           }).then(() => {
             const montos = montosCcPorMoneda(monCom, -montoCom);
+            const conceptoCc = conceptoCcLeyenda('comision_acuerdo', ordNum, trComNumero);
             return client.from('movimientos_cuenta_corriente_intermediario').insert({
-              intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: trComId, concepto: 'Comisión del acuerdo',
-              moneda: monCom, monto: -montoCom, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+              intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: trComId, transaccion_numero: trComNumero != null ? trComNumero : null,
+              concepto: conceptoCc, moneda: monCom, monto: -montoCom, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
               monto_usd: montos.monto_usd, monto_ars: montos.monto_ars, monto_eur: montos.monto_eur,
             });
           }).then(() => client.from('orden_comisiones_generadas').insert({ orden_id: ordenId, tipo: 'comision_intermediario', transaccion_id: trComId }));
@@ -6038,8 +6120,10 @@ function autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumenta
       const egresoClienteId = results[1]?.data?.id;
       const egresoChequeTrId = results[2]?.data?.id;
       const ingresoEfectivoIntTrId = results[3]?.data?.id;
-      // CC y caja se derivan de la instrumentación: una sola sincronización desde orden + transacciones.
-      return sincronizarCcYCajaDesdeOrden(ordenId).then(() => actualizarEstadoOrden(ordenId));
+      // CC momento cero por transacción (eficiente: solo inserts, sin borrar/repoblar).
+      return insertarMovimientosCcMomentoCero(ordenId, orden, ingresoClienteId, egresoClienteId)
+        .then(() => insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, egresoChequeTrId, ingresoEfectivoIntTrId))
+        .then(() => actualizarEstadoOrden(ordenId));
     });
   });
 }
@@ -6862,18 +6946,58 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
             if (nuevoEstado === 'pendiente') deletes.push(client.from('movimientos_caja').delete().eq('transaccion_id', transaccionId));
             // Con instrumentación, derivar siempre CC y caja desde orden + transacciones (cualquier movimiento parcial se refleja).
             if (instrumentacionId && !debeDividir) {
-              // Al reversar a pendiente el ingreso cliente→Pandy, revertir Ganancia del acuerdo si existía (orden_comisiones_generadas) para que la sync reconstruya CC correcta.
               const esIngresoClientePandy = (t.tipo || '').toLowerCase() === 'ingreso' && String(pag || '').toLowerCase() === 'cliente' && String(cob || '').toLowerCase() === 'pandy';
               const comisionPandyMonto = (monR === monE && montoRecibido > montoEntregado) ? montoRecibido - montoEntregado : 0;
               const promRevertirGanancia = (nuevoEstado === 'pendiente' && esIngresoClientePandy && clienteId && comisionPandyMonto >= 1e-6)
                 ? revertirGananciaPandy(ordenId, orden, clienteId, comisionPandyMonto)
                 : Promise.resolve();
-              return Promise.all(deletes).then(() => promRevertirGanancia).then(() => sincronizarCcYCajaDesdeOrden(ordenId))
-                .then(() => actualizarEstadoOrden(ordenId))
-                .then(() => {
-                  // Comisión Pandy se refleja en CC desde el acuerdo (no se crea transacción Ganancia ni se divide el ingreso).
-                  return { ordenId, instrumentacionId };
-                });
+              // Reversa por transacción (eficiente: solo borrar/actualizar movimientos de esta transacción, sin sync).
+              function revertirCcYCajaPorTransaccion() {
+                if (nuevoEstado !== 'pendiente') return Promise.resolve();
+                const ahora = new Date().toISOString();
+                let prom = Promise.all(deletes).then(() => promRevertirGanancia);
+                if (clienteId) {
+                  prom = prom.then(() => client.from('movimientos_cuenta_corriente').select('id, concepto').eq('orden_id', ordenId).eq('cliente_id', clienteId).eq('transaccion_id', transaccionId))
+                    .then((r) => {
+                      const rows = r.data || [];
+                      const idsCancel = rows.filter((m) => (m.concepto || '').includes('Cancelación de deuda') || (m.concepto || '').includes('Contraparte cancelación')).map((m) => m.id);
+                      const idsMomentoCero = rows.filter((m) => (m.concepto || '').includes('Compromiso') || (m.concepto || '').includes('Debe') || (m.concepto || '').includes('Compensación')).map((m) => m.id);
+                      const del = idsCancel.length > 0 ? Promise.all(idsCancel.map((id) => client.from('movimientos_cuenta_corriente').delete().eq('id', id))) : Promise.resolve();
+                      const upd = idsMomentoCero.length > 0 ? Promise.all(idsMomentoCero.map((id) => client.from('movimientos_cuenta_corriente').update({ estado: 'pendiente', estado_fecha: ahora }).eq('id', id))) : Promise.resolve();
+                      return del.then(() => upd);
+                    });
+                }
+                if (intermediarioId && (cob === 'pandy' && pag === 'intermediario')) {
+                  prom = prom.then(() => revertirComisionIntermediario(ordenId))
+                    .then(() => client.from('movimientos_cuenta_corriente_intermediario').select('id, concepto, monto').eq('orden_id', ordenId).eq('intermediario_id', intermediarioId).eq('transaccion_id', transaccionId))
+                    .then((rRows) => {
+                      const rows = rRows.data || [];
+                      const idsBorrar = rows.filter((r) => (r.concepto || '').includes('Compromiso a Cobrar') || (r.concepto || '').includes('Comisión del acuerdo')).map((r) => r.id);
+                      const rowPendiente = rows.find((r) => (r.concepto || '').toLowerCase().includes('compromiso de pago') || (Number(r.monto) || 0) < 0);
+                      const del = idsBorrar.length > 0 ? Promise.all(idsBorrar.map((id) => client.from('movimientos_cuenta_corriente_intermediario').delete().eq('id', id))) : Promise.resolve();
+                      const monRInt = orden.moneda_recibida || 'ARS';
+                      const montoUsd = monRInt === 'USD' ? -montoRecibido : 0;
+                      const montoArs = monRInt === 'ARS' ? -montoRecibido : 0;
+                      const montoEur = monRInt === 'EUR' ? -montoRecibido : 0;
+                      const upd = rowPendiente && rowPendiente.id ? client.from('movimientos_cuenta_corriente_intermediario').update({ estado: 'pendiente', estado_fecha: ahora, monto_usd: montoUsd, monto_ars: montoArs, monto_eur: montoEur }).eq('id', rowPendiente.id) : Promise.resolve();
+                      return del.then(() => upd);
+                    });
+                }
+                if (intermediarioId && (cob === 'intermediario' && pag === 'pandy')) {
+                  prom = prom.then(() => client.from('movimientos_cuenta_corriente_intermediario').select('id, concepto').eq('orden_id', ordenId).eq('intermediario_id', intermediarioId).eq('transaccion_id', transaccionId))
+                    .then((rRows) => {
+                      const rows = rRows.data || [];
+                      const idsBorrar = rows.filter((r) => (r.concepto || '').includes('Cobro') || (r.concepto || '').includes('Descuento')).map((r) => r.id);
+                      const idCompensacion = rows.find((r) => (r.concepto || '').toLowerCase().includes('compensacion'));
+                      const del = idsBorrar.length > 0 ? Promise.all(idsBorrar.map((id) => client.from('movimientos_cuenta_corriente_intermediario').delete().eq('id', id))) : Promise.resolve();
+                      const upd = idCompensacion ? client.from('movimientos_cuenta_corriente_intermediario').update({ estado: 'pendiente', estado_fecha: ahora }).eq('id', idCompensacion.id) : Promise.resolve();
+                      return del.then(() => upd);
+                    });
+                }
+                return prom;
+              }
+              return revertirCcYCajaPorTransaccion().then(() => actualizarEstadoOrden(ordenId))
+                .then(() => ({ ordenId, instrumentacionId }));
             }
             const ordenLabel = orden.numero != null ? 'nro orden ' + orden.numero : 'nro orden ' + (ordenId || '').toString().slice(0, 8);
             /** Cancelación: por el monto de esta transacción (item.monto). En misma moneda (monR === monE) solo ese monto en la moneda participante. */
@@ -7182,8 +7306,9 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                                 return Promise.resolve();
                               })
                               .then(() => client.from('movimientos_cuenta_corriente_intermediario').insert({
-                                intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: item.id, moneda: monInt, monto: -montoEfectivoInt,
-                                concepto: 'Deuda del intermediario con Pandy', fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                                intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: item.id, transaccion_numero: item.numero != null ? item.numero : null,
+                                moneda: monInt, monto: -montoEfectivoInt,
+                                concepto: conceptoCcLeyenda('compromiso_cobrar', orden && orden.numero != null ? orden.numero : null, item.numero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                                 ...montosCcPorMoneda(monInt, -montoEfectivoInt),
                               }))
                               .then(() => client.from('comisiones_orden').select('moneda, monto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario').maybeSingle())
@@ -7192,10 +7317,11 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                                 if (comMonto >= 1e-6) {
                                   const monCom = (rCom.data.moneda || 'ARS').toUpperCase();
                                   return client.from('movimientos_cuenta_corriente_intermediario').insert({
-                                    intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: item.id, moneda: monCom, monto: comMonto,
-                                    concepto: 'Comisión del acuerdo', fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                                    intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: item.id, transaccion_numero: item.numero != null ? item.numero : null,
+                                    moneda: monCom, monto: comMonto,
+                                    concepto: conceptoCcLeyenda('comision_acuerdo', orden && orden.numero != null ? orden.numero : null, item.numero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                                     ...montosCcPorMoneda(monCom, comMonto),
-                                  }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom));
+                                  }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, orden && orden.numero != null ? orden.numero : null));
                                 }
                                 return Promise.resolve();
                               })
@@ -7204,6 +7330,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                         if (cob === 'cliente' && pag === 'intermediario' && intermediarioId) {
                           insertsCc.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
                             intermediario_id: intermediarioId, moneda: item.moneda, monto: -montoItem, orden_id: ordenId, transaccion_id: item.id,
+                            transaccion_numero: item.numero != null ? item.numero : null,
                             concepto: conceptoCc, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                             ...montosCcPorMoneda(item.moneda || 'USD', -montoItem),
                           }));
@@ -7211,6 +7338,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                         if (cob === 'intermediario' && pag === 'cliente' && intermediarioId) {
                           insertsCc.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
                             intermediario_id: intermediarioId, moneda: item.moneda, monto: montoItem, orden_id: ordenId, transaccion_id: item.id,
+                            transaccion_numero: item.numero != null ? item.numero : null,
                             concepto: conceptoCc, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                             ...montosCcPorMoneda(item.moneda || 'USD', montoItem),
                           }));
@@ -7223,8 +7351,8 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                         return res;
                       }).then(() => ({ ordenId, instrumentacionId }));
                     }
-                    function syncYActualizarEstado() {
-                      return sincronizarCcYCajaDesdeOrden(ordenId).then(() => actualizarEstadoYConversion());
+                    function actualizarEstadoSinSync() {
+                      return actualizarEstadoOrden(ordenId).then(() => actualizarEstadoYConversion());
                     }
                     return Promise.all(insertsCc).then(() => promUpdatesCc).then(() => {
                         if (nuevoEstado !== 'ejecutada') {
@@ -7233,8 +7361,8 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                           promReversa = promReversa.then(() => revertirComisionIntermediario(ordenId)).then(() =>
                             client.from('movimientos_cuenta_corriente_intermediario').select('id, concepto').eq('orden_id', ordenId).eq('intermediario_id', intermediarioId).eq('transaccion_id', transaccionId).then((rRows) => {
                               const rows = rRows.data || [];
-                              const idsBorrar = rows.filter((r) => (r.concepto || '').includes('Deuda del intermediario') || (r.concepto || '').includes('Comisión del acuerdo')).map((r) => r.id);
-                              const rowDebe = rows.find((r) => (r.concepto || '').toLowerCase().includes('debe'));
+                              const idsBorrar = rows.filter((r) => (r.concepto || '').includes('Compromiso a Cobrar') || (r.concepto || '').includes('Comisión del acuerdo')).map((r) => r.id);
+                              const rowDebe = rows.find((r) => (r.concepto || '').toLowerCase().includes('compromiso a cobrar'));
                               const del = idsBorrar.length > 0 ? Promise.all(idsBorrar.map((id) => client.from('movimientos_cuenta_corriente_intermediario').delete().eq('id', id))) : Promise.resolve();
                               const monR = orden.moneda_recibida || 'ARS';
                               const montoUsd = monR === 'USD' ? -mr : 0;
@@ -7263,10 +7391,10 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                         if (esIngresoClientePandyLegacy && clienteId && comisionPandyLegacy >= 1e-6) {
                           promReversa = promReversa.then(() => revertirGananciaPandy(ordenId, orden, clienteId, comisionPandyLegacy));
                         }
-                        return promReversa.then(() => syncYActualizarEstado());
+                        return promReversa.then(() => actualizarEstadoSinSync());
                       }
                       const pandyParticipa = cob === 'pandy' || pag === 'pandy';
-                      if (!pandyParticipa) return syncYActualizarEstado();
+                      if (!pandyParticipa) return actualizarEstadoSinSync();
                       let promCaja = Promise.resolve();
                       listaTrx.forEach((item) => {
                         if (!item.id || !item.modo_pago_id) return;
@@ -7287,7 +7415,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                           })
                         );
                       });
-                      return promCaja.then(() => syncYActualizarEstado()).then(() => {
+                      return promCaja.then(() => actualizarEstadoSinSync()).then(() => {
                         if (ordenWizardInstrumentacionIdActual && instrumentacionId && ordenWizardInstrumentacionIdActual === instrumentacionId) renderOrdenWizardInstrumentacion(instrumentacionId);
                         refreshCcView();
                       });
@@ -7475,7 +7603,17 @@ function saveTransaccion() {
       if (vistaCc && vistaCc.style.display !== 'none') loadCuentaCorriente();
       if (ccDetalleId && ccDetalleTipo) {
         fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos, saldos, ordenes }) => {
-          ccDetalleMovimientosList = movimientos;
+          const ordenNumeroById = Object.fromEntries((ordenes || []).map((o) => [o.id, o.numero]).filter(([, n]) => n != null));
+          const ordenTipoOpById = Object.fromEntries((ordenes || []).map((o) => {
+            const to = o.tipos_operacion;
+            const codigo = (to && (typeof to === 'object' && !Array.isArray(to) ? to.codigo : (Array.isArray(to) && to[0] ? to[0].codigo : null))) || null;
+            return [o.id, codigo != null ? codigo : '–'];
+          }));
+          ccDetalleMovimientosList = movimientos.map((m) => ({
+            ...m,
+            orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : null,
+            tipo_operacion: ordenTipoOpById[m.orden_id] != null ? ordenTipoOpById[m.orden_id] : '–'
+          }));
           ccDetalleOrdenesList = ordenes || [];
           renderCcDetalleTable();
           const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
@@ -7505,7 +7643,7 @@ function saveTransaccion() {
         renderOrdenWizardInstrumentacion(instrumentacionId);
       }
       if (ordenId) {
-        sincronizarCcYCajaDesdeOrden(ordenId).then(() => actualizarEstadoOrden(ordenId))
+        actualizarEstadoOrden(ordenId)
           .then((res) => {
             mostrarMensajeSiInstrumentacionCerrada(res);
             return res;
@@ -7794,8 +7932,9 @@ function saveTransaccion() {
                   return Promise.resolve();
                 })
                 .then(() => client.from('movimientos_cuenta_corriente_intermediario').insert({
-                  intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, moneda: monInt, monto: -montoEfectivoInt,
-                  concepto: 'Deuda del intermediario con Pandy', fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                  intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transaccionNumero != null ? transaccionNumero : null,
+                  moneda: monInt, monto: -montoEfectivoInt,
+                  concepto: conceptoCcLeyenda('compromiso_cobrar', orden && orden.numero != null ? orden.numero : null, transaccionNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                   ...montosCcPorMoneda(monInt, -montoEfectivoInt),
                 }))
                 .then(() => client.from('comisiones_orden').select('moneda, monto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario').maybeSingle())
@@ -7804,10 +7943,11 @@ function saveTransaccion() {
                   if (comMonto >= 1e-6) {
                     const monCom = (rCom.data.moneda || 'ARS').toUpperCase();
                     return client.from('movimientos_cuenta_corriente_intermediario').insert({
-                      intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, moneda: monCom, monto: comMonto,
-                      concepto: 'Comisión del acuerdo', fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                      intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transaccionNumero != null ? transaccionNumero : null,
+                      moneda: monCom, monto: comMonto,
+                      concepto: conceptoCcLeyenda('comision_acuerdo', orden && orden.numero != null ? orden.numero : null, transaccionNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                       ...montosCcPorMoneda(monCom, comMonto),
-                    }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom));
+                    }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, orden && orden.numero != null ? orden.numero : null));
                   }
                   return Promise.resolve();
                 })
@@ -7821,7 +7961,7 @@ function saveTransaccion() {
                 promReversa = revertirComisionIntermediario(ordenId).then(() =>
                   client.from('movimientos_cuenta_corriente_intermediario').select('id, concepto').eq('orden_id', ordenId).eq('intermediario_id', intermediarioId).eq('transaccion_id', transaccionId).then((rRows) => {
                     const rows = rRows.data || [];
-                    const idsBorrar = rows.filter((r) => (r.concepto || '').includes('Deuda del intermediario') || (r.concepto || '').includes('Comisión del acuerdo')).map((r) => r.id);
+                    const idsBorrar = rows.filter((r) => (r.concepto || '').includes('Compromiso a Cobrar') || (r.concepto || '').includes('Comisión del acuerdo')).map((r) => r.id);
                     const rowDebe = rows.find((r) => (r.concepto || '').toLowerCase().includes('debe'));
                     const del = idsBorrar.length > 0 ? Promise.all(idsBorrar.map((id) => client.from('movimientos_cuenta_corriente_intermediario').delete().eq('id', id))) : Promise.resolve();
                     const monR = orden.moneda_recibida || 'ARS';
@@ -8360,7 +8500,7 @@ function setupModalTransacciones() {
   const backdrop = document.getElementById('modal-transacciones-backdrop');
   const btnClose = document.getElementById('modal-transacciones-close');
   if (btnClose) btnClose.addEventListener('click', closeModalTransacciones);
-  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalTransacciones(); });
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalTransacciones);
 }
 
 function setupModalTransaccion() {
@@ -8372,7 +8512,7 @@ function setupModalTransaccion() {
   const montoEl = document.getElementById('transaccion-monto');
   if (btnClose) btnClose.addEventListener('click', closeModalTransaccion);
   if (btnCancel) btnCancel.addEventListener('click', closeModalTransaccion);
-  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalTransaccion(); });
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalTransaccion);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveTransaccion(); });
   const selTipo = document.getElementById('transaccion-tipo');
   if (selTipo) selTipo.addEventListener('change', adaptarTransaccionTipoYMoneda);
@@ -8513,11 +8653,7 @@ function setupModalCliente() {
 
   if (btnClose) btnClose.addEventListener('click', closeModalCliente);
   if (btnCancel) btnCancel.addEventListener('click', closeModalCliente);
-  if (backdrop) {
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) closeModalCliente();
-    });
-  }
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalCliente);
   if (form) {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -8663,7 +8799,7 @@ function setupModalIntermediario() {
 
   if (btnClose) btnClose.addEventListener('click', closeModalIntermediario);
   if (btnCancel) btnCancel.addEventListener('click', closeModalIntermediario);
-  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalIntermediario(); });
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalIntermediario);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveIntermediario(); });
   if (btnNuevo) btnNuevo.addEventListener('click', () => openModalIntermediario(null));
 }
@@ -8808,7 +8944,7 @@ function setupModalTipoOperacion() {
 
   if (btnClose) btnClose.addEventListener('click', closeModalTipoOperacion);
   if (btnCancel) btnCancel.addEventListener('click', closeModalTipoOperacion);
-  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModalTipoOperacion(); });
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalTipoOperacion);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveTipoOperacion(); });
   if (btnNuevo) btnNuevo.addEventListener('click', () => openModalTipoOperacion(null));
 }
@@ -8901,7 +9037,7 @@ function startSessionTimeoutCheck() {
   if (sessionCheckIntervalId) clearInterval(sessionCheckIntervalId);
   lastActivityTime = Date.now();
   lastActivityUpdate = lastActivityTime;
-  const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+  const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
   events.forEach((ev) => document.addEventListener(ev, updateSessionActivity));
   sessionCheckIntervalId = setInterval(() => {
     if (sessionTimeoutMinutes <= 0) return;
@@ -8954,7 +9090,7 @@ function onSessionReady(session) {
         sessionCheckIntervalId = null;
         if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
         refreshDataIntervalId = null;
-        ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach((ev) => document.removeEventListener(ev, updateSessionActivity));
+        ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach((ev) => document.removeEventListener(ev, updateSessionActivity));
         client.auth.signOut().then(() => showLogin());
       });
 
@@ -9025,7 +9161,7 @@ function setupHelpPopovers() {
   }
 
   btnCerrar.addEventListener('click', closeHelpModal);
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeHelpModal(); });
+  setupBackdropCloseOnlyOnRealClick(backdrop, closeHelpModal);
 
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.help-icon-btn');
