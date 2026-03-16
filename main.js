@@ -4922,37 +4922,40 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           const usarMomentoCeroClienteConInt = clienteId && intermediarioId && ingresoTr && egresoTr && transacciones.length >= 4 && mr >= 1e-6 && me >= 1e-6 && monR === monE;
           const ordenLabelSimple = 'Orden Nro ' + (orden.numero != null ? orden.numero : '?');
           if (usarReglaSimpleCliente) {
-            // Usar montos reales de las transacciones para que la CC cierre en 0 (comisión implícita en mr-me).
-            const montoIngreso = Number(ingresoTr.monto) || mr;
-            const montoEgreso = Number(egresoTr.monto) || me;
-            rowsCcCliente.push({
-              cliente_id: clienteId,
-              orden_id: ordenId,
-              transaccion_id: ingresoTr.id,
-              transaccion_numero: ingresoTr.numero != null ? ingresoTr.numero : null,
-              concepto: 'Compromiso - ' + ordenLabelSimple + ' y Trans Nro ' + (ingresoTr.numero != null ? ingresoTr.numero : '?'),
-              fecha,
-              usuario_id: currentUserId,
-              moneda: monR,
-              monto: -montoIngreso,
-              monto_usd: numCc(monR === 'USD' ? -montoIngreso : 0),
-              monto_ars: numCc(monR === 'ARS' ? -montoIngreso : 0),
-              monto_eur: numCc(monR === 'EUR' ? -montoIngreso : 0),
-            });
-            rowsCcCliente.push({
-              cliente_id: clienteId,
-              orden_id: ordenId,
-              transaccion_id: egresoTr.id,
-              transaccion_numero: egresoTr.numero != null ? egresoTr.numero : null,
-              concepto: 'Compromiso - ' + ordenLabelSimple + ' y Trans Nro ' + (egresoTr.numero != null ? egresoTr.numero : '?'),
-              fecha,
-              usuario_id: currentUserId,
-              moneda: monE,
-              monto: -montoEgreso,
-              monto_usd: numCc(monE === 'USD' ? -montoEgreso : 0),
-              monto_ars: numCc(monE === 'ARS' ? -montoEgreso : 0),
-              monto_eur: numCc(monE === 'EUR' ? -montoEgreso : 0),
-            });
+            // Solo compromisos cuando al menos una transacción está ejecutada. Si ambas pendientes, no se inserta nada → saldo 0.
+            const algunaEjecutada = ingresoTr.estado === 'ejecutada' || egresoTr.estado === 'ejecutada';
+            if (algunaEjecutada) {
+              const montoIngreso = Number(ingresoTr.monto) || mr;
+              const montoEgreso = Number(egresoTr.monto) || me;
+              rowsCcCliente.push({
+                cliente_id: clienteId,
+                orden_id: ordenId,
+                transaccion_id: ingresoTr.id,
+                transaccion_numero: ingresoTr.numero != null ? ingresoTr.numero : null,
+                concepto: 'Compromiso - ' + ordenLabelSimple + ' y Trans Nro ' + (ingresoTr.numero != null ? ingresoTr.numero : '?'),
+                fecha,
+                usuario_id: currentUserId,
+                moneda: monR,
+                monto: -montoIngreso,
+                monto_usd: numCc(monR === 'USD' ? -montoIngreso : 0),
+                monto_ars: numCc(monR === 'ARS' ? -montoIngreso : 0),
+                monto_eur: numCc(monR === 'EUR' ? -montoIngreso : 0),
+              });
+              rowsCcCliente.push({
+                cliente_id: clienteId,
+                orden_id: ordenId,
+                transaccion_id: egresoTr.id,
+                transaccion_numero: egresoTr.numero != null ? egresoTr.numero : null,
+                concepto: 'Compromiso - ' + ordenLabelSimple + ' y Trans Nro ' + (egresoTr.numero != null ? egresoTr.numero : '?'),
+                fecha,
+                usuario_id: currentUserId,
+                moneda: monE,
+                monto: -montoEgreso,
+                monto_usd: numCc(monE === 'USD' ? -montoEgreso : 0),
+                monto_ars: numCc(monE === 'ARS' ? -montoEgreso : 0),
+                monto_eur: numCc(monE === 'EUR' ? -montoEgreso : 0),
+              });
+            }
           }
           if (usarMomentoCeroClienteConInt) {
             const montoIngreso = Number(ingresoTr.monto) || mr;
