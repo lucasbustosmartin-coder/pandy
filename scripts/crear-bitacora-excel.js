@@ -205,6 +205,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'CC: Tipo op. después de Fecha, sticky y export Excel', 'Tipo de operación visible en vista Detalle (página), modal detalle y export. Orden de columnas: Fecha, Tipo op., Orden, Trans., Concepto, … Columnas Fecha y Tipo op. ancladas en scroll horizontal (sticky left) en modal y vista detalle. loadCuentaCorriente carga tipos_operacion(codigo) en órdenes; buildCcResumenRows agrega tipo_operacion a detalleList. Export Excel incluye columna Tipo op. tras Fecha.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Modales: no cerrar al elegir opción de menú/select', 'Al abrir un desplegable (select o menú) y mover el mouse para elegir, el click a veces se reportaba en el backdrop y cerraba el modal. Helper setupBackdropCloseOnlyOnRealClick: solo cerrar si tanto mousedown como click fueron sobre el backdrop. Aplicado a todos los modales (órdenes, transacciones, CC, cliente, intermediario, tipo op., confirm, help, etc.).', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Sesión: movimiento de mouse/trackpad cuenta como actividad', 'El cierre por inactividad se disparaba al solo mover el mouse o el trackpad (sin clic) porque mousemove no actualizaba lastActivityTime. Se agregó mousemove a los eventos que llaman a updateSessionActivity (throttle 30 s); así mover el cursor mantiene la sesión viva y no se cierra la app al abrir un menú.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Despliegue v1.38', 'Producción Vercel: XLSX desde CDN en index.html y main.js usa window.XLSX para que funcione sin bundler (fix "Failed to resolve module specifier xlsx").', 'Despliegue'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -324,6 +325,7 @@ const versiones = [
   ['1.35', '__HOY__', 'Regla de estilos de botones LyP: mismo estilo (border-radius 8px, min-height); con leyenda = icono a la izquierda; solo icono mismo estilo; botón Excel verde. Regla estilos-botones.mdc en Pandi y en Fornitalia, MiGusto, Everfit, Sistema-Contable.'],
   ['1.36', '__HOY__', 'Reglas que no pueden omitirse: Bitácora, RPC/Supabase y Tests. Al completar tareas hay que actualizar bitácora, revisar RPC en sql/ si aplica y adaptar tests si afectan. bitacora-tareas.mdc y reglas-pandi.mdc.'],
   ['1.37', '__HOY__', 'Modales: no cerrar al elegir en select (mousedown+click en backdrop). Sesión: mousemove cuenta como actividad para no cerrar por inactividad al mover mouse/trackpad. CC: Tipo op. después de Fecha, sticky y export Excel.'],
+  ['1.38', '__HOY__', 'Producción Vercel: XLSX cargado desde CDN (script en index.html); main.js usa window.XLSX para evitar error "Failed to resolve module specifier xlsx" sin bundler.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

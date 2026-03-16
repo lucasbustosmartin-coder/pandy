@@ -1,5 +1,6 @@
 import { formatMonto, formatImporteDisplay, formatImporteParaInput, formatearCeldaMoneda } from './utils.js';
-import * as XLSX from 'xlsx';
+// XLSX se carga por script en index.html (CDN) para que funcione en producción sin bundler
+const XLSX = window.XLSX;
 
 const SUPABASE_URL = (typeof window.SUPABASE_URL !== 'undefined' && window.SUPABASE_URL) ? window.SUPABASE_URL : '';
 const SUPABASE_ANON_KEY = (typeof window.SUPABASE_ANON_KEY !== 'undefined' && window.SUPABASE_ANON_KEY) ? window.SUPABASE_ANON_KEY : '';
