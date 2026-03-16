@@ -1246,15 +1246,12 @@ function loadCuentaCorriente() {
       });
       return { trById, orderHasEjecutada };
     }).then(({ trById, orderHasEjecutada }) => {
+      // Regla simple ARS-ARS: obligaciones (Compromiso) siempre cuentan; solo "Compromiso Saldado" depende de la transacción ejecutada. Así al reversar el ingreso la comisión implícita se revierte en el cálculo (se sigue mostrando cliente debe mr, no "transacción - comisión").
       function incluirEnSaldo(m, trEstados, ordEjecutada) {
         if (m.estado === 'anulado') return false;
         const concepto = (m.concepto || '').toString();
         if (concepto.includes('Compromiso Saldado')) return true;
-        if (concepto.includes('Compromiso')) {
-          const trId = m.transaccion_id;
-          const ordenId = m.orden_id;
-          return (trId && trEstados[trId] === 'ejecutada') || (ordenId && ordEjecutada[ordenId]);
-        }
+        if (concepto.includes('Compromiso') && !concepto.includes('Compromiso Saldado')) return true;
         return true;
       }
       const movCli = movCliRaw.filter((m) => incluirEnSaldo(m, trById, orderHasEjecutada));
@@ -1460,13 +1457,12 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
       });
       return { trById, orderHasEjecutada };
     }).then(({ trById, orderHasEjecutada }) => {
+      // Misma regla que resumen: Compromiso (obligación) siempre cuenta; Compromiso Saldado también (solo se inserta cuando la transacción está ejecutada).
       function incluirEnSaldo(m) {
         if (m.estado === 'anulado') return false;
         const concepto = (m.concepto || '').toString();
         if (concepto.includes('Compromiso Saldado')) return true;
-        if (concepto.includes('Compromiso')) {
-          return (m.transaccion_id && trById[m.transaccion_id] === 'ejecutada') || (m.orden_id && orderHasEjecutada[m.orden_id]);
-        }
+        if (concepto.includes('Compromiso') && !concepto.includes('Compromiso Saldado')) return true;
         return true;
       }
       const sumAll = { USD: 0, EUR: 0, ARS: 0 };
@@ -3868,6 +3864,8 @@ function renderOrdenWizardInstrumentacion(instId) {
   const instrumentadoTexto = document.getElementById('orden-inst-instrumentado-texto');
   const acuerdoAviso = document.getElementById('orden-inst-acuerdo-aviso');
   if (!loadingEl || !wrapEl || !tbody || !instId) return;
+  const msgActualizando = document.getElementById('orden-inst-actualizando-msg');
+  if (msgActualizando) msgActualizando.style.display = 'none';
   loadingEl.textContent = 'Cargando instrumentación…';
   loadingEl.style.display = 'block';
   wrapEl.style.display = 'none';
@@ -4921,8 +4919,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           const ingresoTr = transacciones.find((t) => String(t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy');
           const egresoTr = transacciones.find((t) => String(t.tipo || '').toLowerCase() === 'egreso' && String(t.cobrador || '').toLowerCase() === 'cliente' && String(t.pagador || '').toLowerCase() === 'pandy');
           const usarReglaSimpleCliente = clienteId && !intermediarioId && ingresoTr && egresoTr && transacciones.length === 2 && mr >= 1e-6 && me >= 1e-6;
+          const usarMomentoCeroClienteConInt = clienteId && intermediarioId && ingresoTr && egresoTr && transacciones.length >= 4 && mr >= 1e-6 && me >= 1e-6 && monR === monE;
           const ordenLabelSimple = 'Orden Nro ' + (orden.numero != null ? orden.numero : '?');
           if (usarReglaSimpleCliente) {
+            // Usar montos reales de las transacciones para que la CC cierre en 0 (comisión implícita en mr-me).
+            const montoIngreso = Number(ingresoTr.monto) || mr;
+            const montoEgreso = Number(egresoTr.monto) || me;
             rowsCcCliente.push({
               cliente_id: clienteId,
               orden_id: ordenId,
@@ -4932,10 +4934,10 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               fecha,
               usuario_id: currentUserId,
               moneda: monR,
-              monto: -mr,
-              monto_usd: numCc(monR === 'USD' ? -mr : 0),
-              monto_ars: numCc(monR === 'ARS' ? -mr : 0),
-              monto_eur: numCc(monR === 'EUR' ? -mr : 0),
+              monto: -montoIngreso,
+              monto_usd: numCc(monR === 'USD' ? -montoIngreso : 0),
+              monto_ars: numCc(monR === 'ARS' ? -montoIngreso : 0),
+              monto_eur: numCc(monR === 'EUR' ? -montoIngreso : 0),
             });
             rowsCcCliente.push({
               cliente_id: clienteId,
@@ -4946,10 +4948,42 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               fecha,
               usuario_id: currentUserId,
               moneda: monE,
-              monto: -me,
-              monto_usd: numCc(monE === 'USD' ? -me : 0),
-              monto_ars: numCc(monE === 'ARS' ? -me : 0),
-              monto_eur: numCc(monE === 'EUR' ? -me : 0),
+              monto: -montoEgreso,
+              monto_usd: numCc(monE === 'USD' ? -montoEgreso : 0),
+              monto_ars: numCc(monE === 'ARS' ? -montoEgreso : 0),
+              monto_eur: numCc(monE === 'EUR' ? -montoEgreso : 0),
+            });
+          }
+          if (usarMomentoCeroClienteConInt) {
+            const montoIngreso = Number(ingresoTr.monto) || mr;
+            const montoEgreso = Number(egresoTr.monto) || me;
+            rowsCcCliente.push({
+              cliente_id: clienteId,
+              orden_id: ordenId,
+              transaccion_id: ingresoTr.id,
+              transaccion_numero: ingresoTr.numero != null ? ingresoTr.numero : null,
+              concepto: 'Compromiso - ' + ordenLabelSimple + ' y Trans Nro ' + (ingresoTr.numero != null ? ingresoTr.numero : '?'),
+              fecha,
+              usuario_id: currentUserId,
+              moneda: monR,
+              monto: -montoIngreso,
+              monto_usd: numCc(monR === 'USD' ? -montoIngreso : 0),
+              monto_ars: numCc(monR === 'ARS' ? -montoIngreso : 0),
+              monto_eur: numCc(monR === 'EUR' ? -montoIngreso : 0),
+            });
+            rowsCcCliente.push({
+              cliente_id: clienteId,
+              orden_id: ordenId,
+              transaccion_id: egresoTr.id,
+              transaccion_numero: egresoTr.numero != null ? egresoTr.numero : null,
+              concepto: 'Compromiso - ' + ordenLabelSimple + ' y Trans Nro ' + (egresoTr.numero != null ? egresoTr.numero : '?'),
+              fecha,
+              usuario_id: currentUserId,
+              moneda: monE,
+              monto: -montoEgreso,
+              monto_usd: numCc(monE === 'USD' ? -montoEgreso : 0),
+              monto_ars: numCc(monE === 'ARS' ? -montoEgreso : 0),
+              monto_eur: numCc(monE === 'EUR' ? -montoEgreso : 0),
             });
           }
 
@@ -5041,6 +5075,21 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                     monto_eur: numCc(monE === 'EUR' ? monto : 0),
                   });
                 }
+              } else if (usarMomentoCeroClienteConInt && (t.tipo || '').toLowerCase() === 'egreso' && cob === 'cliente' && pag === 'pandy' && t.estado === 'ejecutada') {
+                rowsCcCliente.push({
+                  cliente_id: clienteId,
+                  orden_id: ordenId,
+                  transaccion_id: transaccionId,
+                  transaccion_numero: t.numero != null ? t.numero : null,
+                  concepto: 'Compromiso Saldado - ' + ordenLabelSimple + ' y Trans Nro ' + (t.numero != null ? t.numero : '?'),
+                  fecha,
+                  usuario_id: currentUserId,
+                  moneda: monE,
+                  monto: monto,
+                  monto_usd: numCc(monE === 'USD' ? monto : 0),
+                  monto_ars: numCc(monE === 'ARS' ? monto : 0),
+                  monto_eur: numCc(monE === 'EUR' ? monto : 0),
+                });
               } else if (!usarReglaSimpleCliente) {
                 // Cobro: ingreso cliente→Pandy (lógica legacy cuando no aplica regla simple).
                 if (pag === 'cliente' && cob !== 'intermediario' && clienteId) {
@@ -5068,7 +5117,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                     });
                   }
                 }
-                if (cob === 'cliente' && pag !== 'intermediario' && clienteId && t.estado === 'ejecutada') {
+                if (cob === 'cliente' && pag !== 'intermediario' && clienteId && t.estado === 'ejecutada' && !(usarMomentoCeroClienteConInt && (t.tipo || '').toLowerCase() === 'egreso' && pag === 'pandy')) {
                   rowsCcCliente.push({
                     cliente_id: clienteId,
                     moneda: mon,
@@ -5157,7 +5206,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             }
           });
 
-          // Cuenta corriente cliente (legacy): momento cero 3 líneas; "Pandy debe al cliente" cuando aplica. No usar con regla simple.
+          // Cuenta corriente cliente (legacy): "Pandy debe al cliente" solo si no existe ya una fila -me (el forEach ya inserta "Deuda por" para egreso Pandy→Cliente; no duplicar).
           const montoDeudaPandy = me >= 1e-6 ? me : 0;
           const ingresoClientePandyEjecutada = transacciones.find((t) => {
             const cob = String(t.cobrador || '').toLowerCase();
@@ -5168,7 +5217,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             const rm = Number(r.monto) || 0;
             return rm < 0 && Math.abs(rm + montoDeudaPandy) < 1e-6;
           }).length;
-          const cuantasFaltan = !usarReglaSimpleCliente && ingresoClientePandyEjecutada && montoDeudaPandy >= 1e-6 && cuantasDeuda48750 < 2 ? (2 - cuantasDeuda48750) : 0;
+          const cuantasFaltan = !usarReglaSimpleCliente && !usarMomentoCeroClienteConInt && ingresoClientePandyEjecutada && montoDeudaPandy >= 1e-6 && cuantasDeuda48750 < 1 ? 1 : 0;
           if (clienteId && cuantasFaltan > 0 && transacciones.length > 0) {
             const cobPag = (t) => ({ cob: String(t.cobrador || '').toLowerCase(), pag: String(t.pagador || '').toLowerCase() });
             const egresoPandyCliente = transacciones.find((t) => {
@@ -5197,34 +5246,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             }
           }
 
-          // CC cliente: cuando Pandy paga al cliente (egreso Pandy→cliente ejecutada), agregar +monto "Pago Pandy al cliente" para que el saldo pase de -48.750 a 0.
-          const egresoPandyClienteEjecutada = transacciones.find((t) => {
-            const cob = String(t.cobrador || '').toLowerCase();
-            const pag = String(t.pagador || '').toLowerCase();
-            return (cob === 'cliente' && pag === 'pandy' && t.estado === 'ejecutada') || (String(t.tipo || '').toLowerCase() === 'egreso' && pag === 'pandy' && cob === 'cliente' && t.estado === 'ejecutada');
-          });
-          const montoPagoPandyCliente = egresoPandyClienteEjecutada ? (Number(egresoPandyClienteEjecutada.monto) || 0) : 0;
-          const cuantasPagoCliente = rowsCcCliente.filter((r) => {
-            const rm = Number(r.monto) || 0;
-            return rm > 0 && Math.abs(rm - montoPagoPandyCliente) < 1e-6;
-          }).length;
-          if (!usarReglaSimpleCliente && clienteId && egresoPandyClienteEjecutada && montoPagoPandyCliente >= 1e-6 && cuantasPagoCliente < 1) {
-            const monPago = (egresoPandyClienteEjecutada.moneda || monE).toUpperCase();
-            const montosPago = montosCcPorOrden(monR, monE, mr, me, monPago, montoPagoPandyCliente);
-            rowsCcCliente.push({
-              cliente_id: clienteId,
-              orden_id: ordenId,
-              transaccion_id: egresoPandyClienteEjecutada.id,
-              moneda: monPago,
-              monto: montoPagoPandyCliente,
-              concepto: conceptoConOrden('Pago Pandy al cliente', ordenLabel),
-              fecha,
-              usuario_id: currentUserId,
-              estado: 'cerrado',
-              estado_fecha: ahora,
-              ...montosPago,
-            });
-          }
+          // Regla: un evento en CC por transacción. El egreso Pandy→Cliente ya tiene su único evento en el forEach: "Deuda" -monto (cob === 'cliente' && t.estado === 'ejecutada'). No agregar "Pago Pandy al cliente" para no duplicar el efecto de la misma transacción.
 
           // Asegurar fila "Comisión Intermediario" (+750) en CC intermediario: parte de los 50.000 que se queda el intermediario; -50.000 + 49.250 + 750 = 0.
           const tienePandyAInt = rowsCcInt.some((r) => (r.concepto || '').includes('Pandy a Intermediario'));
@@ -5308,8 +5330,9 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           }
 
           // Comisión Pandy: solo cuando el ingreso cliente→Pandy está ejecutada (así al revertir la entrega no queda saldo 48.750; queda 0).
+          // Con regla simple o con momento cero cliente+intermediario (usarMomentoCeroClienteConInt) la comisión ya queda implícita en -mr,-me,+mr,+me; no agregar fila CC ni caja.
           const comisionPandy = (monR === monE && mr > me) ? mr - me : 0;
-          if (clienteId && comisionPandy >= 1e-6 && !yaTieneGananciaTrx && ingresoClientePandyEjecutada) {
+          if (clienteId && comisionPandy >= 1e-6 && !yaTieneGananciaTrx && ingresoClientePandyEjecutada && !usarReglaSimpleCliente && !usarMomentoCeroClienteConInt) {
             const egresoPandyCliente = transacciones.find((t) => t.tipo === 'egreso' && t.cobrador === 'cliente' && t.pagador === 'pandy');
             if (egresoPandyCliente) {
               const estadoCom = egresoPandyCliente.estado === 'ejecutada' ? 'cerrado' : 'pendiente';
@@ -5349,6 +5372,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           }
 
           const idsTrx = transacciones.map((t) => t.id).filter(Boolean);
+          // Reconstruir todos los movimientos desde el estado actual de las transacciones (un evento en CC por transacción; si todas pendientes, autocompensar).
           const promDelCc = client.from('movimientos_cuenta_corriente').delete().eq('orden_id', ordenId);
           const promDelCcInt = client.from('movimientos_cuenta_corriente_intermediario').delete().eq('orden_id', ordenId);
           const promDelCajaTrx = idsTrx.length > 0
@@ -6321,11 +6345,11 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
     }
   }
   function hideLoadingEstado() {
-    if (!selectEl) return;
-    const enWizard = selectEl.closest('#orden-inst-tabla-wrap');
-    if (enWizard) {
-      const msg = document.getElementById('orden-inst-actualizando-msg');
-      if (msg) msg.style.display = 'none';
+    const msg = document.getElementById('orden-inst-actualizando-msg');
+    if (msg) msg.style.display = 'none';
+    if (selectEl) {
+      const table = selectEl.closest('table');
+      if (table) table.querySelectorAll('.combo-estado-transaccion').forEach((s) => { s.disabled = false; });
     }
   }
 
@@ -6459,6 +6483,10 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
             const nuevaTrxNumero = rNew && rNew.data && rNew.data.numero;
             const fecha = new Date().toISOString().slice(0, 10);
             const ahora = new Date().toISOString();
+            const monR = orden.moneda_recibida || 'USD';
+            const monE = orden.moneda_entregada || 'USD';
+            const mr = Number(orden.monto_recibido) || 0;
+            const me = Number(orden.monto_entregado) || 0;
             const listaTrx = debeDividir
               ? [
                   { id: transaccionId, numero: t.numero, monto: montoEntregado, moneda: t.moneda, modo_pago_id: t.modo_pago_id, concepto: conceptoCcMovimiento(t.moneda, montoEntregado, 'deuda'), cobrador: cob, pagador: pag },
@@ -6472,7 +6500,13 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
             if (nuevoEstado === 'pendiente') deletes.push(client.from('movimientos_caja').delete().eq('transaccion_id', transaccionId));
             // Con instrumentación, derivar siempre CC y caja desde orden + transacciones (cualquier movimiento parcial se refleja).
             if (instrumentacionId && !debeDividir) {
-              return Promise.all(deletes).then(() => sincronizarCcYCajaDesdeOrden(ordenId))
+              // Al reversar a pendiente el ingreso cliente→Pandy, revertir Ganancia del acuerdo si existía (orden_comisiones_generadas) para que la sync reconstruya CC correcta.
+              const esIngresoClientePandy = (t.tipo || '').toLowerCase() === 'ingreso' && String(pag || '').toLowerCase() === 'cliente' && String(cob || '').toLowerCase() === 'pandy';
+              const comisionPandyMonto = (monR === monE && montoRecibido > montoEntregado) ? montoRecibido - montoEntregado : 0;
+              const promRevertirGanancia = (nuevoEstado === 'pendiente' && esIngresoClientePandy && clienteId && comisionPandyMonto >= 1e-6)
+                ? revertirGananciaPandy(ordenId, orden, clienteId, comisionPandyMonto)
+                : Promise.resolve();
+              return Promise.all(deletes).then(() => promRevertirGanancia).then(() => sincronizarCcYCajaDesdeOrden(ordenId))
                 .then(() => actualizarEstadoOrden(ordenId))
                 .then(() => {
                   // Comisión Pandy se refleja en CC desde el acuerdo (no se crea transacción Ganancia ni se divide el ingreso).
@@ -6480,10 +6514,6 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                 });
             }
             const ordenLabel = orden.numero != null ? 'nro orden ' + orden.numero : 'nro orden ' + (ordenId || '').toString().slice(0, 8);
-            const monR = orden.moneda_recibida || 'USD';
-            const monE = orden.moneda_entregada || 'USD';
-            const mr = Number(orden.monto_recibido) || 0;
-            const me = Number(orden.monto_entregado) || 0;
             /** Cancelación: por el monto de esta transacción (item.monto). En misma moneda (monR === monE) solo ese monto en la moneda participante. */
             function montosCancelacion(item) {
               const montoTrx = Number(item.monto) || 0;
@@ -6865,7 +6895,12 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                             })
                           );
                         }
-                        // No revertir Ganancia: ya no creamos esa transacción; la comisión se trata en CC desde el acuerdo.
+                        // Revertir Ganancia del acuerdo si esta transacción es ingreso cliente→Pandy y había comisión.
+                        const esIngresoClientePandyLegacy = (t.tipo || '').toLowerCase() === 'ingreso' && pag === 'cliente' && cob === 'pandy';
+                        const comisionPandyLegacy = (monR === monE && mr > me) ? mr - me : 0;
+                        if (esIngresoClientePandyLegacy && clienteId && comisionPandyLegacy >= 1e-6) {
+                          promReversa = promReversa.then(() => revertirGananciaPandy(ordenId, orden, clienteId, comisionPandyLegacy));
+                        }
                         return promReversa.then(() => syncYActualizarEstado());
                       }
                       const pandyParticipa = cob === 'pandy' || pag === 'pandy';
@@ -6919,6 +6954,9 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
   }).catch((err) => {
     hideLoadingEstado();
     if (err && err.message) showToast('Error: ' + err.message, 'error');
+    if (ordenWizardInstrumentacionIdActual === instrumentacionId && instrumentacionId) {
+      renderOrdenWizardInstrumentacion(instrumentacionId);
+    }
   });
 }
 
@@ -7445,7 +7483,12 @@ function saveTransaccion() {
                   })
                 );
               }
-              // No revertir Ganancia: ya no creamos esa transacción.
+              // Revertir Ganancia del acuerdo si esta transacción es ingreso cliente→Pandy y había comisión (misma moneda mr > me o comisiones_orden).
+              const esIngresoClientePandy = (tipo || '').toLowerCase() === 'ingreso' && pagador === 'cliente' && cobrador === 'pandy';
+              const comisionPandyReversa = (monR === monE && mr > me) ? mr - me : (comisionPandyMonto || 0);
+              if (esIngresoClientePandy && clienteId && comisionPandyReversa >= 1e-6) {
+                promReversa = promReversa.then(() => revertirGananciaPandy(ordenId, orden, clienteId, comisionPandyReversa));
+              }
               promReversa.then(() => { hacerCierre(ordenId); });
               return;
             }

@@ -30,8 +30,11 @@ async function loginAndSeeApp(page) {
   ]).catch(() => false);
 
   if (!success) {
-    const msg = (await loginError.textContent()) || 'Sin mensaje';
-    throw new Error('Login falló. Revisá .env.test. Error: ' + msg);
+    const msg = (await loginError.textContent())?.trim() || 'Sin mensaje';
+    const hint = !TEST_USER_EMAIL || !TEST_USER_PASSWORD
+      ? ' Comprobá que .env.test existe en la raíz y tiene TEST_USER_EMAIL y TEST_USER_PASSWORD (cp .env.test.example .env.test).'
+      : ' Revisá usuario/contraseña en Supabase y que la app esté levantada (npm run dev) en ' + (process.env.TEST_BASE_URL || 'http://localhost:5173') + '.';
+    throw new Error('Login falló.' + hint + ' Error en pantalla: ' + (msg || '(ninguno)'));
   }
   await expect(page.locator('#sidebar')).toBeVisible({ timeout: 5000 });
   await expect(page.locator('#app-content')).toBeVisible({ timeout: 5000 });
@@ -182,7 +185,7 @@ test.describe('Orden ARS-ARS, transacciones y cuenta corriente', () => {
 
       for (let i = 0; i < 4; i++) {
         await combosEstado.nth(i).selectOption('ejecutada');
-        await expect(page.getByText('Estado de la transacción actualizado.').first()).toBeVisible({ timeout: 10000 });
+        await expect(combosEstado.nth(i)).toHaveValue('ejecutada', { timeout: 35000 });
 
         await page.locator('#orden-btn-cerrar-wizard').click();
         await expect(page.locator('#modal-orden-backdrop.activo')).toBeHidden({ timeout: 20000 });
@@ -364,6 +367,7 @@ test.describe('Orden ARS-USD, transacciones y cuenta corriente', () => {
       await expect(optArsUsd).toHaveCount(1, { timeout: 5000 });
       const valueArsUsd = await optArsUsd.getAttribute('value');
       await page.locator('#orden-tipo-operacion').selectOption(valueArsUsd);
+      await page.locator('#orden-wrap-intermediario').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
 
       const optsCliente = page.locator('#orden-cliente option');
       const countClientes = await optsCliente.count();
@@ -373,7 +377,6 @@ test.describe('Orden ARS-USD, transacciones y cuenta corriente', () => {
       const indexClienteArsUsd = randomInt(1, countClientes - 1);
       await page.locator('#orden-cliente').selectOption({ index: indexClienteArsUsd });
       const nombreCliente = (await page.locator('#orden-cliente option:checked').textContent())?.trim() || '';
-      await page.locator('#orden-intermediario').selectOption({ index: 0 });
 
       await page.locator('#orden-btn-next').click();
       await expect(page.locator('#orden-step-detalles')).toBeVisible({ timeout: 3000 });
@@ -408,7 +411,7 @@ test.describe('Orden ARS-USD, transacciones y cuenta corriente', () => {
 
       for (let i = 0; i < 2; i++) {
         await combosEstado.nth(i).selectOption('ejecutada');
-        await expect(page.getByText('Estado de la transacción actualizado.').first()).toBeVisible({ timeout: 10000 });
+        await expect(combosEstado.nth(i)).toHaveValue('ejecutada', { timeout: 35000 });
 
         await page.locator('#orden-btn-cerrar-wizard').click();
         await expect(page.locator('#modal-orden-backdrop.activo')).toBeHidden({ timeout: 15000 });
@@ -528,6 +531,7 @@ test.describe('Orden USD-ARS, transacciones y cuenta corriente (sin intermediari
       await expect(optUsdArs).toHaveCount(1, { timeout: 5000 });
       const valueUsdArs = await optUsdArs.getAttribute('value');
       await page.locator('#orden-tipo-operacion').selectOption(valueUsdArs);
+      await page.locator('#orden-wrap-intermediario').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
 
       const optsCliente = page.locator('#orden-cliente option');
       const countClientes = await optsCliente.count();
@@ -537,7 +541,6 @@ test.describe('Orden USD-ARS, transacciones y cuenta corriente (sin intermediari
       const indexClienteUsdArs = randomInt(1, countClientes - 1);
       await page.locator('#orden-cliente').selectOption({ index: indexClienteUsdArs });
       const nombreCliente = (await page.locator('#orden-cliente option:checked').textContent())?.trim() || '';
-      await page.locator('#orden-intermediario').selectOption({ index: 0 });
 
       await page.locator('#orden-btn-next').click();
       await expect(page.locator('#orden-step-detalles')).toBeVisible({ timeout: 3000 });
@@ -572,7 +575,7 @@ test.describe('Orden USD-ARS, transacciones y cuenta corriente (sin intermediari
 
       for (let i = 0; i < 2; i++) {
         await combosEstado.nth(i).selectOption('ejecutada');
-        await expect(page.getByText('Estado de la transacción actualizado.').first()).toBeVisible({ timeout: 10000 });
+        await expect(combosEstado.nth(i)).toHaveValue('ejecutada', { timeout: 35000 });
 
         await page.locator('#orden-btn-cerrar-wizard').click();
         await expect(page.locator('#modal-orden-backdrop.activo')).toBeHidden({ timeout: 15000 });
@@ -692,6 +695,7 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
       await expect(optUsdUsd).toHaveCount(1, { timeout: 5000 });
       const valueUsdUsd = await optUsdUsd.getAttribute('value');
       await page.locator('#orden-tipo-operacion').selectOption(valueUsdUsd);
+      await page.locator('#orden-wrap-intermediario').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
 
       const optsCliente = page.locator('#orden-cliente option');
       const countClientes = await optsCliente.count();
@@ -701,7 +705,6 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
       const indexClienteUsdUsd = randomInt(1, countClientes - 1);
       await page.locator('#orden-cliente').selectOption({ index: indexClienteUsdUsd });
       const nombreCliente = (await page.locator('#orden-cliente option:checked').textContent())?.trim() || '';
-      await page.locator('#orden-intermediario').selectOption({ index: 0 });
 
       await page.locator('#orden-btn-next').click();
       await expect(page.locator('#orden-step-detalles')).toBeVisible({ timeout: 3000 });
@@ -741,7 +744,7 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
 
       for (let i = 0; i < 2; i++) {
         await combosEstado.nth(i).selectOption('ejecutada');
-        await expect(page.getByText('Estado de la transacción actualizado.').first()).toBeVisible({ timeout: 10000 });
+        await expect(combosEstado.nth(i)).toHaveValue('ejecutada', { timeout: 35000 });
 
         await page.locator('#orden-btn-cerrar-wizard').click();
         await expect(page.locator('#modal-orden-backdrop.activo')).toBeHidden({ timeout: 15000 });

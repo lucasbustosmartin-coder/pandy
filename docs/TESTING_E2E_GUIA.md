@@ -47,6 +47,7 @@ El archivo `.env.test` ya está en `.gitignore`; no se sube al repositorio.
 Los tests abren la URL que configuraste (por ejemplo `http://localhost:5173`). Esa app debe estar corriendo y usando **el mismo proyecto de Supabase** que tu `config.js` (misma URL y anon key).
 
 - Para probar en local: en una terminal dejá corriendo `npm run dev` y en otra ejecutá los tests.
+- Si Vite dice "Port 5173 is in use, trying another one..." y arranca en otro puerto (ej. 5174), poné en `.env.test`: `TEST_BASE_URL=http://localhost:5174` (o el puerto que muestre Vite). Si no, los tests intentan abrir 5173 y fallan con `net::ERR_CONNECTION_REFUSED`.
 - Si más adelante tenés una URL de staging, podés poner esa en `TEST_BASE_URL` y no hace falta levantar nada en tu máquina.
 
 ---

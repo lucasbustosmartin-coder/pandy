@@ -190,6 +190,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Caja: movimiento por comisión Pandy (sin transacción Ganancia)', 'En sincronizarCcYCajaDesdeOrden, cuando hay comisión Pandy (mr > me, misma moneda), no hay transacción Ganancia y el ingreso cliente→Pandy está ejecutado, se agrega un movimiento de caja: ingreso efectivo por el monto de la comisión (transaccion_id null). Al re-sincronizar se borran movimientos de caja de la orden con transaccion_id null para no duplicar. Así la caja cierra en cero en operaciones de cobro de cheques.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Tipos de operación: Intermediario Sí/No', 'Columna usa_intermediario en tipos_operacion (migración sql). ABM Tipos de operación: columna Intermediario (Sí/No) y checkbox Usa intermediario en modal. Modal de orden: si el tipo no usa intermediario se oculta el selector de intermediario y no se menciona; al guardar se fuerza intermediario_id = null. Tasa descuento intermediario y split comisión solo visibles cuando el tipo usa intermediario.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Número de orden MAX+1 atómico en DB', 'Función ordenes_insertar_con_proximo_numero en Supabase: asigna numero = MAX(numero)+1 bajo pg_advisory_xact_lock para evitar huecos y colisiones. La app llama a la RPC al crear orden nueva (wizard, saveOrden, chat); fallback a INSERT sin numero si la columna no existe. sql/ordenes_insertar_con_proximo_numero.sql.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'v1.33 Despliegue', 'CC ARS-ARS con intermediario: momento cero cliente (Compromiso -mr/-me, Compromiso Saldado +me); sin fila Comisión Pandy en sync para que saldo cierre en 0. Mensajes de error login E2E; guía TEST_BASE_URL cuando Vite usa otro puerto.', 'Despliegue'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -302,6 +303,7 @@ const versiones = [
   ['1.30', '__HOY__', 'Número de orden atómico: función ordenes_insertar_con_proximo_numero en DB (MAX+1 con lock). La app llama a la RPC al crear orden nueva; sin huecos ni colisiones por concurrencia. sql/ordenes_insertar_con_proximo_numero.sql.'],
   ['1.31', '__HOY__', 'Reajuste tests E2E (timeouts CC) y signos CC regla simple (Pandy debe = negativo). Refresh automático no se ejecuta si hay sección expandida (detalle transacciones en Órdenes o menú/rol en Seguridad) para no colapsar.'],
   ['1.32', '__HOY__', 'Switch Activo en tablas Clientes e Intermediarios; modales Cliente/Intermediario con toggle; centrado de botón y título en todas las pantallas con switch. Script truncar: orden correcto y orden_comisiones_generadas opcional. Tests E2E: intermediario solo si visible (tipos sin intermediario).'],
+  ['1.33', '__HOY__', 'CC ARS-ARS con intermediario: momento cero cliente (-mr/-me, Compromiso Saldado +me); sin fila Comisión Pandy en sync para que saldo cierre en 0. Mensajes de error login E2E; guía testing con TEST_BASE_URL cuando Vite usa otro puerto.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
