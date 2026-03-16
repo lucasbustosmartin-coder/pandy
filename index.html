@@ -505,7 +505,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.35</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.36</div>
   </aside>
 
   <main class="main-content">
@@ -814,7 +814,6 @@
             <div class="toggle-moneda" id="cc-filtro-tipo" role="group">
               <button type="button" class="activo" data-tipo="cliente">Cliente</button>
               <button type="button" data-tipo="intermediario">Intermediario</button>
-              <button type="button" data-tipo="todos">Todos</button>
             </div>
           </label>
           <span id="cc-detalle-rango-wrap" style="display:none; align-items:center; gap:0.5rem; flex-wrap:wrap;">
@@ -851,14 +850,15 @@
             <thead>
               <tr>
                 <th class="th-nombre th-sortable" data-sort="fecha" scope="col">Fecha</th>
-                <th class="th-sub th-sortable" data-sort="nroOrden" scope="col">Nro Orden</th>
-                <th class="th-sub th-sortable" data-sort="nroTrans" scope="col">Nro Trans.</th>
+                <th class="th-sub th-sortable" data-sort="nroOrden" scope="col">Orden</th>
+                <th class="th-sub th-sortable" data-sort="nroTrans" scope="col">Trans.</th>
                 <th class="th-nombre cc-detalle-concepto-th th-sortable" data-sort="concepto" scope="col">Concepto</th>
                 <th class="th-moneda th-sortable" data-sort="usd" scope="col">USD</th>
                 <th class="th-moneda th-sortable" data-sort="ars" scope="col">ARS</th>
                 <th class="th-moneda th-sortable" data-sort="eur" scope="col">EUR</th>
                 <th class="th-sub th-sortable" data-sort="estado" scope="col">Estado</th>
-                <th class="th-nombre th-sortable" id="cc-detalle-th-nombre" data-sort="nombre" scope="col" style="display:none;">Nombre</th>
+                <th class="th-nombre th-sortable" id="cc-detalle-th-entity" data-sort="nombre" scope="col">Cliente</th>
+                <th class="th-nombre th-sortable" id="cc-detalle-th-originante" data-sort="originante" scope="col">Originante</th>
               </tr>
             </thead>
             <tbody id="cc-vista-detalle-tbody"></tbody>

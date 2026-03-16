@@ -33,6 +33,7 @@ alwaysApply: true
 ## Modales
 
 - **Tamaño:** Los modales deben usar el máximo ancho y alto posible (p. ej. `max-width: min(95vw, 1280px)`, `width: 95%`, `max-height: 92vh`). En móvil se puede ajustar a `98%` / `98vw`.
+- **Modales de confirmación:** Los modales de confirmación (sí/no, p. ej. `showConfirm`, `#modal-confirm-backdrop`) deben **ajustar su tamaño al contenido**: no ocupar ancho fijo; usar `width: max-content` (o equivalente) con `max-width` para no superar el viewport. Así el cuadro de confirmación queda compacto según el mensaje y los botones.
 - **Movibles:** Todos los modales son arrastrables por el header (excepto el botón Cerrar). La lógica está en `setupModalesDraggable()`; al cerrar el modal se resetea la posición para que la próxima apertura quede centrada. Al agregar modales nuevos, usar la misma estructura (`.modal-backdrop` > `.modal` > `.modal-header` + `.modal-body`) para que arrastre y cierre sigan funcionando.
 
 ## Responsive / móvil
@@ -42,6 +43,12 @@ alwaysApply: true
 ## No fallar en terminal local
 
 - **El proyecto no debe fallar en terminal local.** Tras cambios relevantes en el frontend (p. ej. en `main.js` o en la app), comprobar que no haya errores de sintaxis o de build: ejecutar `node --check main.js` y/o `npx vite build` (o `npm run dev`) desde la raíz y asegurarse de que terminan sin error. Si falla, corregir antes de dar por cerrada la tarea.
+
+## Bitácora, RPC y tests (regla que no puede omitirse)
+
+- **Bitácora:** Al completar una tarea, actualizar la bitácora (Log y solapas que correspondan) y regenerar el Excel. Detalle en la regla **bitacora-tareas**. No saltear salvo que el usuario lo pida explícitamente.
+- **RPC / Supabase:** Si el cambio afecta lógica que corre en el backend (funciones en `sql/`, p. ej. `sync_cc_caja_orden`, `transacciones_cambiar_estado`), **hay que revisar si las RPC deben adaptarse** y actualizar los scripts en `sql/` cuando corresponda. No puede omitirse este paso.
+- **Tests:** Si el cambio afecta flujos o UI cubiertos por tests (E2E en `tests/e2e/`, o tests unitarios), **hay que adaptar o ampliar los tests** en la misma sesión para que sigan pasando y reflejen el nuevo comportamiento. No omitir: revisar selectores, textos, columnas o pasos que hayan cambiado. Guía: `docs/TESTING_E2E_GUIA.md`.
 
 ## Despliegue
 

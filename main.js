@@ -1,3 +1,6 @@
+import { formatMonto, formatImporteDisplay, formatImporteParaInput, formatearCeldaMoneda } from './utils.js';
+import * as XLSX from 'xlsx';
+
 const SUPABASE_URL = (typeof window.SUPABASE_URL !== 'undefined' && window.SUPABASE_URL) ? window.SUPABASE_URL : '';
 const SUPABASE_ANON_KEY = (typeof window.SUPABASE_ANON_KEY !== 'undefined' && window.SUPABASE_ANON_KEY) ? window.SUPABASE_ANON_KEY : '';
 
@@ -462,11 +465,6 @@ function loadSeguridad() {
 let cajasMonedaActual = 'TODO';
 let tiposMovimientoCaja = [];
 
-function formatMonto(n, moneda) {
-  if (n == null || isNaN(n)) return '–';
-  return formatImporteDisplay(n);
-}
-
 /** Concepto para movimientos de cuenta corriente: "Cobro por USD 5.000,00" (Pandy cobró), "Deuda por ARS 4.170.000,00" (Pandy debe), "Pago por comisión USD 60,00". */
 function conceptoCcMovimiento(moneda, monto, tipo) {
   const m = Number(monto) || 0;
@@ -483,6 +481,18 @@ function conceptoConOrden(leyenda, ordenLabel) {
   if (!leyenda) return (ordenLabel || '').replace('nro orden ', 'Orden Nro ');
   const sufijo = ordenLabel ? ' - ' + (ordenLabel + '').replace('nro orden ', 'Orden Nro ') : '';
   return leyenda + sufijo;
+}
+
+/** Leyendas unificadas para movimientos CC: "Pago Realizado - Orden x y Trans x", "Cobro Realizado - Orden x y Trans x", "Compromiso de Pago - Orden x y Trans x", "Compromiso a Cobrar - Orden x y Trans x". El Originante del movimiento es siempre el Pagador de la transacción. */
+function conceptoCcLeyenda(tipo, ordenNumero, transNumero) {
+  const ord = ordenNumero != null && ordenNumero !== '' ? String(ordenNumero) : '?';
+  const tr = transNumero != null && transNumero !== '' ? String(transNumero) : '?';
+  const suf = ' - Orden ' + ord + ' y Trans ' + tr;
+  if (tipo === 'cobro_realizado') return 'Cobro Realizado' + suf;
+  if (tipo === 'pago_realizado') return 'Pago Realizado' + suf;
+  if (tipo === 'compromiso_pago') return 'Compromiso de Pago' + suf;
+  if (tipo === 'compromiso_cobrar') return 'Compromiso a Cobrar' + suf;
+  return 'Movimiento' + suf;
 }
 
 /**
@@ -1157,8 +1167,24 @@ let ccDetalleTipo = null;
 let ccDetalleId = null;
 let ccDetalleMovimientosList = [];
 let ccDetalleOrdenesList = [];
-let ccResumenRowsConSaldo = [];
+/** Todas las filas de resumen CC (todas las entidades con sus saldos). */
+let ccResumenRowsTodos = [];
+/** Lista plana de todos los movimientos CC con tipo y nombre (cliente/intermediario) para la vista "Detalle de movimientos". */
+let ccMovimientosDetalleList = [];
 let ccFiltroTipo = 'cliente';
+/** 'resumen' | 'detalle': vista actual en Cuenta corriente. */
+let ccVistaToggle = 'resumen';
+/** Filtro de fechas para vista Detalle de movimientos (desde/hasta). Valores '' = no filtrar por ese lado. */
+let ccDetalleDesde = '';
+let ccDetalleHasta = '';
+/** Filas actuales de la vista Detalle (para ordenar sin volver a filtrar). */
+let ccDetalleVistaRowsActual = [];
+/** Ordenación vista Detalle: clave (fecha, nroOrden, ...) y dirección 1 | -1. */
+let ccDetalleSortCol = null;
+let ccDetalleSortDir = 1;
+/** Ordenación modal Detalle. */
+let ccDetalleModalSortCol = null;
+let ccDetalleModalSortDir = 1;
 
 // Conceptos de movimientos CC (legibles para el usuario). Incluimos textos legacy en listas para borrar/consultar datos ya guardados.
 const CONCEPTO_CC_CONVERSION = 'Conversión de moneda';
@@ -1215,8 +1241,8 @@ function loadCuentaCorriente() {
     Promise.all([
       client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
       client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
-      client.from('movimientos_cuenta_corriente').select('cliente_id, orden_id, transaccion_id, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado'),
-      client.from('movimientos_cuenta_corriente_intermediario').select('intermediario_id, orden_id, transaccion_id, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado'),
+      client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado'),
+      client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado'),
     ])
   ).then(([rClientes, rInt, rMovCli, rMovInt]) => {
     const clientes = rClientes.data || [];
@@ -1226,30 +1252,36 @@ function loadCuentaCorriente() {
     const transaccionIds = [...new Set([...(movCliRaw.map((m) => m.transaccion_id)), ...(movIntRaw.map((m) => m.transaccion_id))].filter(Boolean))];
     const ordenIds = [...new Set([...(movCliRaw.map((m) => m.orden_id)), ...(movIntRaw.map((m) => m.orden_id))].filter(Boolean))];
     return Promise.all([
-      transaccionIds.length > 0 ? client.from('transacciones').select('id, estado').in('id', transaccionIds) : Promise.resolve({ data: [] }),
+      transaccionIds.length > 0 ? client.from('transacciones').select('id, estado, pagador').in('id', transaccionIds) : Promise.resolve({ data: [] }),
       ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
-    ]).then(([rTr, rInst]) => {
+      ordenIds.length > 0 ? client.from('ordenes').select('id, numero, cliente_id, intermediario_id').in('id', ordenIds) : Promise.resolve({ data: [] }),
+    ]).then(([rTr, rInst, rOrdenes]) => {
       const trById = {};
-      (rTr.data || []).forEach((t) => { trById[t.id] = t.estado; });
+      const trPagadorById = {};
+      (rTr.data || []).forEach((t) => { trById[t.id] = t.estado; trPagadorById[t.id] = (t.pagador || '').toLowerCase(); });
       const instByOrden = {};
       (rInst.data || []).forEach((i) => { instByOrden[i.orden_id] = i.id; });
+      const ordenNumeroById = Object.fromEntries((rOrdenes.data || []).map((o) => [o.id, o.numero]));
+      const ordenById = Object.fromEntries((rOrdenes.data || []).map((o) => [o.id, o]));
       const instIds = (rInst.data || []).map((i) => i.id).filter(Boolean);
       const promTrInst = instIds.length > 0
         ? client.from('transacciones').select('id, instrumentacion_id, estado').in('instrumentacion_id', instIds)
         : Promise.resolve({ data: [] });
-      return promTrInst.then((rTrInst) => ({ rTrInst, trById, instByOrden }));
-    }).then(({ rTrInst, trById, instByOrden }) => {
+      return promTrInst.then((rTrInst) => ({ rTrInst, trById, instByOrden, ordenNumeroById, trPagadorById, ordenById }));
+    }).then(({ rTrInst, trById, instByOrden, ordenNumeroById, trPagadorById, ordenById }) => {
       const orderHasEjecutada = {};
       (rTrInst.data || []).forEach((t) => {
         const ordenId = Object.keys(instByOrden || {}).find((oid) => instByOrden[oid] === t.instrumentacion_id);
         if (ordenId && t.estado === 'ejecutada') orderHasEjecutada[ordenId] = true;
       });
-      return { trById, orderHasEjecutada };
-    }).then(({ trById, orderHasEjecutada }) => {
-      // Regla simple ARS-ARS: obligaciones (Compromiso) siempre cuentan; solo "Compromiso Saldado" depende de la transacción ejecutada. Así al reversar el ingreso la comisión implícita se revierte en el cálculo (se sigue mostrando cliente debe mr, no "transacción - comisión").
+      return { trById, orderHasEjecutada, ordenNumeroById, trPagadorById, ordenById };
+    }).then(({ trById, orderHasEjecutada, ordenNumeroById, trPagadorById, ordenById }) => {
+      // Incluir en saldo: compromisos (Compromiso de Pago / Compromiso a Cobrar o legacy "Compromiso") y realizados (Cobro/Pago Realizado o legacy "Compromiso Saldado").
       function incluirEnSaldo(m, trEstados, ordEjecutada) {
         if (m.estado === 'anulado') return false;
         const concepto = (m.concepto || '').toString();
+        if (concepto.includes('Cobro Realizado') || concepto.includes('Pago Realizado')) return true;
+        if (concepto.includes('Compromiso de Pago') || concepto.includes('Compromiso a Cobrar')) return true;
         if (concepto.includes('Compromiso Saldado')) return true;
         if (concepto.includes('Compromiso') && !concepto.includes('Compromiso Saldado')) return true;
         return true;
@@ -1257,7 +1289,7 @@ function loadCuentaCorriente() {
       const movCli = movCliRaw.filter((m) => incluirEnSaldo(m, trById, orderHasEjecutada));
       const movInt = movIntRaw.filter((m) => incluirEnSaldo(m, trById, orderHasEjecutada));
       return delayMinLoading(loadingShownAtCc).then(() => {
-        buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl, contenido, tbody);
+        buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById || {}, ordenById || {});
       });
     });
   }).catch((err) => {
@@ -1266,8 +1298,26 @@ function loadCuentaCorriente() {
   });
 }
 
-function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl, contenido, tbody) {
+function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById, ordenById) {
   if (loadingEl) loadingEl.style.display = 'none';
+  ordenNumeroById = ordenNumeroById || {};
+  trPagadorById = trPagadorById || {};
+  ordenById = ordenById || {};
+  function nombreOriginante(mov, tipo, clientesById, intermediariosById) {
+    const pagador = trPagadorById[mov.transaccion_id];
+    const orden = ordenById[mov.orden_id];
+    if (!pagador) return '–';
+    if (pagador === 'pandy') return 'Pandy';
+    if (pagador === 'cliente') {
+      const clienteId = tipo === 'cliente' ? mov.cliente_id : (orden && orden.cliente_id);
+      return (clientesById[clienteId] && clientesById[clienteId].nombre) || '–';
+    }
+    if (pagador === 'intermediario') {
+      const intId = orden && orden.intermediario_id;
+      return (intermediariosById[intId] && intermediariosById[intId].nombre) || '–';
+    }
+    return '–';
+  }
   function parseOrdenNumero(concepto) {
     const txt = (concepto || '').toString();
     let m = txt.match(/(?:ORDEN|NRO ORDEN)\s*(\d+)/i);
@@ -1357,16 +1407,71 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     const saldos = saldosDesdeMovimientosPorOrden(movsIntById[id] || []);
     rows.push({ tipo: 'intermediario', id, nombre: (i && i.nombre) || '–', saldos });
   });
-  const conSaldo = (r) => (Number(r.saldos.USD) || 0) !== 0 || (Number(r.saldos.EUR) || 0) !== 0 || (Number(r.saldos.ARS) || 0) !== 0;
-  ccResumenRowsConSaldo = rows.filter(conSaldo);
-  ccResumenRowsConSaldo.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  ccResumenRowsTodos = [...rows].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
+  const detalleList = [];
+  (movCli || []).forEach((m) => {
+    detalleList.push({
+      ...m,
+      tipo: 'cliente',
+      nombre: (clientesById[m.cliente_id] && clientesById[m.cliente_id].nombre) || '–',
+      originante: nombreOriginante(m, 'cliente', clientesById, intermediariosById),
+      orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : (m.orden_numero != null ? m.orden_numero : null),
+    });
+  });
+  (movInt || []).forEach((m) => {
+    detalleList.push({
+      ...m,
+      tipo: 'intermediario',
+      nombre: (intermediariosById[m.intermediario_id] && intermediariosById[m.intermediario_id].nombre) || '–',
+      originante: nombreOriginante(m, 'intermediario', clientesById, intermediariosById),
+      orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : (m.orden_numero != null ? m.orden_numero : null),
+    });
+  });
+  ccMovimientosDetalleList = detalleList.sort((a, b) => {
+    const fa = (a.fecha || '').toString();
+    const fb = (b.fecha || '').toString();
+    if (fb !== fa) return fb.localeCompare(fa);
+    return (b.id || 0) - (a.id || 0);
+  });
 
   aplicarFiltroCcResumen();
-  contenido.style.display = 'block';
+  const contenidoEl = document.getElementById('cc-contenido');
+  const detalleWrap = document.getElementById('cc-detalle-wrap');
+  if (contenidoEl) contenidoEl.style.display = ccVistaToggle === 'resumen' ? 'block' : 'none';
+  if (detalleWrap) detalleWrap.style.display = ccVistaToggle === 'detalle' ? 'block' : 'none';
 }
 
 function aplicarFiltroCcResumen() {
-  const filtrados = ccResumenRowsConSaldo.filter((r) => r.tipo === ccFiltroTipo);
+  const contenidoEl = document.getElementById('cc-contenido');
+  const detalleWrap = document.getElementById('cc-detalle-wrap');
+
+  if (ccVistaToggle === 'detalle') {
+    if (contenidoEl) contenidoEl.style.display = 'none';
+    if (detalleWrap) detalleWrap.style.display = 'block';
+    const rangoWrap = document.getElementById('cc-detalle-rango-wrap');
+    if (rangoWrap) rangoWrap.style.display = 'inline-flex';
+    let filtrados = ccMovimientosDetalleList.filter((m) => m.tipo === ccFiltroTipo);
+    if (filtrados.length > 0 && (ccDetalleDesde || ccDetalleHasta)) {
+      filtrados = filtrados.filter((m) => {
+        const f = (m.fecha || '').toString().slice(0, 10);
+        if (ccDetalleDesde && f < ccDetalleDesde) return false;
+        if (ccDetalleHasta && f > ccDetalleHasta) return false;
+        return true;
+      });
+    }
+    actualizarRangoDetalleDefaults(filtrados);
+    renderCcVistaDetalle(filtrados);
+    return;
+  }
+  const rangoWrap = document.getElementById('cc-detalle-rango-wrap');
+  if (rangoWrap) rangoWrap.style.display = 'none';
+  if (contenidoEl) contenidoEl.style.display = 'block';
+  if (detalleWrap) detalleWrap.style.display = 'none';
+  const EPSILON_SALDO = 1e-6;
+  const conSaldo = (r) => Math.abs(Number(r.saldos.USD) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.EUR) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.ARS) || 0) >= EPSILON_SALDO;
+  const conSaldoList = ccResumenRowsTodos.filter(conSaldo);
+  const filtrados = conSaldoList.filter((r) => r.tipo === ccFiltroTipo);
   renderCcResumenTable(filtrados);
 }
 
@@ -1385,14 +1490,16 @@ function renderCcResumenTable(rows) {
         cels.push(`<span class="${cls}">${val}</span>`);
       });
       cels.push(
-        `<button type="button" class="btn-ver-detalle" data-tipo="${escapeHtml(row.tipo)}" data-id="${escapeHtml(row.id)}" data-nombre="${escapeHtml(row.nombre || '')}" title="Ver detalle" aria-label="Ver detalle cuenta corriente"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="2.5" fill="none"/></svg></span></button>`
+        `<button type="button" class="btn-ver-detalle" data-tipo="${escapeHtml(row.tipo)}" data-id="${escapeHtml(row.id)}" data-nombre="${escapeHtml(row.nombre || '')}" title="Ver detalle de movimientos" aria-label="Ver detalle de movimientos"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="2.5" fill="none"/></svg></span></button>`
       );
       return `<tr><td>${cels.join('</td><td>')}</td></tr>`;
     })
     .join('');
 
-  if (rows.length === 0) tbody.innerHTML = '<tr><td colspan="5">No hay ' + (ccFiltroTipo === 'cliente' ? 'clientes' : 'intermediarios') + ' con saldo distinto de cero.</td></tr>';
-  else {
+  if (rows.length === 0) {
+    const tipoLabel = ccFiltroTipo === 'cliente' ? 'clientes' : 'intermediarios';
+    tbody.innerHTML = '<tr><td colspan="5">No hay ' + tipoLabel + ' con saldo distinto de cero.</td></tr>';
+  } else {
     tbody.querySelectorAll('.btn-ver-detalle').forEach((btn) => {
       btn.addEventListener('click', () => {
         const tipo = btn.getAttribute('data-tipo');
@@ -1402,6 +1509,222 @@ function renderCcResumenTable(rows) {
       });
     });
   }
+}
+
+/** Inicializa o sincroniza Desde/Hasta de la vista Detalle con min/max de los datos cuando aún no hay rango elegido. */
+function actualizarRangoDetalleDefaults(filtrados) {
+  const desdeEl = document.getElementById('cc-detalle-desde');
+  const hastaEl = document.getElementById('cc-detalle-hasta');
+  if (!desdeEl || !hastaEl) return;
+  if (filtrados.length === 0) {
+    desdeEl.value = '';
+    hastaEl.value = '';
+    return;
+  }
+  if (ccDetalleDesde === '' && ccDetalleHasta === '') {
+    const fechas = filtrados.map((m) => (m.fecha || '').toString().slice(0, 10)).filter(Boolean);
+    const minF = fechas.length ? fechas.reduce((a, b) => (a < b ? a : b)) : '';
+    const maxF = fechas.length ? fechas.reduce((a, b) => (a > b ? a : b)) : '';
+    ccDetalleDesde = minF;
+    ccDetalleHasta = maxF;
+    desdeEl.value = minF;
+    hastaEl.value = maxF;
+  } else {
+    desdeEl.value = ccDetalleDesde || '';
+    hastaEl.value = ccDetalleHasta || '';
+  }
+}
+
+/** Comparador para ordenar filas de detalle CC por columna (fecha, nroOrden, nroTrans, concepto, usd, ars, eur, estado, nombre). */
+function compareCcDetalleRow(a, b, col, dir) {
+  let va, vb;
+  switch (col) {
+    case 'fecha':
+      va = (a.fecha || '').toString().slice(0, 10);
+      vb = (b.fecha || '').toString().slice(0, 10);
+      return dir * (va < vb ? -1 : va > vb ? 1 : 0);
+    case 'nroOrden':
+      va = a.orden_numero != null ? Number(a.orden_numero) : -Infinity;
+      vb = b.orden_numero != null ? Number(b.orden_numero) : -Infinity;
+      return dir * (va - vb);
+    case 'nroTrans':
+      va = a.transaccion_numero != null ? Number(a.transaccion_numero) : -Infinity;
+      vb = b.transaccion_numero != null ? Number(b.transaccion_numero) : -Infinity;
+      return dir * (va - vb);
+    case 'concepto':
+      va = (a.concepto || '').toString();
+      vb = (b.concepto || '').toString();
+      return dir * (va.localeCompare(vb));
+    case 'usd': case 'ars': case 'eur': {
+      const key = col === 'usd' ? 'monto_usd' : (col === 'ars' ? 'monto_ars' : 'monto_eur');
+      const mon = col === 'usd' ? 'USD' : (col === 'ars' ? 'ARS' : 'EUR');
+      const tieneA = a.monto_usd != null || a.monto_ars != null || a.monto_eur != null;
+      const tieneB = b.monto_usd != null || b.monto_ars != null || b.monto_eur != null;
+      va = tieneA && a[key] != null ? Number(a[key]) : (a.moneda === mon ? Number(a.monto) || 0 : -Infinity);
+      vb = tieneB && b[key] != null ? Number(b[key]) : (b.moneda === mon ? Number(b.monto) || 0 : -Infinity);
+      return dir * (va - vb);
+    }
+    case 'estado':
+      va = (a.estado || '').toString();
+      vb = (b.estado || '').toString();
+      return dir * (va.localeCompare(vb));
+    case 'nombre':
+      va = (a.nombre || '').toString();
+      vb = (b.nombre || '').toString();
+      return dir * (va.localeCompare(vb));
+    case 'originante':
+      va = (a.originante || '').toString();
+      vb = (b.originante || '').toString();
+      return dir * (va.localeCompare(vb));
+    default:
+      return 0;
+  }
+}
+
+/** Renderiza la tabla de la vista "Detalle de movimientos". Columnas: Fecha, Orden, Trans., Concepto, USD, ARS, EUR, Estado, Cliente/Intermediario (entidad), Originante (pagador de la transacción). */
+function renderCcVistaDetalle(filtrados) {
+  const tbody = document.getElementById('cc-vista-detalle-tbody');
+  const thEntity = document.getElementById('cc-detalle-th-entity');
+  const thOriginante = document.getElementById('cc-detalle-th-originante');
+  if (!tbody) return;
+  const entityLabel = ccFiltroTipo === 'cliente' ? 'Cliente' : 'Intermediario';
+  if (thEntity) thEntity.textContent = entityLabel;
+  if (thOriginante) thOriginante.textContent = 'Originante';
+  ccDetalleVistaRowsActual = filtrados;
+
+  tbody.innerHTML = filtrados
+    .map((m) => {
+      const tienePorMoneda = m.monto_usd != null || m.monto_ars != null || m.monto_eur != null;
+      let celdaUsd = '–', celdaArs = '–', celdaEur = '–';
+      if (tienePorMoneda) {
+        celdaUsd = formatearCeldaMoneda(m.monto_usd, 'USD');
+        celdaArs = formatearCeldaMoneda(m.monto_ars, 'ARS');
+        celdaEur = formatearCeldaMoneda(m.monto_eur, 'EUR');
+      } else {
+        const mon = m.moneda || 'USD';
+        const n = Number(m.monto) || 0;
+        const cls = n >= 0 ? 'valor-positivo' : 'valor-negativo';
+        const str = formatMonto(n >= 0 ? n : -n, mon);
+        if (mon === 'USD') celdaUsd = `<span class="${cls}">${str}</span>`;
+        else if (mon === 'ARS') celdaArs = `<span class="${cls}">${str}</span>`;
+        else celdaEur = `<span class="${cls}">${str}</span>`;
+      }
+      const estadoLabel = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
+      const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
+      const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
+      return `<tr>
+          <td>${(m.fecha || '').toString().slice(0, 10)}</td>
+          <td>${escapeHtml(nroOrden)}</td>
+          <td>${escapeHtml(nroTrans)}</td>
+          <td class="td-concepto">${escapeHtml(m.concepto || '–')}</td>
+          <td>${celdaUsd}</td>
+          <td>${celdaArs}</td>
+          <td>${celdaEur}</td>
+          <td>${escapeHtml(estadoLabel)}</td>
+          <td>${escapeHtml(m.nombre || '–')}</td>
+          <td>${escapeHtml(m.originante || '–')}</td>
+        </tr>`;
+    })
+    .join('');
+
+  if (filtrados.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10">No hay movimientos para el filtro seleccionado.</td></tr>';
+  } else {
+    setupCcDetalleVistaSortHeaders();
+  }
+}
+
+function setupCcDetalleVistaSortHeaders() {
+  const table = document.getElementById('tabla-cc-detalle');
+  if (!table || !table.closest('#cc-detalle-wrap')) return;
+  const thead = table.querySelector('thead tr');
+  if (!thead) return;
+  thead.querySelectorAll('th[data-sort]').forEach((th) => {
+    const col = th.getAttribute('data-sort');
+    const indicator = th.querySelector('.sort-indicator') || (() => { const s = document.createElement('span'); s.className = 'sort-indicator'; th.appendChild(s); return s; })();
+    indicator.textContent = ccDetalleSortCol === col ? (ccDetalleSortDir === 1 ? ' ▲' : ' ▼') : '';
+    th.onclick = () => {
+      if (ccDetalleVistaRowsActual.length === 0) return;
+      if (ccDetalleSortCol === col) ccDetalleSortDir *= -1;
+      else { ccDetalleSortCol = col; ccDetalleSortDir = 1; }
+      const sorted = [...ccDetalleVistaRowsActual].sort((a, b) => compareCcDetalleRow(a, b, col, ccDetalleSortDir));
+      ccDetalleVistaRowsActual = sorted;
+      renderCcVistaDetalle(sorted);
+    };
+  });
+}
+
+/** Exporta la tabla actual de cuenta corriente (resumen o detalle según vista, filtro tipo e incluir cero). */
+function exportarCcResumenExcel() {
+  if (ccVistaToggle === 'detalle') {
+    let filtrados = ccMovimientosDetalleList.filter((m) => m.tipo === ccFiltroTipo);
+    if (ccDetalleDesde || ccDetalleHasta) {
+      filtrados = filtrados.filter((m) => {
+        const f = (m.fecha || '').toString().slice(0, 10);
+        if (ccDetalleDesde && f < ccDetalleDesde) return false;
+        if (ccDetalleHasta && f > ccDetalleHasta) return false;
+        return true;
+      });
+    }
+    if (filtrados.length === 0) {
+      showToast('No hay movimientos para exportar.', 'info');
+      return;
+    }
+    const entityHeader = ccFiltroTipo === 'cliente' ? 'Cliente' : 'Intermediario';
+    const header = ['Fecha', 'Orden', 'Trans.', 'Concepto', 'USD', 'ARS', 'EUR', 'Estado', entityHeader, 'Originante'];
+    const rows = filtrados.map((m) => {
+      const tienePorMoneda = m.monto_usd != null || m.monto_ars != null || m.monto_eur != null;
+      let usd = null, ars = null, eur = null;
+      if (tienePorMoneda) {
+        usd = m.monto_usd != null ? Number(m.monto_usd) : null;
+        ars = m.monto_ars != null ? Number(m.monto_ars) : null;
+        eur = m.monto_eur != null ? Number(m.monto_eur) : null;
+      } else if (m.moneda && m.monto != null) {
+        const val = Number(m.monto);
+        if (m.moneda === 'USD') usd = val;
+        else if (m.moneda === 'ARS') ars = val;
+        else if (m.moneda === 'EUR') eur = val;
+      }
+      const estado = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
+      const nroOrden = m.orden_numero != null ? Number(m.orden_numero) : null;
+      const nroTrans = m.transaccion_numero != null ? Number(m.transaccion_numero) : null;
+      return [(m.fecha || '').toString().slice(0, 10), nroOrden, nroTrans, m.concepto || '', usd, ars, eur, estado, m.nombre || '', m.originante || ''];
+    });
+    const aoa = [header, ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'CC detalle movimientos');
+    const nombreArchivo = 'cc_detalle_movimientos_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    XLSX.writeFile(wb, nombreArchivo);
+    showToast('Exportado: ' + nombreArchivo, 'success');
+    return;
+  }
+  const EPSILON_SALDO = 1e-6;
+  const conSaldo = (r) => Math.abs(Number(r.saldos.USD) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.EUR) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.ARS) || 0) >= EPSILON_SALDO;
+  const conSaldoList = ccResumenRowsTodos.filter(conSaldo);
+  const filtrados = conSaldoList.filter((r) => r.tipo === ccFiltroTipo);
+  if (filtrados.length === 0) {
+    showToast('No hay filas para exportar.', 'info');
+    return;
+  }
+  const monedas = ['USD', 'EUR', 'ARS'];
+  const header = ['Nombre', 'Tipo', ...monedas];
+  const rows = filtrados.map((r) => {
+    const tipoLabel = r.tipo === 'cliente' ? 'Cliente' : 'Intermediario';
+    const cels = [r.nombre || '', tipoLabel];
+    monedas.forEach((mon) => {
+      const s = Number(r.saldos[mon]) || 0;
+      cels.push(s);
+    });
+    return cels;
+  });
+  const aoa = [header, ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cuenta corriente');
+  const nombreArchivo = 'cuenta_corriente_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  XLSX.writeFile(wb, nombreArchivo);
+  showToast('Exportado: ' + nombreArchivo, 'success');
 }
 
 /** Compromiso por moneda desde órdenes (solo no anuladas y no ejecutadas): +monto_recibido en moneda_recibida, -monto_entregado en moneda_entregada. Las ejecutadas ya están realizadas en movimientos (incl. comisión/ganancia). */
@@ -1426,8 +1749,8 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
   const tablaMov = tipo === 'cliente' ? 'movimientos_cuenta_corriente' : 'movimientos_cuenta_corriente_intermediario';
   const filtroMov = tipo === 'cliente' ? { cliente_id: entityId } : { intermediario_id: entityId };
   const selectMov = tipo === 'cliente'
-    ? 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id'
-    : 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id';
+    ? 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero'
+    : 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero';
   return Promise.all([
     client.from(tablaMov).select(selectMov).match(filtroMov).order('fecha', { ascending: false }).order('created_at', { ascending: false }),
     client.from('ordenes').select(ordenesTieneNumeroColumn ? 'id, numero, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado' : 'id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').neq('estado', 'anulada').match({ [campoId]: entityId }),
@@ -1457,10 +1780,12 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
       });
       return { trById, orderHasEjecutada };
     }).then(({ trById, orderHasEjecutada }) => {
-      // Misma regla que resumen: Compromiso (obligación) siempre cuenta; Compromiso Saldado también (solo se inserta cuando la transacción está ejecutada).
+      // Misma regla que resumen: compromisos y realizados (nuevas leyendas o legacy).
       function incluirEnSaldo(m) {
         if (m.estado === 'anulado') return false;
         const concepto = (m.concepto || '').toString();
+        if (concepto.includes('Cobro Realizado') || concepto.includes('Pago Realizado')) return true;
+        if (concepto.includes('Compromiso de Pago') || concepto.includes('Compromiso a Cobrar')) return true;
         if (concepto.includes('Compromiso Saldado')) return true;
         if (concepto.includes('Compromiso') && !concepto.includes('Compromiso Saldado')) return true;
         return true;
@@ -1494,7 +1819,7 @@ function openModalCcDetalle(tipo, id, nombre) {
   ccDetalleTipo = tipo;
   ccDetalleId = id;
   const tipoLabel = tipo === 'intermediario' ? 'Intermediario' : 'Cliente';
-  tituloEl.textContent = 'Detalle cuenta corriente';
+  tituloEl.textContent = 'Detalle de movimientos – ' + (nombre || '');
   entityEl.innerHTML = '';
   const strong = document.createElement('strong');
   strong.textContent = tipoLabel + ': ' + (nombre || '–');
@@ -1505,7 +1830,8 @@ function openModalCcDetalle(tipo, id, nombre) {
   backdrop.classList.add('activo');
 
   fetchMovimientosCcPorEntidad(tipo, id).then(({ movimientos, saldos, ordenes }) => {
-    ccDetalleMovimientosList = movimientos;
+    const ordenNumeroById = Object.fromEntries((ordenes || []).map((o) => [o.id, o.numero]).filter(([, n]) => n != null));
+    ccDetalleMovimientosList = movimientos.map((m) => ({ ...m, orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : null }));
     ccDetalleOrdenesList = ordenes || [];
     loadingEl.style.display = 'none';
 
@@ -1561,24 +1887,16 @@ function closeModalCcDetalle() {
   ccDetalleId = null;
   ccDetalleMovimientosList = [];
   ccDetalleOrdenesList = [];
-}
-
-function formatearCeldaMoneda(val, moneda) {
-  if (val == null || Number(val) === 0) return '–';
-  const n = Number(val);
-  const cls = n >= 0 ? 'valor-positivo' : 'valor-negativo';
-  const mon = moneda || 'USD';
-  return `<span class="${cls}">${formatMonto(n >= 0 ? n : -n, mon)}</span>`;
+  ccDetalleModalSortCol = null;
+  ccDetalleModalSortDir = 1;
 }
 
 function renderCcDetalleTable() {
   const tbody = document.getElementById('cc-detalle-tbody');
   const tfoot = document.getElementById('cc-detalle-tfoot');
-  const canAbmCc = userPermissions.includes('editar_transacciones') && ccDetalleTipo === 'cliente';
   if (!tbody) return;
 
   const filtrados = ccDetalleMovimientosList;
-
   tbody.innerHTML = filtrados
     .map((m) => {
       const tienePorMoneda = m.monto_usd != null || m.monto_ars != null || m.monto_eur != null;
@@ -1597,30 +1915,43 @@ function renderCcDetalleTable() {
         else celdaEur = `<span class="${cls}">${str}</span>`;
       }
       const estadoLabel = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
-      const editarBtn = (canAbmCc && !m.synthetic) ? `<button type="button" class="btn-editar btn-editar-cc-detalle" data-id="${m.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : '';
+      const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
+      const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
       return `<tr>
           <td>${(m.fecha || '').toString().slice(0, 10)}</td>
-          <td>${escapeHtml(m.concepto || '–')}</td>
+          <td>${escapeHtml(nroOrden)}</td>
+          <td>${escapeHtml(nroTrans)}</td>
+          <td class="td-concepto">${escapeHtml(m.concepto || '–')}</td>
           <td>${celdaUsd}</td>
           <td>${celdaArs}</td>
           <td>${celdaEur}</td>
           <td>${escapeHtml(estadoLabel)}</td>
-          <td>${editarBtn}</td>
         </tr>`;
     })
     .join('');
 
   if (tfoot) tfoot.innerHTML = filtrados.length === 0 ? '' : '';
+  if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="8">No hay movimientos.</td></tr>';
+  else setupCcDetalleModalSortHeaders();
+}
 
-  if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="7">No hay movimientos.</td></tr>';
-  else if (canAbmCc) {
-    tbody.querySelectorAll('.btn-editar-cc-detalle').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const mov = ccDetalleMovimientosList.find((x) => x.id === btn.getAttribute('data-id'));
-        if (mov) openModalMovimientoCc(mov);
-      });
-    });
-  }
+function setupCcDetalleModalSortHeaders() {
+  const table = document.getElementById('tabla-cc-detalle-modal');
+  if (!table) return;
+  const thead = table.querySelector('thead tr');
+  if (!thead) return;
+  thead.querySelectorAll('th[data-sort]').forEach((th) => {
+    const col = th.getAttribute('data-sort');
+    const indicator = th.querySelector('.sort-indicator') || (() => { const s = document.createElement('span'); s.className = 'sort-indicator'; th.appendChild(s); return s; })();
+    indicator.textContent = ccDetalleModalSortCol === col ? (ccDetalleModalSortDir === 1 ? ' ▲' : ' ▼') : '';
+    th.onclick = () => {
+      if (ccDetalleMovimientosList.length === 0) return;
+      if (ccDetalleModalSortCol === col) ccDetalleModalSortDir *= -1;
+      else { ccDetalleModalSortCol = col; ccDetalleModalSortDir = 1; }
+      ccDetalleMovimientosList = [...ccDetalleMovimientosList].sort((a, b) => compareCcDetalleRow(a, b, col, ccDetalleModalSortDir));
+      renderCcDetalleTable();
+    };
+  });
 }
 
 /** Carga CC de un intermediario: misma regla que cliente — saldo desde movimientos (suma sin filtrar por estado; solo se excluye anulado). */
@@ -1859,6 +2190,19 @@ function setupCuentaCorriente() {
   if (btnCloseDetalle) btnCloseDetalle.addEventListener('click', closeModalCcDetalle);
   if (backdropDetalle) backdropDetalle.addEventListener('click', (e) => { if (e.target === backdropDetalle) closeModalCcDetalle(); });
 
+  const ccVistaToggleEl = document.getElementById('cc-vista-toggle');
+  if (ccVistaToggleEl) {
+    ccVistaToggleEl.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const vista = btn.getAttribute('data-vista');
+        if (!vista || vista === ccVistaToggle) return;
+        ccVistaToggle = vista;
+        ccVistaToggleEl.querySelectorAll('button').forEach((b) => b.classList.remove('activo'));
+        btn.classList.add('activo');
+        aplicarFiltroCcResumen();
+      });
+    });
+  }
   const ccFiltroTipoEl = document.getElementById('cc-filtro-tipo');
   if (ccFiltroTipoEl) {
     ccFiltroTipoEl.querySelectorAll('button').forEach((btn) => {
@@ -1880,6 +2224,20 @@ function setupCuentaCorriente() {
       showToast('Saldos recalculados (solo movimientos ejecutados).', 'info');
     });
   }
+
+  const ccBtnExportar = document.getElementById('cc-btn-exportar-excel');
+  if (ccBtnExportar) {
+    ccBtnExportar.addEventListener('click', () => exportarCcResumenExcel());
+  }
+  const ccDetalleDesdeEl = document.getElementById('cc-detalle-desde');
+  const ccDetalleHastaEl = document.getElementById('cc-detalle-hasta');
+  function aplicarRangoDetalle() {
+    ccDetalleDesde = (ccDetalleDesdeEl && ccDetalleDesdeEl.value) || '';
+    ccDetalleHasta = (ccDetalleHastaEl && ccDetalleHastaEl.value) || '';
+    aplicarFiltroCcResumen();
+  }
+  if (ccDetalleDesdeEl) ccDetalleDesdeEl.addEventListener('change', aplicarRangoDetalle);
+  if (ccDetalleHastaEl) ccDetalleHastaEl.addEventListener('change', aplicarRangoDetalle);
 
   document.querySelectorAll('.link-inicio').forEach((a) => {
     a.addEventListener('click', (e) => {
@@ -2212,21 +2570,6 @@ function parseImporteInput(str) {
   return isNaN(n) ? NaN : n;
 }
 
-function formatImporteDisplay(num) {
-  if (num == null || isNaN(num)) return '';
-  const parts = Number(num).toFixed(2).split('.');
-  const entera = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return parts[1] ? entera + ',' + parts[1] : entera;
-}
-
-/** Para inputs de importe: vacío si no hay valor, "0" si es cero (no "0,00"), sino formatImporteDisplay. */
-function formatImporteParaInput(num) {
-  if (num == null || num === '' || isNaN(Number(num))) return '';
-  const n = Number(num);
-  if (n === 0) return '0';
-  return formatImporteDisplay(n);
-}
-
 /** Guarda solo el monto de una transacción. Si está ejecutada, reajusta CC y caja (revierte Cancelación/caja anterior, actualiza resto pendiente si hay momento cero, inserta nueva Cancelación y caja). Llama onSuccess() tras guardar. */
 function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
   const newMonto = parseImporteInput(typeof valorInput === 'string' ? valorInput : (valorInput && valorInput.value));
@@ -2272,8 +2615,8 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
           const sumIngresosClienteEjecutados = sumIngresosOthers + (t.tipo === 'ingreso' && t.pagador === 'cliente' ? newMonto : 0);
           const sumEgresosClienteEjecutados = sumEgresosOthers + (t.tipo === 'egreso' && t.cobrador === 'cliente' ? newMonto : 0);
           const cancelacionIds = rows.filter((m) => m.transaccion_id === transaccionId && ((m.concepto || '').includes('Cancelación de deuda') || (m.concepto || '').includes('Contraparte cancelación'))).map((m) => m.id);
-          const rowDebe = rows.find((r) => (r.concepto || '').toUpperCase().includes('DEBE'));
-          const rowComp = rows.find((r) => (r.concepto || '').normalize('NFD').replace(/\u0301/g, '').toUpperCase().includes('COMPENSACION'));
+          const rowDebe = rows.find((r) => { const c = (r.concepto || '').toUpperCase(); return c.includes('DEBE') || c.includes('COMPROMISO DE PAGO'); });
+          const rowComp = rows.find((r) => { const c = (r.concepto || '').normalize('NFD').replace(/\u0301/g, '').toUpperCase(); return c.includes('COMPENSACION') || c.includes('COMPROMISO A COBRAR'); });
           const tieneMomentoCero = rowDebe && rowComp && (rowDebe.monto_usd != null || rowDebe.monto_ars != null || rowDebe.monto_eur != null);
           let prom = Promise.resolve();
           if (cancelacionIds.length > 0) prom = prom.then(() => Promise.all(cancelacionIds.map((id) => client.from('movimientos_cuenta_corriente').delete().eq('id', id))));
@@ -4920,7 +5263,6 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           const egresoTr = transacciones.find((t) => String(t.tipo || '').toLowerCase() === 'egreso' && String(t.cobrador || '').toLowerCase() === 'cliente' && String(t.pagador || '').toLowerCase() === 'pandy');
           const usarReglaSimpleCliente = clienteId && !intermediarioId && ingresoTr && egresoTr && transacciones.length === 2 && mr >= 1e-6 && me >= 1e-6;
           const usarMomentoCeroClienteConInt = clienteId && intermediarioId && ingresoTr && egresoTr && transacciones.length >= 4 && mr >= 1e-6 && me >= 1e-6 && monR === monE;
-          const ordenLabelSimple = 'Orden Nro ' + (orden.numero != null ? orden.numero : '?');
           if (usarReglaSimpleCliente) {
             // Solo compromisos cuando al menos una transacción está ejecutada. Si ambas pendientes, no se inserta nada → saldo 0.
             const algunaEjecutada = ingresoTr.estado === 'ejecutada' || egresoTr.estado === 'ejecutada';
@@ -4932,7 +5274,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 orden_id: ordenId,
                 transaccion_id: ingresoTr.id,
                 transaccion_numero: ingresoTr.numero != null ? ingresoTr.numero : null,
-                concepto: 'Compromiso - ' + ordenLabelSimple + ' y Trans Nro ' + (ingresoTr.numero != null ? ingresoTr.numero : '?'),
+                concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, ingresoTr.numero),
                 fecha,
                 usuario_id: currentUserId,
                 moneda: monR,
@@ -4946,7 +5288,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 orden_id: ordenId,
                 transaccion_id: egresoTr.id,
                 transaccion_numero: egresoTr.numero != null ? egresoTr.numero : null,
-                concepto: 'Compromiso - ' + ordenLabelSimple + ' y Trans Nro ' + (egresoTr.numero != null ? egresoTr.numero : '?'),
+                concepto: conceptoCcLeyenda('compromiso_cobrar', orden.numero, egresoTr.numero),
                 fecha,
                 usuario_id: currentUserId,
                 moneda: monE,
@@ -4965,7 +5307,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               orden_id: ordenId,
               transaccion_id: ingresoTr.id,
               transaccion_numero: ingresoTr.numero != null ? ingresoTr.numero : null,
-              concepto: 'Compromiso - ' + ordenLabelSimple + ' y Trans Nro ' + (ingresoTr.numero != null ? ingresoTr.numero : '?'),
+              concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, ingresoTr.numero),
               fecha,
               usuario_id: currentUserId,
               moneda: monR,
@@ -4979,7 +5321,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               orden_id: ordenId,
               transaccion_id: egresoTr.id,
               transaccion_numero: egresoTr.numero != null ? egresoTr.numero : null,
-              concepto: 'Compromiso - ' + ordenLabelSimple + ' y Trans Nro ' + (egresoTr.numero != null ? egresoTr.numero : '?'),
+              concepto: conceptoCcLeyenda('compromiso_cobrar', orden.numero, egresoTr.numero),
               fecha,
               usuario_id: currentUserId,
               moneda: monE,
@@ -5044,7 +5386,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 monto_eur: montosNeg.monto_eur,
               });
             } else {
-              // Regla simple: una fila "Compromiso Saldado" por moneda cuando la transacción está ejecutada.
+              // Regla simple: Cobro Realizado (ingreso) o Pago Realizado (egreso) cuando la transacción está ejecutada.
               if (usarReglaSimpleCliente && t.estado === 'ejecutada') {
                 if ((t.tipo || '').toLowerCase() === 'ingreso' && pag === 'cliente') {
                   rowsCcCliente.push({
@@ -5052,7 +5394,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                     orden_id: ordenId,
                     transaccion_id: transaccionId,
                     transaccion_numero: t.numero != null ? t.numero : null,
-                    concepto: 'Compromiso Saldado - ' + ordenLabelSimple + ' y Trans Nro ' + (t.numero != null ? t.numero : '?'),
+                    concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero),
                     fecha,
                     usuario_id: currentUserId,
                     moneda: monR,
@@ -5068,7 +5410,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                     orden_id: ordenId,
                     transaccion_id: transaccionId,
                     transaccion_numero: t.numero != null ? t.numero : null,
-                    concepto: 'Compromiso Saldado - ' + ordenLabelSimple + ' y Trans Nro ' + (t.numero != null ? t.numero : '?'),
+                    concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
                     fecha,
                     usuario_id: currentUserId,
                     moneda: monE,
@@ -5084,7 +5426,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   orden_id: ordenId,
                   transaccion_id: transaccionId,
                   transaccion_numero: t.numero != null ? t.numero : null,
-                  concepto: 'Compromiso Saldado - ' + ordenLabelSimple + ' y Trans Nro ' + (t.numero != null ? t.numero : '?'),
+                  concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
                   fecha,
                   usuario_id: currentUserId,
                   moneda: monE,
@@ -5099,7 +5441,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   const esIngresoClientePandy = (t.tipo || '').toLowerCase() === 'ingreso' && cob === 'pandy' && pag === 'cliente';
                   const comisionPandyOrden = (monR === monE && mr > me) ? mr - me : 0;
                   const usarNominalOrden = comisionPandyOrden >= 1e-6 && esIngresoClientePandy;
-                  const yaTieneCobroNominal = usarNominalOrden && rowsCcCliente.some((r) => Math.abs(Number(r.monto) - mr) < 1e-6 && (r.concepto || '').toLowerCase().includes('cobro'));
+                  const yaTieneCobroNominal = usarNominalOrden && rowsCcCliente.some((r) => Math.abs(Number(r.monto) - mr) < 1e-6 && (r.concepto || '').includes('Cobro Realizado'));
                   if (!yaTieneCobroNominal && t.estado === 'ejecutada') {
                     const montoCobro = usarNominalOrden ? mr : monto;
                     const monedaCobro = usarNominalOrden ? monR : mon;
@@ -5111,7 +5453,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                       orden_id: ordenId,
                       transaccion_id: transaccionId,
                       transaccion_numero: t.numero != null ? t.numero : null,
-                      concepto: conceptoConOrden(conceptoCcMovimiento(monedaCobro, montoCobro, 'cobro'), ordenLabel),
+                      concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero),
                       fecha,
                       usuario_id: currentUserId,
                       estado: estadoMov,
@@ -5128,7 +5470,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                     orden_id: ordenId,
                     transaccion_id: transaccionId,
                     transaccion_numero: t.numero != null ? t.numero : null,
-                    concepto: conceptoConOrden(conceptoCcMovimiento(mon, monto, 'deuda'), ordenLabel),
+                    concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
                     fecha,
                     usuario_id: currentUserId,
                     estado: estadoMov,
@@ -5374,22 +5716,20 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             }
           }
 
+          // Sync atómico en Supabase: RPC hace delete + insert en una transacción. Si la RPC no existe o falla, fallback a delete+insert en el cliente.
           const idsTrx = transacciones.map((t) => t.id).filter(Boolean);
-          // Reconstruir todos los movimientos desde el estado actual de las transacciones (un evento en CC por transacción; si todas pendientes, autocompensar).
-          const promDelCc = client.from('movimientos_cuenta_corriente').delete().eq('orden_id', ordenId);
-          const promDelCcInt = client.from('movimientos_cuenta_corriente_intermediario').delete().eq('orden_id', ordenId);
-          const promDelCajaTrx = idsTrx.length > 0
-            ? client.from('movimientos_caja').delete().in('transaccion_id', idsTrx)
-            : Promise.resolve();
-          const promDelCajaComision = client.from('movimientos_caja').delete().eq('orden_id', ordenId).is('transaccion_id', null);
-
-          return Promise.all([promDelCc, promDelCcInt, promDelCajaTrx, promDelCajaComision]).then(() => {
-            const inserts = [];
-            rowsCcCliente.forEach((row) => inserts.push(client.from('movimientos_cuenta_corriente').insert(row)));
-            rowsCcInt.forEach((row) => inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert(row)));
-            rowsCaja.forEach((row) => inserts.push(client.from('movimientos_caja').insert(row)));
-            if (inserts.length === 0) return Promise.resolve();
-            return Promise.all(inserts);
+          return client.rpc('sync_cc_caja_orden', {
+            p_orden_id: ordenId,
+            p_usuario_id: currentUserId,
+            p_rows_cc_cliente: rowsCcCliente,
+            p_rows_cc_int: rowsCcInt,
+            p_rows_caja: rowsCaja,
+          }).then((rRpc) => {
+            if (rRpc.error) {
+              console.warn('sync_cc_caja_orden:', rRpc.error.message || rRpc.error);
+              return fallbackSyncCcCaja(ordenId, idsTrx, rowsCcCliente, rowsCcInt, rowsCaja);
+            }
+            return Promise.resolve();
           });
         });
       });
@@ -5398,6 +5738,24 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
       console.warn('sincronizarCcYCajaDesdeOrden:', err && (err.message || err.code));
       return Promise.resolve();
     });
+}
+
+/** Fallback cuando la RPC sync_cc_caja_orden no existe o falla: delete + insert desde el cliente (mismo resultado, sin atomicidad en una transacción). */
+function fallbackSyncCcCaja(ordenId, idsTrx, rowsCcCliente, rowsCcInt, rowsCaja) {
+  const promDelCc = client.from('movimientos_cuenta_corriente').delete().eq('orden_id', ordenId);
+  const promDelCcInt = client.from('movimientos_cuenta_corriente_intermediario').delete().eq('orden_id', ordenId);
+  const promDelCajaTrx = (idsTrx && idsTrx.length > 0)
+    ? client.from('movimientos_caja').delete().in('transaccion_id', idsTrx)
+    : Promise.resolve();
+  const promDelCajaComision = client.from('movimientos_caja').delete().eq('orden_id', ordenId).is('transaccion_id', null);
+  return Promise.all([promDelCc, promDelCcInt, promDelCajaTrx, promDelCajaComision]).then(() => {
+    const inserts = [];
+    (rowsCcCliente || []).forEach((row) => inserts.push(client.from('movimientos_cuenta_corriente').insert(row)));
+    (rowsCcInt || []).forEach((row) => inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert(row)));
+    (rowsCaja || []).forEach((row) => inserts.push(client.from('movimientos_caja').insert(row)));
+    if (inserts.length === 0) return Promise.resolve();
+    return Promise.all(inserts);
+  });
 }
 
 /** Tabla orden_comisiones_generadas: una fila por (orden_id, tipo) evita duplicar Ganancia Pandy y Comisión intermediario al re-ejecutar. */
@@ -5600,20 +5958,15 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, egresoChe
   const monR = orden.moneda_recibida || 'ARS';
   if (mr < 1e-6) return Promise.resolve();
   const fecha = new Date().toISOString().slice(0, 10);
-  const resolverOrdenLabel = () => {
-    if (orden.numero != null) return Promise.resolve('Orden Nro ' + orden.numero);
-    return client.from('ordenes').select('numero').eq('id', ordenId).single().then((r) => {
-      const numero = r.data?.numero;
-      return 'Orden Nro ' + (numero != null ? numero : '?');
-    });
-  };
-  return resolverOrdenLabel().then((ordenLabel) =>
-    client.from('transacciones').select('id, numero').in('id', [egresoChequeTrId, ingresoEfectivoIntTrId]).then((rTr) => {
-      const trs = rTr.data || [];
-      const nroEgreso = trs.find((x) => x.id === egresoChequeTrId)?.numero;
-      const nroIngreso = trs.find((x) => x.id === ingresoEfectivoIntTrId)?.numero;
-      const conceptoDebe = 'Compromiso - ' + ordenLabel + ' y Trans Nro ' + (nroEgreso != null ? nroEgreso : '?');
-      const conceptoComp = 'Compromiso - ' + ordenLabel + ' y Trans Nro ' + (nroIngreso != null ? nroIngreso : '?');
+  return client.from('ordenes').select('numero').eq('id', ordenId).single()
+    .then((rOrd) => rOrd.data?.numero)
+    .then((ordenNum) =>
+      client.from('transacciones').select('id, numero').in('id', [egresoChequeTrId, ingresoEfectivoIntTrId]).then((rTr) => {
+        const trs = rTr.data || [];
+        const nroEgreso = trs.find((x) => x.id === egresoChequeTrId)?.numero;
+        const nroIngreso = trs.find((x) => x.id === ingresoEfectivoIntTrId)?.numero;
+        const conceptoDebe = conceptoCcLeyenda('compromiso_pago', ordenNum, nroEgreso);
+        const conceptoComp = conceptoCcLeyenda('compromiso_cobrar', ordenNum, nroIngreso);
       const row1 = {
         intermediario_id: intermediarioId,
         orden_id: ordenId,
@@ -5706,21 +6059,13 @@ function insertarMovimientosCcMomentoCero(ordenId, orden, ingresoId, egresoId) {
   const fecha = new Date().toISOString().slice(0, 10);
   const ahora = new Date().toISOString();
 
-  const resolverOrdenLabel = () => {
-    if (orden.numero != null) return Promise.resolve('Orden Nro ' + orden.numero);
-    return client.from('ordenes').select('numero').eq('id', ordenId).single().then((r) => {
-      const numero = r.data?.numero;
-      return 'Orden Nro ' + (numero != null ? numero : ordenId.toString().slice(0, 8));
-    });
-  };
-
-  return resolverOrdenLabel().then((ordenLabel) =>
-    client.from('transacciones').select('id, numero').in('id', [ingresoId, egresoId]).then((rTr) => {
+  return client.from('transacciones').select('id, numero').in('id', [ingresoId, egresoId]).then((rTr) => {
       const trs = rTr.data || [];
       const nroIngreso = trs.find((x) => x.id === ingresoId)?.numero;
       const nroEgreso = trs.find((x) => x.id === egresoId)?.numero;
-      const conceptoMonR = 'Compromiso - ' + ordenLabel + ' y Trans Nro ' + (nroIngreso != null ? nroIngreso : '?');
-      const conceptoMonE = 'Compromiso - ' + ordenLabel + ' y Trans Nro ' + (nroEgreso != null ? nroEgreso : '?');
+      const ordenNum = orden.numero != null ? orden.numero : null;
+      const conceptoMonR = conceptoCcLeyenda('compromiso_pago', ordenNum, nroIngreso);
+      const conceptoMonE = conceptoCcLeyenda('compromiso_cobrar', ordenNum, nroEgreso);
       // Una fila por moneda: solo esa moneda con valor; el resto 0.
       const rowMonR = {
         cliente_id: clienteId,
@@ -5754,8 +6099,7 @@ function insertarMovimientosCcMomentoCero(ordenId, orden, ingresoId, egresoId) {
         client.from('movimientos_cuenta_corriente').insert(rowMonR),
         client.from('movimientos_cuenta_corriente').insert(rowMonE),
       ]);
-    })
-  ).catch((err) => {
+    }).catch((err) => {
     console.warn('insertarMovimientosCcMomentoCero:', err && (err.message || err.code));
     return Promise.resolve();
   });
@@ -6457,8 +6801,23 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
         if (nuevoEstado === 'pendiente') payload.revertida_una_vez = true;
         if (debeDividir) payload.monto = montoEntregado;
 
-        return client.from('transacciones').update(payload).eq('id', transaccionId).then((rUp) => {
-          if (rUp.error) {
+        const hacerUpdate = () => client.from('transacciones').update(payload).eq('id', transaccionId);
+        const promUpdate = client.rpc('transacciones_cambiar_estado', {
+          p_transaccion_id: transaccionId,
+          p_estado: nuevoEstado,
+          p_fecha_ejecucion: nuevoEstado === 'ejecutada' ? payload.fecha_ejecucion : null,
+          p_usuario_id: nuevoEstado === 'ejecutada' ? currentUserId : null,
+          p_revertida_una_vez: nuevoEstado === 'pendiente' ? true : null,
+        }).then((rRpc) => {
+          if (rRpc.error) {
+            console.warn('transacciones_cambiar_estado:', rRpc.error.message || rRpc.error);
+            return hacerUpdate();
+          }
+          return { data: null, error: null };
+        });
+
+        return promUpdate.then((rUp) => {
+          if (rUp && rUp.error) {
             showToast('Error al actualizar estado: ' + (rUp.error.message || ''), 'error');
             return;
           }
@@ -6588,8 +6947,8 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                   const sumEgresosClienteEjecutados = listTrx.filter((tr) => tr.tipo === 'egreso' && tr.cobrador === 'cliente' && tr.estado === 'ejecutada').reduce((s, tr) => s + Number(tr.monto), 0);
                   const idsTrxMomentoCero = rCc.idsTrxMomentoCero || [];
                   const rowsCc = rCc.data || [];
-                  const rowDebe = rowsCc.find((r) => (r.concepto || '').toUpperCase().includes('DEBE'));
-                  const rowComp = rowsCc.find((r) => (r.concepto || '').normalize('NFD').replace(/\u0301/g, '').toUpperCase().includes('COMPENSACION'));
+                  const rowDebe = rowsCc.find((r) => { const c = (r.concepto || '').toUpperCase(); return c.includes('DEBE') || c.includes('COMPROMISO DE PAGO'); });
+                  const rowComp = rowsCc.find((r) => { const c = (r.concepto || '').normalize('NFD').replace(/\u0301/g, '').toUpperCase(); return c.includes('COMPENSACION') || c.includes('COMPROMISO A COBRAR'); });
                   const tieneMomentoCero = !!(rowDebe && rowComp && (rowDebe.monto_usd != null || rowDebe.monto_ars != null || rowDebe.monto_eur != null) && (rowComp.monto_usd != null || rowComp.monto_ars != null || rowComp.monto_eur != null));
                   const ingresoId = rowDebe && rowDebe.transaccion_id;
                   const egresoId = rowComp && rowComp.transaccion_id;
@@ -7220,8 +7579,8 @@ function saveTransaccion() {
           const sumIngresosClienteEjecutados = sumIngresosOthers + (tipo === 'ingreso' && pagador === 'cliente' && estado === 'ejecutada' ? monto : 0);
           const sumEgresosClienteEjecutados = sumEgresosOthers + (tipo === 'egreso' && cobrador === 'cliente' && estado === 'ejecutada' ? monto : 0);
           const filasDeEstaTrx = filasCc.filter((m) => m.transaccion_id === transaccionId);
-          const rowDebe = filasCc.find((r) => (r.concepto || '').toUpperCase().includes('DEBE'));
-          const rowComp = filasCc.find((r) => (r.concepto || '').normalize('NFD').replace(/\u0301/g, '').toUpperCase().includes('COMPENSACION'));
+          const rowDebe = filasCc.find((r) => { const c = (r.concepto || '').toUpperCase(); return c.includes('DEBE') || c.includes('COMPROMISO DE PAGO'); });
+          const rowComp = filasCc.find((r) => { const c = (r.concepto || '').normalize('NFD').replace(/\u0301/g, '').toUpperCase(); return c.includes('COMPENSACION') || c.includes('COMPROMISO A COBRAR'); });
           const tieneMomentoCero = !!(rowDebe && rowComp && (rowDebe.monto_usd != null || rowDebe.monto_ars != null || rowDebe.monto_eur != null) && (rowComp.monto_usd != null || rowComp.monto_ars != null || rowComp.monto_eur != null));
           const idsLegacy = filasDeEstaTrx.filter((m) => m.monto_usd == null && m.monto_ars == null && m.monto_eur == null).map((m) => m.id);
           const amountDebeMonR = rowDebe && (monR === 'USD' ? rowDebe.monto_usd : (monR === 'ARS' ? rowDebe.monto_ars : rowDebe.monto_eur));
