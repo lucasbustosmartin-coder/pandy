@@ -1,0 +1,37 @@
+---
+description: Regla LyP – Botones: mismo estilo, icono a la izquierda de la leyenda; solo icono mismo estilo
+alwaysApply: true
+---
+
+# Estilos de botones (LyP)
+
+En **todos los repos de raíz LyP**, los botones de acción deben seguir el **mismo patrón visual y de estructura** en toda la aplicación.
+
+## Reglas
+
+1. **Mismo estilo base**  
+   Todos los botones (primarios, secundarios, nuevo, editar, Excel, etc.): **misma altura mínima** (p. ej. `min-height: 2.25rem`), **mismo border-radius** (p. ej. `8px`), mismo criterio de padding y `box-sizing: border-box`. Así se ve homogéneo en toda la app.
+
+2. **Con leyenda (texto)**  
+   - Estructura: **icono a la izquierda** + texto.  
+   - Marcado: `<button class="btn-..."><span class="btn-icon"><svg>...</svg></span>Texto</button>`.  
+   - El icono debe ser **apropiado a la acción** (Guardar = check, Cancelar = X, Nueva orden = +, Exportar Excel = flecha descarga, etc.).  
+   - Usar SVG en línea, stroke, mismo tamaño (p. ej. 18×18 dentro de `.btn-icon`).
+
+3. **Solo icono (sin leyenda)**  
+   - **Mismo estilo** que los que llevan leyenda: mismo border-radius, misma min-height, mismo tipo de borde/fondo.  
+   - Solo se muestra el icono (sin texto).  
+   - Incluir `title` y `aria-label` para accesibilidad.  
+   - Clase tipo `btn-icon-only` o reutilizar la misma clase base; el botón solo contiene `<span class="btn-icon"><svg>...</svg></span>`.
+
+4. **Botón Excel**  
+   - Siempre **fondo verde** (mismo verde que acciones principales, p. ej. #0d7d3d), para identificarlo en cualquier vista.
+
+5. **No inventar variantes**  
+   - No usar `border-radius` distinto ni botones sin icono donde el resto de la app lleva icono, salvo excepciones justificadas (p. ej. modal de confirmación mínima).
+
+## Resumen
+
+- Con leyenda: **icono a la izquierda** + texto; mismo estilo redondeado y altura.  
+- Solo icono: **mismo estilo**; solo el icono; `title` y `aria-label`.  
+- Aplicar en **toda** la aplicación y en **todos** los repos LyP.

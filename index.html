@@ -53,7 +53,7 @@
     .login-screen .form-group { margin-bottom: 1rem; }
     .login-screen label { display: block; margin-bottom: 0.35rem; font-size: 0.9rem; color: #555; }
     .login-screen input[type="email"], .login-screen input[type="password"] { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
-    .login-screen .btn-login { width: 100%; padding: 0.65rem; background: #1a1a1a; color: #fff; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; margin-top: 0.5rem; }
+    .login-screen .btn-login { width: 100%; padding: 0.65rem; background: #1a1a1a; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; margin-top: 0.5rem; }
     .login-screen .btn-login:hover { background: #333; }
     .login-screen .login-error { color: #b91c1c; font-size: 0.9rem; margin-top: 0.5rem; }
     .login-screen .login-footer { margin-top: 1.25rem; font-size: 0.9rem; color: #666; }
@@ -61,9 +61,9 @@
     .login-screen .login-logo-wrap { width: 56px; height: 56px; margin: 0 auto 1.25rem auto; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(0,0,0,0.1); }
 .login-screen .login-logo-wrap .login-logo { width: 100%; height: 100%; object-fit: contain; object-position: center; }
     .user-bar { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; font-size: 0.9rem; color: #555; }
-    .user-bar .btn-cerrar { padding: 0.4rem 0.75rem; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    .user-bar .btn-cerrar { padding: 0.4rem 0.75rem; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; font-size: 0.85rem; }
     .user-bar .btn-cerrar:hover { background: #f0f0f0; }
-    .user-bar .btn-refresh { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; color: #555; }
+    .user-bar .btn-refresh { display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; min-width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; color: #555; box-sizing: border-box; }
     .user-bar .btn-refresh:hover { background: #f0f0f0; color: #1a1a1a; }
     .user-bar .btn-refresh svg { width: 18px; height: 18px; }
     table { width: 100%; border-collapse: collapse; }
@@ -77,7 +77,7 @@
     .panel-seguridad table { margin-top: 0.75rem; }
     .panel-seguridad th { background: #1a1a1a; color: #fff; }
     .panel-seguridad select { padding: 0.35rem 0.5rem; border-radius: 6px; border: 1px solid #ccc; }
-    .panel-seguridad .btn-guardar-rol { padding: 0.35rem 0.6rem; font-size: 0.85rem; background: #0d7d3d; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+    .panel-seguridad .btn-guardar-rol { padding: 0.35rem 0.6rem; font-size: 0.85rem; background: #0d7d3d; color: #fff; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 0.45rem; min-height: 2.25rem; }
     .panel-seguridad .btn-guardar-rol:hover { background: #0a5c2e; }
     .panel-seguridad .seguridad-loading { color: #666; }
     .seguridad-permisos-rol { background: #fff; border-radius: 10px; margin-bottom: 0.75rem; border: 1px solid #e5e7eb; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
@@ -135,18 +135,18 @@
     .form-group-toggle .toggle-switch { flex-shrink: 0; }
     .vista-placeholder { color: #666; padding: 1rem 0; }
     .vista-toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
-    .btn-nuevo, .btn-editar, .btn-primary, .btn-secondary, .btn-login, .btn-cerrar { display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; }
-    .btn-nuevo .btn-icon, .btn-editar .btn-icon, .btn-primary .btn-icon, .btn-secondary .btn-icon, .btn-login .btn-icon, .btn-cerrar .btn-icon { width: 18px; height: 18px; flex-shrink: 0; }
-    .btn-nuevo .btn-icon svg, .btn-editar .btn-icon svg, .btn-primary .btn-icon svg, .btn-secondary .btn-icon svg, .btn-login .btn-icon svg, .btn-cerrar .btn-icon svg { width: 100%; height: 100%; stroke: currentColor; }
-    .btn-nuevo { padding: 0.5rem 1rem; border: 1px solid #0d7d3d; background: #0d7d3d; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    .btn-nuevo, .btn-editar, .btn-primary, .btn-secondary, .btn-login, .btn-cerrar, .btn-excel { display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; min-height: 2.25rem; box-sizing: border-box; }
+    .btn-nuevo .btn-icon, .btn-editar .btn-icon, .btn-primary .btn-icon, .btn-secondary .btn-icon, .btn-login .btn-icon, .btn-cerrar .btn-icon, .btn-excel .btn-icon { width: 18px; height: 18px; flex-shrink: 0; }
+    .btn-nuevo .btn-icon svg, .btn-editar .btn-icon svg, .btn-primary .btn-icon svg, .btn-secondary .btn-icon svg, .btn-login .btn-icon svg, .btn-cerrar .btn-icon svg, .btn-excel .btn-icon svg { width: 100%; height: 100%; stroke: currentColor; }
+    .btn-nuevo { padding: 0.5rem 1rem; border: 1px solid #0d7d3d; background: #0d7d3d; color: #fff; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
     .btn-nuevo:hover { background: #0a5c2e; border-color: #0a5c2e; }
-    .btn-chat { padding: 0.5rem 1rem; border: 1px solid #0c6ea8; background: #0c6ea8; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; }
+    .btn-chat { padding: 0.5rem 1rem; border: 1px solid #0c6ea8; background: #0c6ea8; color: #fff; border-radius: 8px; cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; min-height: 2.25rem; box-sizing: border-box; }
     .btn-chat:hover { background: #0a5488; border-color: #0a5488; }
     .btn-chat .btn-icon { width: 18px; height: 18px; flex-shrink: 0; }
     .btn-chat .btn-icon svg { width: 100%; height: 100%; stroke: currentColor; }
-    .btn-editar { padding: 0.25rem 0.5rem; font-size: 0.85rem; background: #fff; color: #555; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
+    .btn-editar { padding: 0.35rem 0.6rem; font-size: 0.85rem; background: #fff; color: #555; border: 1px solid #ccc; border-radius: 8px; cursor: pointer; }
     .btn-editar:hover { background: #f0f0f0; border-color: #999; }
-    .btn-icon-only { padding: 0.4rem; min-width: 0; border-radius: 6px; }
+    .btn-icon-only { padding: 0.4rem; min-width: 2.25rem; min-height: 2.25rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; box-sizing: border-box; }
     .btn-icon-only .btn-icon { width: 18px; height: 18px; }
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
     .modal-backdrop.activo { display: flex; }
@@ -158,7 +158,9 @@
     .chat-orden-input-row { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; flex-wrap: nowrap; margin-top: 0; }
     .chat-orden-input-wrap { flex: 1; min-width: 0; }
     .chat-orden-input-wrap input { width: 100%; }
-    #modal-chat-orden-backdrop .btn-primary { padding: 0.5rem 1rem; background: #0d7d3d; color: #fff; border: 1px solid #0d7d3d; border-radius: 6px; cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.45rem; flex-shrink: 0; }
+    .btn-primary { border-radius: 8px; }
+    .btn-secondary { border-radius: 8px; }
+    #modal-chat-orden-backdrop .btn-primary { padding: 0.5rem 1rem; background: #0d7d3d; color: #fff; border: 1px solid #0d7d3d; border-radius: 8px; cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.45rem; flex-shrink: 0; }
     #modal-chat-orden-backdrop .btn-primary:hover { background: #0a5c2e; border-color: #0a5c2e; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
     .modal { background: #fff; border-radius: 12px; max-width: min(95vw, 1280px); width: 95%; max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
@@ -229,15 +231,22 @@
     .modal.modal-transacciones-pendientes,
     .modal.modal-ordenes-pendientes { max-width: min(95vw, 1400px); width: 95%; margin-left: 4rem; }
     .form-actions { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
-    .form-actions .btn-primary { padding: 0.5rem 1rem; background: #0d7d3d; color: #fff; border: 1px solid #0d7d3d; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    .form-actions .btn-primary { padding: 0.5rem 1rem; background: #0d7d3d; color: #fff; border: 1px solid #0d7d3d; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
     .form-actions .btn-primary:hover { background: #0a5c2e; }
-    .form-actions .btn-secondary { padding: 0.5rem 1rem; background: #fff; color: #333; border: 1px solid #999; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    .form-actions .btn-secondary { padding: 0.5rem 1rem; background: #fff; color: #333; border: 1px solid #999; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
     .form-actions .btn-secondary:hover { background: #f0f0f0; }
+    .btn-excel { padding: 0.5rem 1rem; border: 1px solid #0d7d3d; background: #0d7d3d; color: #fff; border-radius: 8px; cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; min-height: 2.25rem; box-sizing: border-box; }
+    .btn-excel:hover { background: #0a5c2e; border-color: #0a5c2e; }
+    .btn-excel .btn-icon { width: 18px; height: 18px; flex-shrink: 0; }
+    .btn-excel .btn-icon svg { width: 100%; height: 100%; stroke: currentColor; }
     .clientes-loading { color: #666; }
     .vista-loading-spinner { display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 1.5rem; min-height: 3rem; }
     .vista-loading-spinner::before { content: ''; display: inline-block; width: 26px; height: 26px; border: 2px solid #e5e7eb; border-top-color: #0d7d3d; border-radius: 50%; animation: vista-spin 0.7s linear infinite; flex-shrink: 0; }
     @keyframes vista-spin { to { transform: rotate(360deg); } }
     .tabla-clientes-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .tabla-clientes-wrap.tabla-wrap-con-scroll { max-height: 70vh; overflow-y: auto; }
+    .tabla-cc-resumen thead th,
+    .tabla-cc-movimientos thead th { position: sticky; top: 0; z-index: 1; background: #f9fafb; box-shadow: 0 1px 0 0 #d1d5db; }
     .resumen-cajas { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
     .resumen-cajas .card { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 0.25rem; }
     .resumen-cajas .card-titulo { display: flex; align-items: center; gap: 0.5rem; color: #555; font-size: 0.95rem; }
@@ -287,8 +296,8 @@
     .inicio-card-ordenes-fila { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 0.5rem 0.75rem; font-size: 0.9rem; min-height: 2rem; }
     .inicio-card-ordenes-fila .inicio-card-ordenes-badge { min-width: 10rem; }
     .inicio-card-ordenes-fila .inicio-card-ordenes-num { font-weight: 700; color: #1a1a1a; text-align: right; min-width: 1.5rem; }
-    .inicio-card-ordenes-fila .btn-ver-estado { background: none; border: none; padding: 0.25rem; cursor: pointer; color: #555; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
-    .inicio-card-ordenes-fila .btn-ver-estado:hover { color: #0d7d3d; }
+    .inicio-card-ordenes-fila .btn-ver-estado { background: none; border: none; padding: 0.35rem; cursor: pointer; color: #555; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; min-width: 2.25rem; min-height: 2.25rem; box-sizing: border-box; }
+    .inicio-card-ordenes-fila .btn-ver-estado:hover { color: #0d7d3d; background: rgba(0,0,0,0.04); }
     .inicio-card-ordenes-fila .btn-ver-estado svg { width: 18px; height: 18px; }
     .inicio-cards-pendientes .valor-count { font-size: 1.25rem; font-weight: 700; color: #1a1a1a; }
     .inicio-count-transacciones-wrap { display: flex; justify-content: center; align-items: center; margin-top: 0.5rem; }
@@ -296,8 +305,8 @@
     .inicio-caja-fila-actual { background: #ecfdf5; border-radius: 6px; padding: 0.35rem 0.5rem; margin: 0 -0.5rem; font-weight: 700; }
     .inicio-caja-fila-actual .inicio-caja-etiqueta { font-weight: 700; color: #065f46; }
     .inicio-caja-fila-actual .inicio-caja-valor { font-weight: 700; }
-    .btn-ver-listo { background: none; border: none; padding: 0.25rem; cursor: pointer; color: #555; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
-    .btn-ver-listo:hover { color: #0d7d3d; }
+    .btn-ver-listo { background: none; border: none; padding: 0.35rem; cursor: pointer; color: #555; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; min-width: 2.25rem; min-height: 2.25rem; box-sizing: border-box; }
+    .btn-ver-listo:hover { color: #0d7d3d; background: rgba(0,0,0,0.04); }
     .cc-saldo-label { display: block; font-size: 0.8rem; color: #666; margin-top: 0.15rem; }
     .tabla-cc-debe-haber { width: 100%; }
     .tabla-cc-debe-haber th:nth-child(n+3), .tabla-cc-debe-haber td:nth-child(n+3) { text-align: right; white-space: nowrap; }
@@ -324,7 +333,14 @@
     .tabla-cc-resumen th.th-sub { font-weight: 500; font-size: 0.9em; }
     .tabla-cc-resumen .valor-positivo { color: #059669; }
     .tabla-cc-resumen .valor-negativo { color: #dc2626; }
-    .btn-ver-detalle { padding: 0.35rem 0.5rem; min-height: 44px; min-width: 44px; background: none; border: none; color: #555; cursor: pointer; border-radius: 6px; }
+    .tabla-cc-resumen .cc-detalle-concepto-th,
+    .tabla-cc-movimientos .cc-detalle-concepto-th { text-align: left; padding-left: 0.75rem; }
+    .tabla-cc-resumen td.td-concepto,
+    .tabla-cc-movimientos td.td-concepto { text-align: left; padding-left: 0.85rem; }
+    .tabla-cc-detalle-sortable th.th-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+    .tabla-cc-detalle-sortable th.th-sortable:hover { background: #f0f0f0; }
+    .tabla-cc-detalle-sortable th.th-sortable .sort-indicator { margin-left: 0.25rem; opacity: 0.6; font-size: 0.75em; }
+    .btn-ver-detalle { padding: 0.35rem 0.5rem; min-height: 44px; min-width: 44px; background: none; border: none; color: #555; cursor: pointer; border-radius: 8px; }
     .btn-ver-detalle:hover { color: #0ea5e9; background: rgba(0,0,0,0.04); }
     .btn-ver-detalle .btn-icon { display: inline-flex; }
     .btn-ver-detalle .btn-icon svg { width: 20px; height: 20px; }
@@ -489,7 +505,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.34</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.35</div>
   </aside>
 
   <main class="main-content">
@@ -787,18 +803,33 @@
         </h3>
         <div class="vista-toolbar" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
           <label style="display:flex; align-items:center; gap:0.5rem;">
+            <span>Vista:</span>
+            <div class="toggle-moneda" id="cc-vista-toggle" role="group">
+              <button type="button" class="activo" data-vista="resumen">Resumen</button>
+              <button type="button" data-vista="detalle">Detalle de movimientos</button>
+            </div>
+          </label>
+          <label style="display:flex; align-items:center; gap:0.5rem;">
             <span>Tipo:</span>
             <div class="toggle-moneda" id="cc-filtro-tipo" role="group">
               <button type="button" class="activo" data-tipo="cliente">Cliente</button>
               <button type="button" data-tipo="intermediario">Intermediario</button>
+              <button type="button" data-tipo="todos">Todos</button>
             </div>
           </label>
+          <span id="cc-detalle-rango-wrap" style="display:none; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <label style="display:inline-flex; align-items:center; gap:0.35rem;"><span>Desde:</span><input type="date" id="cc-detalle-desde" aria-label="Fecha desde"/></label>
+            <label style="display:inline-flex; align-items:center; gap:0.35rem;"><span>Hasta:</span><input type="date" id="cc-detalle-hasta" aria-label="Fecha hasta"/></label>
+          </span>
           <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Recalcular saldos (solo movimientos ejecutados)" aria-label="Refrescar cuenta corriente">
             <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></span>Refrescar
           </button>
+          <button type="button" class="btn-excel" id="cc-btn-exportar-excel" title="Exportar tabla actual a Excel" aria-label="Exportar Excel">
+            <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg></span>Exportar Excel
+          </button>
         </div>
         <div id="cc-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando…</div>
-        <div id="cc-contenido" class="tabla-clientes-wrap" style="display:none;">
+        <div id="cc-contenido" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-cc-resumen" class="tabla-cc-resumen">
             <colgroup>
               <col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/>
@@ -813,6 +844,24 @@
               </tr>
             </thead>
             <tbody id="cc-resumen-tbody"></tbody>
+          </table>
+        </div>
+        <div id="cc-detalle-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
+          <table id="tabla-cc-detalle" class="tabla-cc-resumen tabla-cc-detalle-sortable" style="table-layout:auto;">
+            <thead>
+              <tr>
+                <th class="th-nombre th-sortable" data-sort="fecha" scope="col">Fecha</th>
+                <th class="th-sub th-sortable" data-sort="nroOrden" scope="col">Nro Orden</th>
+                <th class="th-sub th-sortable" data-sort="nroTrans" scope="col">Nro Trans.</th>
+                <th class="th-nombre cc-detalle-concepto-th th-sortable" data-sort="concepto" scope="col">Concepto</th>
+                <th class="th-moneda th-sortable" data-sort="usd" scope="col">USD</th>
+                <th class="th-moneda th-sortable" data-sort="ars" scope="col">ARS</th>
+                <th class="th-moneda th-sortable" data-sort="eur" scope="col">EUR</th>
+                <th class="th-sub th-sortable" data-sort="estado" scope="col">Estado</th>
+                <th class="th-nombre th-sortable" id="cc-detalle-th-nombre" data-sort="nombre" scope="col" style="display:none;">Nombre</th>
+              </tr>
+            </thead>
+            <tbody id="cc-vista-detalle-tbody"></tbody>
           </table>
         </div>
       </div>
@@ -831,7 +880,7 @@
               <input type="number" id="seguridad-session-timeout-min" min="1" max="1440" step="1" style="width:5rem; padding:0.35rem 0.5rem; border-radius:6px; border:1px solid #ccc;" aria-label="Minutos de inactividad antes de cerrar sesión" />
             </label>
             <button type="button" class="btn-primary" id="seguridad-session-timeout-guardar">
-              <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>
+              <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar
               Guardar
             </button>
           </div>
@@ -1470,18 +1519,25 @@
   <div id="modal-cc-detalle-backdrop" class="modal-backdrop">
     <div class="modal modal-cc-detalle">
       <div class="modal-header">
-        <h2 id="modal-cc-detalle-titulo">Detalle cuenta corriente</h2>
+        <h2 id="modal-cc-detalle-titulo">Detalle de movimientos</h2>
         <button type="button" class="modal-close" id="modal-cc-detalle-close" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
         <div id="modal-cc-detalle-entity" class="modal-cc-entity-block" style="margin-bottom:1rem; padding:0.75rem; background:#f5f5f5; border-radius:8px;"></div>
         <div id="modal-cc-detalle-saldos" class="resumen-cajas modal-cc-saldos" style="margin-bottom:1rem; display:flex; flex-wrap:wrap; gap:0.5rem;"></div>
         <div id="modal-cc-detalle-loading" class="clientes-loading" style="display:none;">Cargando movimientos…</div>
-        <div id="modal-cc-detalle-tabla-wrap" class="tabla-clientes-wrap" style="display:none; overflow-x:auto;">
-          <table id="tabla-cc-detalle" class="tabla-cc-movimientos">
+        <div id="modal-cc-detalle-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
+          <table id="tabla-cc-detalle-modal" class="tabla-cc-movimientos tabla-cc-detalle-sortable">
             <thead>
               <tr>
-                <th>Fecha</th><th>Concepto</th><th>USD</th><th>ARS</th><th>EUR</th><th>Estado</th><th></th>
+                <th class="th-sortable" data-sort="fecha">Fecha</th>
+                <th class="th-sortable" data-sort="nroOrden">Nro Orden</th>
+                <th class="th-sortable" data-sort="nroTrans">Nro Trans.</th>
+                <th class="cc-detalle-concepto-th th-sortable" data-sort="concepto">Concepto</th>
+                <th class="th-sortable" data-sort="usd">USD</th>
+                <th class="th-sortable" data-sort="ars">ARS</th>
+                <th class="th-sortable" data-sort="eur">EUR</th>
+                <th class="th-sortable" data-sort="estado">Estado</th>
               </tr>
             </thead>
             <tbody id="cc-detalle-tbody"></tbody>
@@ -1556,8 +1612,8 @@
       <div class="modal-body">
         <p id="modal-confirm-mensaje" class="modal-confirm-texto"></p>
         <div class="form-actions" style="margin-top:1rem; margin-bottom:0;">
-          <button type="button" class="btn-primary" id="modal-confirm-aceptar">Confirmar</button>
-          <button type="button" class="btn-secondary" id="modal-confirm-cancelar">Cancelar</button>
+          <button type="button" class="btn-primary" id="modal-confirm-aceptar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Confirmar</button>
+          <button type="button" class="btn-secondary" id="modal-confirm-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
         </div>
       </div>
     </div>

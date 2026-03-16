@@ -192,6 +192,9 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Número de orden MAX+1 atómico en DB', 'Función ordenes_insertar_con_proximo_numero en Supabase: asigna numero = MAX(numero)+1 bajo pg_advisory_xact_lock para evitar huecos y colisiones. La app llama a la RPC al crear orden nueva (wizard, saveOrden, chat); fallback a INSERT sin numero si la columna no existe. sql/ordenes_insertar_con_proximo_numero.sql.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'v1.33 Despliegue', 'CC ARS-ARS con intermediario: momento cero cliente (Compromiso -mr/-me, Compromiso Saldado +me); sin fila Comisión Pandy en sync para que saldo cierre en 0. Mensajes de error login E2E; guía TEST_BASE_URL cuando Vite usa otro puerto.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'v1.34 Despliegue', 'CC regla simple: compromisos solo si al menos una transacción ejecutada; ambas pendientes → saldo 0.', 'Despliegue'],
+  ['__HOY__', '__AHORA__', 'Utils y RPC sync CC/caja (modelo Sistema-Contable)', 'utils.js en raíz: formatMonto, formatImporteDisplay, formatImporteParaInput, formatearCeldaMoneda; main.js importa desde ./utils.js. RPC sync_cc_caja_orden en Supabase: front construye rows y llama RPC para delete+insert atómico; fallback a delete+insert en cliente si RPC no existe. sql/rpc_sync_cc_caja_orden.sql. Doc docs/FUNCIONES_CRITICAS_SUPABASE_VS_FRONT.md actualizado.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'RPC transacciones_cambiar_estado', 'Función PostgreSQL transacciones_cambiar_estado(p_transaccion_id, p_estado, p_fecha_ejecucion, p_usuario_id, p_revertida_una_vez). El front llama la RPC al cambiar pendiente↔ejecutada; si la RPC no existe usa UPDATE directo. sql/rpc_transacciones_cambiar_estado.sql. Sin Edge Functions: solo RPC (funciones en la DB).', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'v1.35 Despliegue', 'Regla de estilos de botones LyP: mismo estilo en toda la app; con leyenda icono a la izquierda; solo icono mismo estilo. Regla .cursor/rules/estilos-botones.mdc en Pandi y replicada en Fornitalia, MiGusto, Everfit, Sistema-Contable.', 'Despliegue'],
 ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -250,6 +253,7 @@ const funcionalidades = [
   ['Caja: movimiento por comisión Pandy', 'Cuando hay comisión Pandy (misma moneda, sin transacción Ganancia) la sincronización agrega un movimiento de caja (ingreso efectivo por la comisión) para que la caja cierre en cero en operaciones de cobro de cheques. transaccion_id null; al re-sincronizar se borran esos movimientos por orden.'],
   ['Tipos de operación: Intermediario Sí/No', 'Columna usa_intermediario en tipos_operacion. En ABM Tipos de operación: columna Intermediario (Sí/No) y checkbox "Usa intermediario" en modal Nuevo/Editar. En modal de orden: si el tipo no usa intermediario, el selector de intermediario no se muestra ni se menciona; si usa intermediario se muestra como antes. Al guardar orden se fuerza intermediario_id = null cuando el tipo no usa intermediario. sql/migracion_tipos_operacion_usa_intermediario.sql.'],
   ['Número de orden atómico (MAX+1)', 'Al crear orden nueva la app llama a la RPC ordenes_insertar_con_proximo_numero: en la DB se asigna numero = MAX(numero)+1 bajo pg_advisory_xact_lock para evitar huecos y colisiones por concurrencia. Fallback a INSERT sin numero si la columna no existe. sql/ordenes_insertar_con_proximo_numero.sql.'],
+  ['Utils y RPC sync CC/caja', 'utils.js en raíz con formatMonto, formatImporteDisplay, formatImporteParaInput, formatearCeldaMoneda. RPC sync_cc_caja_orden: front construye rows de CC y caja, backend hace delete+insert en una transacción. Fallback en cliente si la RPC no está desplegada. sql/rpc_sync_cc_caja_orden.sql.'],
 ];
 
 const wsResumen = XLSX.utils.aoa_to_sheet(funcionalidades);
@@ -306,6 +310,7 @@ const versiones = [
   ['1.32', '__HOY__', 'Switch Activo en tablas Clientes e Intermediarios; modales Cliente/Intermediario con toggle; centrado de botón y título en todas las pantallas con switch. Script truncar: orden correcto y orden_comisiones_generadas opcional. Tests E2E: intermediario solo si visible (tipos sin intermediario).'],
   ['1.33', '__HOY__', 'CC ARS-ARS con intermediario: momento cero cliente (-mr/-me, Compromiso Saldado +me); sin fila Comisión Pandy en sync para que saldo cierre en 0. Mensajes de error login E2E; guía testing con TEST_BASE_URL cuando Vite usa otro puerto.'],
   ['1.34', '__HOY__', 'CC regla simple (USD-USD, 2 transacciones): compromisos solo cuando al menos una transacción está ejecutada; si ambas pendientes, saldo 0 (no figura deuda).'],
+  ['1.35', '__HOY__', 'Regla de estilos de botones LyP: mismo estilo (border-radius 8px, min-height); con leyenda = icono a la izquierda; solo icono mismo estilo; botón Excel verde. Regla estilos-botones.mdc en Pandi y en Fornitalia, MiGusto, Everfit, Sistema-Contable.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
