@@ -1,0 +1,39 @@
+Reglas CC - Dos combinaciones en formato modelo conceptual. Abrir en Excel con separador ;
+
+=== COMBINACIÓN 1: Tx1=E Tx2=P Tx3=E Tx4=E ===
+Transacciones principales
+Nro;Tipo;Modo pa;Moneda;Monto;Pagador;Cobrador;Estado;SIGNO_CC;Contiene_Comision;CC_CLIENTE;CC_CLIENTE_SUMA_SALDO;CC_INTERMEDIARIO;CC_INTERMEDIARIO_SUMA_SALDO;INCLUIR EN MOV CC CLIENTE;INCLUIR EN MOV DE CC INTERMEDIARIO
+1;Ingreso;Cheque;ARS;200.000,00;Cliente;Pandy;Ejecutada;-;Y;-200.000,00;N;No Aplica;N;Y;N
+2;Egreso;Efectivo;ARS;195.000,00;Pandy;Cliente;Pendiente;+;N;195.000,00;N;No Aplica;N;N;N
+3;Egreso;Cheque;ARS;200.000,00;Pandy;Intermediario;Ejecutada;+;Y;No Aplica;N;200.000,00;N;N;Y
+4;Ingreso;Efectivo;ARS;197.000,00;Intermediario;Pandy;Ejecutada;-;N;No Aplica;N;-197.000,00;N;N;Y
+
+Agrego los movimientos de comisiones. El secreto --> Se invierte el signo
+Nro;Tipo;Modo pa;Moneda;Monto;Pagador;Cobrador;Estado;SIGNO_CC;Contiene_Comision;CC_CLIENTE;CC_CLIENTE_SUMA_SALDO;CC_INTERMEDIARIO;CC_INTERMEDIARIO_SUMA_SALDO;INCLUIR EN MOV CC CLIENTE;INCLUIR EN MOV DE CC INTERMEDIARIO
+1;Ingreso (comisión);-;ARS;5.000,00;Cliente;Pandy;Pendiente;+;Y;5.000,00;N;No Aplica;N;Y;N
+3;Egreso (comisión);-;ARS;3.000,00;Pandy;Intermediario;Pendiente;-;Y;No Aplica;N;-3.000,00;N;N;Y
+
+Resultado con esta combinación (todo cierra)
+Saldo CC cliente;0,00;Ninguna fila tiene CC_CLIENTE_SUMA_SALDO = Y (Tx1 y Tx2 no suman)
+Saldo CC intermediario;0,00;Tx3 y Tx4 ejecutadas; ninguna suma al saldo
+Detalle CC cliente;Solo Tx1;-200.000,00 (cerrado). Tx2 no se incluye (INCLUIR = N).
+Detalle CC intermediario;Tx3 y Tx4;+200.000,00 y -197.000,00 (cerrados)
+
+=== COMBINACIÓN 2: Tx1=P Tx2=E Tx3=E Tx4=E (como en tu imagen) ===
+Transacciones principales
+Nro;Tipo;Modo pa;Moneda;Monto;Pagador;Cobrador;Estado;SIGNO_CC;Contiene_Comision;CC_CLIENTE;CC_CLIENTE_SUMA_SALDO;CC_INTERMEDIARIO;CC_INTERMEDIARIO_SUMA_SALDO;INCLUIR EN MOV CC CLIENTE;INCLUIR EN MOV DE CC INTERMEDIARIO
+1;Ingreso;Cheque;ARS;200.000,00;Cliente;Pandy;Pendiente;-;Y;-200.000,00;Y;No Aplica;N;N;N
+2;Egreso;Efectivo;ARS;195.000,00;Pandy;Cliente;Ejecutada;+;N;195.000,00;N;No Aplica;N;Y;N
+3;Egreso;Cheque;ARS;200.000,00;Pandy;Intermediario;Ejecutada;+;Y;No Aplica;N;200.000,00;N;N;Y
+4;Ingreso;Efectivo;ARS;197.000,00;Intermediario;Pandy;Ejecutada;-;N;No Aplica;N;-197.000,00;N;N;Y
+
+Agrego los movimientos de comisiones. El secreto --> Se invierte el signo
+Nro;Tipo;Modo pa;Moneda;Monto;Pagador;Cobrador;Estado;SIGNO_CC;Contiene_Comision;CC_CLIENTE;CC_CLIENTE_SUMA_SALDO;CC_INTERMEDIARIO;CC_INTERMEDIARIO_SUMA_SALDO;INCLUIR EN MOV CC CLIENTE;INCLUIR EN MOV DE CC INTERMEDIARIO
+1;Ingreso (comisión);-;ARS;5.000,00;Cliente;Pandy;Pendiente;+;Y;5.000,00;N;No Aplica;N;Y;N
+3;Egreso (comisión);-;ARS;3.000,00;Pandy;Intermediario;Pendiente;-;Y;No Aplica;N;-3.000,00;N;N;Y
+
+Resultado: Saldo CC cliente = -200k (Tx1 SUMA_SALDO Y) + movimientos cerrados. Detalle: Tx1 no se incluye (INCLUIR N); Tx2 +195k; comisión +5k. Detalle CC int +200k -197k -3k = 0.
+
+Reglas interpretadas
+Transacción PENDIENTE (Tx1-Tx4): no se incluye en mov (INCLUIR N); si tiene contrapartida ejecutada puede tener signo en la regla (Tx1 pendiente = -). Transacción EJECUTADA: INCLUIR Y con su signo.
+Comisiones: Se invierte el signo. Pendiente o ejecutada: si incluir Y → van al detalle (+5k cliente -3k int). Par cerrado (ambas patas ejecutadas) → no incluir comisión.
