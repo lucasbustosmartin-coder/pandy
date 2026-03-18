@@ -150,6 +150,9 @@
     .btn-icon-only .btn-icon { width: 18px; height: 18px; }
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
     .modal-backdrop.activo { display: flex; }
+    /* Modal orden abierto: el contenido de fondo no recibe clics ni foco (evita que "quede atrás" el modal) */
+    body.modal-orden-abierto #app-content { pointer-events: none; }
+    #modal-orden-backdrop.activo { z-index: 1000; }
     .chat-orden-log .chat-msg { margin-bottom: 0.5rem; }
     .chat-orden-log .chat-msg.user { text-align: right; color: #1a1a1a; }
     .chat-orden-log .chat-msg.bot { color: #555; font-size: 0.9rem; }
@@ -209,6 +212,8 @@
     .modal.modal-ancho { max-width: 920px; width: 95%; }
     .modal.modal-orden { max-width: min(90vw, 720px); width: 90%; margin-left: auto; margin-right: auto; }
     .modal.modal-orden.modal-orden-con-instrumentacion { max-width: min(95vw, 1020px); width: 95%; }
+    .orden-inst-form-actions-sticky { position: sticky; bottom: 0; background: #fff; z-index: 10; padding-top: 0.5rem; margin-bottom: -0.5rem; box-shadow: 0 -2px 8px rgba(0,0,0,0.06); pointer-events: auto; }
+    #orden-step-instrumentacion .orden-inst-contenido-scroll { max-height: min(60vh, 480px); overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.75rem; }
     .orden-beneficio-acuerdo { color: #0066cc !important; font-weight: 700 !important; background: #f0f0f0 !important; }
     .orden-label-verb-destacado { color: #b91c1c; font-weight: 700; }
     #orden-step-detalles .form-row.dos-columnas,
@@ -514,7 +519,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.42</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.43</div>
   </aside>
 
   <main class="main-content">
@@ -1299,40 +1304,42 @@
           </div>
 
           <div id="orden-step-instrumentacion" style="display:none;">
-            <div class="form-actions" style="justify-content:flex-start; margin-top:0; margin-bottom:0.5rem;">
-              <button type="button" class="btn-secondary" id="orden-btn-back-detalles"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M11 18l-6-6 6-6"/></svg></span>Detalles</button>
-            </div>
-            <h3 style="margin:0 0 0.5rem 0; font-size:1rem;">Instrumentación <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Cargá y editá transacciones sin salir del modal. El estado de la orden se recalcula automáticamente.</span></span></h3>
+            <div class="orden-inst-contenido-scroll">
+              <div class="form-actions" style="justify-content:flex-start; margin-top:0; margin-bottom:0.5rem;">
+                <button type="button" class="btn-secondary" id="orden-btn-back-detalles"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M11 18l-6-6 6-6"/></svg></span>Detalles</button>
+              </div>
+              <h3 style="margin:0 0 0.5rem 0; font-size:1rem;">Instrumentación <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Cargá y editá transacciones sin salir del modal. El estado de la orden se recalcula automáticamente.</span></span></h3>
 
-            <div id="orden-inst-acuerdo-block" class="orden-inst-acuerdo" style="margin-bottom:1rem; padding:0.75rem 1rem; background:#f5f5f5; border-radius:8px; border:1px solid #e0e0e0;">
-              <div id="orden-inst-participantes-wrap" style="margin-bottom:0.5rem; font-size:0.9rem; color:#555;">
-                <span id="orden-inst-participantes-texto">–</span>
+              <div id="orden-inst-acuerdo-block" class="orden-inst-acuerdo" style="margin-bottom:1rem; padding:0.75rem 1rem; background:#f5f5f5; border-radius:8px; border:1px solid #e0e0e0;">
+                <div id="orden-inst-participantes-wrap" style="margin-bottom:0.5rem; font-size:0.9rem; color:#555;">
+                  <span id="orden-inst-participantes-texto">–</span>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:0.5rem 1rem;">
+                  <strong>Acuerdo:</strong>
+                  <span id="orden-inst-acuerdo-texto">–</span>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:0.5rem 1rem; margin-top:0.35rem;">
+                  <strong id="orden-inst-instrumentado-label">Instrumentado:</strong>
+                  <span id="orden-inst-instrumentado-texto">–</span>
+                  <span id="orden-inst-acuerdo-aviso" style="color:#b91c1c; font-size:0.9rem;"></span>
+                  <span id="orden-inst-actualizando-msg" style="display:none; margin-left:0.5rem; color:#0ea5e9; font-size:0.9rem; font-weight:500;">Actualizando estado…</span>
+                </div>
               </div>
-              <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:0.5rem 1rem;">
-                <strong>Acuerdo:</strong>
-                <span id="orden-inst-acuerdo-texto">–</span>
-              </div>
-              <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:0.5rem 1rem; margin-top:0.35rem;">
-                <strong id="orden-inst-instrumentado-label">Instrumentado:</strong>
-                <span id="orden-inst-instrumentado-texto">–</span>
-                <span id="orden-inst-acuerdo-aviso" style="color:#b91c1c; font-size:0.9rem;"></span>
-                <span id="orden-inst-actualizando-msg" style="display:none; margin-left:0.5rem; color:#0ea5e9; font-size:0.9rem; font-weight:500;">Actualizando estado…</span>
-              </div>
-            </div>
 
-            <div class="vista-toolbar" style="margin-bottom:0.75rem; justify-content:flex-start;">
-              <button type="button" id="orden-btn-nueva-transaccion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
+              <div class="vista-toolbar" style="margin-bottom:0.75rem; justify-content:flex-start;">
+                <button type="button" id="orden-btn-nueva-transaccion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
+              </div>
+              <div id="orden-inst-loading" class="clientes-loading" style="display:none;">Cargando instrumentación…</div>
+              <div id="orden-inst-tabla-wrap" style="display:none;">
+                <table id="orden-inst-tabla">
+                  <thead><tr><th>Nro</th><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
+                  <tbody id="orden-inst-tbody"></tbody>
+                </table>
+              </div>
             </div>
-            <div id="orden-inst-loading" class="clientes-loading" style="display:none;">Cargando instrumentación…</div>
-            <div id="orden-inst-tabla-wrap" style="display:none;">
-              <table id="orden-inst-tabla">
-                <thead><tr><th>Nro</th><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
-                <tbody id="orden-inst-tbody"></tbody>
-              </table>
-            </div>
-            <div class="form-actions" style="margin-top:0.75rem;">
-              <button type="button" class="btn-primary" id="orden-btn-cerrar-wizard"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Listo</button>
-              <button type="button" class="btn-secondary" id="orden-btn-cancelar-wizard"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cerrar</button>
+            <div class="form-actions orden-inst-form-actions-sticky" style="margin-top:0;">
+              <button type="button" class="btn-primary" id="orden-btn-cerrar-wizard" onclick="typeof window.__closeModalOrden==='function'&&window.__closeModalOrden(); return false;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Listo</button>
+              <button type="button" class="btn-secondary" id="orden-btn-cancelar-wizard" onclick="typeof window.__closeModalOrdenSolo==='function'&&window.__closeModalOrdenSolo(); return false;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cerrar</button>
             </div>
           </div>
         </form>

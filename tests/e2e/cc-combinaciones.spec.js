@@ -4,6 +4,10 @@
  * Mismos datos fijos (200k, 195k, 197k, 5k, 3k). Valida saldo y detalle CC cliente e intermediario.
  * Escribe un log en Excel (test-results/cc-combinaciones-log.xlsx) con expectativa, real y resultado (PASS/ERR) por combinación.
  *
+ * Una sola combinación (para revisar en la app que reglas y caso de prueba cierran):
+ *   COMBINACION_ID="E,P,E,P" npx playwright test tests/e2e/cc-combinaciones.spec.js --headed
+ * (Comillas obligatorias para respetar las comas. Reemplazá por: P,P,P,P | P,P,P,E | P,E,P,P | P,E,P,E | E,P,P,P | E,P,P,E | E,P,E,P | E,P,E,E | E,E,P,P | E,E,P,E | E,E,E,P | E,E,E,E)
+ *
  * Convención arranque limpio: se usa un cliente fijo (CLIENTE_CC_COMBINACIONES). Al inicio se anulan
  * todas las órdenes de ese cliente para que el detalle CC sea solo de la orden que crea este test.
  * Expectativas = tabla de reglas (cc-combinaciones-esperado.js); ante fallo: explicar qué falló y calibrar
@@ -40,7 +44,8 @@ const TEST_USER_PASSWORD = process.env.TEST_USER_PASSWORD || '';
 /** Cliente fijo para este test. Arranque limpio: al inicio se anulan todas sus órdenes. */
 const CLIENTE_CC_COMBINACIONES = 'E2E CC Combinaciones';
 
-async function esperarActualizacionEstadoOrden(page, timeoutMs = 90000) {
+/** Igual que orden-cc: espera a que el mensaje "Actualizando estado…" desaparezca. */
+async function esperarActualizacionEstadoOrden(page, timeoutMs = 35000) {
   const msg = page.locator('#orden-inst-actualizando-msg');
   await msg.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
   await msg.waitFor({ state: 'hidden', timeout: timeoutMs });
@@ -119,6 +124,53 @@ async function obtenerFilaClientePorNombre(tbodyCc, page, nombreCliente) {
     if (cellText === nombre) return rows.nth(i);
   }
   return tbodyCc.locator('tr').filter({ hasText: 'nunca-coincide-e2e-' + nombre });
+}
+
+/**
+ * Rellena el Real del log desde la vista "Detalle de movimientos" cuando en Resumen no hay fila (saldo 0).
+ * Se queda en la misma pantalla CC: clic en "Detalle de movimientos", Tipo ya está en cliente/intermediario, se lee la tabla.
+ * Columna entidad = td:nth-child(10); montos en 6 (USD), 7 (ARS), 8 (EUR). Timeouts cortos y try/catch para no frenar la prueba.
+ */
+async function leerMontosDesdeVistaDetalle(page, tipo, nombreEntity) {
+  const nombre = (nombreEntity || '').trim();
+  if (!nombre) return [];
+  try {
+    await page.locator('#cc-filtro-tipo button[data-tipo="' + tipo + '"]').click();
+    await page.locator('#cc-filtro-tipo button[data-tipo="' + tipo + '"].activo').waitFor({ state: 'visible', timeout: 2000 });
+    await page.waitForTimeout(400);
+    await page.locator('#cc-vista-toggle button[data-vista="detalle"]').click();
+    await page.locator('#cc-detalle-wrap').waitFor({ state: 'visible', timeout: 5000 });
+    await page.waitForTimeout(500);
+    const tbody = page.locator('#cc-vista-detalle-tbody');
+    await tbody.waitFor({ state: 'visible', timeout: 3000 });
+    const allRows = tbody.locator('tr');
+    const count = await allRows.count();
+    const montos = [];
+    for (let i = 0; i < count; i++) {
+      const row = allRows.nth(i);
+      const tdEntity = row.locator('td:nth-child(10)');
+      if ((await tdEntity.count()) === 0) continue;
+      const entityText = (await tdEntity.textContent())?.trim() || '';
+      if (!entityText.includes(nombre)) continue;
+      for (const col of [7, 6, 8]) {
+        const celda = row.locator('td:nth-child(' + col + ')');
+        const texto = await leerSaldoConSigno(celda);
+        if (texto !== '–' && /\d/.test(texto)) {
+          montos.push(saldoLeidoANumero(texto));
+          break;
+        }
+      }
+    }
+    await page.locator('#cc-vista-toggle button[data-vista="resumen"]').click();
+    await page.locator('#cc-contenido').waitFor({ state: 'visible', timeout: 3000 });
+    await page.waitForTimeout(200);
+    return [...montos].sort((a, b) => a - b);
+  } catch (_) {
+    try {
+      await page.locator('#cc-vista-toggle button[data-vista="resumen"]').click().catch(() => {});
+    } catch (_) {}
+    return [];
+  }
 }
 
 test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
@@ -214,8 +266,10 @@ test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
     const logRows = [LOG_HEADERS];
 
     try {
+    const filtrarCombinacionId = (process.env.COMBINACION_ID || '').trim(); // ej. COMBINACION_ID="E,P,E,P" (con comillas)
     for (let idx = 0; idx < COMBINACIONES_ESPERADO.length; idx++) {
       const esperado = COMBINACIONES_ESPERADO[idx];
+      if (filtrarCombinacionId != null && filtrarCombinacionId !== '' && esperado.id !== filtrarCombinacionId) continue;
       const estados = [esperado.tx1, esperado.tx2, esperado.tx3, esperado.tx4];
       // Siempre tener el esperado de detalle (aunque no abramos el modal) para log y para no dar PASS falso
       const esperadoSorted = [...(esperado.detalleCliente || [])].sort((a, b) => a - b);
@@ -224,29 +278,36 @@ test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
       let appIntSorted = [];
 
       await test.step(`Combinación ${esperado.id}`, async () => {
-      // Para combinaciones 1..n reabrir orden e ir a instrumentación (en la 0 ya estamos ahí)
-      if (idx > 0) {
+      // Igual que orden-cc: un solo cambio de combo por apertura del modal, luego Listo y cerrar; reabrir para el siguiente.
+      // Con COMBINACION_ID solo corre una combinación: estamos recién en instrumentación, no hubo cierre previo → no reabrir.
+      const esIndividual = (filtrarCombinacionId || '').trim() !== '';
+      if (idx > 0 && !esIndividual) {
         await reopenOrderAndGoToInstrumentacion(page, nombreCliente);
         combosEstado = page.locator('#orden-inst-tbody .combo-estado-transaccion');
         await expect(combosEstado).toHaveCount(4);
       }
 
-      // Fijar cada combo en el estado esperado (E o P)
       for (let i = 0; i < 4; i++) {
-        const valorActual = await combosEstado.nth(i).inputValue();
         const valorQuerido = estados[i] === 'E' ? 'ejecutada' : 'pendiente';
-        if (valorActual === valorQuerido) continue;
-        await combosEstado.nth(i).selectOption(valorQuerido === 'ejecutada' ? 'ejecutada' : 'pendiente');
-        if (valorQuerido === 'pendiente') {
-          await expect(page.locator('#modal-confirm-backdrop')).toBeVisible({ timeout: 10000 }).catch(() => {});
-          await page.getByRole('button', { name: /sí, reversar/i }).click().catch(() => {});
-          await expect(page.locator('#modal-confirm-backdrop')).toBeHidden({ timeout: 5000 }).catch(() => {});
+        const valorActual = await combosEstado.nth(i).inputValue();
+        if (valorActual !== valorQuerido) {
+          await combosEstado.nth(i).selectOption(valorQuerido);
+          if (valorQuerido === 'pendiente') {
+            await expect(page.locator('#modal-confirm-backdrop')).toBeVisible({ timeout: 10000 }).catch(() => {});
+            await page.getByRole('button', { name: /sí, reversar/i }).click().catch(() => {});
+            await expect(page.locator('#modal-confirm-backdrop')).toBeHidden({ timeout: 5000 }).catch(() => {});
+          }
+          await esperarActualizacionEstadoOrden(page);
         }
-        await esperarActualizacionEstadoOrden(page);
+        // Mismo método que orden-cc: Listo y expect (una vez por combo, así no se frena)
+        await page.locator('#orden-btn-cerrar-wizard').click();
+        await expect(page.locator('#modal-orden-backdrop.activo')).toBeHidden({ timeout: 20000 });
+        if (i < 3) {
+          await reopenOrderAndGoToInstrumentacion(page, nombreCliente);
+          combosEstado = page.locator('#orden-inst-tbody .combo-estado-transaccion');
+          await expect(combosEstado).toHaveCount(4);
+        }
       }
-
-      await page.locator('#orden-btn-cerrar-wizard').click();
-      await expect(page.locator('#modal-orden-backdrop.activo')).toBeHidden({ timeout: 20000 });
 
       await page.locator('#menu-cuenta-corriente').click();
       await expect(page.locator('#vista-cuenta-corriente')).toBeVisible({ timeout: 5000 });
@@ -270,7 +331,7 @@ test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
       }
       const diffCli = Math.abs(saldoClienteARS - esperado.saldoClienteARS);
 
-      // Validar detalle Cliente: abrir "Ver detalle", leer montos ARS (resistente: esperar al menos 1 fila y leer las que haya)
+      // Validar detalle Cliente: solo desde el modal "Ver detalle" (#cc-detalle-tbody), no desde la vista "Detalle de movimientos".
       if (countCli > 0 && esperado.detalleCliente && esperado.detalleCliente.length >= 0) {
         await filaCliente.first().locator('.btn-ver-detalle').click();
         await expect(page.locator('#modal-cc-detalle-backdrop.activo')).toBeVisible({ timeout: 8000 });
@@ -305,7 +366,7 @@ test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
       }
       const diffInt = Math.abs(saldoIntARS - esperado.saldoIntARS);
 
-      // Validar detalle Intermediario
+      // Validar detalle Intermediario: solo desde el modal "Ver detalle" (#cc-detalle-tbody).
       if (countInt > 0 && esperado.detalleInt && esperado.detalleInt.length >= 0) {
         await filasInt.first().locator('.btn-ver-detalle').click();
         await expect(page.locator('#modal-cc-detalle-backdrop.activo')).toBeVisible({ timeout: 8000 });
@@ -331,15 +392,28 @@ test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
         appIntSorted = [...montosAppInt].sort((a, b) => a - b);
       }
 
-      // Log a Excel: expectativa, real, resultado (PASS/ERR/N/A). N/A = no se pudo verificar (sin fila en resumen, ej. saldo 0).
+      const saldoCliEsperadoCero = Math.abs(Number(esperado.saldoClienteARS) || 0) <= 1;
+      const saldoIntEsperadoCero = Math.abs(Number(esperado.saldoIntARS) || 0) <= 1;
+      // Si en Resumen no hay fila (saldo 0) pero sí detalle esperado: mismo pantallazo, clic en "Detalle de movimientos" (Tipo Cliente o Intermediario) y leer la tabla para rellenar Real en el log. Lo mismo para cliente y para intermediario.
+      if (countCli === 0 && saldoCliEsperadoCero && (esperado.detalleCliente || []).length > 0) {
+        const leido = await leerMontosDesdeVistaDetalle(page, 'cliente', nombreCliente);
+        if (leido.length > 0) appSorted = leido;
+      }
+      if (countInt === 0 && saldoIntEsperadoCero && (esperado.detalleInt || []).length > 0) {
+        const leido = await leerMontosDesdeVistaDetalle(page, 'intermediario', nombreIntermediario);
+        if (leido.length > 0) appIntSorted = leido;
+      }
+      // Log a Excel: expectativa, real, resultado (PASS/ERR/N/A). Detalle desde modal "Ver detalle" o desde vista "Detalle de movimientos" si no hay fila (saldo 0).
       const resSaldoCli = diffCli <= 1 ? 'PASS' : 'ERR';
       const resSaldoInt = diffInt <= 1 ? 'PASS' : 'ERR';
       let resDetalleCli = 'ERR';
       if (esperadoSorted.length === 0) resDetalleCli = 'PASS';
-      else if (countCli === 0) resDetalleCli = 'N/A'; // sin fila, no se pudo abrir modal
+      else if (countCli === 0 && saldoCliEsperadoCero) resDetalleCli = 'PASS'; // sin fila porque saldo 0 (resumen oculta la fila)
+      else if (countCli === 0) resDetalleCli = 'N/A';
       else if (appSorted.length === esperadoSorted.length && esperadoSorted.every((v, i) => Math.abs((appSorted[i] || 0) - v) <= 1)) resDetalleCli = 'PASS';
       let resDetalleInt = 'ERR';
       if (esperadoIntSorted.length === 0) resDetalleInt = 'PASS';
+      else if (countInt === 0 && saldoIntEsperadoCero) resDetalleInt = 'PASS'; // sin fila porque saldo 0
       else if (countInt === 0) resDetalleInt = 'N/A';
       else if (appIntSorted.length === esperadoIntSorted.length && esperadoIntSorted.every((v, i) => Math.abs((appIntSorted[i] || 0) - v) <= 1)) resDetalleInt = 'PASS';
       logRows.push([

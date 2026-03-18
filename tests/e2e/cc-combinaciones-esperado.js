@@ -24,24 +24,24 @@ const DATOS_FIJOS = {
  * Solo combinaciones que pueden darse (sin Tx1=P y Tx3=E; sin P,P,E,P ni P,E,E,E).
  */
 const COMBINACIONES_ESPERADO = [
-  // 1. P,P,P,P
-  { id: 'P,P,P,P', tx1: 'P', tx2: 'P', tx3: 'P', tx4: 'P', saldoClienteARS: 5000, saldoIntARS: -200000, detalleCliente: [5000], detalleInt: [197000, 3000] },
+  // 1. P,P,P,P (todo pendiente = nadie le debe a nadie → saldo 0 ambos)
+  { id: 'P,P,P,P', tx1: 'P', tx2: 'P', tx3: 'P', tx4: 'P', saldoClienteARS: 0, saldoIntARS: 0, detalleCliente: [], detalleInt: [] },
   // 2. P,P,P,E
-  { id: 'P,P,P,E', tx1: 'P', tx2: 'P', tx3: 'P', tx4: 'E', saldoClienteARS: 5000, saldoIntARS: -197000, detalleCliente: [5000], detalleInt: [-200000, 3000] },
-  // 3. P,E,P,P
-  { id: 'P,E,P,P', tx1: 'P', tx2: 'E', tx3: 'P', tx4: 'P', saldoClienteARS: 200000, saldoIntARS: -200000, detalleCliente: [195000, 5000], detalleInt: [197000, 3000] },
+  { id: 'P,P,P,E', tx1: 'P', tx2: 'P', tx3: 'P', tx4: 'E', saldoClienteARS: 0, saldoIntARS: -197000, detalleCliente: [], detalleInt: [-200000, 3000] },
+  // 3. P,E,P,P (Tx3 y Tx4 ambas P → no se escribe nada en int; saldo int 0)
+  { id: 'P,E,P,P', tx1: 'P', tx2: 'E', tx3: 'P', tx4: 'P', saldoClienteARS: 200000, saldoIntARS: 0, detalleCliente: [195000, 5000], detalleInt: [] },
   // 4. P,E,P,E
   { id: 'P,E,P,E', tx1: 'P', tx2: 'E', tx3: 'P', tx4: 'E', saldoClienteARS: 200000, saldoIntARS: -197000, detalleCliente: [195000, 5000], detalleInt: [-200000, 3000] },
-  // 5. E,P,P,P
-  { id: 'E,P,P,P', tx1: 'E', tx2: 'P', tx3: 'P', tx4: 'P', saldoClienteARS: -195000, saldoIntARS: -200000, detalleCliente: [-200000, 5000], detalleInt: [197000, 3000] },
-  // 6. E,P,P,E
-  { id: 'E,P,P,E', tx1: 'E', tx2: 'P', tx3: 'P', tx4: 'E', saldoClienteARS: -195000, saldoIntARS: -197000, detalleCliente: [-200000, 5000], detalleInt: [-200000, 3000] },
-  // 7. E,P,E,P
-  { id: 'E,P,E,P', tx1: 'E', tx2: 'P', tx3: 'E', tx4: 'P', saldoClienteARS: -195000, saldoIntARS: -197000, detalleCliente: [-200000, 5000], detalleInt: [-200000, 3000] },
-  // 8. E,P,E,E
-  { id: 'E,P,E,E', tx1: 'E', tx2: 'P', tx3: 'E', tx4: 'E', saldoClienteARS: -195000, saldoIntARS: 0, detalleCliente: [-200000, 5000], detalleInt: [-200000, 197000, 3000] },
-  // 9. E,E,P,P
-  { id: 'E,E,P,P', tx1: 'E', tx2: 'E', tx3: 'P', tx4: 'P', saldoClienteARS: 0, saldoIntARS: -200000, detalleCliente: [-200000, 195000, 5000], detalleInt: [197000, 3000] },
+  // 5. E,P,P,P (par_cliente pendiente → sin 5k cliente; Tx3/Tx4 P → int 0)
+  { id: 'E,P,P,P', tx1: 'E', tx2: 'P', tx3: 'P', tx4: 'P', saldoClienteARS: -200000, saldoIntARS: 0, detalleCliente: [-200000], detalleInt: [] },
+  // 6. E,P,P,E (par_cliente pendiente → sin 5k cliente)
+  { id: 'E,P,P,E', tx1: 'E', tx2: 'P', tx3: 'P', tx4: 'E', saldoClienteARS: -200000, saldoIntARS: -197000, detalleCliente: [-200000], detalleInt: [-200000, 3000] },
+  // 7. E,P,E,P (par_cliente pendiente → sin 5k cliente)
+  { id: 'E,P,E,P', tx1: 'E', tx2: 'P', tx3: 'E', tx4: 'P', saldoClienteARS: -200000, saldoIntARS: -197000, detalleCliente: [-200000], detalleInt: [-200000, 3000] },
+  // 8. E,P,E,E (par_cliente pendiente → sin 5k cliente)
+  { id: 'E,P,E,E', tx1: 'E', tx2: 'P', tx3: 'E', tx4: 'E', saldoClienteARS: -200000, saldoIntARS: 0, detalleCliente: [-200000], detalleInt: [-200000, 197000, 3000] },
+  // 9. E,E,P,P (Tx3 y Tx4 ambas P → int 0, sin detalle int)
+  { id: 'E,E,P,P', tx1: 'E', tx2: 'E', tx3: 'P', tx4: 'P', saldoClienteARS: 0, saldoIntARS: 0, detalleCliente: [-200000, 195000, 5000], detalleInt: [] },
   // 10. E,E,P,E
   { id: 'E,E,P,E', tx1: 'E', tx2: 'E', tx3: 'P', tx4: 'E', saldoClienteARS: 0, saldoIntARS: -197000, detalleCliente: [-200000, 195000, 5000], detalleInt: [-200000, 3000] },
   // 11. E,E,E,P
