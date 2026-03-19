@@ -273,6 +273,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'UI botones azul + iconos moneda con círculo negro', 'Estilos globales en index.html: todos los botones de acción pasan a azul vivo (btn-primary, btn-secondary, btn-nuevo, btn-editar, btn-chat, login/cerrar/refrescar y icon-only), excepto btn-excel que queda verde. Además los iconos de moneda ahora se muestran contenidos en círculo negro (tipo operación y cards de cajas).', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Ajuste visual: revertir botones y suavizar círculo iconos', 'Se revierte la paleta azul de botones y se recupera el estilo anterior de la app. Se mantiene el círculo negro en iconos de moneda, pero con borde mínimo y menor padding para que acompañe sin llamar la atención.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Iconos de moneda: círculo sutil en gris', 'Ajuste estético en index.html: el contenedor circular de iconos de moneda pasa de negro a gris claro con borde fino gris para una presencia más suave en tipos de operación y cards de cajas.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Cards Inicio/Cajas: ocultar EUR sin tipo activo', 'Si no existe ningún tipo de operación activo que use EUR (moneda_in o moneda_out), se oculta EUR en las cards de Efectivo de Panel de Control y Cajas. Se consulta tipos_operacion activos en main.js y se ajusta el grid de las cards para mostrar solo USD/ARS.', 'Desarrollo'],
   ];
 
 const datosLogParaExcel = aplicarHoyAhora(datosLog);
@@ -406,6 +407,7 @@ const versiones = [
   ['1.46', '__HOY__', 'Modal orden (primeros datos): sin duplicar moneda/montos; más aire bloque azul. Instrumentación: columna Monto ancha para ARS. CC ARS-USD: espejo Compromiso en moneda recibida (detalle). CC Movimientos: filtros en grid 3 columnas. Trackpad overscroll SPA; reglas SQL CC sin int cobro par cerrado; comisión USD-USD; E2E ajustes.'],
   ['1.47', '__HOY__', 'CC tabla única fuente de verdad: ajuste P,E (ingreso pendiente + contrapartida ejecutada) en dos monedas con orden_recibida+mr; USD-USD cobro bruto -10000 (monto_transaccion) y cierre E,E con comisión +300 al saldo cuando par cerrado. Nuevas migraciones SQL puntuales, documentación del motor y E2E completos (cc-combinaciones + tipos 2tx) en verde.'],
   ['1.48', '__HOY__', 'Ajuste visual final: iconos de moneda con círculo gris sutil (borde fino) en tipos de operación y cards de cajas, manteniendo el estilo previo de botones. Incluye insumo para presentación (HTML/PDF de main.js) y bitácora actualizada.'],
+  ['1.49', '__HOY__', 'Panel/Cajas dinámicos por catálogo activo: EUR se oculta en cards de Efectivo cuando no hay tipos de operación activos que usen EUR (IN/OUT), y reaparece automáticamente al activar alguno.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

@@ -653,6 +653,49 @@ function saldosCajaDesdeLista(list) {
   return saldos;
 }
 
+/**
+ * Devuelve true si existe al menos un tipo de operación activo que use la moneda en IN u OUT.
+ * Si hay error de consulta, fallback conservador: true (no ocultar columna).
+ */
+function hayTipoOperacionActivoConMoneda(moneda) {
+  const mon = String(moneda || '').toUpperCase().trim();
+  if (!mon) return Promise.resolve(true);
+  return client
+    .from('tipos_operacion')
+    .select('id', { head: true, count: 'exact' })
+    .eq('activo', true)
+    .or(`moneda_in.eq.${mon},moneda_out.eq.${mon}`)
+    .then((res) => {
+      if (res.error) return true;
+      return Number(res.count || 0) > 0;
+    })
+    .catch(() => true);
+}
+
+/** Muestra/oculta EUR en cards de Efectivo (Inicio y Cajas) y ajusta el grid a 2 monedas cuando se oculta. */
+function setVisibilidadEurCardsEfectivo(mostrarEur) {
+  const map = [
+    { cardId: 'inicio-card-efectivo', eurIds: ['inicio-efectivo-eur-inicial', 'inicio-efectivo-eur-actual', 'inicio-efectivo-eur-var', 'inicio-efectivo-eur-tendencia'] },
+    { cardId: 'cajas-card-efectivo', eurIds: ['cajas-saldo-efectivo-eur'] },
+  ];
+
+  map.forEach(({ cardId, eurIds }) => {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const filas = card.querySelectorAll('.inicio-caja-fila');
+    filas.forEach((fila) => {
+      if (mostrarEur) fila.classList.remove('inicio-caja-banco-fila');
+      else fila.classList.add('inicio-caja-banco-fila');
+      const eurCol = fila.children && fila.children[3] ? fila.children[3] : null;
+      if (eurCol) eurCol.style.display = mostrarEur ? '' : 'none';
+    });
+    eurIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = mostrarEur ? '' : 'none';
+    });
+  });
+}
+
 function loadCajas() {
   const loadingEl = document.getElementById('cajas-loading');
   const wrapEl = document.getElementById('cajas-tabla-wrap');
@@ -680,10 +723,15 @@ function loadCajas() {
   const cajasSaldoIds = ['cajas-saldo-efectivo-usd', 'cajas-saldo-efectivo-eur', 'cajas-saldo-efectivo-ars', 'cajas-saldo-banco-usd', 'cajas-saldo-banco-ars', 'cajas-saldo-cheque-ars'];
   cajasSaldoIds.forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = '–'; });
 
-  Promise.all([getListaMovimientosCajaParaSaldos(), client.from('tipos_movimiento_caja').select('id, nombre')])
-    .then(([list, resTipos]) => {
+  Promise.all([
+    getListaMovimientosCajaParaSaldos(),
+    client.from('tipos_movimiento_caja').select('id, nombre'),
+    hayTipoOperacionActivoConMoneda('EUR'),
+  ])
+    .then(([list, resTipos, mostrarEur]) => {
     return delayMinLoading(loadingShownAtCajas).then(() => {
     loadingEl.style.display = 'none';
+    setVisibilidadEurCardsEfectivo(!!mostrarEur);
     const saldos = saldosCajaDesdeLista(list);
     const tiposMap = {};
     (resTipos.data || []).forEach((t) => { tiposMap[t.id] = t.nombre || '–'; });
@@ -694,7 +742,7 @@ function loadCajas() {
       el.className = base + (valor >= 0 ? 'positivo' : 'negativo');
     };
     setVal(document.getElementById('cajas-saldo-efectivo-usd'), saldos.efectivo.USD, 'USD');
-    setVal(document.getElementById('cajas-saldo-efectivo-eur'), saldos.efectivo.EUR, 'EUR');
+    if (mostrarEur) setVal(document.getElementById('cajas-saldo-efectivo-eur'), saldos.efectivo.EUR, 'EUR');
     setVal(document.getElementById('cajas-saldo-efectivo-ars'), saldos.efectivo.ARS, 'ARS');
     setVal(document.getElementById('cajas-saldo-banco-usd'), saldos.banco.USD, 'USD');
     setVal(document.getElementById('cajas-saldo-banco-ars'), saldos.banco.ARS, 'ARS');
@@ -789,8 +837,9 @@ function loadInicio() {
   const monedasBanco = ['USD', 'ARS'];
 
   // Usar la misma lista y el mismo cálculo que la vista Cajas: Saldo Actual = saldos de las cards de Cajas.
-  getListaMovimientosCajaParaSaldos()
-    .then((list) => {
+  Promise.all([getListaMovimientosCajaParaSaldos(), hayTipoOperacionActivoConMoneda('EUR')])
+    .then(([list, mostrarEur]) => {
+      setVisibilidadEurCardsEfectivo(!!mostrarEur);
       const saldoActual = saldosCajaDesdeLista(list);
       const saldoT1 = { efectivo: { USD: 0, EUR: 0, ARS: 0 }, banco: { USD: 0, EUR: 0, ARS: 0 }, cheque: { USD: 0, EUR: 0, ARS: 0 } };
       (list || []).forEach((m) => {
@@ -833,7 +882,7 @@ function loadInicio() {
           elTend.innerHTML = variacion > 0 ? svgSube : variacion < 0 ? svgBaja : svgIgual;
         }
       };
-      monedasEfectivo.forEach((mon) => setFila('efectivo', mon));
+      (mostrarEur ? monedasEfectivo : ['USD', 'ARS']).forEach((mon) => setFila('efectivo', mon));
       monedasBanco.forEach((mon) => setFila('banco', mon));
       setFila('cheque', 'ARS');
       loadInicioPendientes();
