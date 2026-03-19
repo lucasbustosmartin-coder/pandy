@@ -388,12 +388,21 @@
     .tipo-op-iconos-par { display: inline-flex; align-items: center; gap: 0.15rem; }
     .tipo-op-iconos-sep { display: inline-block; font-size: 0.72rem; color: #9ca3af; font-weight: 600; margin: 0 0.05rem; line-height: 1; align-self: center; }
     .tipo-op-icono-moneda, .tipo-op-icono-cheque, .tipo-op-icono-custom { display: inline-block; vertical-align: middle; object-fit: contain; flex-shrink: 0; max-height: 24px; width: auto; }
+    .tipo-op-icono-moneda {
+      width: 24px;
+      height: 24px;
+      padding: 1px;
+      background: #f1f3f5;
+      border-radius: 50%;
+      border: 0.5px solid rgba(107,114,128,0.65);
+      box-shadow: none;
+    }
     .td-tipo-op-iconos, .cc-col-tipo-op-iconos { text-align: center; vertical-align: middle; }
     .tipo-op-moneda-celda { display: inline-flex; align-items: center; gap: 0.35rem; }
     .tipo-op-moneda-codigo { font-weight: 500; color: #374151; }
     .inicio-caja-fila-header { padding-bottom: 0.35rem; border-bottom: 1px solid #e5e7eb; }
     .inicio-caja-col-header { font-weight: 600; color: #374151; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; }
-    .inicio-caja-icono-moneda { object-fit: contain; flex-shrink: 0; vertical-align: middle; width: 26px; height: 26px; }
+    .inicio-caja-icono-moneda { object-fit: contain; flex-shrink: 0; vertical-align: middle; width: 26px; height: 26px; padding: 1px; background: #f1f3f5; border-radius: 50%; border: 0.5px solid rgba(107,114,128,0.65); box-shadow: none; }
     .inicio-caja-etiqueta { color: #6b7280; }
     .inicio-caja-valor { font-weight: 600; text-align: right; }
     .inicio-caja-valor.positivo { color: #0d7d3d; }
@@ -771,7 +780,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.47</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.48</div>
   </aside>
 
   <main class="main-content">

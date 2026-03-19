@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Insumo IA Presentaciones - main.js (Pandi)</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a31;
+      --panel-2: #0f172c;
+      --txt: #e8eefc;
+      --muted: #b9c6e8;
+      --accent: #50e3c2;
+      --accent-2: #7aa2ff;
+      --border: #2a375d;
+      --warn: #ffd166;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      background: radial-gradient(1200px 900px at 90% -10%, #1e2d57 0%, var(--bg) 60%);
+      color: var(--txt);
+      line-height: 1.45;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 20px 64px;
+    }
+    h1, h2, h3 { margin: 0 0 10px; line-height: 1.2; }
+    h1 { font-size: 2rem; }
+    h2 { font-size: 1.25rem; color: var(--accent); margin-top: 24px; }
+    h3 { font-size: 1.02rem; color: var(--accent-2); margin-top: 18px; }
+    p, li { color: var(--muted); }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin: 14px 0 8px;
+    }
+    .kpi {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .kpi .v { font-size: 1.28rem; color: #fff; font-weight: 700; }
+    .kpi .k { font-size: 0.8rem; color: var(--muted); }
+    .card {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 14px 10px;
+      margin-top: 10px;
+    }
+    code {
+      background: #101933;
+      border: 1px solid #23325b;
+      border-radius: 6px;
+      padding: 1px 6px;
+      color: #d9e4ff;
+    }
+    .tag {
+      display: inline-block;
+      margin: 3px 6px 3px 0;
+      padding: 4px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #101933;
+      color: #dce7ff;
+      font-size: 0.82rem;
+    }
+    .note {
+      border-left: 3px solid var(--warn);
+      padding: 8px 10px;
+      background: #1f2130;
+      border-radius: 6px;
+      color: #ffe8a6;
+      margin: 10px 0;
+    }
+    .cols {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 10px;
+    }
+    ol, ul { margin-top: 8px; }
+    .footer {
+      margin-top: 24px;
+      font-size: 0.88rem;
+      color: #a5b4db;
+    }
+    a { color: #9cc6ff; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>Insumo para IA de presentaciones - <code>main.js</code></h1>
+    <p>
+      Documento pensado para que otra IA pueda armar una presentación de producto/arquitectura sin leer todo el repo.
+      Este resumen está centrado en el archivo <code>main.js</code>, que contiene la lógica principal de frontend de Pandi.
+    </p>
+
+    <section class="kpi-grid">
+      <article class="kpi"><div class="v">10.218</div><div class="k">líneas aprox. en <code>main.js</code></div></article>
+      <article class="kpi"><div class="v">100</div><div class="k">funciones declaradas</div></article>
+      <article class="kpi"><div class="v">22</div><div class="k">funciones <code>setup*</code></div></article>
+      <article class="kpi"><div class="v">13</div><div class="k">funciones <code>load*</code></div></article>
+      <article class="kpi"><div class="v">11</div><div class="k">funciones <code>render*</code></div></article>
+      <article class="kpi"><div class="v">8</div><div class="k">funciones <code>save*</code></div></article>
+    </section>
+
+    <section class="card">
+      <h2>1) Qué resuelve este archivo</h2>
+      <ul>
+        <li>Autenticación y sesión con Supabase (login, registro, signOut, permisos por rol).</li>
+        <li>Navegación SPA y carga de vistas: Inicio, Órdenes, Cajas, Clientes, Intermediarios, Tipos de operación, Cuenta corriente, Seguridad.</li>
+        <li>Motor operativo de órdenes/transacciones y sincronización contable: <strong>CC + Caja</strong>.</li>
+        <li>Aplicación de reglas de negocio de CC desde tabla <code>cc_modelo_reglas</code> (fuente de verdad).</li>
+        <li>Modales, UX (drag, backdrop real click), ayudas, toasts, confirmaciones y exportes Excel.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>2) Dependencias y contrato técnico</h2>
+      <p><code>main.js</code> depende de:</p>
+      <div>
+        <span class="tag">Supabase JS client (window.supabase)</span>
+        <span class="tag">Config runtime: SUPABASE_URL / SUPABASE_ANON_KEY</span>
+        <span class="tag">XLSX vía CDN (<code>window.XLSX</code>)</span>
+        <span class="tag"><code>utils.js</code> (formatos + iconografía)</span>
+      </div>
+      <p>Si falta configuración, corta la ejecución con mensaje de error visible en pantalla.</p>
+    </section>
+
+    <section class="card">
+      <h2>3) Módulos funcionales (visión de producto)</h2>
+      <div class="cols">
+        <div>
+          <h3>Seguridad y permisos</h3>
+          <ul>
+            <li>Alta/perfil de usuario (<code>ensureProfile</code>).</li>
+            <li>Permisos por menú y por operación (<code>loadSeguridad</code>, <code>refreshPermisosYVista</code>).</li>
+            <li>Sesión por inactividad configurable (Admin).</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Inicio y pendientes</h3>
+          <ul>
+            <li>Cards de caja + paneles de pendientes.</li>
+            <li>Modales de órdenes/transacciones pendientes con filtros.</li>
+            <li>Recarga suave cada 30 segundos (si no hay modal/expandido).</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Cajas</h3>
+          <ul>
+            <li>Cálculo de saldos desde movimientos.</li>
+            <li>ABM de movimientos y tipos de movimiento.</li>
+            <li>Separación por caja (efectivo/banco/cheque) y moneda.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Cuenta corriente (core)</h3>
+          <ul>
+            <li>Resumen por cliente/intermediario y detalle filtrable.</li>
+            <li>Export Excel de resumen/detalle.</li>
+            <li>Reglas dinámicas de signo/exposición/saldo desde <code>cc_modelo_reglas</code>.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Órdenes e instrumentación</h3>
+          <ul>
+            <li>Wizard de orden y transacciones.</li>
+            <li>Tipos de operación con/sin intermediario, incluyendo CHEQUE-ARS.</li>
+            <li>Sincronización contable al cambiar estado de transacciones.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>UX transversal</h3>
+          <ul>
+            <li>Modales arrastrables y cierre seguro por backdrop real.</li>
+            <li>Ayudas con modal (<code>setupHelpPopovers</code>).</li>
+            <li>Mensajería interna (<code>showToast</code>, <code>showConfirm</code>).</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4) Motor CC por tabla (mensaje clave para presentación)</h2>
+      <p>
+        El diseño buscado es: <strong>“la tabla de reglas es la única fuente de verdad”</strong>.
+        El frontend no decide reglas financieras hardcodeadas, sino que consulta y aplica filas de <code>cc_modelo_reglas</code>.
+      </p>
+      <ul>
+        <li><code>getReglasCcModelo</code>: trae reglas por tipo de operación y uso de intermediario.</li>
+        <li><code>lookupRegla</code>: selecciona regla exacta por pagador/cobrador/tipo/comisión/estado/contrapartida.</li>
+        <li><code>resolverMonedaYMontoCcClienteMotor</code> y <code>resolverMonedaYMontoCcIntermediarioMotor</code>: resuelven moneda/monto de exposición.</li>
+        <li><code>estadoEfectivoComision</code>: interpreta condiciones de comisión sin transacción propia.</li>
+        <li><code>sincronizarCcYCajaDesdeOrden</code>: aplica reglas y reconstruye movimientos de CC y caja.</li>
+      </ul>
+      <div class="note">
+        Punto narrativo fuerte para slides: Pandi desacopla “motor de cálculo” del “código UI”.
+        Cambiar reglas de negocio implica cambiar datos/reglas SQL y no reescribir todo el frontend.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5) Flujos end-to-end importantes</h2>
+      <h3>Flujo A - Login y arranque</h3>
+      <ol>
+        <li><code>client.auth.getSession()</code> verifica sesión.</li>
+        <li>Si no hay sesión: <code>showLogin()</code> + <code>setupLoginAndRegister()</code>.</li>
+        <li>Si hay sesión: <code>onSessionReady(session)</code>.</li>
+        <li>Se cargan permisos, timeout, setup de modales/vistas, y vista inicial permitida.</li>
+      </ol>
+
+      <h3>Flujo B - Cambio de vista</h3>
+      <ol>
+        <li><code>showView(vistaId, pageTitle)</code> controla visibilidad SPA.</li>
+        <li>Dispara <code>load*</code> correspondiente.</li>
+        <li>Cuenta corriente usa loading previo para evitar “flash” de saldos viejos.</li>
+      </ol>
+
+      <h3>Flujo C - Impacto contable por transacciones</h3>
+      <ol>
+        <li>Usuario cambia estado de transacciones en orden/instrumentación.</li>
+        <li>Se sincroniza vía <code>sincronizarCcYCajaDesdeOrden</code>.</li>
+        <li>Se aplican reglas de <code>cc_modelo_reglas</code>.</li>
+        <li>Se reflejan resumen y detalle de CC + saldos de caja.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>6) Funciones clave para mostrar en slides técnicas</h2>
+      <div>
+        <span class="tag">setupLoginAndRegister</span>
+        <span class="tag">showView</span>
+        <span class="tag">loadSeguridad</span>
+        <span class="tag">loadInicio</span>
+        <span class="tag">loadCajas</span>
+        <span class="tag">loadCuentaCorriente</span>
+        <span class="tag">getReglasCcModelo</span>
+        <span class="tag">lookupRegla</span>
+        <span class="tag">estadoEfectivoComision</span>
+        <span class="tag">resolverMonedaYMontoCcClienteMotor</span>
+        <span class="tag">resolverMonedaYMontoCcIntermediarioMotor</span>
+        <span class="tag">sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion</span>
+        <span class="tag">exportarCcResumenExcel</span>
+        <span class="tag">setupModalesDraggable</span>
+        <span class="tag">setupHelpPopovers</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>7) Puntos de negocio que NO hay que omitir en la presentación</h2>
+      <ul>
+        <li><strong>CC y caja deben cerrar siempre</strong> con la realidad operativa.</li>
+        <li>Cliente e intermediario se modelan en paralelo (coherencia global).</li>
+        <li>Reglas de CC parametrizadas por tabla (motor data-driven).</li>
+        <li>E2E de combinaciones valida estados P/E y evita regresiones financieras.</li>
+        <li>Exportación Excel numérica para análisis contable real.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>8) Estructura sugerida de slides (lista para IA)</h2>
+      <ol>
+        <li>Problema: complejidad de CC/caja y riesgo de reglas hardcodeadas.</li>
+        <li>Solución: motor de reglas <code>cc_modelo_reglas</code> + sincronización automática.</li>
+        <li>Arquitectura funcional del frontend (<code>main.js</code> como orquestador).</li>
+        <li>Flujo de negocio de una orden (de instrumentación a impacto contable).</li>
+        <li>Casos de prueba E2E por combinaciones de estados.</li>
+        <li>Beneficios: mantenibilidad, auditabilidad, velocidad de cambio.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>9) Referencias para ampliar</h2>
+      <ul>
+        <li>Código fuente completo: <code>/main.js</code></li>
+        <li>Motor de reglas y docs: <code>docs/CC_MODELO_ENGINE_TABLA.md</code></li>
+        <li>Reglas SQL: <code>sql/cc_modelo_reglas_tabla.sql</code></li>
+        <li>E2E combinaciones: <code>tests/e2e/cc-combinaciones.spec.js</code> y <code>tests/e2e/cc-tipos-activos-combinaciones.spec.js</code></li>
+      </ul>
+    </section>
+
+    <p class="footer">
+      Archivo generado para insumo de presentación. Fecha de referencia: marzo 2026.
+    </p>
+  </main>
+</body>
+</html>
