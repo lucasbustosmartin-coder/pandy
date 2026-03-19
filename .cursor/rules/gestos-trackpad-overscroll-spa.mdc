@@ -1,0 +1,31 @@
+---
+description: Evitar que el gesto horizontal del trackpad dispare "atrás" del navegador en la SPA Pandi
+alwaysApply: true
+---
+
+# Gesto horizontal del trackpad y SPA (Pandi)
+
+## Problema
+
+En **Safari** y **Chrome** (macOS), al usar el trackpad para desplazar una tabla con **scroll horizontal**, el navegador puede interpretar el overscroll como **navegación “atrás”** en el historial. En una SPA de una sola página parece que **se cierra la app** o se sale de la sesión de trabajo.
+
+Suele reproducirse en vistas con tablas anchas (p. ej. **Cuenta corriente → Movimientos**).
+
+## Solución en CSS (obligatoria en este proyecto)
+
+En `index.html` (estilos globales):
+
+1. **`html` y `body`:** `overscroll-behavior-x: none` — evita encadenar el overscroll horizontal al comportamiento por defecto del documento (gesto “atrás”).
+2. **`.main-content`:** `overscroll-behavior-x: contain` — contiene el overscroll en el área principal.
+3. **Cada contenedor con scroll horizontal** (`overflow-x: auto`): **`overscroll-behavior-x: contain`**, junto con `-webkit-overflow-scrolling: touch` en móvil si ya se usa.
+
+Clases y bloques que ya siguen este patrón: `.tabla-clientes-wrap`, `.tabla-movimientos-wrap`, cuerpos de modal con scroll, wraps de tablas en media queries móviles, etc.
+
+## Al agregar o cambiar UI
+
+- Si agregás un **nuevo** `div` con `overflow-x: auto` (tabla ancha, toolbar, etc.), añadí **`overscroll-behavior-x: contain`** en ese mismo contenedor (o reutilizá una clase que ya lo incluya).
+- **No quites** `overscroll-behavior-x: none` de `html`/`body` ni los `contain` de los wraps sin motivo y sin probar en navegador con trackpad.
+
+## Referencia
+
+- MDN: [overscroll-behavior](https://developer.mozilla.org/en-US/docs/Web/CSS/overscroll-behavior)

@@ -177,11 +177,15 @@ function showView(vistaId, pageTitle) {
   if (vistaId === 'vista-ordenes') loadOrdenes();
   if (vistaId === 'vista-inicio') loadInicio();
   if (vistaId === 'vista-cuenta-corriente') {
-    // Evitar flash de datos viejos (ej. -200.000): mostrar loading y ocultar tabla antes de cargar.
+    // Evitar flash de datos viejos (ej. -200.000): mostrar loading y ocultar paneles antes de cargar.
     const ccLoading = document.getElementById('cc-loading');
     const ccContenido = document.getElementById('cc-contenido');
+    const ccPanelSaldos = document.getElementById('cc-panel-saldos');
+    const ccPanelMov = document.getElementById('cc-panel-movimientos');
     if (ccLoading) ccLoading.style.display = 'block';
     if (ccContenido) ccContenido.style.display = 'none';
+    if (ccPanelSaldos) ccPanelSaldos.style.display = 'none';
+    if (ccPanelMov) ccPanelMov.style.display = 'none';
     loadCuentaCorriente();
   }
   if (vistaId === 'vista-intermediarios') loadIntermediarios();
@@ -1208,6 +1212,8 @@ let ccVistaToggle = 'resumen';
 /** Filtro de fechas para vista Detalle de movimientos (desde/hasta). Valores '' = no filtrar por ese lado. */
 let ccDetalleDesde = '';
 let ccDetalleHasta = '';
+/** Filtro opcional por cliente_id o intermediario_id en solapa Movimientos (vacío = todos). */
+let ccDetalleFiltroEntidadId = '';
 /** Filas actuales de la vista Detalle (para ordenar sin volver a filtrar). */
 let ccDetalleVistaRowsActual = [];
 /** Ordenación vista Detalle: clave (fecha, nroOrden, ...) y dirección 1 | -1. */
@@ -1715,11 +1721,15 @@ function loadCuentaCorriente() {
   const loadingEl = document.getElementById('cc-loading');
   const contenido = document.getElementById('cc-contenido');
   const tbody = document.getElementById('cc-resumen-tbody');
+  const panelSaldos = document.getElementById('cc-panel-saldos');
+  const panelMov = document.getElementById('cc-panel-movimientos');
   if (!contenido || !tbody) return;
 
   if (loadingEl) loadingEl.style.display = 'block';
   const loadingShownAtCc = Date.now();
   contenido.style.display = 'none';
+  if (panelSaldos) panelSaldos.style.display = 'none';
+  if (panelMov) panelMov.style.display = 'none';
 
   // Corazón de la app: la única fuente de verdad es orden + transacciones. Siempre sincronizar CC (y caja) antes de cargar, así el detalle muestra exactamente lo que indica el modelo (ej. 3 movimientos cliente para ARS-ARS+int). Si sync falla, se cargan igual los movimientos ya guardados.
   const promDatos = sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
@@ -1943,6 +1953,7 @@ function loadCuentaCorriente() {
   }).catch((err) => {
     if (loadingEl) loadingEl.style.display = 'none';
     contenido.style.display = 'block';
+    syncCcPestañasYPaneles();
   });
 }
 
@@ -2147,11 +2158,56 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     return (b.id || 0) - (a.id || 0);
   });
 
+  poblarSelectCcDetalleEntidad();
   aplicarFiltroCcResumen();
-  const contenidoEl = document.getElementById('cc-contenido');
-  const detalleWrap = document.getElementById('cc-detalle-wrap');
-  if (contenidoEl) contenidoEl.style.display = ccVistaToggle === 'resumen' ? 'block' : 'none';
-  if (detalleWrap) detalleWrap.style.display = ccVistaToggle === 'detalle' ? 'block' : 'none';
+}
+
+/** Rellena el combo Cliente/Intermediario en Movimientos según movimientos cargados y tipo actual. */
+function poblarSelectCcDetalleEntidad() {
+  const sel = document.getElementById('cc-detalle-entidad-select');
+  const labelSpan = document.getElementById('cc-detalle-entidad-label-text');
+  if (!sel) return;
+  if (labelSpan) labelSpan.textContent = ccFiltroTipo === 'cliente' ? 'Cliente:' : 'Intermediario:';
+  const idKey = ccFiltroTipo === 'cliente' ? 'cliente_id' : 'intermediario_id';
+  const movs = ccMovimientosDetalleList.filter((m) => m.tipo === ccFiltroTipo);
+  const map = new Map();
+  movs.forEach((m) => {
+    const id = m[idKey];
+    if (!id) return;
+    const nombre = ((m.nombre || '') + '').trim() || '–';
+    if (!map.has(id)) map.set(id, nombre);
+  });
+  const sorted = [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], 'es'));
+  const prev = ccDetalleFiltroEntidadId;
+  sel.innerHTML = '<option value="">' + (ccFiltroTipo === 'cliente' ? 'Todos los clientes' : 'Todos los intermediarios') + '</option>'
+    + sorted.map(([id, nom]) => '<option value="' + escapeHtml(String(id)) + '">' + escapeHtml(nom) + '</option>').join('');
+  if (prev && sorted.some(([id]) => id === prev)) {
+    sel.value = prev;
+    ccDetalleFiltroEntidadId = prev;
+  } else {
+    ccDetalleFiltroEntidadId = '';
+    sel.value = '';
+  }
+  const ariaEnt = ccFiltroTipo === 'cliente' ? 'Filtrar movimientos por cliente' : 'Filtrar movimientos por intermediario';
+  sel.setAttribute('aria-label', ariaEnt);
+}
+
+/** Muestra el panel Saldos o Movimientos y actualiza solapas (clase activo y aria-selected). */
+function syncCcPestañasYPaneles() {
+  const panelSaldos = document.getElementById('cc-panel-saldos');
+  const panelMov = document.getElementById('cc-panel-movimientos');
+  const toggleEl = document.getElementById('cc-vista-toggle');
+  const esDetalle = ccVistaToggle === 'detalle';
+  if (panelSaldos) panelSaldos.style.display = esDetalle ? 'none' : 'block';
+  if (panelMov) panelMov.style.display = esDetalle ? 'block' : 'none';
+  if (toggleEl) {
+    toggleEl.querySelectorAll('button[data-vista]').forEach((b) => {
+      const v = b.getAttribute('data-vista');
+      const on = (esDetalle && v === 'detalle') || (!esDetalle && v === 'resumen');
+      b.classList.toggle('activo', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  }
 }
 
 function aplicarFiltroCcResumen() {
@@ -2159,11 +2215,19 @@ function aplicarFiltroCcResumen() {
   const detalleWrap = document.getElementById('cc-detalle-wrap');
 
   if (ccVistaToggle === 'detalle') {
+    syncCcPestañasYPaneles();
     if (contenidoEl) contenidoEl.style.display = 'none';
     if (detalleWrap) detalleWrap.style.display = 'block';
     const rangoWrap = document.getElementById('cc-detalle-rango-wrap');
-    if (rangoWrap) rangoWrap.style.display = 'inline-flex';
+    if (rangoWrap) rangoWrap.style.display = 'flex';
     let filtrados = ccMovimientosDetalleList.filter((m) => m.tipo === ccFiltroTipo);
+    if (ccDetalleFiltroEntidadId) {
+      if (ccFiltroTipo === 'cliente') {
+        filtrados = filtrados.filter((m) => m.cliente_id === ccDetalleFiltroEntidadId);
+      } else {
+        filtrados = filtrados.filter((m) => m.intermediario_id === ccDetalleFiltroEntidadId);
+      }
+    }
     if (filtrados.length > 0 && (ccDetalleDesde || ccDetalleHasta)) {
       filtrados = filtrados.filter((m) => {
         const f = (m.fecha || '').toString().slice(0, 10);
@@ -2176,6 +2240,7 @@ function aplicarFiltroCcResumen() {
     renderCcVistaDetalle(filtrados);
     return;
   }
+  syncCcPestañasYPaneles();
   const rangoWrap = document.getElementById('cc-detalle-rango-wrap');
   if (rangoWrap) rangoWrap.style.display = 'none';
   if (contenidoEl) contenidoEl.style.display = 'block';
@@ -2376,6 +2441,13 @@ function setupCcDetalleVistaSortHeaders() {
 function exportarCcResumenExcel() {
   if (ccVistaToggle === 'detalle') {
     let filtrados = ccMovimientosDetalleList.filter((m) => m.tipo === ccFiltroTipo);
+    if (ccDetalleFiltroEntidadId) {
+      if (ccFiltroTipo === 'cliente') {
+        filtrados = filtrados.filter((m) => m.cliente_id === ccDetalleFiltroEntidadId);
+      } else {
+        filtrados = filtrados.filter((m) => m.intermediario_id === ccDetalleFiltroEntidadId);
+      }
+    }
     if (ccDetalleDesde || ccDetalleHasta) {
       filtrados = filtrados.filter((m) => {
         const f = (m.fecha || '').toString().slice(0, 10);
@@ -2934,13 +3006,11 @@ function setupCuentaCorriente() {
 
   const ccVistaToggleEl = document.getElementById('cc-vista-toggle');
   if (ccVistaToggleEl) {
-    ccVistaToggleEl.querySelectorAll('button').forEach((btn) => {
+    ccVistaToggleEl.querySelectorAll('button[data-vista]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const vista = btn.getAttribute('data-vista');
         if (!vista || vista === ccVistaToggle) return;
         ccVistaToggle = vista;
-        ccVistaToggleEl.querySelectorAll('button').forEach((b) => b.classList.remove('activo'));
-        btn.classList.add('activo');
         aplicarFiltroCcResumen();
       });
     });
@@ -2954,38 +3024,51 @@ function setupCuentaCorriente() {
         ccFiltroTipo = tipo;
         ccFiltroTipoEl.querySelectorAll('button').forEach((b) => b.classList.remove('activo'));
         btn.classList.add('activo');
+        ccDetalleFiltroEntidadId = '';
+        poblarSelectCcDetalleEntidad();
         aplicarFiltroCcResumen();
       });
     });
   }
 
-  const ccBtnRefrescar = document.getElementById('cc-btn-refrescar');
-  if (ccBtnRefrescar) {
-    ccBtnRefrescar.addEventListener('click', () => {
-      showToast('Sincronizando CC y caja desde órdenes…', 'info');
-      sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
-        .then(() => {
-          loadCuentaCorriente();
-          showToast('Cuenta corriente actualizada.', 'success');
-          // Si sigue sin movimientos puede ser que la tabla de reglas en Supabase no esté alineada con el Excel.
-          setTimeout(() => {
-            const tbody = document.getElementById('cc-vista-detalle-tbody');
-            const sinMovimientos = tbody && tbody.querySelector('td[colspan="11"]') && tbody.textContent.includes('No hay movimientos');
-            if (sinMovimientos) {
-              showToast('Si tenés órdenes con transacciones ejecutadas y no ves movimientos: ejecutá en Supabase (SQL Editor) el script sql/migracion_cc_modelo_reglas_alinear_excel_completo.sql y volvé a Refrescar.', 'info', 12000);
-            }
-          }, 800);
-        })
-        .catch((e) => {
-          showToast(e && (e.message || String(e)) || 'Error al sincronizar', 'error');
-        });
+  const ccDetalleEntidadSel = document.getElementById('cc-detalle-entidad-select');
+  if (ccDetalleEntidadSel) {
+    ccDetalleEntidadSel.addEventListener('change', () => {
+      ccDetalleFiltroEntidadId = ccDetalleEntidadSel.value || '';
+      aplicarFiltroCcResumen();
     });
   }
 
-  const ccBtnExportar = document.getElementById('cc-btn-exportar-excel');
-  if (ccBtnExportar) {
-    ccBtnExportar.addEventListener('click', () => exportarCcResumenExcel());
+  function onCcRefrescarClick() {
+    showToast('Sincronizando CC y caja desde órdenes…', 'info');
+    sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
+      .then(() => {
+        loadCuentaCorriente();
+        showToast('Cuenta corriente actualizada.', 'success');
+        setTimeout(() => {
+          const tbody = document.getElementById('cc-vista-detalle-tbody');
+          const sinMovimientos = tbody && tbody.querySelector('td[colspan="11"]') && tbody.textContent.includes('No hay movimientos');
+          if (sinMovimientos) {
+            showToast('Si tenés órdenes con transacciones ejecutadas y no ves movimientos: ejecutá en Supabase (SQL Editor) el script sql/migracion_cc_modelo_reglas_alinear_excel_completo.sql y volvé a Refrescar.', 'info', 12000);
+          }
+        }, 800);
+      })
+      .catch((e) => {
+        showToast(e && (e.message || String(e)) || 'Error al sincronizar', 'error');
+      });
   }
+  const ccBtnRefrescar = document.getElementById('cc-btn-refrescar');
+  const ccBtnRefrescarMov = document.getElementById('cc-btn-refrescar-movimientos');
+  if (ccBtnRefrescar) ccBtnRefrescar.addEventListener('click', onCcRefrescarClick);
+  if (ccBtnRefrescarMov) ccBtnRefrescarMov.addEventListener('click', onCcRefrescarClick);
+
+  function onCcExportarClick() {
+    exportarCcResumenExcel();
+  }
+  const ccBtnExportar = document.getElementById('cc-btn-exportar-excel');
+  const ccBtnExportarMov = document.getElementById('cc-btn-exportar-movimientos');
+  if (ccBtnExportar) ccBtnExportar.addEventListener('click', onCcExportarClick);
+  if (ccBtnExportarMov) ccBtnExportarMov.addEventListener('click', onCcExportarClick);
   const ccDetalleDesdeEl = document.getElementById('cc-detalle-desde');
   const ccDetalleHastaEl = document.getElementById('cc-detalle-hasta');
   function aplicarRangoDetalle() {
@@ -4698,6 +4781,10 @@ function adaptarFormularioOrden(codigo, tipos) {
   const btnIrInst = document.getElementById('orden-btn-ir-instrumentacion');
 
   if (wrapPrimerosDatos) wrapPrimerosDatos.style.display = isTipoPrimerosDatos ? 'block' : 'none';
+  const rowMonedaMontoRec = document.getElementById('orden-row-moneda-monto-recibido');
+  const rowMonedaMontoEnt = document.getElementById('orden-row-moneda-monto-entregado');
+  if (rowMonedaMontoRec) rowMonedaMontoRec.style.display = isTipoPrimerosDatos ? 'none' : '';
+  if (rowMonedaMontoEnt) rowMonedaMontoEnt.style.display = isTipoPrimerosDatos ? 'none' : '';
   if (labelImporteCheque) labelImporteCheque.textContent = isArsArs ? 'Importe en Cheque (ARS) *' : (isUsdUsd ? 'Importe (USD) *' : 'Importe *');
   if (btnGuardar) btnGuardar.style.display = soloInstrumentacion ? 'none' : '';
   const iconInstrumentacion = '<span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>';
@@ -6465,6 +6552,49 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   incluir_en_detalle: !!regla.incluir_en_mov_cc_cliente,
                   ...montosCcPorMoneda(monCc, montoCc)
                 });
+                // Dos monedas sin intermediario: la exposición (p. ej. USD/me) cierra el saldo; el ingreso físico va en la moneda de la transacción (p. ej. ARS). Mostramos una línea espejo solo en detalle (no suma al saldo) para que el listado refleje el cobro en caja.
+                if (
+                  !intermediarioId &&
+                  monR !== monE &&
+                  pag === 'cliente' &&
+                  cob === 'pandy' &&
+                  tipo === 'ingreso' &&
+                  estado === 'ejecutada' &&
+                  monCc !== mon &&
+                  Math.abs(montoT) >= 1e-6
+                ) {
+                  const montoEspejo = signoCli * montoT;
+                  rowsCcCliente.push({
+                    cliente_id: clienteId, orden_id: ordenId, transaccion_id: t.id, transaccion_numero: t.numero != null ? t.numero : null,
+                    concepto: conceptoCcLeyenda(leyenda, orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: mon, monto: montoEspejo,
+                    estado: estadoMov, estado_fecha: ahora,
+                    sumar_al_saldo: false,
+                    incluir_en_detalle: true,
+                    ...montosCcPorMoneda(mon, montoEspejo)
+                  });
+                }
+                // Par simétrico al ingreso: el compromiso se registra en moneda entregada (transacción); una línea espejo en moneda recibida (mr)
+                // con transaccion_id del egreso hace que Originante = Pandy y la columna ARS/USD “cuadre” con el cobro en la otra moneda (solo detalle).
+                if (
+                  !intermediarioId &&
+                  monR !== monE &&
+                  pag === 'pandy' &&
+                  cob === 'cliente' &&
+                  tipo === 'egreso' &&
+                  estado === 'ejecutada' &&
+                  mon === monE &&
+                  Math.abs(mr) >= 1e-6
+                ) {
+                  const montoEspejoEgr = signoCli * mr;
+                  rowsCcCliente.push({
+                    cliente_id: clienteId, orden_id: ordenId, transaccion_id: t.id, transaccion_numero: t.numero != null ? t.numero : null,
+                    concepto: conceptoCcLeyenda(leyenda, orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: monR, monto: montoEspejoEgr,
+                    estado: estadoMov, estado_fecha: ahora,
+                    sumar_al_saldo: false,
+                    incluir_en_detalle: true,
+                    ...montosCcPorMoneda(monR, montoEspejoEgr)
+                  });
+                }
               }
               if (intermediarioId && escribirCcInt) {
                 const { moneda: monCcInt, monto: baseInt } = resolverMonedaYMontoCcIntermediarioMotor(regla, orden, t, {
@@ -6488,9 +6618,18 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               if (reglaComPandy && (reglaComPandy.incluir_en_mov_cc_cliente || reglaComPandy.cc_cliente_suma_saldo)) {
                 const signo = reglaComPandy.cc_cliente_signo != null ? reglaComPandy.cc_cliente_signo : 1;
                 const cerrado = estadoComPandy === 'ejecutada';
+                /** Nro. trans. del ingreso Cliente→Pandy (no la fila de comisión) para el texto del concepto */
+                const trIngresoClientePandy = (transacciones || [])
+                  .filter((t) => (t.tipo || '').toLowerCase() === 'ingreso'
+                    && String(t.pagador || '').toLowerCase() === 'cliente'
+                    && String(t.cobrador || '').toLowerCase() === 'pandy'
+                    && (t.estado || '').toLowerCase() === 'ejecutada'
+                    && Math.abs(Number(t.monto) - comisionPandyMonto) >= 1e-6)
+                  .sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0))[0];
+                const nroTransComisionConcepto = trIngresoClientePandy && trIngresoClientePandy.numero != null ? trIngresoClientePandy.numero : null;
                 rowsCcCliente.push({
                   cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null,
-                  concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, null), fecha, usuario_id: currentUserId,
+                  concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConcepto), fecha, usuario_id: currentUserId,
                   moneda: comisionPandyMon, monto: signo * comisionPandyMonto, estado: cerrado ? 'cerrado' : 'pendiente', estado_fecha: ahora,
                   sumar_al_saldo: !!reglaComPandy.cc_cliente_suma_saldo,
                   incluir_en_detalle: !!reglaComPandy.incluir_en_mov_cc_cliente,
@@ -6557,8 +6696,16 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             }
           }
 
-          // Cierre orden en dos monedas (sin intermediario): para que el resumen de CC no arroje saldo en más de una moneda por la misma orden, añadimos dos movimientos de cierre que zeran el saldo del cliente cuando ambas patas están ejecutadas.
-          if (clienteId && monR !== monE) {
+          // Si la tabla define moneda/monto de exposición para cliente, el motor ya registra ambas patas en la moneda coherente (p. ej. todo USD) y el saldo cierra solo. El cierre sintético legacy (+monR / -monE) duplicaría el efecto y dejaría saldo en dos monedas (ej. USD -me y ARS +mr).
+          const reglasUsanExposicionCcCliente = (reglas || []).some((r) => {
+            if (!r) return false;
+            const exp = r.cc_cliente_moneda_exposicion != null ? String(r.cc_cliente_moneda_exposicion).trim() : '';
+            const ref = r.cc_cliente_monto_referencia != null ? String(r.cc_cliente_monto_referencia).trim() : '';
+            return !!(exp || ref);
+          });
+
+          // Cierre orden en dos monedas (sin intermediario, sin exposición en tabla): zerar saldo cuando ambas patas ejecutadas moviendo +recibido en monR y -entregado en monE.
+          if (clienteId && monR !== monE && !reglasUsanExposicionCcCliente) {
             const ingresoCli = transacciones.find((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && t.estado === 'ejecutada');
             const egresoCli = transacciones.find((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.cobrador || '').toLowerCase() === 'cliente' && String(t.pagador || '').toLowerCase() === 'pandy' && t.estado === 'ejecutada');
             const montoRecibido = ingresoCli ? (Number(ingresoCli.monto) || 0) : 0;

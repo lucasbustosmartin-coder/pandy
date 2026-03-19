@@ -914,6 +914,21 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
           expect(esCero, `Paso 2: después de Pandy→Cliente la CC del cliente debe ser 0. Se capturó: ${saldoMoneda}, filas: ${countCliente}`).toBe(true);
           logStep('4.2', 'Paso 2: Pandy paga USD al cliente (fila 1)', 'CC cliente cierra en 0. Sin fila = saldo 0.', 'Filtro Cliente; sin fila o celda 0', 'OK', '', countCliente === 0 ? '0 (sin fila)' : saldoMoneda, numerosTransaccionUsdUsd[1]);
           logTransaccion(2, 'Pandy', 'Cliente', 'USD', 'Efectivo', montoEntregado, countCliente === 0 ? '0' : saldoMoneda, 'OK', numerosTransaccionUsdUsd[1]);
+
+          // Validar que en Movimientos de CC quede visible la comisión explícita de USD-USD.
+          await page.locator('#cc-vista-toggle button[data-vista="detalle"]').click();
+          await expect(page.locator('#cc-detalle-wrap')).toBeVisible({ timeout: 5000 });
+          await page.locator('#cc-detalle-entidad-select').selectOption({ label: nombreCliente }).catch(async () => {
+            const val = await page.locator('#cc-detalle-entidad-select option').filter({ hasText: nombreCliente }).first().getAttribute('value');
+            if (val) await page.locator('#cc-detalle-entidad-select').selectOption(val);
+          });
+          await page.waitForTimeout(700);
+          const filaComision = page.locator('#cc-vista-detalle-tbody tr')
+            .filter({ hasText: /comisi[oó]n del acuerdo/i })
+            .filter({ hasText: nombreCliente });
+          await expect(filaComision.first(), 'USD-USD: debe existir movimiento "Comisión del acuerdo" en CC Movimientos').toBeVisible({ timeout: 12000 });
+          await page.locator('#cc-vista-toggle button[data-vista="resumen"]').click();
+          await expect(page.locator('#cc-contenido')).toBeVisible({ timeout: 5000 });
         }
 
         // Control caja efectivo ARS: USD-USD no mueve ARS → Exp_Sdo_CE = 0

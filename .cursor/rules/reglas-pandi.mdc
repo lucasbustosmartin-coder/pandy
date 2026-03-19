@@ -49,6 +49,7 @@ alwaysApply: true
 ## Responsive / móvil
 
 - **Desde ahora en más:** al agregar o modificar vistas, formularios, tablas o modales en la app, tener **siempre en cuenta la responsividad en móviles**. Incluir o ajustar estilos para pantallas pequeñas: breakpoints típicos 768px (tablet/móvil grande) y 480px (móvil chico), touch targets mínimos 44px, padding y fuentes reducidos, scroll horizontal con `-webkit-overflow-scrolling: touch` donde haga falta, y `viewport-fit=cover` si aplica. No dejar que nuevos componentes rompan el layout en celulares.
+- **Gesto horizontal del trackpad (no “cerrar” la SPA):** en macOS, el scroll horizontal en tablas puede encadenar al navegador y disparar **atrás** en el historial. Ver regla **gestos-trackpad-overscroll-spa**: mantener `overscroll-behavior-x` en `html`/`body`, `.main-content` y cada wrap con `overflow-x: auto`; al sumar tablas con scroll horizontal, incluir `overscroll-behavior-x: contain` en el contenedor.
 
 ## No fallar en terminal local
 

@@ -171,7 +171,7 @@ WHERE pagador = 'pandy' AND cobrador = 'intermediario' AND tipo_transaccion = 'e
 
 -- ========== 2b. Tipos activos SIN intermediario (ARS-USD, USD-USD, USD-ARS) ==========
 -- Solo par cliente↔pandy: ingreso Cliente→Pandy y egreso Pandy→Cliente (4 combinaciones cada uno). CC intermediario no aplica (0, N, N).
--- Misma lógica de signos e incluir/suma_saldo que el par cliente en ARS-ARS.
+-- Con par cerrado, ingreso (E,true): incluir Y para listar "Cobro Realizado" en Movimientos.
 
 INSERT INTO public.cc_modelo_reglas (
   tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision,
@@ -193,11 +193,11 @@ FROM (VALUES
 ) AS t(codigo)
 CROSS JOIN (VALUES
   ('cliente', 'pandy', 'ingreso', false, 'ejecutada', false, -1, true, true, 'cobro_realizado', false, 'orden_entregada'::text, 'me'::text),
-  ('cliente', 'pandy', 'ingreso', false, 'ejecutada', true,  -1, true, false, 'cobro_realizado', false, 'orden_entregada', 'me'),
+  ('cliente', 'pandy', 'ingreso', false, 'ejecutada', true,  -1, true, true, 'cobro_realizado', false, 'orden_entregada', 'me'),
   ('cliente', 'pandy', 'ingreso', false, 'pendiente', false,  0, false, false, NULL, false, 'orden_entregada', 'me'),
   ('cliente', 'pandy', 'ingreso', false, 'pendiente', true,  -1, true, false, NULL, false, 'orden_entregada', 'me'),
   ('pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, true, true, 'compromiso_pago', false, 'transaccion', 'monto_transaccion'),
-  ('pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, false, true, 'compromiso_pago', false, 'transaccion', 'monto_transaccion'),
+  ('pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, true, true, 'compromiso_pago', false, 'transaccion', 'monto_transaccion'),
   ('pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, false, false, NULL, false, 'transaccion', 'monto_transaccion'),
   ('pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, false, false, NULL, false, 'transaccion', 'monto_transaccion')
 ) AS r(pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada, cc_cliente_signo, cc_cliente_suma_saldo, incluir_en_mov_cc_cliente, concepto_leyenda, usa_monto_efectivo, cli_mon_exp, cli_monto_ref)
@@ -214,6 +214,35 @@ ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_t
   cc_cliente_monto_referencia = EXCLUDED.cc_cliente_monto_referencia,
   cc_intermediario_moneda_exposicion = EXCLUDED.cc_intermediario_moneda_exposicion,
   cc_intermediario_monto_referencia = EXCLUDED.cc_intermediario_monto_referencia;
+
+-- Comisión Pandy explícita en USD-USD sin intermediario (visible en detalle, no suma saldo).
+INSERT INTO public.cc_modelo_reglas (
+  tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada,
+  cc_cliente_signo, cc_cliente_suma_saldo, incluir_en_mov_cc_cliente,
+  cc_intermediario_signo, cc_intermediario_suma_saldo, incluir_en_mov_cc_intermediario,
+  concepto_leyenda, usa_monto_efectivo,
+  cc_cliente_moneda_exposicion, cc_cliente_monto_referencia,
+  cc_intermediario_moneda_exposicion, cc_intermediario_monto_referencia
+) VALUES
+  ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 1, false, true, 0, false, false, 'comision_acuerdo', false, 'transaccion', 'monto_transaccion', NULL, NULL),
+  ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  1, false, true, 0, false, false, 'comision_acuerdo', false, 'transaccion', 'monto_transaccion', NULL, NULL),
+  ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 1, false, false, 0, false, false, NULL, false, 'transaccion', 'monto_transaccion', NULL, NULL),
+  ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'pendiente', true,  1, false, false, 0, false, false, NULL, false, 'transaccion', 'monto_transaccion', NULL, NULL)
+ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada) DO UPDATE SET
+  cc_cliente_signo = EXCLUDED.cc_cliente_signo,
+  cc_cliente_suma_saldo = EXCLUDED.cc_cliente_suma_saldo,
+  incluir_en_mov_cc_cliente = EXCLUDED.incluir_en_mov_cc_cliente,
+  cc_intermediario_signo = EXCLUDED.cc_intermediario_signo,
+  cc_intermediario_suma_saldo = EXCLUDED.cc_intermediario_suma_saldo,
+  incluir_en_mov_cc_intermediario = EXCLUDED.incluir_en_mov_cc_intermediario,
+  concepto_leyenda = EXCLUDED.concepto_leyenda,
+  usa_monto_efectivo = EXCLUDED.usa_monto_efectivo,
+  cc_cliente_moneda_exposicion = EXCLUDED.cc_cliente_moneda_exposicion,
+  cc_cliente_monto_referencia = EXCLUDED.cc_cliente_monto_referencia,
+  cc_intermediario_moneda_exposicion = EXCLUDED.cc_intermediario_moneda_exposicion,
+  cc_intermediario_monto_referencia = EXCLUDED.cc_intermediario_monto_referencia,
+  condicion_estado_comision = NULL;
 
 -- ========== 3. RLS (lectura para autenticados) ==========
 ALTER TABLE public.cc_modelo_reglas ENABLE ROW LEVEL SECURITY;
