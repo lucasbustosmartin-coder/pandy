@@ -1,0 +1,35 @@
+---
+description: Regla LyP – En exportaciones Excel los importes deben ser valores numéricos (para SUM, tablas dinámicas, etc.)
+alwaysApply: true
+---
+
+# Exportación Excel – importes numéricos (LyP)
+
+En **todos los repos de raíz LyP**, toda exportación a Excel debe escribir **importes y montos como valores numéricos** (tipo `number`), no como texto formateado.
+
+## Objetivo
+
+Que en Excel/LibreOffice el usuario pueda:
+- Usar **SUM**, **SUMA.SI**, promedios, etc.
+- Crear **tablas dinámicas** con totales correctos.
+- Ordenar y filtrar por valor numérico.
+- Aplicar formato de moneda en la hoja sin perder el número.
+
+## Cómo cumplirla
+
+- **En las celdas de importes/montos/saldos**: escribir el **número** (p. ej. `Number(monto)` o el valor crudo), no un string.
+- **No** usar en la exportación funciones de formato para visualización (ej. `formatImporteDisplay()`, strings con "1.234,56") en las columnas que son importes.
+- Para “sin valor” o vacío: usar `null` o dejar la celda sin valor para que Excel no cuente ese celda en SUM.
+- Texto (concepto, nombre, estado) sigue siendo string; columnas como Nro Orden / Nro Trans. pueden ser número si son identificadores numéricos.
+
+## Ejemplo (concepto)
+
+```javascript
+// ❌ Evitar en export Excel
+const cels = [fecha, concepto, formatImporteDisplay(m.monto_usd), ...];
+
+// ✅ Correcto
+const cels = [fecha, concepto, m.monto_usd != null ? Number(m.monto_usd) : null, ...];
+```
+
+Esta regla aplica a cualquier funcionalidad de exportación a Excel (XLSX, SheetJS, etc.) en el repo.

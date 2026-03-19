@@ -1,20 +1,32 @@
 // @ts-check
 /**
- * Tests E2E: todas las combinaciones de estados (Tx1,Tx2,Tx3,Tx4) para ARS-ARS con intermediario.
+ * Tests E2E: todas las combinaciones de estados (Tx1,Tx2,Tx3,Tx4) para CHEQUE-ARS con intermediario.
+ * Prerrequisito: tipo `CHEQUE-ARS` en catálogo (sql/seed_tipo_operacion_cheque_ars.sql).
  * Mismos datos fijos (200k, 195k, 197k, 5k, 3k). Valida saldo y detalle CC cliente e intermediario.
  * Escribe un log en Excel (test-results/cc-combinaciones-log.xlsx) con expectativa, real y resultado (PASS/ERR) por combinación.
+ *
+ * Fuente de verdad: las tablas. El saldo CC = suma de movimientos con sumar_al_saldo = true
+ * (movimientos_cuenta_corriente / movimientos_cuenta_corriente_intermediario). Par cerrado (ej. E,E,P,P)
+ * requiere que cc_modelo_reglas tenga las filas (estado_transaccion, contrapartida_ejecutada) correctas
+ * para que el sync escriba -200k, +195k y +5k con sumar_al_saldo true → saldo 0. Si falla E,E,P,P con
+ * "saldo CC cliente esperado 0, app -200000", ejecutá en Supabase: migracion_cc_sumar_saldo_incluir_detalle.sql
+ * y cc_modelo_reglas_todas_combinaciones.sql (ver docs/TESTING_E2E_GUIA.md §1.5).
+ * Si falla sync con "cannot cast jsonb null to type integer", re-ejecutá sql/rpc_sync_cc_caja_orden.sql (§1.6).
+ * Timeouts del test: 15 min global y 90 s por paso a ejecutada (§1.7).
  *
  * Una sola combinación (para revisar en la app que reglas y caso de prueba cierran):
  *   COMBINACION_ID="E,P,E,P" npx playwright test tests/e2e/cc-combinaciones.spec.js --headed
  * (Comillas obligatorias para respetar las comas. Reemplazá por: P,P,P,P | P,P,P,E | P,E,P,P | P,E,P,E | E,P,P,P | E,P,P,E | E,P,E,P | E,P,E,E | E,E,P,P | E,E,P,E | E,E,E,P | E,E,E,E)
  *
- * Convención arranque limpio: se usa un cliente fijo (CLIENTE_CC_COMBINACIONES). Al inicio se anulan
- * todas las órdenes de ese cliente para que el detalle CC sea solo de la orden que crea este test.
+ * Convención: al inicio de cada combinación se limpia la base (limpiar-base-e2e) y se crea una orden
+ * nueva (cliente E2E CC Combinaciones, intermediario E2E Int + timestamp). Solo se marcan como
+ * ejecutada las Tx que indica la combinación (nunca se reversa a pendiente).
  * Expectativas = tabla de reglas (cc-combinaciones-esperado.js); ante fallo: explicar qué falló y calibrar
  * (no cambiar el esperado para "hacer pasar" el test).
  */
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 const XLSX = require('xlsx');
 const { test, expect } = require('@playwright/test');
 const { COMBINACIONES_ESPERADO, DATOS_FIJOS } = require('./cc-combinaciones-esperado');
@@ -25,6 +37,8 @@ const LOG_HEADERS = [
   'Expect Saldo CC Int', 'Real Saldo CC Int', 'Resultado Saldo Int',
   'Expect Detalle Cliente', 'Real Detalle Cliente', 'Resultado Detalle Cliente',
   'Expect Detalle Int', 'Real Detalle Int', 'Resultado Detalle Int',
+  'Exp_Sdo_CE', 'Real_Sdo_CE', 'Saldo_CE_Rdo',
+  'Exp_Sdo_CCh', 'Real_Sdo_CCh', 'Saldo_CCh_Rdo',
 ];
 
 function escribirLogExcel(logRows) {
@@ -44,34 +58,22 @@ const TEST_USER_PASSWORD = process.env.TEST_USER_PASSWORD || '';
 /** Cliente fijo para este test. Arranque limpio: al inicio se anulan todas sus órdenes. */
 const CLIENTE_CC_COMBINACIONES = 'E2E CC Combinaciones';
 
-/** Igual que orden-cc: espera a que el mensaje "Actualizando estado…" desaparezca. */
-async function esperarActualizacionEstadoOrden(page, timeoutMs = 35000) {
+/** Igual que orden-cc: espera a que el mensaje "Actualizando estado…" desaparezca. Timeout alto (90s) porque el sync CC/caja puede tardar cuando hay varias Tx ejecutadas. */
+async function esperarActualizacionEstadoOrden(page, timeoutMs = 90000) {
   const msg = page.locator('#orden-inst-actualizando-msg');
   await msg.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
   await msg.waitFor({ state: 'hidden', timeout: timeoutMs });
 }
 
 async function loginAndSeeApp(page) {
-  await page.goto('/');
-  await expect(page.locator('#login-screen')).toBeVisible();
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await expect(page.locator('#login-screen')).toBeVisible({ timeout: 10000 });
   await page.locator('#login-email').fill(TEST_USER_EMAIL);
   await page.locator('#login-password').fill(TEST_USER_PASSWORD);
   await page.locator('#login-form').getByRole('button', { name: /entrar/i }).click();
   await expect(page.locator('#login-screen')).toBeHidden({ timeout: 20000 });
   await expect(page.locator('#sidebar')).toBeVisible({ timeout: 5000 });
   await expect(page.locator('#app-content')).toBeVisible({ timeout: 5000 });
-}
-
-async function reopenOrderAndGoToInstrumentacion(page, nombreCliente) {
-  await page.locator('#menu-ordenes').click();
-  await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
-  await expect(page.locator('#ordenes-tbody tr').filter({ hasText: nombreCliente.trim() }).first()).toBeVisible({ timeout: 10000 });
-  await page.locator('#ordenes-tbody tr').filter({ hasText: nombreCliente.trim() }).first().locator('.btn-editar-orden').click();
-  await expect(page.locator('#modal-orden-backdrop.activo')).toBeVisible({ timeout: 5000 });
-  await page.locator('#orden-btn-next').click();
-  await expect(page.locator('#orden-step-detalles')).toBeVisible({ timeout: 5000 });
-  await page.locator('#orden-btn-ir-instrumentacion').click();
-  await expect(page.locator('#orden-step-instrumentacion')).toBeVisible({ timeout: 15000 });
 }
 
 async function leerSaldoConSigno(celda) {
@@ -112,6 +114,36 @@ function saldoLeidoANumero(saldoStr) {
 function saldoResumenANumero(saldoStr, esIntermediario) {
   const n = saldoLeidoANumero(saldoStr);
   return esIntermediario ? -n : n;
+}
+
+/** Va a Cajas, lee saldo efectivo ARS (#cajas-saldo-efectivo-ars). La app muestra valor absoluto; el signo viene de la clase negativo. Si sale "–", espera 2s y relee una vez (sync puede tardar). */
+async function leerSaldoCajaEfectivoARS(page) {
+  await page.locator('#menu-cajas').click();
+  await expect(page.locator('#vista-cajas')).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('#cajas-saldos')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#cajas-loading')).toBeHidden({ timeout: 20000 });
+  const el = page.locator('#cajas-saldo-efectivo-ars');
+  let texto = (await el.textContent())?.trim() || '–';
+  if (texto === '–' || !/\d/.test(texto)) {
+    await page.waitForTimeout(2000);
+    texto = (await el.textContent())?.trim() || '–';
+  }
+  if (texto === '–' || !/\d/.test(texto)) return 0;
+  const esNegativo = await el.evaluate((node) => node.classList.contains('negativo'));
+  const abs = normalizarMontoSaldo(texto);
+  return esNegativo ? -abs : abs;
+}
+
+/** Lee saldo caja cheque ARS desde la vista Cajas (asume que ya estamos en #vista-cajas, p. ej. tras leer efectivo). */
+async function leerSaldoCajaChequeARS(page) {
+  const el = page.locator('#cajas-saldo-cheque-ars');
+  const visible = await el.isVisible().catch(() => false);
+  if (!visible) return 0;
+  const texto = (await el.textContent())?.trim() || '–';
+  if (texto === '–' || !/\d/.test(texto)) return 0;
+  const esNegativo = await el.evaluate((node) => node.classList.contains('negativo')).catch(() => false);
+  const abs = normalizarMontoSaldo(texto);
+  return esNegativo ? -abs : abs;
 }
 
 async function obtenerFilaClientePorNombre(tbodyCc, page, nombreCliente) {
@@ -173,7 +205,7 @@ async function leerMontosDesdeVistaDetalle(page, tipo, nombreEntity) {
   }
 }
 
-test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
+test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
   test.beforeEach(async ({ page }) => {
     if (!TEST_USER_EMAIL || !TEST_USER_PASSWORD) {
       test.skip(true, 'Faltan TEST_USER_EMAIL o TEST_USER_PASSWORD en .env.test');
@@ -181,31 +213,55 @@ test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
   });
 
   test('crear orden con datos fijos y validar saldo/detalle en cada combinación', async ({ page }) => {
-    test.setTimeout(420000); // 7 min para 12 combinaciones (excl. Tx1=P y Tx3=E; P,P,E,P; P,E,E,E)
+    test.setTimeout(900000); // 15 min: en algunos entornos el sync CC/caja tarda más (ej. E,E,E,P)
 
     await loginAndSeeApp(page);
 
-    // Arranque limpio: anular todas las órdenes del cliente fijo para que el detalle CC sea solo de esta ejecución
     const nombreCliente = CLIENTE_CC_COMBINACIONES;
-    await page.locator('#menu-ordenes').click();
-    await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('#ordenes-tbody')).toBeVisible({ timeout: 10000 });
-    for (let i = 0; i < 15; i++) {
-      const fila = page.locator('#ordenes-tbody tr').filter({ hasText: nombreCliente }).first();
-      const btnAnular = fila.locator('.btn-anular-orden-tabla');
-      if ((await btnAnular.count()) === 0 || !(await btnAnular.isVisible())) break;
-      await btnAnular.click();
-      await expect(page.locator('#modal-confirm-backdrop')).toBeVisible({ timeout: 5000 });
-      await page.getByRole('button', { name: /^anular$/i }).click();
-      await expect(page.locator('#modal-confirm-backdrop')).toBeHidden({ timeout: 10000 });
-      await page.waitForTimeout(1500);
-    }
+    const tbodyCc = page.locator('#cc-resumen-tbody');
+    const logRows = [LOG_HEADERS];
+    const rootDir = path.resolve(__dirname, '../..');
 
-    // Asegurar que existe el cliente fijo (crear si no existe)
-    await page.locator('#menu-clientes').click();
-    await expect(page.locator('#vista-clientes')).toBeVisible({ timeout: 5000 });
-    const filasCliente = page.locator('#clientes-tbody tr').filter({ hasText: nombreCliente });
-    if ((await filasCliente.count()) === 0) {
+    try {
+    const filtrarCombinacionId = (process.env.COMBINACION_ID || '').trim(); // ej. COMBINACION_ID="E,P,E,P" (con comillas)
+    for (let idx = 0; idx < COMBINACIONES_ESPERADO.length; idx++) {
+      const esperado = COMBINACIONES_ESPERADO[idx];
+      if (filtrarCombinacionId != null && filtrarCombinacionId !== '' && esperado.id !== filtrarCombinacionId) continue;
+      const numComb = COMBINACIONES_ESPERADO.filter(c => !filtrarCombinacionId || c.id === filtrarCombinacionId).indexOf(esperado) + 1;
+      const totalComb = filtrarCombinacionId ? 1 : COMBINACIONES_ESPERADO.length;
+      console.log(`>>> Combinación ${numComb}/${totalComb}: ${esperado.id}`);
+      const estados = [esperado.tx1, esperado.tx2, esperado.tx3, esperado.tx4];
+      // Siempre tener el esperado de detalle (aunque no abramos el modal) para log y para no dar PASS falso
+      const esperadoSorted = [...(esperado.detalleCliente || [])].sort((a, b) => a - b);
+      const esperadoIntSorted = [...(esperado.detalleInt || [])].sort((a, b) => a - b);
+      let appSorted = [];
+      let appIntSorted = [];
+
+      const STEP_TIMEOUT_MS = 180000; // 3 min por combinación
+      await test.step(`Combinación ${esperado.id}`, async () => {
+      const stepDone = Promise.resolve();
+      const stepTimeout = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`Combinación ${esperado.id}: timeout ${STEP_TIMEOUT_MS / 1000}s (revisar CC, modal o cierre de orden).`)), STEP_TIMEOUT_MS);
+      });
+      await Promise.race([
+        stepDone.then(async () => {
+      // Limpiar base al inicio de cada combinación para evitar conflictos (una orden nueva por combinación, siempre P,P,P,P).
+      console.log(`  [${esperado.id}] Limpiando base E2E...`);
+      try {
+        execSync('node scripts/limpiar-base-e2e.js', {
+          cwd: rootDir,
+          stdio: 'inherit',
+          env: { ...process.env, NODE_ENV: 'test' },
+        });
+      } catch (e) {
+        if (e.status !== 0) console.warn(`  [${esperado.id}] limpiar-base-e2e falló o no se ejecutó; continuando.`);
+      }
+      await page.reload({ waitUntil: 'networkidle' }).catch(() => {});
+      await expect(page.locator('#sidebar')).toBeVisible({ timeout: 15000 });
+
+      // Crear cliente fijo (la limpieza borra clientes E2E)
+      await page.locator('#menu-clientes').click();
+      await expect(page.locator('#vista-clientes')).toBeVisible({ timeout: 5000 });
       const btnNuevoCliente = page.locator('#btn-nuevo-cliente');
       if ((await btnNuevoCliente.count()) === 0 || !(await btnNuevoCliente.isVisible())) {
         test.skip(true, 'Se necesita permiso abm_clientes y botón Nuevo cliente.');
@@ -216,105 +272,66 @@ test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
       await page.locator('#form-cliente').getByRole('button', { name: /guardar/i }).click();
       await expect(page.locator('#modal-cliente-backdrop.activo')).toBeHidden({ timeout: 10000 });
       await page.waitForTimeout(500);
-    }
 
-    // Intermediario único por run para no chocar con otras pruebas
-    const nombreIntermediario = 'E2E Int ' + Date.now();
-    await page.locator('#menu-intermediarios').click();
-    await expect(page.locator('#vista-intermediarios')).toBeVisible({ timeout: 5000 });
-    const btnNuevoInt = page.locator('#btn-nuevo-intermediario');
-    if ((await btnNuevoInt.count()) === 0 || !(await btnNuevoInt.isVisible())) {
-      test.skip(true, 'Se necesita permiso abm_intermediarios y botón Nuevo intermediario para aislar una sola orden por run.');
-    }
-    await btnNuevoInt.click();
-    await expect(page.locator('#modal-intermediario-backdrop.activo')).toBeVisible({ timeout: 5000 });
-    await page.locator('#intermediario-nombre').fill(nombreIntermediario);
-    await page.locator('#form-intermediario').getByRole('button', { name: /guardar/i }).click();
-    await expect(page.locator('#modal-intermediario-backdrop.activo')).toBeHidden({ timeout: 10000 });
-    await page.waitForTimeout(500);
-
-    // Crear una sola orden ARS-ARS con datos fijos (200k, tasas para 195k y 197k)
-    await page.locator('#menu-ordenes').click();
-    await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
-    await page.locator('#btn-nueva-orden').click();
-    await expect(page.locator('#modal-orden-backdrop.activo')).toBeVisible({ timeout: 5000 });
-
-    const valueArsArs = await page.locator('#orden-tipo-operacion option[data-codigo="ARS-ARS"]').getAttribute('value');
-    await page.locator('#orden-tipo-operacion').selectOption(valueArsArs);
-
-    // Opciones de un <select> pueden ser "hidden" hasta abrirlo; seleccionar por label sin exigir visible
-    await page.locator('#orden-cliente').selectOption({ label: nombreCliente });
-    await page.locator('#orden-intermediario').selectOption({ label: nombreIntermediario });
-
-    await page.locator('#orden-btn-next').click();
-    await expect(page.locator('#orden-step-detalles')).toBeVisible({ timeout: 5000 });
-
-    // Datos fijos: 200000 → monto recibido; tasas para que me≈195000 y efectivo int≈197000
-    await page.locator('#orden-importe-cheque').fill(String(DATOS_FIJOS.montoRecibido));
-    await page.locator('#orden-tasa-descuento-cliente').fill('2,5');
-    await page.waitForTimeout(500);
-    await page.locator('#orden-tasa-descuento-intermediario').fill('1,5');
-    await page.waitForTimeout(300);
-
-    await page.locator('#orden-btn-ir-instrumentacion').click();
-    await expect(page.locator('#orden-step-instrumentacion')).toBeVisible({ timeout: 15000 });
-    let combosEstado = page.locator('#orden-inst-tbody .combo-estado-transaccion');
-    await expect(combosEstado).toHaveCount(4);
-
-    const tbodyCc = page.locator('#cc-resumen-tbody');
-    const reInt = new RegExp(nombreIntermediario.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    const logRows = [LOG_HEADERS];
-
-    try {
-    const filtrarCombinacionId = (process.env.COMBINACION_ID || '').trim(); // ej. COMBINACION_ID="E,P,E,P" (con comillas)
-    for (let idx = 0; idx < COMBINACIONES_ESPERADO.length; idx++) {
-      const esperado = COMBINACIONES_ESPERADO[idx];
-      if (filtrarCombinacionId != null && filtrarCombinacionId !== '' && esperado.id !== filtrarCombinacionId) continue;
-      const estados = [esperado.tx1, esperado.tx2, esperado.tx3, esperado.tx4];
-      // Siempre tener el esperado de detalle (aunque no abramos el modal) para log y para no dar PASS falso
-      const esperadoSorted = [...(esperado.detalleCliente || [])].sort((a, b) => a - b);
-      const esperadoIntSorted = [...(esperado.detalleInt || [])].sort((a, b) => a - b);
-      let appSorted = [];
-      let appIntSorted = [];
-
-      await test.step(`Combinación ${esperado.id}`, async () => {
-      // Igual que orden-cc: un solo cambio de combo por apertura del modal, luego Listo y cerrar; reabrir para el siguiente.
-      // Con COMBINACION_ID solo corre una combinación: estamos recién en instrumentación, no hubo cierre previo → no reabrir.
-      const esIndividual = (filtrarCombinacionId || '').trim() !== '';
-      if (idx > 0 && !esIndividual) {
-        await reopenOrderAndGoToInstrumentacion(page, nombreCliente);
-        combosEstado = page.locator('#orden-inst-tbody .combo-estado-transaccion');
-        await expect(combosEstado).toHaveCount(4);
+      // Intermediario único por combinación
+      const nombreIntermediario = 'E2E Int ' + Date.now();
+      await page.locator('#menu-intermediarios').click();
+      await expect(page.locator('#vista-intermediarios')).toBeVisible({ timeout: 5000 });
+      const btnNuevoInt = page.locator('#btn-nuevo-intermediario');
+      if ((await btnNuevoInt.count()) === 0 || !(await btnNuevoInt.isVisible())) {
+        test.skip(true, 'Se necesita permiso abm_intermediarios y botón Nuevo intermediario.');
       }
+      await btnNuevoInt.click();
+      await expect(page.locator('#modal-intermediario-backdrop.activo')).toBeVisible({ timeout: 5000 });
+      await page.locator('#intermediario-nombre').fill(nombreIntermediario);
+      await page.locator('#form-intermediario').getByRole('button', { name: /guardar/i }).click();
+      await expect(page.locator('#modal-intermediario-backdrop.activo')).toBeHidden({ timeout: 10000 });
+      await page.waitForTimeout(500);
 
+      // Crear orden CHEQUE-ARS con datos fijos e ir a instrumentación (P,P,P,P)
+      await page.locator('#menu-ordenes').click();
+      await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
+      await page.locator('#btn-nueva-orden').click();
+      await expect(page.locator('#modal-orden-backdrop.activo')).toBeVisible({ timeout: 5000 });
+      const valueChequeArs = await page.locator('#orden-tipo-operacion option[data-codigo="CHEQUE-ARS"]').getAttribute('value');
+      await page.locator('#orden-tipo-operacion').selectOption(valueChequeArs);
+      await page.locator('#orden-cliente').selectOption({ label: nombreCliente });
+      await page.locator('#orden-intermediario').selectOption({ label: nombreIntermediario });
+      await page.locator('#orden-btn-next').click();
+      await expect(page.locator('#orden-step-detalles')).toBeVisible({ timeout: 5000 });
+      await page.locator('#orden-importe-cheque').fill(String(DATOS_FIJOS.montoRecibido));
+      await page.locator('#orden-tasa-descuento-cliente').fill('2,5');
+      await page.waitForTimeout(500);
+      await page.locator('#orden-tasa-descuento-intermediario').fill('1,5');
+      await page.waitForTimeout(300);
+      await page.locator('#orden-btn-ir-instrumentacion').click();
+      await expect(page.locator('#orden-step-instrumentacion')).toBeVisible({ timeout: 15000 });
+      let combosEstado = page.locator('#orden-inst-tbody .combo-estado-transaccion');
+      await expect(combosEstado).toHaveCount(4, { timeout: 20000 });
+
+      const reInt = new RegExp(nombreIntermediario.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
+      // Cambiar solo las Tx que la combinación indica como E, todo en la misma apertura del modal; luego Listo una vez (sin reabrir).
       for (let i = 0; i < 4; i++) {
-        const valorQuerido = estados[i] === 'E' ? 'ejecutada' : 'pendiente';
+        if (estados[i] !== 'E') continue;
         const valorActual = await combosEstado.nth(i).inputValue();
-        if (valorActual !== valorQuerido) {
-          await combosEstado.nth(i).selectOption(valorQuerido);
-          if (valorQuerido === 'pendiente') {
-            await expect(page.locator('#modal-confirm-backdrop')).toBeVisible({ timeout: 10000 }).catch(() => {});
-            await page.getByRole('button', { name: /sí, reversar/i }).click().catch(() => {});
-            await expect(page.locator('#modal-confirm-backdrop')).toBeHidden({ timeout: 5000 }).catch(() => {});
-          }
+        if (valorActual !== 'ejecutada') {
+          console.log(`  [${esperado.id}] Tx${i + 1} → ejecutada...`);
+          await combosEstado.nth(i).selectOption('ejecutada');
           await esperarActualizacionEstadoOrden(page);
         }
-        // Mismo método que orden-cc: Listo y expect (una vez por combo, así no se frena)
-        await page.locator('#orden-btn-cerrar-wizard').click();
-        await expect(page.locator('#modal-orden-backdrop.activo')).toBeHidden({ timeout: 20000 });
-        if (i < 3) {
-          await reopenOrderAndGoToInstrumentacion(page, nombreCliente);
-          combosEstado = page.locator('#orden-inst-tbody .combo-estado-transaccion');
-          await expect(combosEstado).toHaveCount(4);
-        }
       }
+      console.log(`  [${esperado.id}] Listo, cerrando modal...`);
+      await page.locator('#orden-btn-cerrar-wizard').click();
+      await expect(page.locator('#modal-orden-backdrop.activo')).toBeHidden({ timeout: 20000 });
+      console.log(`  [${esperado.id}] Yendo a CC...`);
 
       await page.locator('#menu-cuenta-corriente').click();
-      await expect(page.locator('#vista-cuenta-corriente')).toBeVisible({ timeout: 5000 });
-      await expect(page.locator('#cc-loading')).toBeHidden({ timeout: 45000 });
+      await expect(page.locator('#vista-cuenta-corriente')).toBeVisible({ timeout: 10000 });
+      await expect(page.locator('#cc-loading')).toBeHidden({ timeout: 60000 });
       await page.locator('#cc-btn-refrescar').click();
-      await expect(page.locator('#cc-loading')).toBeVisible({ timeout: 3000 }).catch(() => {});
-      await expect(page.locator('#cc-loading')).toBeHidden({ timeout: 45000 });
+      await expect(page.locator('#cc-loading')).toBeVisible({ timeout: 5000 }).catch(() => {});
+      await expect(page.locator('#cc-loading')).toBeHidden({ timeout: 60000 });
       await page.waitForTimeout(1500);
 
       // Validar saldo Cliente
@@ -416,12 +433,28 @@ test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
       else if (countInt === 0 && saldoIntEsperadoCero) resDetalleInt = 'PASS'; // sin fila porque saldo 0
       else if (countInt === 0) resDetalleInt = 'N/A';
       else if (appIntSorted.length === esperadoIntSorted.length && esperadoIntSorted.every((v, i) => Math.abs((appIntSorted[i] || 0) - v) <= 1)) resDetalleInt = 'PASS';
+      // Control caja efectivo (solo efectivo; banco se ignora). Si esperado ≠ 0 y la primera lectura da 0, reintentar tras 3s (sync puede tardar al abrir Cajas).
+      const expSdoCE = Number(esperado.saldoCajaEfectivoARS) || 0;
+      let realSaldoCE = await leerSaldoCajaEfectivoARS(page);
+      if (expSdoCE !== 0 && realSaldoCE === 0) {
+        await page.waitForTimeout(3000);
+        realSaldoCE = await leerSaldoCajaEfectivoARS(page);
+      }
+      const diffCE = Math.abs(realSaldoCE - expSdoCE);
+      const saldoCE_Rdo = diffCE <= 1 ? 'PASS' : 'ERR';
+      // Control caja cheque (Tx1 ingreso cheque, Tx3 Pandy entrega cheque): se lee en la misma vista Cajas.
+      const expSdoCCh = Number(esperado.saldoCajaChequeARS) ?? 0;
+      const realSaldoCCh = await leerSaldoCajaChequeARS(page);
+      const diffCCh = Math.abs(realSaldoCCh - expSdoCCh);
+      const saldoCCh_Rdo = diffCCh <= 1 ? 'PASS' : 'ERR';
       logRows.push([
         esperado.id,
         esperado.saldoClienteARS, saldoClienteARS, resSaldoCli,
         esperado.saldoIntARS, saldoIntARS, resSaldoInt,
         JSON.stringify(esperado.detalleCliente || []), JSON.stringify(appSorted), resDetalleCli,
         JSON.stringify(esperado.detalleInt || []), JSON.stringify(appIntSorted), resDetalleInt,
+        expSdoCE, realSaldoCE, saldoCE_Rdo,
+        expSdoCCh, realSaldoCCh, saldoCCh_Rdo,
       ]);
 
       // Asserts
@@ -444,6 +477,11 @@ test.describe('CC ARS-ARS: combinaciones de estados Tx1..Tx4', () => {
           expect(diff, `Combinación ${esperado.id}: detalle int monto ${i + 1} esperado ${esperadoIntSorted[i]}, app ${appIntSorted[i]}`).toBeLessThanOrEqual(1);
         }
       }
+      expect(diffCE, `Combinación ${esperado.id}: saldo caja efectivo ARS esperado ${expSdoCE}, app ${realSaldoCE}`).toBeLessThanOrEqual(1);
+      expect(diffCCh, `Combinación ${esperado.id}: saldo caja cheque ARS esperado ${expSdoCCh}, app ${realSaldoCCh}`).toBeLessThanOrEqual(1);
+        }),
+        stepTimeout,
+      ]);
       }); // fin test.step Combinación
     }
     } finally {

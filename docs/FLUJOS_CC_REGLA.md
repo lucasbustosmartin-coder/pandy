@@ -2,7 +2,9 @@
 
 **Regla obligatoria:** La cuenta corriente **siempre** tiene que cerrar con la regla conceptual (saldo = suma de movimientos; cada movimiento por el monto realmente ejecutado; sin doble conteo). Si en algún cambio o feature el saldo no cierra, hay que preguntar antes de dar por cerrado.
 
-Referencia conceptual: **docs/REGLA_CC.xlsx**. El saldo se calcula **solo** desde las tablas `movimientos_cuenta_corriente` y `movimientos_cuenta_corriente_intermediario`. Momento cero = Debe + Compensación (ambas monedas en cada fila); al ejecutar una pata = INSERT "Cancelación de deuda" por el **monto de esa transacción** (no por el total de la orden) con signo correcto + UPDATE solo estado en la fila de origen.
+**Regla infalible para el saldo mostrado (cliente e intermediario):** El **saldo** = suma **solo** de movimientos con **estado = cerrado** (se excluyen anulado y pendiente). No se suma ni se resta ningún "pendiente" al número. Así, al pasar una transacción a pendiente, la fila de movimiento queda en pendiente y deja de sumar; el saldo refleja solo lo ya ejecutado (ej. solo Comisión cerrada → saldo = +1.359,11 a favor de Pandy). Los pendientes solo se usan para: (1) mostrar la fila cuando no hay movimientos cerrados pero sí hay pendiente (ej. deuda Pandy→Int); (2) en esa celda, mostrar el monto pendiente en rojo/verde.
+
+Referencia conceptual: **docs/REGLA_CC.xlsx**. **Regla simple e infalible (vigente):** **docs/REGLA_CC_SIMPLE_INFALIBLE.md** — solo transacciones **ejecutadas** generan movimientos; signo por pagador/cobrador. El saldo se calcula **solo** desde las tablas `movimientos_cuenta_corriente` y `movimientos_cuenta_corriente_intermediario` (suma de movimientos; solo se excluye `estado = 'anulado'`).
 
 ## 1. Momento cero (regla única para todo tipo de operación)
 
@@ -51,7 +53,7 @@ El saldo en la vista **excluye** movimientos con `estado === 'anulado'` (ver má
 
 | Dónde | Acción | Cumple regla |
 |-------|--------|---------------|
-| `loadCuentaCorriente` / `buildCcResumenRows` | **Misma regla para cliente e intermediario.** Se traen movimientos (con `estado`). En `saldosDesdeMovimientosPorOrden` se excluyen solo `estado === 'anulado'`. Saldo = suma por moneda (usando `monto_usd`/`monto_ars`/`monto_eur` cuando existen, sino `moneda`+`monto`). Por orden: si suma > 0 → Pandy debe (rojo); si suma < 0 → cliente/intermediario debe (verde). No se suma ninguna capa extra de "pendientes" en intermediario: momento cero (Debe + Compensación) ya da saldo 0. | Sí. |
+| `loadCuentaCorriente` / `buildCcResumenRows` | **Regla infalible:** El saldo mostrado = **solo** suma de movimientos (sin sumar ni restar pendientes). Cliente e intermediario igual. Se traen movimientos; en `saldosDesdeMovimientosPorOrden` se excluye solo `estado === 'anulado'`. Los mapas de pendientes (`contribucionPendienteCcUnificada`, `promPendientesCcGlobal`) se usan solo para: mostrar la fila cuando saldo = 0 pero hay pendiente, y en esa celda mostrar el monto pendiente (rojo/verde). Así, al pasar una transacción a pendiente, el movimiento se revierte y el saldo refleja solo lo ejecutado (ej. solo Comisión → +1.359,11). | Sí. |
 
 ## 8. Comisiones generadas (Ganancia Pandy, Comisión intermediario)
 
@@ -96,3 +98,21 @@ Para que la instrumentación, la cuenta corriente y la caja queden coherentes en
 2. **Split sin momento cero** (ej. ARS-ARS CHEQUE con intermediario): al ejecutar o guardar con monto menor al compromiso (ingreso pagador=cliente con monto menor a mr, egreso cobrador=cliente con monto menor a me) se crea transacción pendiente por la diferencia; CC legacy (Cobro/Deuda) solo por el monto ejecutado; **caja** con el mismo criterio de signo. Aplicado en: `cambiarEstadoTransaccion`, `saveTransaccion` (continuarFlujo) y `guardarSoloMontoTransaccion` (al editar monto en tabla y ya ejecutada).
 
 3. **Movimientos de caja**: convención en DB = positivo ingreso, negativo egreso. En todos los puntos que insertan por transacción ejecutada se usa `signoCaja = (cobrador === 'pandy') ? 1 : -1` y `monto: signoCaja * monto` para que Pandy cobrando sume y Pandy pagando reste en el saldo de caja.
+
+## Revisión de impacto (regla CC / RCA)
+
+Antes de dar por cerrado cualquier cambio que toque **movimientos de cuenta corriente**, **flujos de ejecución** (cambiar estado, guardar transacción, sync) o **cálculo de saldo**:
+
+1. **Verificar** que la regla conceptual se cumpla: saldo = suma de movimientos; sin doble conteo; cada movimiento por el monto realmente ejecutado.
+2. **Revisar** este documento (`docs/FLUJOS_CC_REGLA.md`), `docs/REGLA_CC_SIMPLE.md` y, si existe, `docs/REGLA_CC.xlsx` (RCA = regla de cuenta corriente): que los flujos modificados sigan descritos y que no se introduzcan duplicados ni desbalances.
+3. Si el saldo no cierra o hay dudas, **preguntar al usuario** antes de cerrar la tarea.
+
+Aplicable también a movimientos de **caja** ligados a transacciones: la misma transacción debe ser la fuente de verdad del movimiento de caja y del movimiento de CC.
+
+## Objetivo: actuar por transacción (no borrar/repoblar toda la orden)
+
+Con la estructura actual en base de datos (movimientos con `orden_id`, `transaccion_id`, `transaccion_numero`), la regla deseable es:
+
+- **Cada movimiento de CC (y de caja) está ligado a una transacción.** Al cambiar el estado de una transacción o al guardar una transacción, solo deben **insertarse, actualizarse o borrarse los movimientos que corresponden a esa transacción**, no borrar y volver a poblar todos los movimientos de la orden.
+- **Borrar y repoblar** toda la CC (y caja) de una orden (`sincronizarCcYCajaDesdeOrden` = DELETE por `orden_id` + INSERT masivo) se vuelve **ineficiente** con alto volumen (ej. 1000 órdenes al mes): muchas filas borradas e insertadas por cada cambio de estado.
+- **Implementado:** Los flujos (`cambiarEstadoTransaccion`, `saveTransaccion`, etc.) actúen siempre en función de la **transacción** conectada al movimiento: INSERT/UPDATE/DELETE solo de filas con ese `transaccion_id`, sin depender del sync completo por orden. La RPC `sync_cc_caja_orden` sigue disponible para un "Recalcular desde órdenes" explícito; el botón Refrescar solo recarga desde la base.

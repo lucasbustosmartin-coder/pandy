@@ -24,12 +24,12 @@ La regla se apoya en **cuatro premisas** que toda transacción cumple. A partir 
 
 ## 1. Convención de signos (premisa 1: pagador y cobrador)
 
-**Display:** Positivo = nos deben (cliente/intermediario debe a Pandy). Negativo = Pandy debe (entregar o pagar).
+**Display:** Positivo = nos deben (cliente/intermediario debe a Pandy). Negativo = Pandy debe (entregar o pagar). **Colores en resumen:** verde = positivo (cliente/intermediario debe); rojo = negativo (Pandy debe). La misma regla aplica a cliente e intermediario.
 
 - **CC cliente:**
   - **Cliente pagó** (pagador = cliente) → movimiento **-monto** en general. **Excepción misma moneda (mr = me o comisión implícita):** se usa **-me** (monto a entregar), no -mr. Así Pandy debe en CC el **valor de su transacción** (lo que Pandy se comprometió a entregar), no el monto que el cliente pagó; la comisión implícita no aparece como deuda de Pandy.
   - **Pandy pagó al cliente** (cobrador = cliente) → movimiento **+monto** (me) en general. **Excepción misma moneda con ingreso pendiente:** si el ingreso Cliente→Pandy sigue pendiente, la deuda que debe mostrar la CC es la del cliente (mr), no lo que Pandy ya entregó (me); se usa **+mr**. Así el resumen muestra "cliente debe 4933" (lo que falta por pagar) y no 4849,14.
-- **CC intermediario:** misma idea (positivo = nos deben, negativo = debemos).
+- **CC intermediario:** misma convención (positivo = nos deben → verde; negativo = Pandy debe → rojo). Para que "Pandy debe" aparezca en rojo, al saldo derivado de movimientos se le restan las transacciones pendientes Pandy→Intermediario; así el neto refleja correctamente la deuda de Pandy.
 - **Caja (Pandy):**
   - **Pandy cobra** (cobrador = pandy) → **+monto**.
   - **Pandy paga** (pagador = pandy) → **-monto**.

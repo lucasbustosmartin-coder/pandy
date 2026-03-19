@@ -19,7 +19,7 @@ Ejemplo conceptual:
 
 | Menú           | Ver        | Operar / ABM                                                                 |
 |----------------|------------|-------------------------------------------------------------------------------|
-| Panel de Control | ver_inicio | (solo lectura; sub-opciones ver_inicio_efectivo, ver_inicio_banco, ver_inicio_pendientes si se desea granularidad) |
+| Panel de Control | ver_inicio | Tarjetas Efectivo / Banco / Cheque usan los mismos permisos que Cajas: **ver_cajas_efectivo**, **ver_cajas_banco**, **ver_cajas_cheque** (configurables en el bloque **Cajas** en Seguridad). Sub-opción **ver_inicio_pendientes** para órdenes y transacciones pendientes. Los permisos legacy `ver_inicio_efectivo` / `ver_inicio_banco` ya no gobiernan el panel en la app; migración opcional: `sql/migracion_panel_tarjetas_mismos_permisos_ver_cajas.sql`. |
 | Órdenes        | ver_ordenes | ingresar_orden, editar_orden, anular_orden, editar_estado_orden               |
 | Cajas          | ver_cajas  | abm_movimientos_caja, abm_tipos_movimiento_caja                               |
 | Clientes       | ver_clientes | abm_clientes                                                                 |

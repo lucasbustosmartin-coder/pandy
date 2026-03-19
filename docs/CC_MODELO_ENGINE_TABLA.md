@@ -13,7 +13,7 @@ La lógica de cuenta corriente (qué movimientos crear, signos, qué suma al sal
    - Si **no hay reglas** → fallback al comportamiento actual.
    - Si **hay reglas** → para cada transacción y cada comisión deriva (estado, contrapartida), **busca la fila** en reglas y aplica **solo lo que diga la tabla**: crea movimiento en CC cuando `regla.incluir_en_mov_cc_cliente` o `regla.incluir_en_mov_cc_intermediario` es true. No se agregan condiciones ad-hoc en el front; la tabla define cuándo hay detalle vacío (p. ej. par cerrado = filas con incluir = false).
 
-3. **Comisiones sin transacción propia:** la tabla puede tener una columna `condicion_estado_comision`. Para la comisión del intermediario, el "estado efectivo" no es el de una transacción sino una condición: por ejemplo `par_pandy_int` = "considerar ejecutada si al menos una de (Tx3, Tx4) está ejecutada". El motor interpreta esa condición y obtiene estado_efectivo; con eso busca la regla e incluye o no el movimiento.
+3. **Comisiones sin transacción propia:** la tabla tiene `condicion_estado_comision`. El motor (`estadoEfectivoComision`) interpreta el nombre y devuelve estado efectivo (ejecutada/pendiente). Condiciones: `par_pandy_int` = ejecutada si Tx3 o Tx4 ejecutada (Comisión Intermediario); `par_cliente` = ejecutada si par cerrado (Tx1 y Tx2) O Tx2 ejecutada (Comisión Pandy; así P,E,P,P da saldo 200k y detalle 195k+5k). Con eso se hace lookup y se incluye o no el movimiento.
 
 ---
 
@@ -26,8 +26,8 @@ La lógica de cuenta corriente (qué movimientos crear, signos, qué suma al sal
    - `regla = lookupRegla(reglas, t.pagador, t.cobrador, t.tipo, false, estado, contrapartida_ejecutada)`.
    - Si regla e `incluir_en_mov_cc_cliente` → agregar fila CC cliente (monto = signo × monto; si regla.usa_monto_efectivo usar monto efectivo).
    - Si regla e `incluir_en_mov_cc_intermediario` → agregar fila CC intermediario.
-3. **Por comisión Pandy:** contrapartida = par cliente cerrado (Tx1 y Tx2 ejecutadas). regla = lookup(reglas, cliente, pandy, ingreso, **true**, ejecutada, contrapartida). Si regla.incluir_en_mov_cc_cliente → agregar fila (la tabla tiene incluir = false cuando contrapartida = true).
-4. **Por comisión Intermediario:** si la regla (pandy, intermediario, egreso, true) tiene `condicion_estado_comision = 'par_pandy_int'` → estado_efectivo = ejecutada si (Tx3 o Tx4 ejecutada), sino pendiente. lookup(reglas, pandy, intermediario, egreso, true, estado_efectivo, false). Si incluir_en_mov_cc_intermediario → agregar fila.
+3. **Por comisión Pandy:** se obtiene `condicion_estado_comision` de la tabla (ej. `par_cliente`). estado_efectivo = estadoEfectivoComision(transacciones, condicion); si no hay condición, fallback par cerrado. regla = lookup(reglas, cliente, pandy, ingreso, true, estado_efectivo, parClienteCerrado). Si regla.incluir o suma_saldo → agregar fila.
+4. **Por comisión Intermediario:** igual: condicion = getCondicionComision(reglas, pandy, intermediario, egreso) (ej. `par_pandy_int`). estado_efectivo = estadoEfectivoComision(transacciones, condicion). lookup(reglas, pandy, intermediario, egreso, true, estado_efectivo, parIntCerrado). Si incluir o suma_saldo → agregar fila.
 5. Caja y cierre dos monedas se mantienen como están (no dependen del modelo por tipo).
 
 ---

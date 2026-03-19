@@ -210,7 +210,8 @@
     .inicio-accesos { margin-top: 1.5rem; }
     .link-inicio { text-decoration: none; color: inherit; }
     .modal.modal-ancho { max-width: 920px; width: 95%; }
-    .modal.modal-orden { max-width: min(90vw, 720px); width: 90%; margin-left: auto; margin-right: auto; }
+    /* min-height: evita caja casi vacía en “Nueva orden”; el listbox de tipo va en position:fixed (main.js) para no recortarlo por overflow del modal */
+    .modal.modal-orden { max-width: min(90vw, 720px); width: 90%; margin-left: auto; margin-right: auto; min-height: 220px; }
     .modal.modal-orden.modal-orden-con-instrumentacion { max-width: min(95vw, 1020px); width: 95%; }
     .orden-inst-form-actions-sticky { position: sticky; bottom: 0; background: #fff; z-index: 10; padding-top: 0.5rem; margin-bottom: -0.5rem; box-shadow: 0 -2px 8px rgba(0,0,0,0.06); pointer-events: auto; }
     #orden-step-instrumentacion .orden-inst-contenido-scroll { max-height: min(60vh, 480px); overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.75rem; }
@@ -260,7 +261,7 @@
     .resumen-cajas .valor { font-size: 1.5rem; font-weight: 700; }
     .resumen-cajas .valor.positivo { color: #0d7d3d; }
     .resumen-cajas .valor.negativo { color: #b91c1c; }
-    .inicio-cajas-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1rem; }
+    .inicio-cajas-dos { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin-bottom: 1rem; }
     .inicio-caja-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1rem 1.25rem; }
     .inicio-caja-card-titulo { margin: 0 0 0.75rem 0; font-size: 1.1rem; font-weight: 600; color: #1a1a1a; display: flex; align-items: center; gap: 0.5rem; }
     .inicio-caja-icono-caja { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; color: #555; flex-shrink: 0; }
@@ -269,6 +270,118 @@
     .inicio-caja-tabla { display: flex; flex-direction: column; gap: 0.4rem; }
     .inicio-caja-fila { display: grid; grid-template-columns: 6.5rem 1fr 1fr 1fr; align-items: center; gap: 0.75rem 1rem; font-size: 0.9rem; }
     .inicio-caja-banco-fila { grid-template-columns: 6.5rem 1fr 1fr; }
+    .inicio-caja-cheque-solo-ars { grid-template-columns: 6.5rem 1fr; }
+    /* Cheque: ancho al contenido (no estirar como Efectivo) y ARS alineado con importes */
+    .inicio-caja-card-cheque-compact {
+      justify-self: start;
+      width: max-content;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .inicio-caja-card-cheque-compact .inicio-caja-cheque-solo-ars {
+      grid-template-columns: 6.5rem minmax(5rem, max-content);
+    }
+    .inicio-caja-card-cheque-compact .inicio-caja-col-header {
+      justify-content: flex-end;
+      width: 100%;
+    }
+    .inicio-caja-card-cheque-compact .inicio-caja-valor {
+      text-align: right;
+    }
+    .inicio-caja-card-cheque-compact .inicio-caja-var-derecha {
+      width: 100%;
+      justify-content: flex-end;
+    }
+    /* Tipo de operación: iconos de moneda / cheque */
+    .tipo-op-iconos { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; line-height: 1; }
+    .tipo-op-iconos--inline { min-height: 2.25rem; }
+    .orden-tipo-operacion-fila { display: flex; align-items: stretch; gap: 0.65rem; flex-wrap: wrap; width: 100%; }
+    .orden-tipo-operacion-combo-wrap { position: relative; flex: 1; min-width: min(100%, 220px); max-width: 100%; }
+    .orden-tipo-operacion-sr {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+      pointer-events: none;
+    }
+    .orden-tipo-operacion-combo-ui { position: relative; width: 100%; }
+    .orden-tipo-operacion-combo-btn {
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      width: 100%;
+      min-height: 2.25rem;
+      padding: 0.35rem 0.65rem;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      background: #fff;
+      font: inherit;
+      color: #1a1a1a;
+      text-align: left;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .orden-tipo-operacion-combo-btn:hover { border-color: #999; }
+    .orden-tipo-operacion-combo-btn:focus-visible { outline: 2px solid #0d7d3d; outline-offset: 2px; }
+    .orden-tipo-operacion-combo-btn[aria-expanded="true"] { border-color: #0d7d3d; }
+    .orden-tipo-operacion-combo-display { flex: 1; min-width: 0; display: inline-flex; align-items: center; }
+    .orden-tipo-operacion-combo-display-inner { display: inline-flex; align-items: center; gap: 0.5rem; min-width: 0; flex-wrap: wrap; }
+    .orden-tipo-operacion-combo-nombre { font-weight: 500; color: #374151; font-size: 0.95rem; }
+    .orden-tipo-operacion-placeholder { color: #6b7280; font-size: 0.95rem; }
+    .orden-tipo-operacion-combo-chevron { flex-shrink: 0; font-size: 0.65rem; color: #6b7280; line-height: 1; }
+    .orden-tipo-operacion-listbox {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 4px);
+      z-index: 50;
+      margin: 0;
+      padding: 0.25rem 0;
+      list-style: none;
+      max-height: min(50vh, 280px);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    }
+    .orden-tipo-operacion-listbox[hidden] { display: none !important; }
+    .orden-tipo-operacion-option {
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      width: 100%;
+      min-height: 44px;
+      padding: 0.4rem 0.75rem;
+      border: none;
+      background: transparent;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      color: #1a1a1a;
+    }
+    .orden-tipo-operacion-option:hover,
+    .orden-tipo-operacion-option:focus-visible { background: #f3f4f6; outline: none; }
+    .orden-tipo-operacion-option[aria-selected="true"] { background: #ecfdf5; }
+    .orden-tipo-operacion-option .orden-tipo-operacion-option-label { font-weight: 500; color: #374151; font-size: 0.9rem; }
+    @media (max-width: 480px) {
+      .orden-tipo-operacion-listbox { max-height: min(45vh, 240px); }
+    }
+    .tipo-op-iconos-par { display: inline-flex; align-items: center; gap: 0.15rem; }
+    .tipo-op-iconos-sep { display: inline-block; font-size: 0.72rem; color: #9ca3af; font-weight: 600; margin: 0 0.05rem; line-height: 1; align-self: center; }
+    .tipo-op-icono-moneda, .tipo-op-icono-cheque, .tipo-op-icono-custom { display: inline-block; vertical-align: middle; object-fit: contain; flex-shrink: 0; max-height: 24px; width: auto; }
+    .td-tipo-op-iconos, .cc-col-tipo-op-iconos { text-align: center; vertical-align: middle; }
+    .tipo-op-moneda-celda { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .tipo-op-moneda-codigo { font-weight: 500; color: #374151; }
     .inicio-caja-fila-header { padding-bottom: 0.35rem; border-bottom: 1px solid #e5e7eb; }
     .inicio-caja-col-header { font-weight: 600; color: #374151; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; }
     .inicio-caja-icono-moneda { object-fit: contain; flex-shrink: 0; vertical-align: middle; width: 26px; height: 26px; }
@@ -435,6 +548,9 @@
       .inicio-caja-card-titulo { font-size: 1rem; }
       .inicio-caja-fila { grid-template-columns: 5.5rem 1fr 1fr 1fr; gap: 0.5rem 0.75rem; font-size: 0.85rem; }
       .inicio-caja-banco-fila { grid-template-columns: 5.5rem 1fr 1fr; }
+      .inicio-caja-cheque-solo-ars { grid-template-columns: 5.5rem 1fr; }
+      .inicio-caja-card-cheque-compact .inicio-caja-cheque-solo-ars { grid-template-columns: 5.5rem minmax(4.5rem, max-content); }
+      .inicio-caja-card-cheque-compact { justify-self: stretch; width: auto; max-width: 100%; }
       .inicio-caja-tabla { overflow-x: auto; -webkit-overflow-scrolling: touch; }
       .tabla-clientes-wrap, .tabla-movimientos-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
       #seguridad-tabla-wrap, #orden-inst-tabla-wrap, #transacciones-tabla-wrap, #ordenes-pendientes-tabla-wrap, #transacciones-pendientes-tabla-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
@@ -519,7 +635,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.43</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.44</div>
   </aside>
 
   <main class="main-content">
@@ -628,6 +744,27 @@
               </div>
             </div>
           </div>
+          <div class="inicio-caja-card inicio-caja-cheque inicio-caja-card-cheque-compact" id="inicio-card-cheque">
+            <h3 class="inicio-caja-card-titulo"><span class="inicio-caja-icono-caja" aria-hidden="true"><img src="/assets/Icono_Cheques.png" alt="" width="30" height="30"/></span>Cheque</h3>
+            <div class="inicio-caja-tabla">
+              <div class="inicio-caja-fila inicio-caja-fila-header inicio-caja-banco-fila inicio-caja-cheque-solo-ars">
+                <span class="inicio-caja-etiqueta"></span>
+                <span class="inicio-caja-col-header"><img src="/assets/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
+              </div>
+              <div class="inicio-caja-fila inicio-caja-banco-fila inicio-caja-cheque-solo-ars">
+                <span class="inicio-caja-etiqueta">Saldo Inicial</span>
+                <span class="inicio-caja-valor" id="inicio-cheque-ars-inicial">–</span>
+              </div>
+              <div class="inicio-caja-fila inicio-caja-banco-fila inicio-caja-fila-actual inicio-caja-cheque-solo-ars">
+                <span class="inicio-caja-etiqueta">Saldo Actual</span>
+                <span class="inicio-caja-valor" id="inicio-cheque-ars-actual">–</span>
+              </div>
+              <div class="inicio-caja-fila inicio-caja-fila-var inicio-caja-banco-fila inicio-caja-cheque-solo-ars">
+                <span class="inicio-caja-etiqueta">Var.</span>
+                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-cheque-ars-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-cheque-ars-var">–</span></span>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="inicio-cards-pendientes" id="inicio-cards-pendientes">
           <div class="card card-pendientes" id="inicio-card-ordenes-pendientes">
@@ -721,6 +858,19 @@
               </div>
             </div>
           </div>
+          <div class="inicio-caja-card inicio-caja-cheque inicio-caja-card-cheque-compact" id="cajas-card-cheque">
+            <h3 class="inicio-caja-card-titulo"><span class="inicio-caja-icono-caja" aria-hidden="true"><img src="/assets/Icono_Cheques.png" alt="" width="30" height="30"/></span>Cheque</h3>
+            <div class="inicio-caja-tabla">
+              <div class="inicio-caja-fila inicio-caja-fila-header inicio-caja-banco-fila inicio-caja-cheque-solo-ars">
+                <span class="inicio-caja-etiqueta"></span>
+                <span class="inicio-caja-col-header"><img src="/assets/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
+              </div>
+              <div class="inicio-caja-fila inicio-caja-banco-fila inicio-caja-fila-actual inicio-caja-cheque-solo-ars">
+                <span class="inicio-caja-etiqueta">Saldo</span>
+                <span class="inicio-caja-valor" id="cajas-saldo-cheque-ars">–</span>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="vista-toolbar">
           <label style="display:flex; align-items:center; gap:0.5rem;">
@@ -797,14 +947,14 @@
           <span style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/><circle cx="12" cy="12" r="3"/></svg></span>
           Tipos de operación
         </h3>
-        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Catálogo de tipos (moneda IN = recibida, moneda OUT = entregada). Define las monedas y la lógica de órdenes y transacciones.</p>
+        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Catálogo de tipos (moneda IN = recibida, moneda OUT = entregada). En el listado, la columna <strong>Tipo</strong> muestra iconos según el código (ej. USD→ARS; si el código incluye <strong>CHEQUE</strong>, solo el icono de cheques). El nombre y el código siguen siendo la referencia en formularios y exportaciones.</p>
         <div class="vista-toolbar">
           <button type="button" id="btn-nuevo-tipo-operacion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo tipo</button>
         </div>
         <div id="tipos-operacion-loading" class="clientes-loading">Cargando tipos…</div>
         <div id="tipos-operacion-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
           <table id="tabla-tipos-operacion">
-            <thead><tr><th>Código</th><th>Nombre</th><th>Moneda IN</th><th>Moneda OUT</th><th>Intermediario</th><th>Activo</th><th></th></tr></thead>
+            <thead><tr><th>Tipo</th><th>Nombre</th><th>Moneda IN</th><th>Moneda OUT</th><th>Intermediario</th><th>Activo</th><th></th></tr></thead>
             <tbody id="tipos-operacion-tbody"></tbody>
           </table>
         </div>
@@ -978,12 +1128,34 @@
             <label for="tipo-operacion-nombre">Nombre *</label>
             <input type="text" id="tipo-operacion-nombre" required maxlength="128" placeholder="ej. ARS - USD" />
           </div>
+          <fieldset class="tipo-operacion-icono-fieldset" style="border:1px solid #e5e7eb; padding:0.75rem 1rem; border-radius:8px; margin:0.5rem 0;">
+            <legend style="font-size:0.9rem; padding:0 0.35rem;">Icono en listados</legend>
+            <div class="tipo-op-icono-modos" style="display:flex; flex-direction:column; gap:0.35rem;">
+              <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="radio" name="tipo-operacion-icono-modo" value="auto" checked /> Automático (según código: monedas o CHEQUE en código)</label>
+              <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="radio" name="tipo-operacion-icono-modo" value="cheque" /> Siempre icono cheques</label>
+              <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="radio" name="tipo-operacion-icono-modo" value="custom" /> Personalizado (imagen por URL o Storage)</label>
+            </div>
+            <div id="tipo-operacion-icono-custom-wrap" style="display:none; margin-top:0.65rem;">
+              <label for="tipo-operacion-icono-url">URL pública (https)</label>
+              <input type="url" id="tipo-operacion-icono-url" placeholder="https://..." maxlength="2048" style="width:100%; max-width:100%; box-sizing:border-box;" />
+              <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem; margin-top:0.4rem;">
+                <input type="file" id="tipo-operacion-icono-file" accept="image/png,image/jpeg,image/webp,image/avif,image/gif,image/svg+xml" style="display:none" />
+                <button type="button" class="btn-secondary" id="tipo-operacion-icono-subir"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>Subir imagen</button>
+                <span style="font-size:0.8rem; color:#6b7280;">Bucket Supabase: <code>tipo-operacion-iconos</code> (público). Ver <code>docs/TIPOS_OPERACION_ICONO.md</code></span>
+              </div>
+            </div>
+            <div style="margin-top:0.65rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+              <span style="font-size:0.85rem; color:#6b7280;">Vista previa:</span>
+              <span id="tipo-operacion-icono-preview" class="tipo-op-iconos tipo-op-iconos--inline" aria-hidden="true"></span>
+            </div>
+          </fieldset>
           <div class="form-group">
             <label for="tipo-operacion-moneda-in">Moneda IN (recibida) *</label>
             <select id="tipo-operacion-moneda-in" required>
               <option value="USD">USD</option>
               <option value="EUR">EUR</option>
               <option value="ARS">ARS</option>
+              <option value="CHEQUE">Cheque (ARS; en órdenes se guarda como ARS)</option>
             </select>
           </div>
           <div class="form-group">
@@ -992,6 +1164,7 @@
               <option value="USD">USD</option>
               <option value="EUR">EUR</option>
               <option value="ARS">ARS</option>
+              <option value="CHEQUE">Cheque (ARS; en órdenes se guarda como ARS)</option>
             </select>
           </div>
           <div class="form-group">
@@ -1174,8 +1347,19 @@
         <form id="form-orden">
           <input type="hidden" id="orden-id" value="" />
           <div class="form-group">
-            <label for="orden-tipo-operacion">Tipo de operación *</label>
-            <select id="orden-tipo-operacion" required><option value="">Elegir…</option></select>
+            <label id="orden-tipo-operacion-label">Tipo de operación *</label>
+            <div class="orden-tipo-operacion-fila">
+              <div class="orden-tipo-operacion-combo-wrap">
+                <select id="orden-tipo-operacion" class="orden-tipo-operacion-sr" required aria-hidden="true" tabindex="-1"><option value="">Elegir…</option></select>
+                <div class="orden-tipo-operacion-combo-ui">
+                  <button type="button" class="orden-tipo-operacion-combo-btn" id="orden-tipo-operacion-combo-btn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="orden-tipo-operacion-label orden-tipo-operacion-combo-display" aria-controls="orden-tipo-operacion-listbox">
+                    <span id="orden-tipo-operacion-combo-display" class="orden-tipo-operacion-combo-display"><span class="orden-tipo-operacion-placeholder">Elegir…</span></span>
+                    <span class="orden-tipo-operacion-combo-chevron" aria-hidden="true">▼</span>
+                  </button>
+                  <ul id="orden-tipo-operacion-listbox" class="orden-tipo-operacion-listbox" role="listbox" aria-labelledby="orden-tipo-operacion-label" hidden></ul>
+                </div>
+              </div>
+            </div>
           </div>
           <div id="orden-wizard" style="display:none;">
             <div id="orden-step-participantes">

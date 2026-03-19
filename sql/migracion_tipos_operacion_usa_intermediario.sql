@@ -11,4 +11,4 @@ COMMENT ON COLUMN public.tipos_operacion.usa_intermediario IS 'Si true, las órd
 -- Backfill: solo ARS-ARS (cheque) usa intermediario hoy
 UPDATE public.tipos_operacion
 SET usa_intermediario = true
-WHERE codigo IN ('ARS-ARS-CHEQUE', 'ARS-ARS');
+WHERE codigo IN ('CHEQUE-ARS', 'ARS-ARS');

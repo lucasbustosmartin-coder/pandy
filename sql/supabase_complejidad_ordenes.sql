@@ -16,10 +16,10 @@ INSERT INTO public.tipos_operacion (codigo, nombre) VALUES
   ('ARS-USD', 'ARS - USD'),
   ('USD-ARS', 'USD - ARS'),
   ('ARS-EUR', 'ARS - EUR'),
-  ('ARS-ARS-CHEQUE', 'ARS - ARS (CHEQUE)')
+  ('CHEQUE-ARS', 'CHEQUE - ARS')
 ON CONFLICT (codigo) DO NOTHING;
 
-COMMENT ON TABLE public.tipos_operacion IS 'Clasificación de la orden: USD-USD, ARS-USD, USD-ARS, ARS-EUR, ARS-ARS CHEQUE.';
+COMMENT ON TABLE public.tipos_operacion IS 'Clasificación de la orden: USD-USD, ARS-USD, USD-ARS, ARS-EUR, CHEQUE-ARS.';
 
 -- ========== 2. Catálogo: Modos de pago ==========
 CREATE TABLE IF NOT EXISTS public.modos_pago (

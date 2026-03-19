@@ -31,3 +31,15 @@ config.js
 *.sw?
 .vercel
 .env*.local
+
+# Credenciales para tests E2E (no subir)
+.env.test
+
+# Playwright
+test-results
+playwright-report
+playwright/.cache
+
+# Bloqueos temporales de Excel al abrir un .xlsx
+~$*.xlsx
+~$*.xls

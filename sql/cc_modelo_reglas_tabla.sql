@@ -45,7 +45,7 @@ COMMENT ON COLUMN public.cc_modelo_reglas.incluir_en_mov_cc_cliente IS 'Si true,
 COMMENT ON COLUMN public.cc_modelo_reglas.concepto_leyenda IS 'Clave para concepto: cobro_realizado, pago_realizado, compromiso_pago, comision_acuerdo.';
 COMMENT ON COLUMN public.cc_modelo_reglas.usa_monto_efectivo IS 'Si true, usar monto con tasa descuento (ej. Int→Pandy 197k).';
 
--- ========== 2. Datos: todas las combinaciones ARS-ARS / ARS-ARS-CHEQUE con intermediario ==========
+-- ========== 2. Datos: todas las combinaciones ARS-ARS / CHEQUE-ARS con intermediario ==========
 -- Por cada tipo de transacción: 4 filas (estado_transaccion × contrapartida_ejecutada).
 -- Orden: (ejecutada, false), (ejecutada, true), (pendiente, false), (pendiente, true).
 
@@ -62,10 +62,10 @@ INSERT INTO public.cc_modelo_reglas (
   ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true,  -1, false, true, 0, false, false, 'cobro_realizado', false),
   ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', false,  0, false, false, 0, false, false, NULL, false),
   ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', true,  0, false, false, 0, false, false, NULL, false),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, -1, false, true, 0, false, false, 'cobro_realizado', false),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true,  -1, false, true, 0, false, false, 'cobro_realizado', false),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', false,  0, false, false, 0, false, false, NULL, false),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', true,  0, false, false, 0, false, false, NULL, false)
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, -1, false, true, 0, false, false, 'cobro_realizado', false),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true,  -1, false, true, 0, false, false, 'cobro_realizado', false),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', false,  0, false, false, 0, false, false, NULL, false),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', true,  0, false, false, 0, false, false, NULL, false)
 ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada) DO NOTHING;
 
 -- Tx2: Pandy→Cliente egreso (no comisión). Pendiente + contrapartida ejecutada = SUMA SALDO Y.
@@ -80,10 +80,10 @@ INSERT INTO public.cc_modelo_reglas (
   ('ARS-ARS', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, false, true, 0, false, false, 'compromiso_pago', false),
   ('ARS-ARS', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
   ('ARS-ARS', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, true, false, 0, false, false, NULL, false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, false, true, 0, false, false, 'compromiso_pago', false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, false, true, 0, false, false, 'compromiso_pago', false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, true, false, 0, false, false, NULL, false)
+  ('CHEQUE-ARS', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, false, true, 0, false, false, 'compromiso_pago', false),
+  ('CHEQUE-ARS', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, false, true, 0, false, false, 'compromiso_pago', false),
+  ('CHEQUE-ARS', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
+  ('CHEQUE-ARS', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, true, false, 0, false, false, NULL, false)
 ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada) DO NOTHING;
 
 -- Tx3: Pandy→Intermediario egreso (no comisión)
@@ -98,10 +98,10 @@ INSERT INTO public.cc_modelo_reglas (
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', true,  0, false, false, 1, false, true, 'pago_realizado', false),
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', true,  0, false, false, 0, false, false, NULL, false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', false, 0, false, false, 1, false, true, 'pago_realizado', false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', true,  0, false, false, 1, false, true, 'pago_realizado', false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', true,  0, false, false, 0, false, false, NULL, false)
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', false, 0, false, false, 1, false, true, 'pago_realizado', false),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', true,  0, false, false, 1, false, true, 'pago_realizado', false),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', true,  0, false, false, 0, false, false, NULL, false)
 ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada) DO NOTHING;
 
 -- Tx4: Intermediario→Pandy ingreso (no comisión). Pendiente + contrapartida ejecutada = SUMA SALDO Y.
@@ -116,10 +116,10 @@ INSERT INTO public.cc_modelo_reglas (
   ('ARS-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', true,  0, false, false, -1, false, true, 'cobro_realizado', true),
   ('ARS-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, true),
   ('ARS-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', true,  0, false, false, -1, true, false, NULL, true),
-  ('ARS-ARS-CHEQUE', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', false, 0, false, false, -1, false, true, 'cobro_realizado', true),
-  ('ARS-ARS-CHEQUE', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', true,  0, false, false, -1, false, true, 'cobro_realizado', true),
-  ('ARS-ARS-CHEQUE', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, true),
-  ('ARS-ARS-CHEQUE', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', true,  0, false, false, -1, true, false, NULL, true)
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', false, 0, false, false, -1, false, true, 'cobro_realizado', true),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', true,  0, false, false, -1, false, true, 'cobro_realizado', true),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, true),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', true,  0, false, false, -1, true, false, NULL, true)
 ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada) DO NOTHING;
 
 -- Comisión Pandy: Cliente→Pandy ingreso, es_comision true (solo ejecutada tiene sentido para incluir)
@@ -134,10 +134,10 @@ INSERT INTO public.cc_modelo_reglas (
   ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  -1, false, true, 0, false, false, 'comision_acuerdo', false),
   ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
   ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', true,  0, false, false, 0, false, false, NULL, false),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, -1, false, true, 0, false, false, 'comision_acuerdo', false),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  -1, false, true, 0, false, false, 'comision_acuerdo', false),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', true,  0, false, false, 0, false, false, NULL, false)
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, -1, false, true, 0, false, false, 'comision_acuerdo', false),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  -1, false, true, 0, false, false, 'comision_acuerdo', false),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', true,  0, false, false, 0, false, false, NULL, false)
 ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada) DO NOTHING;
 
 -- Comisión Intermediario: Pandy→Intermediario egreso, es_comision true
@@ -152,10 +152,10 @@ INSERT INTO public.cc_modelo_reglas (
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true,  0, false, false, -1, false, true, 'comision_acuerdo', false),
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', true,  0, false, false, 0, false, false, NULL, false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0, false, false, -1, false, true, 'comision_acuerdo', false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true,  0, false, false, -1, false, true, 'comision_acuerdo', false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', true,  0, false, false, 0, false, false, NULL, false)
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0, false, false, -1, false, true, 'comision_acuerdo', false),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true,  0, false, false, -1, false, true, 'comision_acuerdo', false),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, false, false, 0, false, false, NULL, false),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', true,  0, false, false, 0, false, false, NULL, false)
 ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada) DO NOTHING;
 
 UPDATE public.cc_modelo_reglas SET condicion_estado_comision = 'par_pandy_int'

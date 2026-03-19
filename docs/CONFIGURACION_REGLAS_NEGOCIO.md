@@ -15,7 +15,7 @@ RLS: todos los autenticados pueden **leer**; solo Admin puede **INSERT/UPDATE**.
 | Clave | Descripción | Valor por defecto | Uso en la app |
 |-------|-------------|-------------------|----------------|
 | `session_timeout_minutes` | Minutos de inactividad antes de cerrar sesión. | 60 | loadSeguridad, checkSessionTimeout |
-| `reversar_max_veces` | Cuántas veces se puede reversar una transacción de ejecutada a pendiente (por transacción). 0 = no permitir; 1 = una vez (recomendado). | 1 | cambiarEstadoTransaccion: si 0 bloquea toda reversión; si 1 aplica lógica con columna revertida_una_vez. |
+| `reversar_max_veces` | *(Obsoleto)* Antes limitaba reversiones. **Ya no se usa:** la app permite reversar de ejecutada a pendiente sin límite de veces; solo se pide confirmación. | (ignorado) | No se consulta; ver main.js cambiarEstadoTransaccion. |
 | *(futuro)* `permitir_editar_monto_ejecutada` | Si se puede editar el monto de una transacción ya ejecutada. | false | saveTransaccion, guardarSoloMontoTransaccion |
 | *(futuro)* `permitir_editar_modo_pago_ejecutada` | Si se puede cambiar el modo de pago de una transacción ejecutada. | false | guardarSoloModoPagoTransaccion |
 

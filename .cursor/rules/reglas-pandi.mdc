@@ -15,10 +15,20 @@ alwaysApply: true
 
 - Si se agregan o cambian tablas en Supabase: actualizar `sql/` con los DDL correspondientes, el código que las use y la documentación en `docs/` si aplica.
 
+## Corazón del sistema: CC y caja (obligatorio)
+
+- **Referencia principal:** `docs/CORAZON_SISTEMA_CC_Y_CAJA.md`. Tres principios que siempre deben cumplirse:
+  1. **CC = situación real** entre Pandy y el cliente, y entre Pandy y el intermediario.
+  2. **Caja = dinero real:** si Pandy cuenta los billetes al cierre del día, tiene que dar lo que dice el sistema.
+  3. **Reloj:** CC y caja son deterministas y fuente de verdad; no excepciones ocultas.
+- **CC cliente y CC intermediario van juntas:** No se puede tocar la CC del cliente sin revisar si hay que tocar también la CC del intermediario, ni viceversa. En todo cambio que afecte movimientos, cálculo de saldo, resumen o sync de **una** de las dos, validar impacto en la **otra** y en la coherencia global.
+
 ## Cuenta corriente (regla conceptual)
 
-- **La cuenta corriente siempre tiene que cerrar** con la regla conceptual (saldo = suma de movimientos; cada movimiento por el monto realmente ejecutado; sin doble conteo). Referencia: `docs/FLUJOS_CC_REGLA.md`.
+- **La cuenta corriente siempre tiene que cerrar** con la regla conceptual (saldo = suma de movimientos; cada movimiento por el monto realmente ejecutado; sin doble conteo). Referencia: `docs/FLUJOS_CC_REGLA.md`, `docs/REGLA_CC_SIMPLE_INFALIBLE.md`.
 - En todo cambio que toque movimientos de CC, flujos de ejecución o cálculo de saldo, verificar que el saldo cierre. **Si no cierra, preguntar al usuario** antes de dar por cerrada la tarea.
+- **Revisión de impacto (RCA):** Tras modificar movimientos de CC, caja o flujos de ejecución, revisar que los cambios no rompan la regla ni introduzcan duplicados; contrastar con `docs/FLUJOS_CC_REGLA.md`, `docs/REGLA_CC_SIMPLE_INFALIBLE.md` y, si aplica, `docs/REGLA_CC.xlsx`. **Incluir siempre:** impacto en CC cliente **y** en CC intermediario.
+- **Regla por transacción:** Los movimientos de CC y caja deben estar ligados a una transacción (`transaccion_id` / `transaccion_numero`). La lógica debe actuar por transacción (insertar/actualizar/borrar solo los movimientos de esa transacción), no depender de borrar y repoblar toda la orden para no volver el sistema ineficiente a escala.
 
 ## Mensajería interna (no usar diálogos del navegador)
 
@@ -49,6 +59,18 @@ alwaysApply: true
 - **Bitácora:** Al completar una tarea, actualizar la bitácora (Log y solapas que correspondan) y regenerar el Excel. Detalle en la regla **bitacora-tareas**. No saltear salvo que el usuario lo pida explícitamente.
 - **RPC / Supabase:** Si el cambio afecta lógica que corre en el backend (funciones en `sql/`, p. ej. `sync_cc_caja_orden`, `transacciones_cambiar_estado`), **hay que revisar si las RPC deben adaptarse** y actualizar los scripts en `sql/` cuando corresponda. No puede omitirse este paso.
 - **Tests:** Si el cambio afecta flujos o UI cubiertos por tests (E2E en `tests/e2e/`, o tests unitarios), **hay que adaptar o ampliar los tests** en la misma sesión para que sigan pasando y reflejen el nuevo comportamiento. No omitir: revisar selectores, textos, columnas o pasos que hayan cambiado. Guía: `docs/TESTING_E2E_GUIA.md`.
+- **Expectativas de tests (única fuente de verdad):** Los valores esperados en tests (p. ej. `cc-combinaciones-esperado.js`, o cualquier assert de saldos/resultados) **no pueden modificarse sin analizar y acordar con el usuario**. El propósito del test es asegurar la única fuente de verdad: si se cambia el esperado sin análisis ni acuerdo, se viola ese principio.
+
+## Regla estricta: acuerdo antes de implementar (no omitir)
+
+Ante un fallo de test, un cambio de comportamiento o una decisión que implique tocar código, tests o expectativas:
+
+1. **Explicar** qué falló o cuál es el problema (mensaje de error, combinación, pantalla, etc.).
+2. **Proponer** soluciones (cambios en app, en test, en expectativas o en varios; con opciones si aplica).
+3. **Acordar** con el usuario el plan de acción. El usuario debe aceptar explícitamente qué se va a hacer.
+4. **No tocar nada** (no editar archivos, no cambiar expectativas, no modificar tests ni app) hasta tener ese acuerdo. Solo después de acordar se implementa lo pactado.
+
+Esta regla es obligatoria. No implementar cambios “para que pase el test” o “para arreglar rápido” sin haber explicado, propuesto y acordado con el usuario.
 
 ## Despliegue
 
@@ -56,6 +78,7 @@ alwaysApply: true
 
 ## Documentación de referencia
 
+- **Corazón del sistema (CC y caja):** `docs/CORAZON_SISTEMA_CC_Y_CAJA.md` — principios y checklist al tocar CC o caja; CC cliente e intermediario van juntas.
 - Crear y usar proyecto Supabase: `docs/SUPABASE_REQUISITOS.md`.
 - Git y Vercel (repo, push, deploy): `docs/GIT_Y_VERCEL.md`.
 - Fechas en Argentina (timezone para manejo de fechas): `docs/FECHAS_ARGENTINA.md`.

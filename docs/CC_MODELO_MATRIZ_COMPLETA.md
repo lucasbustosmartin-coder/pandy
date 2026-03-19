@@ -24,12 +24,12 @@ Tipos: Tx1, Tx2, Tx3, Tx4, Comisión Pandy, Comisión Intermediario.
 
 | estado_transaccion | contrapartida_ejecutada | cc_cliente_signo | cc_cliente_suma_saldo | incluir_en_mov_cc_cliente | cc_intermediario_* | concepto_leyenda |
 |-------------------|-------------------------|------------------|----------------------|---------------------------|--------------------|------------------|
-| ejecutada         | false                   | -1               | N                    | Y                         | 0, N, N            | cobro_realizado  |
-| ejecutada         | true                    | -1               | N                    | Y                         | 0, N, N            | cobro_realizado  |
-| pendiente         | false                   | 0                | N                    | N                         | 0, N, N            | —                |
-| pendiente         | true                    | **-1**           | **Y**                | N                         | 0, N, N            | —                |
+| ejecutada         | false                   | -1               | **Y**                 | Y                         | 0, N, N            | cobro_realizado  |
+| ejecutada         | true                    | -1               | **Y**                 | **N**                     | 0, N, N            | cobro_realizado  |
+| pendiente         | false                   | 0                | N                     | N                         | 0, N, N            | —                |
+| pendiente         | true                    | -1               | **Y**                 | N                         | 0, N, N            | —                |
 
-*Modelo: Tx1 ejecutada → -200k, INCLUIR Y. Tx1 pendiente (contrapartida ejecutada): signo -, SUMA_SALDO Y (aporta -200k al saldo), INCLUIR N (no va al detalle).*
+*Modelo imagen: par cerrado (E,true) → SUMA_SALDO Y, INCLUIR N (cobro -200k aporta al saldo pero no va solo al detalle; el detalle muestra la otra pata). Sync escribe cuando INCLUIR O SUMA_SALDO para que suma(detalle) = saldo.*
 
 ---
 
@@ -37,12 +37,12 @@ Tipos: Tx1, Tx2, Tx3, Tx4, Comisión Pandy, Comisión Intermediario.
 
 | estado_transaccion | contrapartida_ejecutada | cc_cliente_signo | cc_cliente_suma_saldo | incluir_en_mov_cc_cliente | cc_intermediario_* | concepto_leyenda |
 |-------------------|-------------------------|------------------|----------------------|---------------------------|--------------------|------------------|
-| ejecutada         | false                   | 1                | N                    | Y                         | 0, N, N            | compromiso_pago  |
-| ejecutada         | true                    | 1                | N                    | Y                         | 0, N, N            | compromiso_pago  |
-| pendiente         | false                   | 0                | N                    | N                         | 0, N, N            | —                |
-| pendiente         | true                    | 1                | N                    | N                         | 0, N, N            | —                |
+| ejecutada         | false                   | 1                | **Y**                 | Y                         | 0, N, N            | compromiso_pago  |
+| ejecutada         | true                    | 1                | **N**                 | Y                         | 0, N, N            | compromiso_pago  |
+| pendiente         | false                   | 0                | N                     | N                         | 0, N, N            | —                |
+| pendiente         | true                    | 1                | N                     | N                         | 0, N, N            | —                |
 
-*Modelo: transacción PENDIENTE no suma al saldo ni se incluye en el detalle de movimientos (CC_CLIENTE_SUMA_SALDO = N, INCLUIR EN MOV CC CLIENTE = N).*
+*Modelo imagen: par cerrado (E,true) → SUMA_SALDO N, INCLUIR Y (compromiso +195k se muestra en detalle; no suma al saldo porque ya sumó Tx1).*
 
 ---
 
@@ -53,9 +53,9 @@ Tipos: Tx1, Tx2, Tx3, Tx4, Comisión Pandy, Comisión Intermediario.
 | ejecutada         | false                   | 0, N, N      | 1                       | N                           | Y                                | pago_realizado   |
 | ejecutada         | true                    | 0, N, N      | 1                       | N                           | Y                                | pago_realizado   |
 | pendiente         | false                   | 0, N, N      | 0                       | N                           | N                                | —                |
-| pendiente         | true                    | 0, N, N      | 0                       | N                           | N                                | —                |
+| pendiente         | true                    | 0, N, N      | **-1**                  | **Y**                       | **N**                            | —                |
 
-*Excel: ejecutada → CC_INTERMEDIARIO = +200.000 (inversión del egreso).*
+*Modelo imagen: Tx3 pendiente con Tx4 ejecutada → signo -1 (CC int -200k), SUMA_SALDO Y, INCLUIR N. Ejecutada → +200k, INCLUIR Y.*
 
 ---
 
@@ -66,9 +66,9 @@ Tipos: Tx1, Tx2, Tx3, Tx4, Comisión Pandy, Comisión Intermediario.
 | ejecutada         | false                   | 0, N, N      | -1                      | N                           | Y                                | Y (197k)           | cobro_realizado  |
 | ejecutada         | true                    | 0, N, N      | -1                      | N                           | Y                                | Y                  | cobro_realizado  |
 | pendiente         | false                   | 0, N, N      | 0                       | N                           | N                                | Y                  | —                |
-| pendiente         | true                    | 0, N, N      | -1                      | N                           | N                                | Y                  | —                |
+| pendiente         | true                    | 0, N, N      | -1                      | **Y**                       | N                                | Y                  | —                |
 
-*Modelo: Tx4 PENDIENTE no suma al saldo ni se incluye en detalle (igual que Tx2 para cliente).*
+*Modelo imagen: Tx4 ejecutada (par cerrado) → SUMA_SALDO N, INCLUIR Y (-197k en detalle). Tx4 pendiente con Tx3 ejecutada → SUMA_SALDO Y, INCLUIR N.*
 
 ---
 
@@ -77,11 +77,11 @@ Tipos: Tx1, Tx2, Tx3, Tx4, Comisión Pandy, Comisión Intermediario.
 | estado_transaccion | contrapartida_ejecutada | cc_cliente_signo | cc_cliente_suma_saldo | incluir_en_mov_cc_cliente | cc_intermediario_* | concepto_leyenda |
 |-------------------|-------------------------|------------------|----------------------|---------------------------|--------------------|------------------|
 | ejecutada         | false                   | **+1**           | N                    | Y                         | 0, N, N            | comision_acuerdo |
-| ejecutada         | true                    | **+1**           | N                    | N                         | 0, N, N            | comision_acuerdo |
+| ejecutada         | true                    | **+1**           | N                    | **Y**                     | 0, N, N            | comision_acuerdo |
 | pendiente         | false                   | **+1**           | N                    | **Y**                     | 0, N, N            | —                |
 | pendiente         | true                    | **+1**           | N                    | **Y**                     | 0, N, N            | —                |
 
-*Modelo: comisión ejecutada (par no cerrado) → incluir Y, +5.000. Comisión pendiente → también INCLUIR Y y signo + (para que cierre con -200k+195k = -5k y +5k comisión). Par cerrado (ejecutada, true) → no incluir.*
+*Comisión siempre INCLUIR en detalle (ejecutada y pendiente, par cerrado o no) para que detalle = saldo: -200k+195k+5k=0.*
 
 ---
 
@@ -118,4 +118,4 @@ Igual que Tx2 con intermediario: 4 filas con (1, N, Y), (1, N, Y), (0, N, N), (1
 - **Por cada tipo de transacción:** siempre **4 filas** (estado = ejecutada/pendiente × contrapartida_ejecutada = false/true).
 - Con eso la app tiene **una regla para cada situación posible** al hacer lookup(reglas, pagador, cobrador, tipo, es_comision, estado_transaccion, contrapartida_ejecutada).
 
-Script SQL que materializa esta matriz: **sql/cc_modelo_reglas_todas_combinaciones.sql** (UPSERT para tipo ARS-ARS, ARS-ARS-CHEQUE, ARS-USD, USD-USD, USD-ARS).
+**Sync:** se escribe movimiento cuando INCLUIR Y o SUMA_SALDO Y. **Contribución:** contribucionSaldoIntermediarioModeloCc incluye Tx3 pendiente + Tx4 ejecutada → -200k. Script SQL: **sql/cc_modelo_reglas_todas_combinaciones.sql**.

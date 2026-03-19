@@ -1,7 +1,14 @@
+-- =============================================================================
+-- TRUNCATE: ejecutar TODO este archivo en Supabase SQL Editor.
+-- Abrís sql/truncar_ordenes_transacciones.sql, copiás todo y pegás en el editor,
+-- luego Run. Hacerlo antes del test E2E si querés arranque limpio (0 órdenes).
+-- =============================================================================
+--
 -- Borrar toda la transaccionalidad para volver a probar de cero.
--- Se borran: órdenes, instrumentación, transacciones, comisiones por orden, orden_comisiones_generadas, movimientos de caja y cuentas corrientes.
--- No se tocan: clientes, intermediarios, modos_pago, tipos_operacion, tipos_movimiento_caja, usuarios/seguridad.
--- Orden: de hijas a madres (quien referencia primero). orden_comisiones_generadas referencia transacciones y ordenes, por eso va antes que ambas.
+-- Se borran: movimientos CC (cliente e intermediario), movimientos_caja, orden_comisiones_generadas (si existe),
+--   transacciones, comisiones_orden, instrumentacion, ordenes.
+-- No se tocan: clientes, intermediarios, modos_pago, tipos_operacion, tipos_movimiento_caja, app_config, usuarios/seguridad.
+-- Orden: de hijas a madres (quien referencia primero). Tras truncar se resetean ordenes_numero_seq y transacciones_numero_seq (próxima orden nº 1, próxima transacción nº 1).
 
 TRUNCATE TABLE public.movimientos_cuenta_corriente CASCADE;
 TRUNCATE TABLE public.movimientos_cuenta_corriente_intermediario CASCADE;

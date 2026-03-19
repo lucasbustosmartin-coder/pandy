@@ -19,7 +19,7 @@
 -- Comisión Pandy: 4 filas: 1,N,Y (cliente). Comisión Int: 4 filas: -1,N,N (no línea en detalle int).
 -- Ejecutar en Supabase SQL Editor.
 
--- ========== 1. Con intermediario: ARS-ARS y ARS-ARS-CHEQUE ==========
+-- ========== 1. Con intermediario: ARS-ARS y CHEQUE-ARS ==========
 
 INSERT INTO public.cc_modelo_reglas (
   tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision,
@@ -33,55 +33,55 @@ INSERT INTO public.cc_modelo_reglas (
   ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true,  -1, true,  true,  0, false, false, 'cobro_realizado', false, NULL),
   ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', false,  0, false, false, 0, false, false, NULL, false, NULL),
   ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', true,  -1, false, false, 0, false, false, NULL, false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, -1, true,  true,  0, false, false, 'cobro_realizado', false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true,  -1, true,  true,  0, false, false, 'cobro_realizado', false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', false,  0, false, false, 0, false, false, NULL, false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', true,  -1, false, false, 0, false, false, NULL, false, NULL),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, -1, true,  true,  0, false, false, 'cobro_realizado', false, NULL),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true,  -1, true,  true,  0, false, false, 'cobro_realizado', false, NULL),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', false,  0, false, false, 0, false, false, NULL, false, NULL),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', false, 'pendiente', true,  -1, false, false, 0, false, false, NULL, false, NULL),
 -- Tx2: Pandy→Cliente egreso. Par cerrado (E,true): SUMA Y e INCLUIR Y para que saldo = -200k+195k+5k = 0.
   ('ARS-ARS', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, true,  true,  0, false, false, 'compromiso_pago', false, NULL),
   ('ARS-ARS', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, true,  true,  0, false, false, 'compromiso_pago', false, NULL),
   ('ARS-ARS', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, false, NULL),
   ('ARS-ARS', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, false, false, 0, false, false, NULL, false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, true,  true,  0, false, false, 'compromiso_pago', false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, true,  true,  0, false, false, 'compromiso_pago', false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, false, false, 0, false, false, NULL, false, NULL),
+  ('CHEQUE-ARS', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, true,  true,  0, false, false, 'compromiso_pago', false, NULL),
+  ('CHEQUE-ARS', true, 'pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, true,  true,  0, false, false, 'compromiso_pago', false, NULL),
+  ('CHEQUE-ARS', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, false, false, 0, false, false, NULL, false, NULL),
+  ('CHEQUE-ARS', true, 'pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, false, false, 0, false, false, NULL, false, NULL),
 -- Tx3: suma al saldo (-200k). En detalle: (E,false) y (P,true) SÍ incluir (nominal -200k para E,E,E,P y E,E,P,E).
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', false, 0, false, false, -1, true,  true,  'pago_realizado', false, NULL),
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', true,  0, false, false, -1, true,  true,  'pago_realizado', false, NULL),
-  ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', false, 0, false, false, -1, true,  false, NULL, false, NULL),
+  ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', false, 0, false, false, -1, false, false, NULL, false, NULL),
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', true,  0, false, false, -1, true,  true,  NULL, false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', false, 0, false, false, -1, true,  true,  'pago_realizado', false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', true,  0, false, false, -1, true,  true,  'pago_realizado', false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', false, 0, false, false, -1, true,  false, NULL, false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', true,  0, false, false, -1, true,  true,  NULL, false, NULL),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', false, 0, false, false, -1, true,  true,  'pago_realizado', false, NULL),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'ejecutada', true,  0, false, false, -1, true,  true,  'pago_realizado', false, NULL),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', false, 0, false, false, -1, false, false, NULL, false, NULL),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', false, 'pendiente', true,  0, false, false, -1, true,  true,  NULL, false, NULL),
 -- Tx4: Par cerrado (E,true) SUMA Y e INCLUIR. (E,false) no incluir para E,E,P,E (detalle solo Tx3 -200k + comisión).
   ('ARS-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', false, 0, false, false,  1, false, false, 'cobro_realizado', true, NULL),
   ('ARS-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', true,  0, false, false,  1, true,  true,  'cobro_realizado', true, NULL),
-  ('ARS-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', false, 0, false, false,  1, false, true,  NULL, true, NULL),
+  ('ARS-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', false, 0, false, false,  1, false, false, NULL, true, NULL),
   ('ARS-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', true,  0, false, false,  1, false, false, NULL, true, NULL),
-  ('ARS-ARS-CHEQUE', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', false, 0, false, false,  1, false, false, 'cobro_realizado', true, NULL),
-  ('ARS-ARS-CHEQUE', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', true,  0, false, false,  1, true,  true,  'cobro_realizado', true, NULL),
-  ('ARS-ARS-CHEQUE', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', false, 0, false, false,  1, false, true,  NULL, true, NULL),
-  ('ARS-ARS-CHEQUE', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', true,  0, false, false,  1, false, false, NULL, true, NULL),
--- Comisión Pandy: SUMA Y e INCLUIR Y para que saldo cliente = -200k+195k+5k = 0 y detalle tenga +5k.
-  ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 1, true,  true, 0, false, false, 'comision_acuerdo', false, NULL),
-  ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  1, true,  true, 0, false, false, 'comision_acuerdo', false, NULL),
-  ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 1, true,  true, 0, false, false, NULL, false, NULL),
-  ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', true,  1, true,  true, 0, false, false, NULL, false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 1, true,  true, 0, false, false, 'comision_acuerdo', false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  1, true,  true, 0, false, false, 'comision_acuerdo', false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 1, true,  true, 0, false, false, NULL, false, NULL),
-  ('ARS-ARS-CHEQUE', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', true,  1, true,  true, 0, false, false, NULL, false, NULL),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', false, 0, false, false,  1, false, false, 'cobro_realizado', true, NULL),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', true,  0, false, false,  1, true,  true,  'cobro_realizado', true, NULL),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', false, 0, false, false,  1, false, false, NULL, true, NULL),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'ingreso', false, 'pendiente', true,  0, false, false,  1, false, false, NULL, true, NULL),
+-- Comisión Pandy: condicion_estado_comision = par_cliente (ejecutada si par cerrado O Tx2 ejecutada; así P,E,P,P suma +5k y saldo 200k).
+  ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 1, true,  true, 0, false, false, 'comision_acuerdo', false, 'par_cliente'),
+  ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  1, true,  true, 0, false, false, 'comision_acuerdo', false, 'par_cliente'),
+  ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 1, false, false, 0, false, false, NULL, false, 'par_cliente'),
+  ('ARS-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', true,  1, true,  true, 0, false, false, NULL, false, 'par_cliente'),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 1, true,  true, 0, false, false, 'comision_acuerdo', false, 'par_cliente'),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  1, true,  true, 0, false, false, 'comision_acuerdo', false, 'par_cliente'),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 1, false, false, 0, false, false, NULL, false, 'par_cliente'),
+  ('CHEQUE-ARS', true, 'cliente', 'pandy', 'ingreso', true, 'pendiente', true,  1, true,  true, 0, false, false, NULL, false, 'par_cliente'),
 -- Comisión Intermediario: Par cerrado (E,true) SUMA Y para saldo int = 0. (P,true) también SUMA Y para E,E,E,P: saldo -200k+3k = -197k.
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0, false, false,  1, false, true,  'comision_acuerdo', false, 'par_pandy_int'),
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true,  0, false, false,  1, true,  true,  'comision_acuerdo', false, 'par_pandy_int'),
-  ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, false, false,  1, false, true,  NULL, false, 'par_pandy_int'),
+  ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, false, false,  1, false, false, NULL, false, 'par_pandy_int'),
   ('ARS-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', true,  0, false, false,  1, true,  true,  NULL, false, 'par_pandy_int'),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0, false, false,  1, false, true,  'comision_acuerdo', false, 'par_pandy_int'),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true,  0, false, false,  1, true,  true,  'comision_acuerdo', false, 'par_pandy_int'),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, false, false,  1, false, true,  NULL, false, 'par_pandy_int'),
-  ('ARS-ARS-CHEQUE', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', true,  0, false, false,  1, true,  true,  NULL, false, 'par_pandy_int')
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0, false, false,  1, false, true,  'comision_acuerdo', false, 'par_pandy_int'),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true,  0, false, false,  1, true,  true,  'comision_acuerdo', false, 'par_pandy_int'),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, false, false,  1, false, false, NULL, false, 'par_pandy_int'),
+  ('CHEQUE-ARS', true, 'pandy', 'intermediario', 'egreso', true, 'pendiente', true,  0, false, false,  1, true,  true,  NULL, false, 'par_pandy_int')
 ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada)
 DO UPDATE SET
   cc_cliente_signo = EXCLUDED.cc_cliente_signo,
