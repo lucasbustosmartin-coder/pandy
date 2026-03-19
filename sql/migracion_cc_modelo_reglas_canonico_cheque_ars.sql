@@ -1,5 +1,7 @@
 -- Canonico CHEQUE-ARS para tipo cheque en reglas CC y catálogo tipos_operacion.
 -- Ejecutar en Supabase SQL Editor (entorno desarrollo primero).
+-- Si el INSERT de reglas CHEQUE-ARS falla por columnas inexistentes, ejecutar antes
+-- sql/migracion_cc_modelo_reglas_moneda_exposicion.sql
 
 -- 0) Asegurar que checks de moneda permitan CHEQUE (si existen columnas/checks).
 DO $$
@@ -55,14 +57,18 @@ INSERT INTO public.cc_modelo_reglas (
   estado_transaccion, contrapartida_ejecutada,
   cc_cliente_signo, cc_cliente_suma_saldo, incluir_en_mov_cc_cliente,
   cc_intermediario_signo, cc_intermediario_suma_saldo, incluir_en_mov_cc_intermediario,
-  concepto_leyenda, usa_monto_efectivo, condicion_estado_comision
+  concepto_leyenda, usa_monto_efectivo, condicion_estado_comision,
+  cc_cliente_moneda_exposicion, cc_cliente_monto_referencia,
+  cc_intermediario_moneda_exposicion, cc_intermediario_monto_referencia
 )
 SELECT
   'CHEQUE-ARS', usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada,
   cc_cliente_signo, cc_cliente_suma_saldo, incluir_en_mov_cc_cliente,
   cc_intermediario_signo, cc_intermediario_suma_saldo, incluir_en_mov_cc_intermediario,
-  concepto_leyenda, usa_monto_efectivo, condicion_estado_comision
+  concepto_leyenda, usa_monto_efectivo, condicion_estado_comision,
+  cc_cliente_moneda_exposicion, cc_cliente_monto_referencia,
+  cc_intermediario_moneda_exposicion, cc_intermediario_monto_referencia
 FROM public.cc_modelo_reglas
 WHERE tipo_operacion_codigo = 'ARS-ARS-CHEQUE'
 ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada)
@@ -75,7 +81,11 @@ DO UPDATE SET
   incluir_en_mov_cc_intermediario = EXCLUDED.incluir_en_mov_cc_intermediario,
   concepto_leyenda = EXCLUDED.concepto_leyenda,
   usa_monto_efectivo = EXCLUDED.usa_monto_efectivo,
-  condicion_estado_comision = EXCLUDED.condicion_estado_comision;
+  condicion_estado_comision = EXCLUDED.condicion_estado_comision,
+  cc_cliente_moneda_exposicion = EXCLUDED.cc_cliente_moneda_exposicion,
+  cc_cliente_monto_referencia = EXCLUDED.cc_cliente_monto_referencia,
+  cc_intermediario_moneda_exposicion = EXCLUDED.cc_intermediario_moneda_exposicion,
+  cc_intermediario_monto_referencia = EXCLUDED.cc_intermediario_monto_referencia;
 
 DELETE FROM public.cc_modelo_reglas
 WHERE tipo_operacion_codigo = 'ARS-ARS-CHEQUE';

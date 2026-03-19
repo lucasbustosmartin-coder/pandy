@@ -1582,6 +1582,101 @@ function getCondicionComision(reglas, pagador, cobrador, tipoTransaccion) {
   return (r && r.condicion_estado_comision) ? r.condicion_estado_comision : null;
 }
 
+/**
+ * Moneda y monto base para CC cliente según cc_modelo_reglas (cc_cliente_moneda_exposicion / cc_cliente_monto_referencia).
+ * Valores: orden_recibida | orden_entregada | transaccion; mr | me | monto_transaccion.
+ * Si ambas columnas son null/vacías → comportamiento legacy del motor.
+ */
+function resolverMonedaYMontoCcClienteMotor(regla, orden, t, ctx) {
+  const montoT = Number(ctx.montoT) || 0;
+  const mrN = Number(ctx.mr) || 0;
+  const meN = Number(ctx.me) || 0;
+  const monR = (ctx.monR || 'USD').toUpperCase();
+  const monE = (ctx.monE || 'USD').toUpperCase();
+  const mon = (ctx.mon || 'USD').toUpperCase();
+  const pag = ctx.pag;
+  const cob = ctx.cob;
+  const tipo = ctx.tipo;
+  const expRaw = regla && regla.cc_cliente_moneda_exposicion != null ? String(regla.cc_cliente_moneda_exposicion).toLowerCase().trim() : '';
+  const refRaw = regla && regla.cc_cliente_monto_referencia != null ? String(regla.cc_cliente_monto_referencia).toLowerCase().trim() : '';
+  if (!expRaw && !refRaw) {
+    let base = montoT;
+    if (pag === 'cliente' && cob === 'pandy' && tipo === 'ingreso') base = mrN;
+    const monCc = (pag === 'cliente' && cob === 'pandy' && tipo === 'ingreso') ? monR : mon;
+    return { moneda: monCc, monto: base };
+  }
+  const monFromExp = (e) => {
+    if (e === 'orden_recibida' || e === 'recibida') return monR;
+    if (e === 'orden_entregada' || e === 'entregada') return monE;
+    if (e === 'transaccion') return mon;
+    return null;
+  };
+  const montoFromRef = (r0) => {
+    if (r0 === 'mr') return mrN;
+    if (r0 === 'me') return meN;
+    if (r0 === 'monto_transaccion') return montoT;
+    return montoT;
+  };
+  let monCc = monFromExp(expRaw);
+  if (!monCc) monCc = (pag === 'cliente' && cob === 'pandy' && tipo === 'ingreso') ? monR : mon;
+  let base;
+  if (refRaw) base = montoFromRef(refRaw);
+  else if (expRaw === 'orden_recibida' || expRaw === 'recibida') base = mrN;
+  else if (expRaw === 'orden_entregada' || expRaw === 'entregada') base = meN;
+  else if (expRaw === 'transaccion') base = montoT;
+  else {
+    base = montoT;
+    if (pag === 'cliente' && cob === 'pandy' && tipo === 'ingreso') base = mrN;
+  }
+  return { moneda: (monCc || monR).toUpperCase(), monto: base };
+}
+
+/**
+ * Moneda y monto base para CC intermediario (cc_intermediario_*). Incluye monto_efectivo_intermediario para la pata Int→Pandy con tasa.
+ */
+function resolverMonedaYMontoCcIntermediarioMotor(regla, orden, t, ctx) {
+  const montoT = Number(ctx.montoT) || 0;
+  const mrN = Number(ctx.mr) || 0;
+  const meN = Number(ctx.me) || 0;
+  const monR = (ctx.monR || 'USD').toUpperCase();
+  const monE = (ctx.monE || 'USD').toUpperCase();
+  const mon = (ctx.mon || 'USD').toUpperCase();
+  const montoEfectivoInt = Number(ctx.montoEfectivoInt) || 0;
+  const pag = String(t.pagador || '').toLowerCase();
+  const cob = String(t.cobrador || '').toLowerCase();
+  const tipo = (t.tipo || '').toLowerCase();
+  let baseLegacy = montoT;
+  if (cob === 'pandy' && pag === 'intermediario' && tipo === 'ingreso' && regla && regla.usa_monto_efectivo) baseLegacy = montoEfectivoInt;
+  const expRaw = regla && regla.cc_intermediario_moneda_exposicion != null ? String(regla.cc_intermediario_moneda_exposicion).toLowerCase().trim() : '';
+  const refRaw = regla && regla.cc_intermediario_monto_referencia != null ? String(regla.cc_intermediario_monto_referencia).toLowerCase().trim() : '';
+  if (!expRaw && !refRaw) {
+    const monCc = (orden.moneda_recibida || mon || 'ARS').toUpperCase();
+    return { moneda: monCc, monto: baseLegacy };
+  }
+  const monFromExp = (e) => {
+    if (e === 'orden_recibida' || e === 'recibida') return monR;
+    if (e === 'orden_entregada' || e === 'entregada') return monE;
+    if (e === 'transaccion') return mon;
+    return null;
+  };
+  const montoFromRef = (r0) => {
+    if (r0 === 'mr') return mrN;
+    if (r0 === 'me') return meN;
+    if (r0 === 'monto_transaccion') return montoT;
+    if (r0 === 'monto_efectivo_intermediario' || r0 === 'efectivo_intermediario') return montoEfectivoInt;
+    return montoT;
+  };
+  let monCc = monFromExp(expRaw) || (orden.moneda_recibida || mon || 'ARS');
+  monCc = (monCc || 'ARS').toUpperCase();
+  let base;
+  if (refRaw) base = montoFromRef(refRaw);
+  else if (expRaw === 'orden_recibida' || expRaw === 'recibida') base = mrN;
+  else if (expRaw === 'orden_entregada' || expRaw === 'entregada') base = meN;
+  else if (expRaw === 'transaccion') base = montoT;
+  else base = baseLegacy;
+  return { moneda: monCc, monto: base };
+}
+
 /** Actualiza las tarjetas de saldo de cuenta corriente: etiqueta "Saldo a favor" / "Saldo negativo" y monto. saldos = { USD, EUR, ARS } o null para reset. */
 function setCcSaldoCards(saldos) {
   const monedas = ['USD', 'EUR', 'ARS'];
@@ -6350,10 +6445,6 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               const regla = lookupRegla(reglas, pag, cob, tipo, false, estado, contrapartida);
               if (!regla) return;
               const mon = (t.moneda || monR).toUpperCase();
-              let baseCliente = montoT;
-              if (pag === 'cliente' && cob === 'pandy' && tipo === 'ingreso') baseCliente = mr;
-              // Egreso Pandy→Cliente (Tx2): usar siempre el monto de la transacción (195k), no mr (200k).
-              const baseInt = (cob === 'pandy' && pag === 'intermediario' && tipo === 'ingreso' && regla.usa_monto_efectivo) ? montoEfectivoInt : montoT;
               const signoCli = regla.cc_cliente_signo != null ? regla.cc_cliente_signo : 0;
               const signoInt = regla.cc_intermediario_signo != null ? regla.cc_intermediario_signo : 0;
               const leyenda = regla.concepto_leyenda || 'cobro_realizado';
@@ -6362,8 +6453,10 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               const escribirCcCliente = (regla.incluir_en_mov_cc_cliente || regla.cc_cliente_suma_saldo) && signoCli !== 0;
               const escribirCcInt = (regla.incluir_en_mov_cc_intermediario || regla.cc_intermediario_suma_saldo) && signoInt !== 0;
               if (clienteId && escribirCcCliente) {
-                const montoCc = signoCli * baseCliente;
-                const monCc = (pag === 'cliente' && cob === 'pandy' && tipo === 'ingreso') ? monR : mon;
+                const { moneda: monCc, monto: baseCli } = resolverMonedaYMontoCcClienteMotor(regla, orden, t, {
+                  montoT, mr, me, monR, monE, mon, pag, cob, tipo,
+                });
+                const montoCc = signoCli * baseCli;
                 rowsCcCliente.push({
                   cliente_id: clienteId, orden_id: ordenId, transaccion_id: t.id, transaccion_numero: t.numero != null ? t.numero : null,
                   concepto: conceptoCcLeyenda(leyenda, orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: monCc, monto: montoCc,
@@ -6374,15 +6467,17 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 });
               }
               if (intermediarioId && escribirCcInt) {
+                const { moneda: monCcInt, monto: baseInt } = resolverMonedaYMontoCcIntermediarioMotor(regla, orden, t, {
+                  montoT, mr, me, monR, monE, mon, montoEfectivoInt,
+                });
                 const montoCc = signoInt * baseInt;
-                const monCc = orden.moneda_recibida || mon || 'ARS';
                 rowsCcInt.push({
                   intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: t.id, transaccion_numero: t.numero != null ? t.numero : null,
-                  concepto: conceptoCcLeyenda(leyenda, orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: monCc, monto: montoCc,
+                  concepto: conceptoCcLeyenda(leyenda, orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: monCcInt, monto: montoCc,
                   estado: estadoMov, estado_fecha: ahora,
                   sumar_al_saldo: !!regla.cc_intermediario_suma_saldo,
                   incluir_en_detalle: !!regla.incluir_en_mov_cc_intermediario,
-                  ...montosCcPorMoneda(monCc, montoCc)
+                  ...montosCcPorMoneda(monCcInt, montoCc)
                 });
               }
             });

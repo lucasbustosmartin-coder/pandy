@@ -102,24 +102,27 @@ INSERT INTO public.cc_modelo_reglas (
   estado_transaccion, contrapartida_ejecutada,
   cc_cliente_signo, cc_cliente_suma_saldo, incluir_en_mov_cc_cliente,
   cc_intermediario_signo, cc_intermediario_suma_saldo, incluir_en_mov_cc_intermediario,
-  concepto_leyenda, usa_monto_efectivo
+  concepto_leyenda, usa_monto_efectivo,
+  cc_cliente_moneda_exposicion, cc_cliente_monto_referencia,
+  cc_intermediario_moneda_exposicion, cc_intermediario_monto_referencia
 )
 SELECT codigo, false, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada,
   cc_cliente_signo, cc_cliente_suma_saldo, incluir_en_mov_cc_cliente,
   0::smallint, false, false,
-  concepto_leyenda, usa_monto_efectivo
+  concepto_leyenda, usa_monto_efectivo,
+  cli_mon_exp, cli_monto_ref, NULL::text, NULL::text
 FROM (VALUES ('ARS-USD'), ('USD-USD'), ('USD-ARS')) AS t(codigo)
 CROSS JOIN (VALUES
-  ('cliente', 'pandy', 'ingreso', false, 'ejecutada', false, -1, true,  true,  'cobro_realizado', false),
-  ('cliente', 'pandy', 'ingreso', false, 'ejecutada', true,  -1, true,  false, 'cobro_realizado', false),
-  ('cliente', 'pandy', 'ingreso', false, 'pendiente', false,  0, false, false, NULL, false),
-  ('cliente', 'pandy', 'ingreso', false, 'pendiente', true,  -1, true,  false, NULL, false),
-  ('pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, true,  true,  'compromiso_pago', false),
-  ('pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, false, true,  'compromiso_pago', false),
-  ('pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, false, false, NULL, false),
-  ('pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, false, false, NULL, false)
-) AS r(pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada, cc_cliente_signo, cc_cliente_suma_saldo, incluir_en_mov_cc_cliente, concepto_leyenda, usa_monto_efectivo)
+  ('cliente', 'pandy', 'ingreso', false, 'ejecutada', false, -1, true,  true,  'cobro_realizado', false, 'orden_entregada'::text, 'me'::text),
+  ('cliente', 'pandy', 'ingreso', false, 'ejecutada', true,  -1, true,  false, 'cobro_realizado', false, 'orden_entregada', 'me'),
+  ('cliente', 'pandy', 'ingreso', false, 'pendiente', false,  0, false, false, NULL, false, 'orden_entregada', 'me'),
+  ('cliente', 'pandy', 'ingreso', false, 'pendiente', true,  -1, true,  false, NULL, false, 'orden_entregada', 'me'),
+  ('pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, true,  true,  'compromiso_pago', false, 'transaccion', 'monto_transaccion'),
+  ('pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, false, true,  'compromiso_pago', false, 'transaccion', 'monto_transaccion'),
+  ('pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, false, false, NULL, false, 'transaccion', 'monto_transaccion'),
+  ('pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, false, false, NULL, false, 'transaccion', 'monto_transaccion')
+) AS r(pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada, cc_cliente_signo, cc_cliente_suma_saldo, incluir_en_mov_cc_cliente, concepto_leyenda, usa_monto_efectivo, cli_mon_exp, cli_monto_ref)
 ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada)
 DO UPDATE SET
   cc_cliente_signo = EXCLUDED.cc_cliente_signo,
@@ -129,4 +132,8 @@ DO UPDATE SET
   cc_intermediario_suma_saldo = EXCLUDED.cc_intermediario_suma_saldo,
   incluir_en_mov_cc_intermediario = EXCLUDED.incluir_en_mov_cc_intermediario,
   concepto_leyenda = EXCLUDED.concepto_leyenda,
-  usa_monto_efectivo = EXCLUDED.usa_monto_efectivo;
+  usa_monto_efectivo = EXCLUDED.usa_monto_efectivo,
+  cc_cliente_moneda_exposicion = EXCLUDED.cc_cliente_moneda_exposicion,
+  cc_cliente_monto_referencia = EXCLUDED.cc_cliente_monto_referencia,
+  cc_intermediario_moneda_exposicion = EXCLUDED.cc_intermediario_moneda_exposicion,
+  cc_intermediario_monto_referencia = EXCLUDED.cc_intermediario_monto_referencia;
