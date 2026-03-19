@@ -1,6 +1,8 @@
 -- Comisión Pandy explícita en USD-USD sin intermediario.
--- Objetivo: que "Comisión del acuerdo" aparezca en detalle de CC,
--- sin alterar el cierre del saldo final (sumar_al_saldo = false).
+-- Objetivo:
+-- - Mostrar "Comisión del acuerdo" en detalle.
+-- - Cuando el par cliente está cerrado (ejecutada + contrapartida true), sumar +comisión al saldo
+--   para cerrar contra cobro bruto -10000 y egreso +9700.
 
 INSERT INTO public.cc_modelo_reglas (
   tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision,
@@ -13,7 +15,7 @@ INSERT INTO public.cc_modelo_reglas (
   condicion_estado_comision
 ) VALUES
   ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 1, false, true, 0, false, false, 'comision_acuerdo', false, 'transaccion', 'monto_transaccion', NULL, NULL, NULL),
-  ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  1, false, true, 0, false, false, 'comision_acuerdo', false, 'transaccion', 'monto_transaccion', NULL, NULL, NULL),
+  ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  1, true,  true, 0, false, false, 'comision_acuerdo', false, 'transaccion', 'monto_transaccion', NULL, NULL, NULL),
   ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 1, false, false, 0, false, false, NULL, false, 'transaccion', 'monto_transaccion', NULL, NULL, NULL),
   ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'pendiente', true,  1, false, false, 0, false, false, NULL, false, 'transaccion', 'monto_transaccion', NULL, NULL, NULL)
 ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada)

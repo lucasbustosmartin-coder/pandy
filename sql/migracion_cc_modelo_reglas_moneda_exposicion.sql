@@ -35,16 +35,30 @@ COMMENT ON COLUMN public.cc_modelo_reglas.cc_cliente_monto_referencia IS 'Base d
 COMMENT ON COLUMN public.cc_modelo_reglas.cc_intermediario_moneda_exposicion IS 'Moneda del movimiento CC intermediario. NULL = motor legacy.';
 COMMENT ON COLUMN public.cc_modelo_reglas.cc_intermediario_monto_referencia IS 'Base del importe; monto_efectivo_intermediario para ingreso Int→Pandy con tasa. NULL = legacy.';
 
--- Par cliente sin intermediario: ingreso Cliente→Pandy expone la contraparte (orden entregada = me); egreso Pandy→Cliente en moneda de la transacción.
+-- Par cliente sin intermediario:
+-- - ARS-USD y USD-ARS: ingreso Cliente→Pandy expone orden_entregada + me.
+-- - USD-USD: ingreso Cliente→Pandy expone transaccion + monto_transaccion (cobro bruto).
+-- - Egreso Pandy→Cliente: transaccion + monto_transaccion.
+-- Excepciones:
+-- - ingreso pendiente + contrapartida ejecutada → orden_recibida + mr (ver migracion_cc_modelo_reglas_ingreso_pendiente_par_exposicion_mr.sql).
+-- - USD-USD cobro bruto + cierre con comisión ejecutada/par cerrado (ver migracion_cc_modelo_reglas_usd_usd_cobro_bruto_y_cierre_comision.sql).
 UPDATE public.cc_modelo_reglas r
 SET
   cc_cliente_moneda_exposicion = CASE
-    WHEN r.pagador = 'cliente' AND r.cobrador = 'pandy' AND r.tipo_transaccion = 'ingreso' AND r.es_comision = false THEN 'orden_entregada'
+    WHEN r.tipo_operacion_codigo = 'USD-USD'
+      AND r.pagador = 'cliente' AND r.cobrador = 'pandy' AND r.tipo_transaccion = 'ingreso' AND r.es_comision = false
+      THEN 'transaccion'
+    WHEN r.pagador = 'cliente' AND r.cobrador = 'pandy' AND r.tipo_transaccion = 'ingreso' AND r.es_comision = false
+      AND NOT (r.estado_transaccion = 'pendiente' AND r.contrapartida_ejecutada = true) THEN 'orden_entregada'
     WHEN r.pagador = 'pandy' AND r.cobrador = 'cliente' AND r.tipo_transaccion = 'egreso' AND r.es_comision = false THEN 'transaccion'
     ELSE r.cc_cliente_moneda_exposicion
   END,
   cc_cliente_monto_referencia = CASE
-    WHEN r.pagador = 'cliente' AND r.cobrador = 'pandy' AND r.tipo_transaccion = 'ingreso' AND r.es_comision = false THEN 'me'
+    WHEN r.tipo_operacion_codigo = 'USD-USD'
+      AND r.pagador = 'cliente' AND r.cobrador = 'pandy' AND r.tipo_transaccion = 'ingreso' AND r.es_comision = false
+      THEN 'monto_transaccion'
+    WHEN r.pagador = 'cliente' AND r.cobrador = 'pandy' AND r.tipo_transaccion = 'ingreso' AND r.es_comision = false
+      AND NOT (r.estado_transaccion = 'pendiente' AND r.contrapartida_ejecutada = true) THEN 'me'
     WHEN r.pagador = 'pandy' AND r.cobrador = 'cliente' AND r.tipo_transaccion = 'egreso' AND r.es_comision = false THEN 'monto_transaccion'
     ELSE r.cc_cliente_monto_referencia
   END

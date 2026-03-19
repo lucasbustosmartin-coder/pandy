@@ -88,6 +88,19 @@ Las 12 combinaciones hacen varios cambios a **Ejecutada** seguidos y cada uno di
 
 Si el test corta por timeout global o se queda en “Actualizando estado…”, revisá red/Supabase y que la RPC del punto 1.6 esté desplegada.
 
+### 1.8 Test `cc-tipos-activos-combinaciones.spec.js` (2 transacciones, sin intermediario)
+
+Cubre las **4 combinaciones** de estados **Tx1/Tx2** (`P,P`, `E,P`, `P,E`, `E,E`) para **ARS-USD**, **USD-ARS** y **USD-USD**, con **montos enteros fijos** definidos en `tests/e2e/cc-tipos-activos-esperado.js`. Misma dinámica que combinaciones: limpieza E2E al inicio de cada caso, cliente fijo `E2E CC TiposActivos`, validación de saldos USD/ARS en resumen CC, detalle (modal **Ver detalle**), y caja **efectivo USD + ARS**.
+
+- **CHEQUE-ARS** (4 transacciones + intermediario) **no** está en este archivo: seguir usando **`tests/e2e/cc-combinaciones.spec.js`** (§1.5–1.7).
+- **Suite recomendada** (todos los tipos activos que tienen test de combinaciones): `npm run test:e2e-cc-activos-completo` (CHEQUE-ARS + tipos 2 tx).
+- **Solo tipos 2 tx:** `npm run test:e2e-cc-tipos-2tx` (añadí `--headed` si querés ver el navegador).
+- **Log Excel** (importes como número): `test-results/cc-tipos-activos-log.xlsx`.
+- **Filtros opcionales:** `TIPO_CODIGO` (`ARS-USD` | `USD-ARS` | `USD-USD`) y `COMBINACION_ID` (`P,P` | `E,P` | `P,E` | `E,E`). Ejemplo:
+  `TIPO_CODIGO=USD-ARS COMBINACION_ID="E,P" npx playwright test tests/e2e/cc-tipos-activos-combinaciones.spec.js --headed`
+
+Requisitos en Supabase: mismos que órdenes/CC sin intermediario (`cc_modelo_reglas` para esos códigos, RPC sync actualizada). Si alguna combinación **P,E** o **E,P** falla tras un cambio de reglas, calibrar expectativas en `cc-tipos-activos-esperado.js` (no aflojar asserts sin revisar negocio).
+
 ---
 
 ## 2. Cómo correr los tests
@@ -179,7 +192,8 @@ No hace falta que me pases la contraseña por chat; solo que la pongas en tu `.e
 |--------|------------|
 | `tests/e2e/login.spec.js` | Login y navegación básica (Panel de Control). |
 | `tests/e2e/orden-cc.spec.js` | **ARS-ARS:** Orden con intermediario (4 transacciones), verificar CC cliente e intermediario y caja (saldo esperado ARS, nro transacción). **ARS-USD**, **USD-ARS** y **USD-USD:** Orden sin intermediario (2 transacciones), verificar CC cliente, vista Cajas y log (USD-USD con saldo esperado USD y nro transacción). |
-| `tests/e2e/cc-combinaciones.spec.js` | Todas las combinaciones E/P de Tx1..Tx4 para ARS-ARS con intermediario; valida saldo y detalle CC cliente e intermediario y caja. Requiere en Supabase: `migracion_cc_sumar_saldo_incluir_detalle.sql`, `cc_modelo_reglas_todas_combinaciones.sql` y RPC `sync_cc_caja_orden` actualizada (ver §1.5–1.7). Log: `test-results/cc-combinaciones-log.xlsx`. |
+| `tests/e2e/cc-combinaciones.spec.js` | Todas las combinaciones E/P de Tx1..Tx4 para **CHEQUE-ARS** con intermediario; valida saldo y detalle CC cliente e intermediario y caja. Requiere en Supabase: `migracion_cc_sumar_saldo_incluir_detalle.sql`, `cc_modelo_reglas_todas_combinaciones.sql` y RPC `sync_cc_caja_orden` actualizada (ver §1.5–1.7). Log: `test-results/cc-combinaciones-log.xlsx`. |
+| `tests/e2e/cc-tipos-activos-combinaciones.spec.js` | Combinaciones Tx1/Tx2 para **ARS-USD**, **USD-ARS**, **USD-USD** (sin intermediario); montos fijos enteros; CC + caja USD/ARS. Log: `test-results/cc-tipos-activos-log.xlsx`. Ver §1.8. |
 
 Para que los tests de orden/CC pasen, en tu proyecto de Supabase necesitás:
 

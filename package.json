@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:e2e:orden": "playwright test --grep-invert \"Reversa\"",
-    "test:e2e:reversa": "playwright test -g \"Reversa\""
+    "test:e2e:reversa": "playwright test -g \"Reversa\"",
+    "test:e2e-cc-tipos-2tx": "playwright test tests/e2e/cc-tipos-activos-combinaciones.spec.js",
+    "test:e2e-cc-activos-completo": "playwright test tests/e2e/cc-combinaciones.spec.js tests/e2e/cc-tipos-activos-combinaciones.spec.js"
   },
   "dependencies": {
     "xlsx": "^0.18.5"
