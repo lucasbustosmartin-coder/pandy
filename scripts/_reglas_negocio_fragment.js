@@ -534,20 +534,49 @@ function loadReglasNegocioVista() {
   loadingEl.style.display = 'block';
   wrapEl.style.display = 'none';
   tbody.innerHTML = '';
-  Promise.all([
-    client.from('reglas_de_negocio').select('*').order('tipo_operacion_codigo').order('usa_intermediario'),
-    client.from('tipos_operacion').select('codigo, usa_intermediario, moneda_in, moneda_out'),
-  ]).then(([rR, rT]) => {
-    loadingEl.style.display = 'none';
-    wrapEl.style.display = 'block';
+  function supabaseErrOrdenVisualReglas(err) {
+    if (!err) return false;
+    if (String(err.code) === '42703') return true;
+    const msg = String(err.message || err.details || '');
+    return /orden_visual/i.test(msg) && (/does not exist|no existe|undefined column/i.test(msg));
+  }
+  function fetchTiposReglasConFallback() {
+    const full = () => client.from('tipos_operacion').select('codigo, usa_intermediario, moneda_in, moneda_out, orden_visual').order('orden_visual', { ascending: true }).order('codigo').order('usa_intermediario').order('id');
+    const leg = () => client.from('tipos_operacion').select('codigo, usa_intermediario, moneda_in, moneda_out').order('codigo').order('usa_intermediario').order('id');
+    return full().then((res) => {
+      if (!res.error || !supabaseErrOrdenVisualReglas(res.error)) return res;
+      if (typeof window !== 'undefined' && !window.__pandiOrdenVisualMigracionToastHecho) {
+        window.__pandiOrdenVisualMigracionToastHecho = true;
+        if (typeof showToast === 'function') {
+          showToast('Falta la columna orden_visual en tipos_operacion. Ejecutá en Supabase: sql/migracion_tipos_operacion_orden_visual.sql. Hasta entonces se usa orden por código.', 'info');
+        }
+      }
+      return leg();
+    });
+  }
+  client.from('reglas_de_negocio').select('*').order('tipo_operacion_codigo').order('usa_intermediario').then((rR) => {
     if (rR.error) {
-      tbody.innerHTML = '<tr><td colspan="17">Error: ' + escapeHtml(rR.error.message || '') + '</td></tr>';
+      loadingEl.style.display = 'none';
+      wrapEl.style.display = 'block';
+      const msg = rR.error.message || '';
+      if (typeof showToast === 'function') showToast('Error: ' + msg, 'error');
+      tbody.innerHTML = '<tr><td colspan="17">Error: ' + escapeHtml(msg) + '</td></tr>';
       return;
     }
     reglasNegocioCacheList = rR.data || [];
-    tiposOperacionReglasCache = rT.data || [];
-    reglasNegocioRellenarFiltroCodigos();
-    renderReglasNegocioTabla();
+    fetchTiposReglasConFallback().then((rT) => {
+      loadingEl.style.display = 'none';
+      wrapEl.style.display = 'block';
+      if (rT.error) {
+        const msg = rT.error.message || '';
+        if (typeof showToast === 'function') showToast('Error: ' + msg, 'error');
+        tbody.innerHTML = '<tr><td colspan="17">Error: ' + escapeHtml(msg) + '</td></tr>';
+        return;
+      }
+      tiposOperacionReglasCache = rT.data || [];
+      reglasNegocioRellenarFiltroCodigos();
+      renderReglasNegocioTabla();
+    });
   });
 }
 

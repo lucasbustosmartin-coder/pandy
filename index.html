@@ -154,7 +154,12 @@
     .toggle-switch input:disabled { cursor: not-allowed; }
     .toggle-switch input:disabled + .slider { opacity: 0.65; }
     .tipo-op-toggle-cell { display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0.5rem 0; }
-    #tabla-tipos-operacion th:nth-child(6), #tabla-tipos-operacion th:nth-child(7), #tabla-tipos-operacion td:nth-child(6), #tabla-tipos-operacion td:nth-child(7) { text-align: center; vertical-align: middle; }
+    #tabla-tipos-operacion th:nth-child(7), #tabla-tipos-operacion th:nth-child(8), #tabla-tipos-operacion td:nth-child(7), #tabla-tipos-operacion td:nth-child(8) { text-align: center; vertical-align: middle; }
+    #tabla-tipos-operacion .tipo-op-orden-celda { vertical-align: middle; }
+    /* Columna Tipo: iconos alineados a la izquierda con leve sangría (solo esta tabla) */
+    #tabla-tipos-operacion th:nth-child(2) { text-align: left; padding-left: 0.5rem; }
+    #tabla-tipos-operacion .td-tipo-op-iconos { text-align: left; padding-left: 0.5rem; vertical-align: middle; }
+    #tabla-tipos-operacion .td-tipo-op-iconos .tipo-op-iconos { justify-content: flex-start; }
     #tabla-tipos-operacion .tipo-op-toggle-cell .toggle-switch { flex-shrink: 0; display: inline-block; width: 48px; height: 26px; }
     #tabla-tipos-operacion .tipo-op-toggle-cell .toggle-switch .slider { border: 1px solid #9ca3af; box-sizing: border-box; }
     #tabla-clientes th:nth-child(5), #tabla-clientes td:nth-child(5), #tabla-intermediarios th:nth-child(5), #tabla-intermediarios td:nth-child(5) { text-align: center; vertical-align: middle; }
@@ -163,6 +168,7 @@
     .form-group-toggle { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
     .form-group-toggle .label-with-toggle { margin-bottom: 0; flex-shrink: 0; font-weight: 500; }
     .form-group-toggle .toggle-switch { flex-shrink: 0; }
+    .vista-def-monedas-tipo-op { margin: 0 0 0.75rem 0; font-size: 0.9rem; color: #555; line-height: 1.45; }
     .vista-placeholder { color: #666; padding: 1rem 0; }
     .vista-toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
     .btn-nuevo, .btn-editar, .btn-primary, .btn-secondary, .btn-login, .btn-cerrar, .btn-excel { display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; min-height: 2.25rem; box-sizing: border-box; }
@@ -923,7 +929,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.52</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.53</div>
   </aside>
 
   <main class="main-content">
@@ -1094,6 +1100,7 @@
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
           Órdenes de compra/venta de divisas
         </h3>
+        <p class="vista-def-monedas-tipo-op">Los importes se alinean con el <strong>tipo de operación</strong>: <strong>Moneda IN</strong> = recibido en el acuerdo, <strong>Moneda OUT</strong> = entregado. La <strong>instrumentación</strong> y la <strong>cuenta corriente</strong> derivan de esas mismas monedas y montos (cruces con USD: ARS, EUR, etc., según el catálogo).</p>
         <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Acuerdo comercial con instrumentación (transacciones). Estado: Abierta / Parcialmente cerrada / Cerrada según transacciones ejecutadas.</p>
         <div class="vista-toolbar">
           <button type="button" id="btn-nueva-orden" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva orden</button>
@@ -1235,14 +1242,14 @@
           <span style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/><circle cx="12" cy="12" r="3"/></svg></span>
           Tipos de operación
         </h3>
-        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Catálogo de tipos (moneda IN = recibida, moneda OUT = entregada). En el listado, la columna <strong>Tipo</strong> muestra iconos según el código (ej. USD→ARS; si el código incluye <strong>CHEQUE</strong>, solo el icono de cheques). El <strong>código</strong> puede repetirse si cambia <strong>Intermediario</strong> (ej. USD-ARS directo vs con intermediario); el <strong>nombre</strong> diferencia la opción en el selector de órdenes. Ver <code>docs/TIPOS_OPERACION_UNICIDAD_CODIGO.md</code>.</p>
+        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Catálogo de tipos (moneda IN = recibida, moneda OUT = entregada). Con permiso de ABM, la columna <strong>Orden</strong> permite subir o bajar cada fila: ese orden se respeta en el selector de <strong>Nueva orden</strong> y en <strong>Cargar por chat</strong>. En el listado, la columna <strong>Tipo</strong> muestra iconos según el código (ej. USD→ARS; si el código incluye <strong>CHEQUE</strong>, solo el icono de cheques). El <strong>código</strong> puede repetirse si cambia <strong>Intermediario</strong> (ej. USD-ARS directo vs con intermediario); el <strong>nombre</strong> diferencia la opción en el selector. Ver <code>docs/TIPOS_OPERACION_UNICIDAD_CODIGO.md</code> y <code>docs/TIPOS_OPERACION_ORDEN_VISUAL.md</code>. <em>Nota:</em> a futuro la instrumentación deberá adaptarse a las monedas que participan (no solo al código del tipo).</p>
         <div class="vista-toolbar">
           <button type="button" id="btn-nuevo-tipo-operacion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo tipo</button>
         </div>
         <div id="tipos-operacion-loading" class="clientes-loading">Cargando tipos…</div>
         <div id="tipos-operacion-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
           <table id="tabla-tipos-operacion">
-            <thead><tr><th>Tipo</th><th>Nombre</th><th>Código</th><th>Moneda IN</th><th>Moneda OUT</th><th>Intermediario</th><th>Activo</th><th></th></tr></thead>
+            <thead><tr><th>Orden</th><th>Tipo</th><th>Nombre</th><th>Código</th><th>Moneda IN</th><th>Moneda OUT</th><th>Intermediario</th><th>Activo</th><th></th></tr></thead>
             <tbody id="tipos-operacion-tbody"></tbody>
           </table>
         </div>
@@ -1251,8 +1258,9 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
           Cuenta corriente
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de Pandy</strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. En <strong>Saldos</strong> el resumen por moneda usa solo <strong>movimientos que suman al saldo</strong> (ejecutados según reglas). En <strong>Movimientos</strong> ves el listado de líneas de detalle. Cobro por = Pandy cobró (positivo); Deuda por = Pandy debe entregar (negativo). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de Pandy</strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado en la orden). En <strong>Saldos</strong> el resumen por moneda usa solo <strong>movimientos que suman al saldo</strong> (ejecutados según reglas). En <strong>Movimientos</strong> ves el listado de líneas de detalle. Cobro por = Pandy cobró (positivo); Deuda por = Pandy debe entregar (negativo). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
         </h3>
+        <p class="vista-def-monedas-tipo-op">Los importes se alinean con el <strong>tipo de operación</strong>: <strong>Moneda IN</strong> = recibido en el acuerdo, <strong>Moneda OUT</strong> = entregado. La <strong>instrumentación</strong> y esta <strong>cuenta corriente</strong> derivan de esas mismas monedas y montos (cruces con USD: ARS, EUR, etc., según el catálogo).</p>
         <div class="vista-toolbar cc-toolbar-compartido">
           <label style="display:flex; align-items:center; gap:0.5rem;">
             <span>Tipo:</span>

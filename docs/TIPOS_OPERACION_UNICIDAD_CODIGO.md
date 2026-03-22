@@ -27,3 +27,7 @@ El usuario las distingue por el **nombre** en el selector de órdenes (ej. “US
 ## Alta en la app
 
 - Al guardar un tipo, si ya existe otro con el mismo **código** y el mismo **toggle Intermediario**, la app muestra error (y la base también lo impediría).
+
+## Orden en el selector
+
+El orden de las opciones en **Nueva orden** y **Cargar por chat** no depende solo del código: se usa **`orden_visual`** en `tipos_operacion`, configurable desde la vista **Tipos de operación** (subir/bajar). Ver `docs/TIPOS_OPERACION_ORDEN_VISUAL.md`.

@@ -78,8 +78,9 @@ INSERT INTO public.reglas_de_negocio (
   -- E,E: con par ejecutado, ingreso usa contrapartida true → hace falta también la pata USD (igual que rama false) para netear con el +USD del egreso ejecutado true.
   ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 1, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_cobrar'),
-  -- P,E: egreso Tx2 ejecutado con ingreso Tx1 aún pendiente → contrapartida_ejecutada=false. Solo línea ARS (entrega real); no USD aquí: el USD sigue solo en el compromiso a cobrar pendiente de Tx1 (no “cerrar” USD en Trans 2 hasta que Tx1 ejecute).
-  ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
+  -- P,E: egreso Tx2 ejecutado con ingreso Tx1 pendiente → contrapartida_ejecutada=false. **Dos líneas ARS** −/+ `monto_transaccion` anulan el egreso en CC (misma definición que ARS-USD con dos USD y que USD-USD P,E). Queda el compromiso **USD** pendiente en Tx1. Definición de producto: lo ejecutado siempre en par ±; lo pendiente, una sola línea con su signo.
+  ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
   -- E,E (Tx1 y Tx2 ejecutadas, contrapartida true): **dos líneas por transacción** (ingreso: ARS+USD; egreso: ARS+USD) → 4 movimientos que se anulan por moneda (saldo 0 USD y 0 ARS). Ver docs/MODELO_CC_USD_ARS_TEORICO.md.
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'USD', 1, 'mr_prorrateado', true, 'compromiso_pago'),

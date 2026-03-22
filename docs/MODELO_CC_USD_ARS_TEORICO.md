@@ -23,7 +23,7 @@ En el esquema habitual hay **dos transacciones** por orden:
 
 Para **cada** transacción, el modelo debe poder expresar el efecto en **ambas** monedas del swap cuando corresponde al tipo de operación:
 
-- **Por transacción** = **dos líneas** en CC (una por **línea** en `reglas_de_negocio`: p. ej. exposición en ARS + exposición en USD), salvo combinaciones donde la tabla defina explícitamente una sola línea.
+- **Por transacción** = **dos líneas** en CC cuando la combinación lo requiere (p. ej. **E,E** en ambas monedas; **P,E** en la moneda del egreso ejecutado con **dos** movimientos ± que anulan, y **una** línea en la moneda del compromiso pendiente del ingreso). Detalle en `reglas_de_negocio` y `docs/REGLAS_DE_NEGOCIO.md`.
 
 Así, cuando **ambas** transacciones están **ejecutadas** (**E,E**) y la contrapartida también está ejecutada:
 

@@ -8,7 +8,7 @@
 
 Reglas explícitas que la sync traduce en **movimientos de cuenta corriente** (y se puede extender a otros efectos de negocio). Nombre alineado al modelo: **reglas de negocio**, no “motor CC” genérico.
 
-**Edición en la app (admin):** menú crítico **Reglas de negocio (CC)** — permiso `abm_reglas_negocio`, validaciones y réplica de matriz. Ver **`docs/MENU_REGLAS_NEGOCIO.md`**.
+**Edición en la app (admin):** menú crítico **Reglas de negocio (CC)** — permiso `abm_reglas_negocio`, validaciones y réplica de matriz. Ver **`docs/MENU_REGLAS_NEGOCIO.md`**. Pares inversos (ej. EUR-USD / USD-EUR): misma cantidad de filas y monedas correctas — ver **`docs/REGLAS_CRUCE_INVERSO_CONSISTENCIA.md`**.
 
 ## Modelo teórico USD-ARS (sin intermediario)
 
@@ -19,6 +19,7 @@ Reglas explícitas que la sync traduce en **movimientos de cuenta corriente** (y
 - **`USD-ARS`**, **`ARS-USD`** y **`USD-USD`** con **`usa_intermediario = false`**: filas en `reglas_de_negocio` con **`entidad_cc = 'cliente'`** (USD-ARS/ARS-USD: espejo lógico mr/me y prorrateos; USD-USD: misma moneda, comisión implícita **`mr_menos_me`** = mr − me).
 - **`USD-ARS`** con **`usa_intermediario = true`** (flujo inverso): `sql/reglas_usd_ars_int_inversa_reglas_de_negocio.sql` — ver `docs/REG_NEG_USD_ARS_INT_PASO1.md`.
 - **`ARS-USD`** con **`usa_intermediario = true`**: `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql` — ver `docs/REG_NEG_ARS_USD_INT_PASO1.md`.
+- **Revisión par ± en CC (cruces con int, excl. CHEQUE y USD-USD+int):** `docs/REG_INTERMEDIARIO_CRUCES_REVISION_PAR_EJECUTADA.md`.
 - **`USD-USD`** con **`usa_intermediario = false`**: **`reglas_de_negocio`** (única fuente; **`sql/migracion_reglas_usd_usd_sin_int.sql`** o `sql/reglas_de_negocio_tabla.sql` actualizado). Comisión = **`mr_menos_me`**. Resumen: **`docs/USD_USD_SIN_INTERMEDIARIO.md`**.
 - **`USD-USD`** con **`usa_intermediario = true`**: **`reglas_de_negocio`** — misma matriz cliente que sin int + fila intermediario con **`comision_intermediario`**. **`sql/migracion_usd_usd_intermediario_tipo_y_reglas.sql`**. Resumen: **`docs/USD_USD_CON_INTERMEDIARIO.md`**.
 - **`CHEQUE-ARS`** con **`usa_intermediario = true`**: la matriz CC vive en **`reglas_de_negocio`** (`tipo_operacion_codigo = 'CHEQUE-ARS'`, `usa_intermediario = true`). Comisiones Pandy e intermediario como filas `es_comision` con **`condicion_estado_comision`** (`par_cliente` / `par_pandy_int`). Signos CC intermediario: **+** cheque (Tx3), **−** comisión int, **−** efectivo Tx4 (ajuste puntual: **`sql/migracion_reglas_cheque_ars_signos_cc_intermediario.sql`**). Ver **`sql/migracion_reglas_de_negocio_cheque_ars.sql`**. Resumen: **`docs/CHEQUE_ARS_INTERMEDIARIO.md`**.
@@ -48,7 +49,7 @@ Para no duplicar mr/me **enteros** por cada transacción:
 
 Cada transacción que matchee la clave `(pagador, cobrador, tipo, estado, contrapartida)` genera **sus** líneas CC; la **suma** en cada moneda coincide con el acuerdo si las trx suman bien.
 
-**USD-ARS P,E (ingreso pendiente + egreso ejecutado):** con `contrapartida_ejecutada = false` en el egreso (porque el ingreso cliente→Pandy sigue pendiente), el egreso ejecutado **solo** genera la línea en **moneda entregada** (ARS). **No** se agrega la línea USD prorrateada en ese egreso: el USD queda representado solo por el **compromiso a cobrar** pendiente del ingreso (Tx1), hasta que esa transacción ejecute. Así el saldo USD no “netea” en cero de forma espuria.
+**USD-ARS P,E (ingreso pendiente + egreso ejecutado):** con `contrapartida_ejecutada = false` en el egreso (ingreso Tx1 aún pendiente), el egreso ejecutado lleva **dos líneas** en **ARS** (`linea` 0 y 1, signos −1 / +1, `monto_transaccion`) que **anulan** el efecto del pago en CC, en el mismo criterio que **ARS-USD P,E** (dos USD) y **USD-USD P,E** (dos USD). El **USD** queda solo en el **compromiso a cobrar** del ingreso pendiente (Tx1). Definición de producto: **ejecutado** → par ± que netea en esa moneda; **pendiente** → una línea con su signo.
 
 **ARS-USD P,E (simétrico):** egreso ejecutado con contrapartida false **solo** en **USD** (moneda entregada); **no** la línea ARS `mr_prorrateado` en ese egreso. El ARS pendiente del ingreso queda en **compromiso a cobrar** (moneda recibida).
 

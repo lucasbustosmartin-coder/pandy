@@ -75,10 +75,10 @@ const COMBINACIONES_USD_ARS = [
     id: 'P,E',
     tx1: 'P',
     tx2: 'E',
-    // Tx2 ejecutada solo materializa ARS; USD queda en compromiso a cobrar pendiente (Tx1) → no línea USD en egreso con contrapartida false.
+    // Espejo ARS-USD P,E: egreso ejecutado dos líneas ARS −/+ monto_transacción anulan en CC; queda compromiso USD pendiente (Tx1). Mismo criterio que USD-ARS+int inversa.
     saldoUSD: -5000,
-    saldoARS: 5000000,
-    detalleCliente: [-5000, 5000000],
+    saldoARS: 0,
+    detalleCliente: [-5000000, -5000, 5000000],
     cajaUSD: 0,
     cajaARS: -5000000,
   },

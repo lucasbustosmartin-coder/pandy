@@ -1,6 +1,7 @@
--- USD-ARS sin int, P,E: quitar línea USD (linea 1, mr_prorrateado) del egreso ejecutado cuando
--- contrapartida_ejecutada = false (ingreso Tx1 aún pendiente). Evita netear USD a 0 en el resumen.
--- E,E sigue usando egreso ejecutada + contrapartida_ejecutada = true (ARS + USD).
+-- USD-ARS sin int, P,E (histórico): quitaba la línea USD (linea 1, mr_prorrateado) del egreso ejecutado.
+-- **Modelo actual:** dos líneas **ARS** −/+ `monto_transaccion` en ese egreso; ver `sql/reglas_de_negocio_tabla.sql`
+-- y `sql/migracion_reglas_usd_ars_sin_int_pe_egreso_dos_lineas_ars.sql`. Este DELETE sigue siendo idempotente
+-- si en alguna base vieja quedó la fila USD en P,E.
 
 DELETE FROM public.reglas_de_negocio
 WHERE tipo_operacion_codigo = 'USD-ARS'
