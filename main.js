@@ -29,6 +29,49 @@ let ordenWizardInstrumentacionIdActual = null;
 
 const SIDEBAR_KEY = 'pandi-sidebar-expanded';
 
+/** Layout estrecho: menú lateral fijo + drawer con backdrop (debe coincidir con CSS max-width: 768px). */
+function pandiIsMobileNavLayout() {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 768px)').matches;
+}
+
+function pandiSyncSidebarBackdrop() {
+  const bd = document.getElementById('sidebar-backdrop');
+  const sidebar = document.getElementById('sidebar');
+  if (!bd || !sidebar) return;
+  const loggedIn = document.body.classList.contains('pandi-shell-logged-in');
+  if (!loggedIn || sidebar.style.display === 'none' || !pandiIsMobileNavLayout()) {
+    bd.classList.remove('is-visible');
+    bd.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  if (sidebar.classList.contains('expanded')) {
+    bd.classList.add('is-visible');
+    bd.setAttribute('aria-hidden', 'false');
+  } else {
+    bd.classList.remove('is-visible');
+    bd.setAttribute('aria-hidden', 'true');
+  }
+}
+
+/** Tras elegir una vista en el menú, cerrar el drawer en móvil para ver el contenido. */
+function pandiCollapseMobileSidebarAfterNav() {
+  if (!pandiIsMobileNavLayout()) return;
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar || !sidebar.classList.contains('expanded')) return;
+  sidebar.classList.remove('expanded');
+  try {
+    localStorage.setItem(SIDEBAR_KEY, '0');
+  } catch (e) {
+    /* ignore */
+  }
+  const toggle = document.getElementById('sidebar-toggle');
+  if (toggle) {
+    toggle.setAttribute('aria-label', 'Expandir menú');
+    toggle.setAttribute('title', 'Expandir menú');
+  }
+  pandiSyncSidebarBackdrop();
+}
+
 /** Tiempo mínimo (ms) que se muestra el spinner al cambiar de solapa, para que se vea el "trabajando". */
 const VISTA_LOADING_MIN_MS = 450;
 function delayMinLoading(shownAt, minMs) {
@@ -51,17 +94,21 @@ let lastActivityUpdate = 0;
 let authBootstrapFromGetSessionDone = false;
 
 function showLogin() {
+  document.body.classList.remove('pandi-shell-logged-in');
   document.getElementById('sidebar').style.display = 'none';
   document.getElementById('login-screen').style.display = 'block';
   document.getElementById('register-screen').style.display = 'none';
   document.getElementById('app-content').style.display = 'none';
+  pandiSyncSidebarBackdrop();
 }
 
 function showAppContent() {
+  document.body.classList.add('pandi-shell-logged-in');
   document.getElementById('sidebar').style.display = 'flex';
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('register-screen').style.display = 'none';
   document.getElementById('app-content').style.display = 'block';
+  pandiSyncSidebarBackdrop();
 }
 
 function ensureProfile(session) {
@@ -195,6 +242,7 @@ function showView(vistaId, pageTitle) {
   if (vistaId === 'vista-intermediarios') loadIntermediarios();
   if (vistaId === 'vista-tipos-operacion') loadTiposOperacion();
   if (vistaId === 'vista-reglas-negocio') loadReglasNegocioVista();
+  pandiCollapseMobileSidebarAfterNav();
 }
 
 /** Mensaje al desactivar un permiso (para mostrar contexto al administrador). Solo permisos con mensaje específico. */
@@ -11888,13 +11936,43 @@ function onSessionReady(session) {
         toggle.setAttribute('title', expanded ? 'Contraer menú' : 'Expandir menú');
       }
       updateSidebarToggleLabel();
+      pandiSyncSidebarBackdrop();
+      const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+      if (sidebarBackdrop) {
+        sidebarBackdrop.addEventListener('click', () => {
+          if (!pandiIsMobileNavLayout() || !sidebar.classList.contains('expanded')) return;
+          sidebar.classList.remove('expanded');
+          localStorage.setItem(SIDEBAR_KEY, '0');
+          updateSidebarToggleLabel();
+          pandiSyncSidebarBackdrop();
+        });
+      }
       if (toggle) {
         toggle.addEventListener('click', () => {
           sidebar.classList.toggle('expanded');
           localStorage.setItem(SIDEBAR_KEY, sidebar.classList.contains('expanded') ? '1' : '0');
           updateSidebarToggleLabel();
+          pandiSyncSidebarBackdrop();
         });
       }
+      let pandiResizeSidebarTid;
+      window.addEventListener('resize', () => {
+        clearTimeout(pandiResizeSidebarTid);
+        pandiResizeSidebarTid = setTimeout(() => pandiSyncSidebarBackdrop(), 150);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        if (document.querySelectorAll('.modal-backdrop.activo').length > 0) return;
+        if (!pandiIsMobileNavLayout() || !sidebar.classList.contains('expanded')) return;
+        sidebar.classList.remove('expanded');
+        try {
+          localStorage.setItem(SIDEBAR_KEY, '0');
+        } catch (err) {
+          /* ignore */
+        }
+        updateSidebarToggleLabel();
+        pandiSyncSidebarBackdrop();
+      });
 
       setupVistasMenu();
       applyVistasMenuVisibility();

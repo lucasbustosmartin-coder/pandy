@@ -1,0 +1,36 @@
+---
+description: LyP (todos los repos raíz) — tablas con encabezados anclados y responsividad móvil obligatoria
+alwaysApply: true
+---
+
+# Tablas y móvil — estándar LyP (global)
+
+Aplica a **todos los proyectos bajo la raíz LyP** (Pandi, Fornitalia, etc.). Mantener este archivo en `.cursor/rules/` de cada repo o copiarlo al crear uno nuevo.
+
+## 1. Encabezados de tabla anclados (sticky)
+
+- **Toda tabla de datos** (listados, grillas de negocio, instrumentación, modales con filas) debe tener **`thead` con celdas que permanezcan visibles** al hacer scroll vertical (en la página, en el cuerpo del modal o en un contenedor con `overflow-y: auto` / `max-height`).
+- **Implementación típica (HTML/CSS):**
+  - Contenedor con scroll acotado si la lista es larga: p. ej. `max-height` + `overflow: auto` en el wrap, o scroll en `.modal-body`.
+  - `thead th { position: sticky; top: 0; z-index: adecuado; background: sólido; box-shadow: 0 1px 0 … }` para separar visualmente del cuerpo.
+  - Si hay **columnas fijas** en horizontal (`position: sticky; left: …`), el `z-index` del encabezado de esas columnas debe ser **mayor** que el del resto del `thead` para que el cruce de esquinas sea correcto.
+- **No omitir:** tablas dentro de modales, sub-wraps sin clase común, ni tablas “auxiliares” (p. ej. operaciones vinculadas).
+- Con **`border-collapse: collapse`**, usar **fondo opaco** en `th` (y si hace falta `background-clip: padding-box`) para evitar artefactos entre navegadores.
+
+## 2. Responsividad móvil (siempre)
+
+- **Ningún cambio en tablas, toolbars ni modales** puede ignorar **móvil y tablet**: breakpoints habituales **768px** y **480px**, **touch targets ≥ 44px** en controles, **scroll horizontal** con `-webkit-overflow-scrolling: touch` y **`overscroll-behavior-x: contain`** en contenedores de tablas anchas (ver regla **gestos-trackpad-overscroll-spa**).
+- Inputs en iOS: donde aplique, **`font-size: 16px`** en campos de formulario en vistas estrechas para reducir zoom accidental.
+- Tras tocar tablas o listados, **revisar** que no se rompa el layout en viewport estrecho (wrap, solapas, modales a casi ancho completo).
+
+## 3. Checklist al agregar una tabla nueva
+
+1. ¿Tiene `thead` con labels claros?
+2. ¿El scroll vertical ocurre en un ancestro definido? → Ajustar sticky `top` (0 o offset si hay barra fija).
+3. ¿Tabla ancha? → Wrap con `overflow-x: auto` + reglas móviles.
+4. ¿Excepción de estilo (p. ej. cabecera oscura)? → Override explícito **después** de la regla base sticky, manteniendo `position: sticky` y fondo sólido.
+
+## 4. Referencia por repo
+
+- **Pandi:** `index.html` (selectores unificados), `docs/MOBILE_RESPONSIVE.md`.
+- **Resto de repos LyP:** mismo criterio en el CSS / layout del proyecto (sticky `thead`, wraps con scroll, modales).

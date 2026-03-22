@@ -43,3 +43,6 @@ playwright/.cache
 # Bloqueos temporales de Excel al abrir un .xlsx
 ~$*.xlsx
 ~$*.xls
+
+# Respaldos SQL locales (no versionar)
+backup_supabase_*.sql

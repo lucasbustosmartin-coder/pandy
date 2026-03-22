@@ -21,6 +21,10 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Despliegue producción v1.57', 'Versión sidebar v1.57: drawer móvil, backdrop, regla tablas+móvil LyP, MOBILE_RESPONSIVE.md; Bitacora_tareas.xlsx; push main y vercel --prod.', 'Despliegue'],
+  ['__HOY__', '__AHORA__', 'LyP: Mi_Gusto — mismas reglas globales', 'Repo Mi_Gusto: .cursor/rules/tablas-y-movil-lyp.mdc (sync Pandi) + estructura-proyecto.mdc con bloque Estándares LyP (tablas sticky y móvil), alineado a MiGusto/Pandi.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'LyP: regla global tablas sticky + móvil', '.cursor/rules/tablas-y-movil-lyp.mdc (alwaysApply) y enlaces en reglas-pandi + estructura-proyecto. index.html: thead sticky unificado en wraps/modales/CC; Seguridad cabecera oscura; wraps orden/transacciones/seguridad con tabla-clientes-wrap. docs/MOBILE_RESPONSIVE.md § tablas.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'UX móvil/tablet: menú drawer y layout', 'index.html: sidebar fijo ≤768px con backdrop (tap/Escape cierra), main con margen según franja; cabecera sticky + safe areas; Cajas toolbar columna; solapas CC scroll horizontal; tablas caja/reglas en scroll; modal orden primeros datos 1 col; toques 44px en filtros caja. main.js: body.pandi-shell-logged-in, pandiSyncSidebarBackdrop, colapsar menú al cambiar vista. docs/MOBILE_RESPONSIVE.md.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Despliegue producción v1.56', 'Versión sidebar v1.56: filtros tipo caja según permisos ver_cajas_*; cabeceras moneda en cards alineadas a la derecha; Bitacora_tareas.xlsx; push main y vercel --prod.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'UI cards caja: encabezados moneda a la derecha', 'index.html: solo cabeceras de columna USD/ARS/EUR (icono+código) con justify-content flex-end y ancho 100% para alinear con importes; icono de tipo caja en título sigue a la izquierda del texto (revertido cambio de posición del icono de caja). Panel y vista Cajas.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Cajas: filtros tipo caja según permisos', 'main.js: botones Todas/Efectivo/Banco/Cheque visibles como las cards (ver_cajas_*); sin subpermisos granular se muestran todos (migración). normalizarCajasMovCajaTipoTabSegunPermisos + filtrarMovimientosCajaVista y export Excel excluyen tipos no permitidos.', 'Desarrollo'],
@@ -432,12 +436,12 @@ wsLog['!cols'] = [{ wch: 12 }, { wch: 6 }, { wch: 45 }, { wch: 95 }, { wch: 14 }
 // --- Hoja Resumen
 const funcionalidades = [
   ['Funcionalidad', 'Descripción'],
-  ['Estructura del repo', 'Carpetas sql/, scripts/, docs/, Base/. Reglas en .cursor/rules (estructura-proyecto, reglas-pandi, bitácora, preguntas-solo-respuesta).'],
+  ['Estructura del repo', 'Carpetas sql/, scripts/, docs/, Base/. Reglas en .cursor/rules (estructura-proyecto, reglas-pandi, tablas-y-movil-lyp, bitácora, preguntas-solo-respuesta). Estándar LyP: tablas con encabezados sticky y UI responsiva móvil.'],
   ['Bitácora', 'Node.js + SheetJS (xlsx). Script scripts/crear-bitacora-excel.js genera Bitacora_tareas.xlsx con Log, Resumen, Ref Git y Vercel, Versiones, Tecnología, Presupuesto.'],
   ['Tablas de negocio (Supabase)', 'clientes, tipos_movimiento_caja, ordenes, movimientos_caja, movimientos_cuenta_corriente. Órdenes: cotizacion, cerrada, concertada. CC por cliente y moneda.'],
   ['Seguridad (Supabase)', 'Roles Admin/Encargado/Visor. Permisos abm_*. RLS. RPC set_user_role.'],
   ['Ayudas en pantalla', 'Ícono ? estándar (help-inline): al clic abre modal con texto largo; usado en vistas principales, reglas críticas y modales (orden, CC, chat, etc.).'],
-  ['UI base Pandi', 'index.html + main.js: sidebar colapsable, login/registro, 6 vistas (Inicio, Órdenes, Cajas, Clientes, Cuenta corriente, Seguridad). Estilos Everfit. Vista Seguridad funcional (asignar rol).'],
+  ['UI base Pandi', 'index.html + main.js: sidebar colapsable, login/registro, vistas según permisos. En ≤768px menú lateral fijo tipo drawer con backdrop (cerrar al tocar fuera/Escape y al cambiar de vista); cabecera sticky y safe-area; tablas y toolbars adaptados en móvil. docs/MOBILE_RESPONSIVE.md. Vista Seguridad funcional (asignar rol).'],
   ['ABM Clientes', 'Listado de clientes (tabla clientes), Nuevo cliente y Editar en modal. Campos: nombre, documento, email, teléfono, dirección, activo. Solo usuarios con permiso abm_clientes pueden crear/editar.'],
   ['Vista Cajas', 'Cards Efectivo, Banco y Cheque arriba (saldo histórico total): cabeceras de columna USD/ARS/EUR alineadas a la derecha con los importes; icono de tipo de caja junto al título a la izquierda. Debajo, solapas estilo Cuenta corriente: Movimientos de caja (moneda, fechas, filtro por tipo de caja, tabla, export Excel) y Tipos de movimiento (catálogo ABM para manuales). Visibilidad cards y botones de filtro por tipo de caja según ver_cajas_* (tabla y Excel no muestran tipos sin permiso); columnas de moneda alineadas a tipos de operación activos. Por defecto tabla movimientos = día (Argentina).'],
   ['ABM Tipos de movimiento de caja', 'Integrado en Cajas: listado, Nuevo tipo, Editar. Nombre, Dirección (Ingreso/Egreso), Activo. Permiso abm_tipos_movimiento_caja.'],
@@ -579,6 +583,7 @@ const versiones = [
   ['1.54', '__HOY__', 'Ayudas UI: textos largos tras ícono ? (modal help) en vistas, reglas, modales orden/CC/chat/pendientes; fix botón Guardar duplicado Seguridad; bitácora Resumen ayudas.'],
   ['1.55', '__HOY__', 'Listados por defecto y Cajas: CC movimientos solo día (AR) con Solo hoy / Todo historial (saldos históricos); órdenes filtro Activas; caja tabla default hoy y export XLSX. Cajas: solapas Movimientos / Tipos, toolbar dos filas (caja luego fechas), Excel solo icono, espaciado relajado, sin etiqueta Moneda. E2E: todo historial en vista detalle CC.'],
   ['1.56', '__HOY__', 'Cajas: botones filtro Todas/Efectivo/Banco/Cheque y listado/export Excel respetan ver_cajas_efectivo/banco/cheque (coherente con cards). Panel y vista Cajas: cabeceras de columna USD/ARS/EUR alineadas a la derecha con los importes.'],
+  ['1.57', '__HOY__', 'UX móvil/tablet: menú drawer con backdrop; regla LyP tablas sticky + móvil (tablas-y-movil-lyp.mdc); doc MOBILE_RESPONSIVE.md; CSS/layout index.html y sync sidebar en main.js; reglas Cursor enlazadas.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

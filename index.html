@@ -48,14 +48,6 @@
     .reglas-negocio-toolbar .form-group { margin: 0; min-width: 140px; }
     #tabla-reglas-negocio { font-size: 0.82rem; border-collapse: separate; border-spacing: 0; }
     #tabla-reglas-negocio th, #tabla-reglas-negocio td { white-space: nowrap; }
-    /* Encabezados anclados al hacer scroll vertical dentro del wrap (tabla-wrap-con-scroll) */
-    #reglas-negocio-tabla-wrap #tabla-reglas-negocio thead th {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      background: #f9fafb;
-      box-shadow: 0 1px 0 0 #d1d5db;
-    }
     #tabla-reglas-negocio thead th .reglas-th-inner {
       display: inline-flex;
       align-items: center;
@@ -71,6 +63,18 @@
     .sidebar-nav .menu-item .menu-label { white-space: nowrap; opacity: 0; width: 0; overflow: hidden; transition: opacity 0.2s, width 0.2s; }
     .sidebar.expanded .sidebar-nav .menu-item .menu-label { opacity: 1; width: auto; }
     .sidebar-version { margin-top: auto; padding: 0.75rem 1rem; font-size: 0.75rem; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+    /* Backdrop del menú: solo se usa en layout móvil (≤768px), controlado por JS */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 240;
+      background: rgba(0, 0, 0, 0.45);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sidebar-backdrop.is-visible {
+      display: block;
+    }
     .main-content { flex: 1; padding: 1.5rem; overflow-x: auto; position: relative; z-index: 1; background: #f5f5f5; overscroll-behavior-x: contain; }
     .app { max-width: 1600px; width: 100%; }
     .page-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; position: relative; z-index: 2; }
@@ -105,7 +109,7 @@
     .tipo-ingreso { color: #15803d; font-weight: 700; }
     .tipo-egreso { color: #b91c1c; font-weight: 700; }
     .panel-seguridad table { margin-top: 0.75rem; }
-    .panel-seguridad th { background: #1a1a1a; color: #fff; }
+    .panel-seguridad thead th { background: #1a1a1a; color: #fff; }
     .panel-seguridad select { padding: 0.35rem 0.5rem; border-radius: 6px; border: 1px solid #ccc; }
     .panel-seguridad .btn-guardar-rol { padding: 0.35rem 0.6rem; font-size: 0.85rem; background: #0d7d3d; color: #fff; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 0.45rem; min-height: 2.25rem; }
     .panel-seguridad .btn-guardar-rol:hover { background: #0a5c2e; }
@@ -351,8 +355,33 @@
     @keyframes vista-spin { to { transform: rotate(360deg); } }
     .tabla-clientes-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
     .tabla-clientes-wrap.tabla-wrap-con-scroll { max-height: 70vh; overflow-y: auto; }
+    /* LyP — todas las tablas de listado: encabezado anclado al scroll (.cursor/rules/tablas-y-movil-lyp.mdc) */
+    .tabla-clientes-wrap table thead th,
+    .tabla-movimientos-wrap table thead th,
+    #seguridad-tabla-wrap table thead th,
+    #orden-inst-tabla-wrap table thead th,
+    #transacciones-tabla-wrap table thead th,
+    #ordenes-pendientes-tabla-wrap table thead th,
+    #transacciones-pendientes-tabla-wrap table thead th,
+    .tabla-wrap-con-scroll table thead th,
+    .modal-body table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #f9fafb;
+      background-clip: padding-box;
+      box-shadow: 0 1px 0 0 #d1d5db;
+    }
+    /* Seguridad: mismo sticky pero cabecera oscura (por encima de la regla genérica del wrap) */
+    .panel-seguridad #seguridad-tabla thead th {
+      background: #1a1a1a;
+      color: #fff;
+      z-index: 3;
+      box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.12);
+    }
+    /* CC: columnas fijas + encabezado (z-index mayor en esquinas) */
     .tabla-cc-resumen thead th,
-    .tabla-cc-movimientos thead th { position: sticky; top: 0; z-index: 1; background: #f9fafb; box-shadow: 0 1px 0 0 #d1d5db; }
+    .tabla-cc-movimientos thead th { background: #f9fafb; box-shadow: 0 1px 0 0 #d1d5db; }
     .resumen-cajas { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
     .resumen-cajas .card { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 0.25rem; }
     .resumen-cajas .card-titulo { display: flex; align-items: center; gap: 0.5rem; color: #555; font-size: 0.95rem; }
@@ -859,12 +888,71 @@
     .tabla-clientes-wrap { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
     .sidebar-nav .menu-item { min-height: 44px; }
     .form-actions .btn-primary, .form-actions .btn-secondary { min-height: 44px; }
+    /* Escritorio: barra lateral en flujo normal (anula drawer móvil) */
+    @media (min-width: 769px) {
+      .sidebar-backdrop { display: none !important; }
+      .sidebar {
+        position: relative;
+        left: auto;
+        top: auto;
+        bottom: auto;
+        height: auto;
+        max-height: none;
+        padding-top: 0;
+        padding-bottom: 0;
+        z-index: 0;
+      }
+      body.pandi-shell-logged-in .main-content {
+        margin-left: 0;
+        width: auto;
+        flex: 1;
+        max-width: none;
+      }
+    }
     /* Tablet y pantallas medianas */
     @media (max-width: 768px) {
       body { font-size: 15px; overflow-x: hidden; }
       .app { min-width: 0; }
+      /* Drawer lateral: contenido no queda bajo la franja del menú */
+      body.pandi-shell-logged-in .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        height: 100vh;
+        height: 100dvh;
+        max-height: 100dvh;
+        z-index: 250;
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      body.pandi-shell-logged-in .main-content {
+        margin-left: 56px;
+        width: calc(100% - 56px);
+        flex: none;
+        min-width: 0;
+        max-width: 100%;
+      }
       .main-content { padding: 0.75rem 1rem; padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); padding-bottom: max(1rem, env(safe-area-inset-bottom)); overflow-x: hidden; }
-      .page-header { flex-wrap: wrap; gap: 0.5rem; flex-direction: row; }
+      /* Cabecera pegajosa: título y usuario accesibles al scrollear */
+      .page-header {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        background: #f5f5f5;
+        padding-top: max(0.35rem, env(safe-area-inset-top));
+        margin-top: calc(-1 * max(0.35rem, env(safe-area-inset-top)));
+        margin-left: calc(-1 * max(1rem, env(safe-area-inset-left)));
+        margin-right: calc(-1 * max(1rem, env(safe-area-inset-right)));
+        padding-left: max(1rem, env(safe-area-inset-left));
+        padding-right: max(1rem, env(safe-area-inset-right));
+        padding-bottom: 0.5rem;
+        margin-bottom: 0.75rem;
+        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        flex-direction: row;
+      }
       .page-header .page-logo-wrap { height: 36px; width: 36px; }
       .page-header h1, #page-title { font-size: 1.25rem; }
       .user-bar { margin-left: 0; width: 100%; order: 3; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
@@ -876,10 +964,21 @@
       .btn-primary, .btn-secondary { min-height: 44px; }
       .toggle-moneda button { min-height: 44px; padding: 0.5rem 0.85rem; }
       .form-row.dos-columnas, .form-row.tres-columnas { grid-template-columns: 1fr; }
-      #orden-step-detalles .form-row.tres-columnas.orden-primeros-datos-row { grid-template-columns: 1fr 1fr 1fr; }
+      /* Modal orden: primeros datos en columna única ≤768px */
+      #orden-step-detalles .form-row.tres-columnas.orden-primeros-datos-row,
+      #orden-step-detalles .orden-primeros-datos-row {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+      }
+      #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-label { grid-row: auto; }
+      #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-input { grid-row: auto; }
+      #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-col3 {
+        grid-column: 1;
+        grid-row: auto;
+      }
       .form-actions { gap: 0.5rem; }
       .modal-backdrop { padding: 0.5rem; padding-left: max(0.5rem, env(safe-area-inset-left)); padding-right: max(0.5rem, env(safe-area-inset-right)); padding-top: max(0.5rem, env(safe-area-inset-top)); align-items: flex-start; }
-      .modal { max-height: 90vh; width: 96%; max-width: min(96vw, 1280px); }
+      .modal { max-height: min(90dvh, 92vh); width: 96%; max-width: min(96vw, 1280px); }
       .modal-body input, .modal-body select { font-size: 16px; }
       .modal-close { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
       .resumen-cajas { flex-direction: column; gap: 0.75rem; }
@@ -896,7 +995,31 @@
       .inicio-caja-card-cheque-compact { justify-self: stretch; width: auto; max-width: 100%; }
       .inicio-caja-tabla { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
       .tabla-clientes-wrap, .tabla-movimientos-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
-      #seguridad-tabla-wrap, #orden-inst-tabla-wrap, #transacciones-tabla-wrap, #ordenes-pendientes-tabla-wrap, #transacciones-pendientes-tabla-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; max-width: 100%; }
+      #seguridad-tabla-wrap, #orden-inst-tabla-wrap, #transacciones-tabla-wrap, #ordenes-pendientes-tabla-wrap, #transacciones-pendientes-tabla-wrap, #cajas-tabla-wrap, #reglas-negocio-tabla-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; max-width: 100%; }
+      .modal.modal-ordenes-pendientes { margin-left: 0 !important; }
+      .select-filtro { min-height: 44px; font-size: 16px; }
+      #cajas-panel-movimientos .cajas-mov-toolbar-fila-primera {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.65rem;
+      }
+      #cajas-panel-movimientos .cajas-mov-toolbar-fila-primera .toggle-moneda,
+      #cajas-panel-movimientos .cajas-mov-toolbar-fila-primera #btn-nuevo-movimiento-caja {
+        align-self: flex-start;
+      }
+      #cajas-panel-movimientos [data-caja-tab] {
+        min-height: 44px;
+        padding: 0.45rem 0.75rem;
+      }
+      .cc-solapas {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        gap: 0.35rem;
+        padding-bottom: 0.2rem;
+        scrollbar-width: thin;
+      }
+      .cc-solapas .cc-solapa { flex-shrink: 0; }
       th, td { padding: 0.45rem 0.5rem; font-size: 0.9rem; }
       .vista-toolbar { gap: 0.5rem; }
       .inicio-accesos .vista-toolbar { flex-direction: column; align-items: stretch; }
@@ -906,6 +1029,10 @@
     /* Móvil */
     @media (max-width: 480px) {
       body { overflow-x: hidden; }
+      body.pandi-shell-logged-in .main-content {
+        margin-left: 52px;
+        width: calc(100% - 52px);
+      }
       .main-content { padding: 0.5rem 0.75rem; padding-left: max(0.75rem, env(safe-area-inset-left)); padding-right: max(0.75rem, env(safe-area-inset-right)); }
       .sidebar { width: 52px; min-width: 52px; }
       .sidebar.expanded { width: 200px; }
@@ -913,6 +1040,15 @@
       .sidebar:not(.expanded) .sidebar-toggle { margin: 4px; width: 44px; height: 44px; }
       .sidebar.expanded .sidebar-toggle { width: 52px; height: 48px; }
       .page-header .page-logo-wrap { height: 32px; width: 32px; }
+      /* Alinear cabecera sticky con el padding más chico de main en móvil */
+      .page-header {
+        margin-left: calc(-1 * max(0.75rem, env(safe-area-inset-left)));
+        margin-right: calc(-1 * max(0.75rem, env(safe-area-inset-right)));
+        padding-left: max(0.75rem, env(safe-area-inset-left));
+        padding-right: max(0.75rem, env(safe-area-inset-right));
+        margin-top: calc(-1 * max(0.25rem, env(safe-area-inset-top)));
+        padding-top: max(0.25rem, env(safe-area-inset-top));
+      }
       #page-title { font-size: 1.1rem; }
       .card { padding: 0.85rem; }
       .modal { max-width: 98vw; width: 98%; border-radius: 10px; margin: 0; }
@@ -937,6 +1073,11 @@
       .orden-detalle-panel { padding: 0.75rem 1rem; }
       .vista-ordenes h3, .vista-cajas h3, .vista-clientes h3, .vista-intermediarios h3, .vista-cuenta-corriente h3 { font-size: 1rem; }
       .transaccion-acuerdo-datos .transaccion-acuerdo-fila + .transaccion-acuerdo-fila { margin-top: 0.35rem; }
+      .inicio-card-ordenes-fila {
+        grid-template-columns: 1fr auto;
+        gap: 0.35rem 0.5rem;
+      }
+      .inicio-card-ordenes-fila .inicio-card-ordenes-badge { min-width: 0; }
     }
     .transaccion-acuerdo-datos .transaccion-acuerdo-fila + .transaccion-acuerdo-fila { margin-top: 0.35rem; }
   </style>
@@ -985,8 +1126,10 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.56</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.57</div>
   </aside>
+  <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
+  <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
   <main class="main-content">
     <div id="login-screen" class="login-screen card" style="display:none;">
@@ -1551,7 +1694,7 @@
           </div>
         </div>
         <div id="seguridad-loading" class="seguridad-loading">Cargando usuarios…</div>
-        <div id="seguridad-tabla-wrap" style="display:none;">
+        <div id="seguridad-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
           <table id="seguridad-tabla">
             <thead><tr><th>Email</th><th>Rol</th><th>Acción</th></tr></thead>
             <tbody id="seguridad-tbody"></tbody>
@@ -2194,7 +2337,7 @@
                 <button type="button" id="orden-btn-nueva-transaccion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
               </div>
               <div id="orden-inst-loading" class="clientes-loading" style="display:none;">Cargando instrumentación…</div>
-              <div id="orden-inst-tabla-wrap" style="display:none;">
+              <div id="orden-inst-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
                 <table id="orden-inst-tabla">
                   <thead><tr><th>Nro</th><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
                   <tbody id="orden-inst-tbody"></tbody>
@@ -2223,7 +2366,7 @@
           <button type="button" id="btn-nueva-transaccion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
         </div>
         <div id="transacciones-loading" class="clientes-loading">Cargando…</div>
-        <div id="transacciones-tabla-wrap" style="display:none;">
+        <div id="transacciones-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
           <table id="tabla-transacciones">
             <thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
             <tbody id="transacciones-tbody"></tbody>
