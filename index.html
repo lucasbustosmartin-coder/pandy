@@ -354,7 +354,8 @@
     .vista-loading-spinner::before { content: ''; display: inline-block; width: 26px; height: 26px; border: 2px solid #e5e7eb; border-top-color: #0d7d3d; border-radius: 50%; animation: vista-spin 0.7s linear infinite; flex-shrink: 0; }
     @keyframes vista-spin { to { transform: rotate(360deg); } }
     .tabla-clientes-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
-    .tabla-clientes-wrap.tabla-wrap-con-scroll { max-height: 70vh; overflow-y: auto; }
+    .tabla-clientes-wrap.tabla-wrap-con-scroll,
+    .tabla-movimientos-wrap.tabla-wrap-con-scroll { max-height: 70vh; overflow-y: auto; }
     /* LyP — todas las tablas de listado: encabezado anclado al scroll (.cursor/rules/tablas-y-movil-lyp.mdc) */
     .tabla-clientes-wrap table thead th,
     .tabla-movimientos-wrap table thead th,
@@ -1126,7 +1127,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.57</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.58</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -1313,7 +1314,7 @@
           <label class="ordenes-filtro-label"><span>Estado:</span><select id="ordenes-filtro-estado" class="select-filtro" style="min-width:220px;"><option value="__activas__" selected>Activas (no ejecutadas ni anuladas)</option><option value="">Todas las órdenes</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option><option value="orden_ejecutada">Orden Ejecutada</option><option value="anulada">Anulada</option></select></label>
         </div>
         <div id="ordenes-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando órdenes…</div>
-        <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+        <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-ordenes">
             <thead><tr><th>Nº</th><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Recibido</th><th>Entregado</th><th></th></tr></thead>
             <tbody id="ordenes-tbody"></tbody>
@@ -1424,7 +1425,7 @@
             </div>
           </div>
           <div id="cajas-loading" class="cajas-loading vista-loading-spinner" style="display:none;">Cargando movimientos…</div>
-          <div id="cajas-tabla-wrap" class="tabla-movimientos-wrap" style="display:none;">
+          <div id="cajas-tabla-wrap" class="tabla-movimientos-wrap tabla-wrap-con-scroll" style="display:none;">
             <table class="tabla-movimientos" id="tabla-movimientos-caja">
               <thead><tr><th>Fecha</th><th>Origen</th><th>Nro orden</th><th>Nro transacción</th><th>Tipo</th><th>Moneda</th><th>Monto</th><th>Caja</th><th>Concepto</th><th></th></tr></thead>
               <tbody id="movimientos-caja-tbody"></tbody>
@@ -1438,7 +1439,7 @@
             <button type="button" id="btn-nuevo-tipo-movimiento" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo tipo</button>
           </div>
           <div id="tipos-mov-loading" class="cajas-loading" style="display:none;">Cargando tipos…</div>
-          <div id="tipos-mov-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+          <div id="tipos-mov-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
             <table id="tabla-tipos-movimiento">
               <thead><tr><th>Nombre</th><th>Dirección</th><th>Activo</th><th></th></tr></thead>
               <tbody id="tipos-movimiento-tbody"></tbody>
@@ -1456,7 +1457,7 @@
           <button type="button" id="btn-nuevo-intermediario" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo intermediario</button>
         </div>
         <div id="intermediarios-loading" class="clientes-loading">Cargando…</div>
-        <div id="intermediarios-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+        <div id="intermediarios-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-intermediarios">
             <thead><tr><th>Nombre</th><th>Documento</th><th>Email</th><th>Teléfono</th><th>Activo</th><th></th></tr></thead>
             <tbody id="intermediarios-tbody"></tbody>
@@ -1472,7 +1473,7 @@
           <button type="button" id="btn-nuevo-cliente" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg></span>Nuevo cliente</button>
         </div>
         <div id="clientes-loading" class="clientes-loading">Cargando clientes…</div>
-        <div id="clientes-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+        <div id="clientes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-clientes">
             <thead><tr><th>Nombre</th><th>Documento</th><th>Email</th><th>Teléfono</th><th>Activo</th><th></th></tr></thead>
             <tbody id="clientes-tbody"></tbody>
@@ -1489,7 +1490,7 @@
           <button type="button" id="btn-nuevo-tipo-operacion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo tipo</button>
         </div>
         <div id="tipos-operacion-loading" class="clientes-loading">Cargando tipos…</div>
-        <div id="tipos-operacion-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+        <div id="tipos-operacion-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-tipos-operacion">
             <thead><tr><th>Orden</th><th>Tipo</th><th>Nombre</th><th>Código</th><th>Moneda IN</th><th>Moneda OUT</th><th>Intermediario</th><th>Activo</th><th></th></tr></thead>
             <tbody id="tipos-operacion-tbody"></tbody>
@@ -1694,7 +1695,7 @@
           </div>
         </div>
         <div id="seguridad-loading" class="seguridad-loading">Cargando usuarios…</div>
-        <div id="seguridad-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+        <div id="seguridad-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="seguridad-tabla">
             <thead><tr><th>Email</th><th>Rol</th><th>Acción</th></tr></thead>
             <tbody id="seguridad-tbody"></tbody>
@@ -2337,7 +2338,7 @@
                 <button type="button" id="orden-btn-nueva-transaccion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
               </div>
               <div id="orden-inst-loading" class="clientes-loading" style="display:none;">Cargando instrumentación…</div>
-              <div id="orden-inst-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+              <div id="orden-inst-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
                 <table id="orden-inst-tabla">
                   <thead><tr><th>Nro</th><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
                   <tbody id="orden-inst-tbody"></tbody>
@@ -2366,7 +2367,7 @@
           <button type="button" id="btn-nueva-transaccion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
         </div>
         <div id="transacciones-loading" class="clientes-loading">Cargando…</div>
-        <div id="transacciones-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
+        <div id="transacciones-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-transacciones">
             <thead><tr><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
             <tbody id="transacciones-tbody"></tbody>
@@ -2493,7 +2494,7 @@
         </div>
         <div id="ordenes-pendientes-loading" class="clientes-loading">Cargando…</div>
         <div id="ordenes-pendientes-tabla-wrap" style="display:none;">
-          <div class="tabla-clientes-wrap">
+          <div class="tabla-clientes-wrap tabla-wrap-con-scroll">
             <table class="tabla-clientes">
               <thead><tr><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Recibido</th><th>Entregado</th><th></th></tr></thead>
               <tbody id="ordenes-pendientes-tbody"></tbody>
@@ -2532,7 +2533,7 @@
         </div>
         <div id="transacciones-pendientes-loading" class="clientes-loading">Cargando…</div>
         <div id="transacciones-pendientes-tabla-wrap" style="display:none;">
-          <div class="tabla-clientes-wrap">
+          <div class="tabla-clientes-wrap tabla-wrap-con-scroll">
             <table class="tabla-clientes">
               <thead><tr><th>Orden</th><th>Cliente</th><th>Intermediario</th><th>Tipo</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
               <tbody id="transacciones-pendientes-tbody"></tbody>
@@ -2575,7 +2576,7 @@
             <tfoot id="cc-detalle-tfoot"></tfoot>
           </table>
         </div>
-        <div id="modal-cc-detalle-operaciones-wrap" class="tabla-clientes-wrap" style="margin-top:1.25rem; display:none; overflow-x:auto;">
+        <div id="modal-cc-detalle-operaciones-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="margin-top:1.25rem; display:none;">
           <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Operaciones vinculadas
             <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: operaciones vinculadas"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Órdenes <strong>no anuladas</strong> en las que participa este cliente o intermediario. El <strong>saldo</strong> mostrado arriba corresponde a movimientos que ya impactan según reglas; si todo está pendiente puede ser <strong>cero</strong> aunque haya compromisos: en esta tabla ves también filas de <strong>compromiso pendiente</strong> (ej. «Deuda por…»).</span></span>
           </h4>
