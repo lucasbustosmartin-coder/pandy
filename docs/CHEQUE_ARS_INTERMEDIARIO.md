@@ -21,6 +21,20 @@
 - **Intermediario:** comisión por tasa sobre el circuito Pandy–intermediario; filas **`es_comision = true`**, **Pandy→Intermediario egreso**, con **`condicion_estado_comision`** (p. ej. `par_pandy_int`) donde aplique.
 - Los importes concretos salen de la orden / `comisiones_orden` y del motor; la **forma** de cuándo suma y qué concepto usar está en **`reglas_de_negocio`** (filas `es_comision` + `condicion_estado_comision`).
 
+## Signos en CC del intermediario (CHEQUE-ARS + int)
+
+Convención alineada a la **cuenta corriente de Pandy** (qué le debe el intermediario en la cadena del cheque):
+
+| Movimiento | Signo en `movimientos_cuenta_corriente_intermediario` | Lectura |
+|------------|------------------------------------------------------|---------|
+| **Pago realizado** (Tx3: Pandy entrega el cheque al intermediario) | **+** monto del cheque | El intermediario “recibe” el pasivo de liquidar ese valor con Pandy. |
+| **Comisión del acuerdo** (parte del intermediario) | **−** importe de comisión | Lo que el intermediario reconoce a favor de Pandy por tasa/spread. |
+| **Cobro realizado** (Tx4: intermediario entrega efectivo a Pandy) | **−** monto efectivo | Reduce la deuda neta; con el par cerrado la suma de las tres líneas debe dar **0**. |
+
+Ejemplo: cheque 25.000 ARS, comisión int 375 ARS, efectivo a devolver 24.625 ARS → líneas **+25.000**, **−375** y, al ejecutar Tx4, **−24.625**; saldo neto **0**.
+
+En el **resumen** CC, el test E2E sigue interpretando el saldo del intermediario con la lógica `saldoResumenANumero(..., true)` (lectura coherente con deuda neta aunque la celda muestre signo “positivo” en verde).
+
 ## Instrumentación
 
 - **Cuatro transacciones:** Tx1 Cliente→Pandy, Tx2 Pandy→Cliente, Tx3 Pandy→Intermediario, Tx4 Intermediario→Pandy (orden pagador al instrumentar: ver tests y `main.js`). Son la **coreografía acordada** al crear la instrumentación (momento cero), no “compensatorias” que el sistema invente al bajar un importe o al guardar.
@@ -30,9 +44,10 @@
 ## Scripts SQL recomendados (Supabase)
 
 1. **Matriz en `reglas_de_negocio` y limpieza `cc_modelo`:** **`sql/migracion_reglas_de_negocio_cheque_ars.sql`**
-2. Semilla catálogo: **`sql/seed_tipo_operacion_cheque_ars.sql`**
-3. Tipos y checks de moneda (histórico): **`sql/migracion_cc_modelo_reglas_canonico_cheque_ars.sql`**
-4. Bootstrap unificado: **`sql/reglas_de_negocio_tabla.sql`** (incluye CHEQUE-ARS con int) y **`sql/cc_modelo_reglas_tabla.sql`** (sin filas CHEQUE-ARS)
+2. **Solo signos CC intermediario (DB ya cargada):** **`sql/migracion_reglas_cheque_ars_signos_cc_intermediario.sql`**
+3. Semilla catálogo: **`sql/seed_tipo_operacion_cheque_ars.sql`**
+4. Tipos y checks de moneda (histórico): **`sql/migracion_cc_modelo_reglas_canonico_cheque_ars.sql`**
+5. Bootstrap unificado: **`sql/reglas_de_negocio_tabla.sql`** (incluye CHEQUE-ARS con int) y **`sql/cc_modelo_reglas_tabla.sql`** (sin filas CHEQUE-ARS)
 
 Orden práctico: según `docs/TESTING_E2E_GUIA.md` §1.5–1.7 (RPC `sync_cc_caja_orden` al día).
 

@@ -32,22 +32,20 @@ INSERT INTO public.reglas_de_negocio (
   -- Tx2 Pandy→Cliente egreso
   ('CHEQUE-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago', NULL),
   ('CHEQUE-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago', NULL),
-  -- Tx3 Pandy→Intermediario egreso (CC intermediario)
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'pago_realizado', NULL),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'ejecutada', true, 0, 'ARS', -1, 'monto_transaccion', true, 'pago_realizado', NULL),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'pendiente', true, 0, 'ARS', -1, 'monto_transaccion', true, 'pago_realizado', NULL),
-  -- Tx4 Intermediario→Pandy ingreso (efectivo neto con tasa)
-  ('CHEQUE-ARS', true, 'intermediario', 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_efectivo_intermediario', true, 'cobro_realizado', NULL),
+  -- Tx3/T4 CC intermediario: signos alineados a deuda neta int→Pandy (+cheque, −comisión, −efectivo). Ver docs/CHEQUE_ARS_INTERMEDIARIO.md
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'ejecutada', false, 0, 'ARS', 1, 'monto_transaccion', true, 'pago_realizado', NULL),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'pago_realizado', NULL),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'pendiente', true, 0, 'ARS', 1, 'monto_transaccion', true, 'pago_realizado', NULL),
+  ('CHEQUE-ARS', true, 'intermediario', 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'ARS', -1, 'monto_efectivo_intermediario', true, 'cobro_realizado', NULL),
   -- Comisión Pandy (signo +1 en matriz canónica; importe desde comisiones_orden en motor)
   ('CHEQUE-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 0, 'ARS', 1, 'mr', true, 'comision_acuerdo', 'par_cliente'),
   ('CHEQUE-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true, 0, 'ARS', 1, 'mr', true, 'comision_acuerdo', 'par_cliente'),
   ('CHEQUE-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 0, 'ARS', 1, 'mr', true, 'comision_acuerdo', 'par_cliente'),
   ('CHEQUE-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'pendiente', true, 0, 'ARS', 1, 'mr', true, 'comision_acuerdo', 'par_cliente'),
-  -- Comisión intermediario
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0, 'ARS', 1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true, 0, 'ARS', 1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, 'ARS', 1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'pendiente', true, 0, 'ARS', 1, 'me', true, 'comision_acuerdo', 'par_pandy_int')
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0, 'ARS', -1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true, 0, 'ARS', -1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, 'ARS', -1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'pendiente', true, 0, 'ARS', -1, 'me', true, 'comision_acuerdo', 'par_pandy_int')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada, linea

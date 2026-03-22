@@ -1,6 +1,6 @@
 -- Pandi – Tabla **reglas_de_negocio**: reglas explícitas de CC (y futuros dominios) por tipo de operación.
 -- Sin intermediario: **USD-ARS**, **ARS-USD** y **USD-USD** (`usa_intermediario = false`).
--- Con intermediario: **USD-ARS** y **ARS-USD** (flujo inverso 2 tx C→Int + P→C), **USD-USD**, **CHEQUE-ARS** — todo en este archivo; scripts puntuales: `sql/reglas_usd_ars_int_inversa_reglas_de_negocio.sql`, `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql`, `sql/migracion_reglas_de_negocio_cheque_ars.sql`, `sql/migracion_usd_usd_intermediario_tipo_y_reglas.sql`.
+-- Con intermediario: **USD-ARS** y **ARS-USD** (flujo inverso 2 tx C→Int + P→C), **USD-USD**, **CHEQUE-ARS** — todo en este archivo; scripts puntuales: `sql/reglas_usd_ars_int_inversa_reglas_de_negocio.sql`, `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql`, `sql/migracion_reglas_de_negocio_cheque_ars.sql`, `sql/migracion_reglas_cheque_ars_signos_cc_intermediario.sql`, `sql/migracion_usd_usd_intermediario_tipo_y_reglas.sql`.
 -- Con intermediario: usar **entidad_cc** `cliente` | `intermediario` (ver `sql/migracion_reglas_de_negocio_entidad_cc.sql`).
 -- Una fila = un movimiento CC cliente. Varios movimientos = varias filas (linea).
 -- Varios movimientos de **transacción** (2..N) que suman el acuerdo: usar **monto_transaccion**,
@@ -307,18 +307,19 @@ INSERT INTO public.reglas_de_negocio (
   ('CHEQUE-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'ARS', -1, 'mr', true, 'cobro_realizado', NULL),
   ('CHEQUE-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago', NULL),
   ('CHEQUE-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago', NULL),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'pago_realizado', NULL),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'ejecutada', true, 0, 'ARS', -1, 'monto_transaccion', true, 'pago_realizado', NULL),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'pendiente', true, 0, 'ARS', -1, 'monto_transaccion', true, 'pago_realizado', NULL),
-  ('CHEQUE-ARS', true, 'intermediario', 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_efectivo_intermediario', true, 'cobro_realizado', NULL),
+  -- CC intermediario: signos desde situación Pandy (ver docs/CHEQUE_ARS_INTERMEDIARIO.md). +Tx3 cheque = lo que el int debe reconocer; −comisión; −Tx4 efectivo = pago al cierre.
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'ejecutada', false, 0, 'ARS', 1, 'monto_transaccion', true, 'pago_realizado', NULL),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'pago_realizado', NULL),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', false, 'pendiente', true, 0, 'ARS', 1, 'monto_transaccion', true, 'pago_realizado', NULL),
+  ('CHEQUE-ARS', true, 'intermediario', 'intermediario', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'ARS', -1, 'monto_efectivo_intermediario', true, 'cobro_realizado', NULL),
   ('CHEQUE-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 0, 'ARS', 1, 'mr', true, 'comision_acuerdo', 'par_cliente'),
   ('CHEQUE-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true, 0, 'ARS', 1, 'mr', true, 'comision_acuerdo', 'par_cliente'),
   ('CHEQUE-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 0, 'ARS', 1, 'mr', true, 'comision_acuerdo', 'par_cliente'),
   ('CHEQUE-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'pendiente', true, 0, 'ARS', 1, 'mr', true, 'comision_acuerdo', 'par_cliente'),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0, 'ARS', 1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true, 0, 'ARS', 1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, 'ARS', 1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
-  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'pendiente', true, 0, 'ARS', 1, 'me', true, 'comision_acuerdo', 'par_pandy_int')
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0, 'ARS', -1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true, 0, 'ARS', -1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'pendiente', false, 0, 'ARS', -1, 'me', true, 'comision_acuerdo', 'par_pandy_int'),
+  ('CHEQUE-ARS', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'pendiente', true, 0, 'ARS', -1, 'me', true, 'comision_acuerdo', 'par_pandy_int')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada, linea

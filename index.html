@@ -38,6 +38,34 @@
     .sidebar-nav .menu-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.65rem 1rem; color: rgba(255,255,255,0.9); text-decoration: none; border: none; background: none; width: 100%; cursor: pointer; font-size: 0.95rem; font-family: inherit; text-align: left; }
     .sidebar-nav .menu-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
     .sidebar-nav .menu-item.menu-item-active { background: rgba(255,255,255,0.15); color: #fff; }
+    .sidebar-nav .menu-item.menu-item-critico { border-left: 3px solid #f59e0b; box-sizing: border-box; }
+    .panel-reglas-negocio-aviso {
+      margin: 0 0 1rem 0; padding: 0.85rem 1rem; border-radius: 10px;
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 1px solid #fcd34d;
+      font-size: 0.9rem; color: #78350f;
+    }
+    .reglas-negocio-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin-bottom: 0.75rem; }
+    .reglas-negocio-toolbar .form-group { margin: 0; min-width: 140px; }
+    #tabla-reglas-negocio { font-size: 0.82rem; border-collapse: separate; border-spacing: 0; }
+    #tabla-reglas-negocio th, #tabla-reglas-negocio td { white-space: nowrap; }
+    /* Encabezados anclados al hacer scroll vertical dentro del wrap (tabla-wrap-con-scroll) */
+    #reglas-negocio-tabla-wrap #tabla-reglas-negocio thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #f9fafb;
+      box-shadow: 0 1px 0 0 #d1d5db;
+    }
+    #tabla-reglas-negocio thead th .reglas-th-inner {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      max-width: 100%;
+    }
+    #tabla-reglas-negocio thead th .reglas-th-inner .help-inline { margin-left: 0; }
+    @media (max-width: 768px) {
+      .reglas-negocio-form-grid { grid-template-columns: 1fr !important; }
+    }
     .sidebar-nav .menu-item .menu-icon { width: 24px; height: 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
     .sidebar-nav .menu-item .menu-icon svg { width: 100%; height: 100%; stroke: currentColor; }
     .sidebar-nav .menu-item .menu-label { white-space: nowrap; opacity: 0; width: 0; overflow: hidden; transition: opacity 0.2s, width 0.2s; }
@@ -886,12 +914,16 @@
         <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></span>
         <span class="menu-label">Cuenta corriente</span>
       </a>
+      <a href="#" class="menu-item menu-item-critico" id="menu-reglas-negocio" title="Reglas de negocio (crítico)" aria-label="Reglas de negocio">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>
+        <span class="menu-label">Reglas CC</span>
+      </a>
       <a href="#" class="menu-item" id="menu-seguridad" title="Seguridad" aria-label="Seguridad">
         <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.51</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.52</div>
   </aside>
 
   <main class="main-content">
@@ -1315,6 +1347,74 @@
           </div>
         </div>
       </div>
+      <div id="vista-reglas-negocio" class="card" style="display:none;">
+        <h3 style="margin:0 0 0.5rem 0; font-size:1.1rem; display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+          <span style="width:22px; height:22px; color:#b45309;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>
+          Reglas de negocio (cuenta corriente)
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda reglas de negocio"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Qué es esto.</strong> Cada fila define cómo el motor de CC traduce una transacción (pagador, cobrador, tipo, estado, contrapartida) en un movimiento para el cliente o el intermediario. La clave única en base es la combinación de tipo de operación, intermediario, entidad CC, pagador/cobrador, tipo de transacción, comisión, estado, contrapartida y <strong>línea</strong>.<br/><br/><strong>Riesgo.</strong> Cambios incorrectos pueden dejar saldos que no cierran o duplicar movimientos. Preferí primero <strong>Replicar matriz</strong> desde un tipo ya probado (ej. USD-ARS) hacia un código nuevo (ej. EUR-USD) y luego ajustar monedas/signos con calma.<br/><br/><strong>Permiso.</strong> Solo perfiles con <code>abm_reglas_negocio</code> (por defecto Admin). Podés delegarlo desde Seguridad → permisos por rol.</span></span>
+        </h3>
+        <div class="panel-reglas-negocio-aviso" role="status">
+          <strong>Menú crítico.</strong> Las reglas alimentan directamente el motor de cuenta corriente (<code>main.js</code> → <code>aplicarMotorCcDesdeReglasDeNegocio</code>). Antes de editar, leé <code>docs/REGLAS_DE_NEGOCIO.md</code> y el tipo de operación en el catálogo. Para nuevos pares de moneda, creá primero el <strong>tipo de operación</strong> y usá <strong>Replicar matriz</strong> desde un tipo análogo.
+        </div>
+        <div class="reglas-negocio-toolbar vista-toolbar">
+          <div class="form-group">
+            <label for="reglas-negocio-filtro-codigo">Tipo (código)</label>
+            <select id="reglas-negocio-filtro-codigo" class="select-filtro" aria-label="Filtrar por código tipo operación">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="reglas-negocio-filtro-usa-int">Intermediario</label>
+            <select id="reglas-negocio-filtro-usa-int" class="select-filtro" aria-label="Filtrar usa intermediario">
+              <option value="all">Todos</option>
+              <option value="true">Con intermediario</option>
+              <option value="false">Sin intermediario</option>
+            </select>
+          </div>
+          <button type="button" class="btn-secondary" id="reglas-negocio-btn-refrescar" title="Recargar desde servidor">
+            <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></span>Refrescar
+          </button>
+          <button type="button" class="btn-secondary" id="reglas-negocio-btn-replicar" title="Copiar todas las filas de un tipo hacia otro" style="display:none;">
+            <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span>Replicar matriz…
+          </button>
+          <button type="button" class="btn-nuevo" id="reglas-negocio-btn-nueva" style="display:none;">
+            <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva fila
+          </button>
+        </div>
+        <div id="reglas-negocio-loading" class="clientes-loading">Cargando reglas…</div>
+        <div id="reglas-negocio-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
+          <table id="tabla-reglas-negocio">
+            <thead>
+              <tr>
+                <th scope="col">Código</th>
+                <th scope="col">Intermediario</th>
+                <th scope="col">
+                  <span class="reglas-th-inner">CC<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: columna CC"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Entidad CC</strong>: indica si el movimiento que genera esta regla impacta la <strong>cuenta corriente del cliente</strong> o la <strong>del intermediario</strong> (siempre respecto de Pandy). Es distinto de la vista “Cuenta corriente” del menú: acá definís para <em>quién</em> se escribe el movimiento en base.</span></span></span>
+                </th>
+                <th scope="col">Pagador</th>
+                <th scope="col">Cobrador</th>
+                <th scope="col">Tipo trx</th>
+                <th scope="col">Comisión</th>
+                <th scope="col">Estado</th>
+                <th scope="col">Contr.</th>
+                <th scope="col">Línea</th>
+                <th scope="col">Mon.</th>
+                <th scope="col">Signo (+/−)</th>
+                <th scope="col">
+                  <span class="reglas-th-inner">Monto origen<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: monto origen"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Qué monto usa el motor</strong> para armar el importe del movimiento:<br/><br/><strong>mr</strong> — Monto <em>recibido</em> del acuerdo (total de la orden).<br/><strong>me</strong> — Monto <em>entregado</em> del acuerdo.<br/><strong>monto_transaccion</strong> — Monto de <em>esta</em> transacción (la que matchea la regla).<br/><strong>mr_prorrateado</strong> / <strong>me_prorrateado</strong> — Parte proporcional de mr/me cuando hay varias patas que suman el acuerdo.<br/><strong>mr_menos_me</strong> — Diferencia mr − me (ej. comisión implícita en misma moneda, USD-USD).<br/><strong>monto_efectivo_intermediario</strong> — Efectivo del circuito con intermediario (ej. CHEQUE-ARS).<br/><strong>comision_intermediario</strong> — Importe de comisión del intermediario (ej. USD-USD con intermediario).</span></span></span>
+                </th>
+                <th scope="col">Concepto</th>
+                <th scope="col">Detalle de Mov.</th>
+                <th scope="col">
+                  <span class="reglas-th-inner">Cond. com.<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: condición comisión"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Condición de estado (comisiones)</strong>: suele usarse en filas de <strong>comisión</strong>. El motor solo aplica la fila cuando el “par” indicado alcanza el estado esperado:<br/><br/><strong>par_cliente</strong> — Circuito <em>cliente ↔ Pandy</em> (ej. comisión cuando el cliente ya cerró su pata).<br/><strong>par_pandy_int</strong> — Circuito <em>Pandy ↔ intermediario</em>.<br/><br/><strong>Vacío</strong> — Sin condición extra por par; rigen el resto de columnas (estado de la transacción, etc.). Si marcás comisión sin condición, revisá que el motor la aplique como querés (ver docs del tipo).</span></span></span>
+                </th>
+                <th scope="col" aria-label="Acciones"></th>
+              </tr>
+            </thead>
+            <tbody id="reglas-negocio-tbody"></tbody>
+          </table>
+        </div>
+      </div>
       <div id="vista-seguridad" class="card panel-seguridad" style="display:none;">
         <h2 style="margin:0 0 0.5rem 0; display:flex; align-items:center; gap:0.5rem;">
           <span style="width:24px; height:24px; color:#555; flex-shrink:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
@@ -1464,6 +1564,168 @@
             <button type="button" class="btn-secondary" id="modal-tipo-operacion-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-regla-negocio-backdrop" class="modal-backdrop">
+    <div class="modal" style="max-width:min(95vw, 960px); width: 95%;">
+      <div class="modal-header">
+        <h2 id="modal-regla-negocio-titulo">Regla de negocio</h2>
+        <button type="button" class="modal-close" id="modal-regla-negocio-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-regla-negocio">
+          <input type="hidden" id="regla-negocio-id" value="" />
+          <p style="margin:0 0 0.75rem 0; font-size:0.85rem; color:#6b7280;">Los valores deben coincidir con el CHECK de PostgreSQL y la clave única. Si cambiás pagador/cobrador/estado/línea podés chocar con otra fila.
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda general regla"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Resumen.</strong> Usá los íconos ℹ junto a <strong>Entidad CC</strong>, <strong>Monto de origen</strong> y <strong>Condición comisión</strong> para el detalle. <strong>Signo (+/−):</strong> +1 o −1 según la convención del tipo (ver docs del tipo, ej. CHEQUE-ARS intermediario). <strong>Es comisión:</strong> marca filas especiales de comisión. Doc: <code>docs/REGLAS_DE_NEGOCIO.md</code>.</span></span>
+          </p>
+          <div class="reglas-negocio-form-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem 1rem;">
+            <div class="form-group">
+              <label for="regla-negocio-codigo">Código tipo operación *</label>
+              <input type="text" id="regla-negocio-codigo" required maxlength="64" placeholder="EUR-USD" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="regla-negocio-usa-intermediario" /> Usa intermediario</label>
+            </div>
+            <div class="form-group">
+              <label for="regla-negocio-entidad-cc" style="display:flex; align-items:center; flex-wrap:wrap; gap:0.25rem;">Entidad CC *
+                <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: entidad CC"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Entidad CC</strong>: el movimiento se registra en la cuenta corriente del <strong>cliente</strong> o del <strong>intermediario</strong> (respecto de Pandy), según elijas acá.</span></span>
+              </label>
+              <select id="regla-negocio-entidad-cc" required>
+                <option value="cliente">cliente</option>
+                <option value="intermediario">intermediario</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="regla-negocio-pagador">Pagador *</label>
+              <select id="regla-negocio-pagador" required>
+                <option value="cliente">cliente</option>
+                <option value="pandy">pandy</option>
+                <option value="intermediario">intermediario</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="regla-negocio-cobrador">Cobrador *</label>
+              <select id="regla-negocio-cobrador" required>
+                <option value="cliente">cliente</option>
+                <option value="pandy">pandy</option>
+                <option value="intermediario">intermediario</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="regla-negocio-tipo-transaccion">Tipo transacción *</label>
+              <select id="regla-negocio-tipo-transaccion" required>
+                <option value="ingreso">ingreso</option>
+                <option value="egreso">egreso</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="regla-negocio-es-comision" /> Es comisión</label>
+            </div>
+            <div class="form-group">
+              <label for="regla-negocio-estado-transaccion">Estado transacción *</label>
+              <select id="regla-negocio-estado-transaccion" required>
+                <option value="pendiente">pendiente</option>
+                <option value="ejecutada">ejecutada</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="regla-negocio-contrapartida" /> Contrapartida ejecutada</label>
+            </div>
+            <div class="form-group">
+              <label for="regla-negocio-linea">Línea *</label>
+              <input type="number" id="regla-negocio-linea" required min="0" max="32767" step="1" value="0" />
+            </div>
+            <div class="form-group">
+              <label for="regla-negocio-moneda">Moneda *</label>
+              <select id="regla-negocio-moneda" required>
+                <option value="USD">USD</option>
+                <option value="ARS">ARS</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="regla-negocio-signo">Signo (+/−) *</label>
+              <select id="regla-negocio-signo" required>
+                <option value="1">+1</option>
+                <option value="-1">−1</option>
+              </select>
+            </div>
+            <div class="form-group" style="grid-column:1/-1;">
+              <label for="regla-negocio-monto-origen" style="display:flex; align-items:center; flex-wrap:wrap; gap:0.25rem;">Monto de origen *
+                <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: monto de origen"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Qué monto usa el motor:</strong><br/><br/><strong>mr</strong> — Monto recibido del acuerdo (total).<br/><strong>me</strong> — Monto entregado del acuerdo.<br/><strong>monto_transaccion</strong> — Monto de esta transacción.<br/><strong>mr_prorrateado</strong> / <strong>me_prorrateado</strong> — Parte proporcional cuando hay varias patas.<br/><strong>mr_menos_me</strong> — mr − me (ej. comisión implícita USD-USD).<br/><strong>monto_efectivo_intermediario</strong> — Efectivo en circuito con intermediario (ej. CHEQUE-ARS).<br/><strong>comision_intermediario</strong> — Comisión del intermediario (ej. USD-USD con int.).</span></span>
+              </label>
+              <select id="regla-negocio-monto-origen" required>
+                <option value="mr">mr</option>
+                <option value="me">me</option>
+                <option value="monto_transaccion">monto_transaccion</option>
+                <option value="me_prorrateado">me_prorrateado</option>
+                <option value="mr_prorrateado">mr_prorrateado</option>
+                <option value="mr_menos_me">mr_menos_me</option>
+                <option value="monto_efectivo_intermediario">monto_efectivo_intermediario</option>
+                <option value="comision_intermediario">comision_intermediario</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="regla-negocio-incluir-detalle" checked /> Incluir en detalle de movimientos</label>
+            </div>
+            <div class="form-group">
+              <label for="regla-negocio-condicion-comision" style="display:flex; align-items:center; flex-wrap:wrap; gap:0.25rem;">Condición comisión
+                <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: condición comisión"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Condición de estado</strong> para filas de comisión: <strong>par_cliente</strong> (circuito cliente ↔ Pandy), <strong>par_pandy_int</strong> (Pandy ↔ intermediario). <strong>Vacío</strong> si no aplica condición por par. Ver también columna “Cond. com.” en la tabla de reglas.</span></span>
+              </label>
+              <select id="regla-negocio-condicion-comision">
+                <option value="">(vacío)</option>
+                <option value="par_cliente">par_cliente</option>
+                <option value="par_pandy_int">par_pandy_int</option>
+              </select>
+            </div>
+            <div class="form-group" style="grid-column:1/-1;">
+              <label for="regla-negocio-concepto">Concepto leyenda *</label>
+              <input type="text" id="regla-negocio-concepto" required maxlength="128" placeholder="cobro_realizado" list="regla-negocio-conceptos-list" />
+              <datalist id="regla-negocio-conceptos-list">
+                <option value="cobro_realizado"></option>
+                <option value="compromiso_pago"></option>
+                <option value="compromiso_cobrar"></option>
+                <option value="pago_realizado"></option>
+                <option value="comision_acuerdo"></option>
+              </datalist>
+            </div>
+          </div>
+          <div class="form-actions" style="margin-top:1rem;">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="modal-regla-negocio-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-replicar-reglas-backdrop" class="modal-backdrop">
+    <div class="modal" style="max-width:min(95vw, 560px); width: 95%;">
+      <div class="modal-header">
+        <h2>Replicar matriz de reglas</h2>
+        <button type="button" class="modal-close" id="modal-replicar-reglas-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Copia <strong>todas</strong> las filas de un tipo fuente al tipo destino. El destino debe existir en <strong>Tipos de operación</strong> y <strong>no</strong> tener aún reglas (o elegí sobrescribir en el paso de confirmación no implementado — por ahora se bloquea si ya hay filas).</p>
+        <div class="form-group">
+          <label for="replicar-reglas-origen">Origen (tipo + intermediario)</label>
+          <select id="replicar-reglas-origen" class="select-filtro" style="width:100%; max-width:100%;"></select>
+        </div>
+        <div class="form-group">
+          <label for="replicar-reglas-destino-codigo">Código destino *</label>
+          <input type="text" id="replicar-reglas-destino-codigo" maxlength="64" placeholder="EUR-USD" autocomplete="off" />
+          <span class="help-inline" style="margin-left:0.35rem;"><button type="button" class="help-icon-btn" aria-label="Ayuda destino"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Debe coincidir exactamente con el <strong>código</strong> del catálogo (misma forma que en órdenes). Normalización: se guarda en mayúsculas. Si el tipo es “con intermediario”, marcá el checkbox inferior.</span></span>
+        </div>
+        <div class="form-group">
+          <label><input type="checkbox" id="replicar-reglas-destino-usa-int" /> Destino usa intermediario</label>
+        </div>
+        <p style="margin:0.75rem 0 0 0; font-size:0.85rem; color:#92400e;"><strong>Monedas.</strong> Esta acción copia las filas tal cual (USD/ARS/EUR). Si el nuevo tipo usa otras monedas IN/OUT, editá las filas replicadas o replicá desde un tipo con la misma estructura monetaria.</p>
+        <div class="form-actions">
+          <button type="button" class="btn-primary" id="replicar-reglas-btn-ejecutar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Replicar</button>
+          <button type="button" class="btn-secondary" id="modal-replicar-reglas-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+        </div>
       </div>
     </div>
   </div>

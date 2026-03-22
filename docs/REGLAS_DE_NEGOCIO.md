@@ -8,6 +8,8 @@
 
 Reglas explícitas que la sync traduce en **movimientos de cuenta corriente** (y se puede extender a otros efectos de negocio). Nombre alineado al modelo: **reglas de negocio**, no “motor CC” genérico.
 
+**Edición en la app (admin):** menú crítico **Reglas de negocio (CC)** — permiso `abm_reglas_negocio`, validaciones y réplica de matriz. Ver **`docs/MENU_REGLAS_NEGOCIO.md`**.
+
 ## Modelo teórico USD-ARS (sin intermediario)
 
 **Resumen:** el tipo **USD-ARS** participa con **dos monedas**; con **dos transacciones** instrumentadas, lo esperado es **dos movimientos CC por transacción** (cuatro en **E,E**), que **se anulan** por moneda cuando todo está ejecutado (saldo 0 en USD y ARS). Detalle: **`docs/MODELO_CC_USD_ARS_TEORICO.md`**.
@@ -19,7 +21,7 @@ Reglas explícitas que la sync traduce en **movimientos de cuenta corriente** (y
 - **`ARS-USD`** con **`usa_intermediario = true`**: `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql` — ver `docs/REG_NEG_ARS_USD_INT_PASO1.md`.
 - **`USD-USD`** con **`usa_intermediario = false`**: **`reglas_de_negocio`** (única fuente; **`sql/migracion_reglas_usd_usd_sin_int.sql`** o `sql/reglas_de_negocio_tabla.sql` actualizado). Comisión = **`mr_menos_me`**. Resumen: **`docs/USD_USD_SIN_INTERMEDIARIO.md`**.
 - **`USD-USD`** con **`usa_intermediario = true`**: **`reglas_de_negocio`** — misma matriz cliente que sin int + fila intermediario con **`comision_intermediario`**. **`sql/migracion_usd_usd_intermediario_tipo_y_reglas.sql`**. Resumen: **`docs/USD_USD_CON_INTERMEDIARIO.md`**.
-- **`CHEQUE-ARS`** con **`usa_intermediario = true`**: la matriz CC vive en **`reglas_de_negocio`** (`tipo_operacion_codigo = 'CHEQUE-ARS'`, `usa_intermediario = true`). Comisiones Pandy e intermediario como filas `es_comision` con **`condicion_estado_comision`** (`par_cliente` / `par_pandy_int`). Ver **`sql/migracion_reglas_de_negocio_cheque_ars.sql`**. Resumen: **`docs/CHEQUE_ARS_INTERMEDIARIO.md`**.
+- **`CHEQUE-ARS`** con **`usa_intermediario = true`**: la matriz CC vive en **`reglas_de_negocio`** (`tipo_operacion_codigo = 'CHEQUE-ARS'`, `usa_intermediario = true`). Comisiones Pandy e intermediario como filas `es_comision` con **`condicion_estado_comision`** (`par_cliente` / `par_pandy_int`). Signos CC intermediario: **+** cheque (Tx3), **−** comisión int, **−** efectivo Tx4 (ajuste puntual: **`sql/migracion_reglas_cheque_ars_signos_cc_intermediario.sql`**). Ver **`sql/migracion_reglas_de_negocio_cheque_ars.sql`**. Resumen: **`docs/CHEQUE_ARS_INTERMEDIARIO.md`**.
 - Tipos **sin** filas en `reglas_de_negocio`: el sync usa **fallbacks legacy** (por transacción, CHEQUE, cierre sintético dos monedas). Conviene cargar reglas en tabla para todo tipo **activo** (ver query de cobertura en la doc de migración).
 
 ## Script SQL
