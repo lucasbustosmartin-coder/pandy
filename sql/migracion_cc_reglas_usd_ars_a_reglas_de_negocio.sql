@@ -1,0 +1,7 @@
+-- Reemplazo de la tabla previa `cc_reglas_usd_ars` por `reglas_de_negocio`.
+-- Si **ya** tenías `cc_reglas_usd_ars` en Supabase y **no** necesitás conservar filas:
+--   DROP TABLE IF EXISTS public.cc_reglas_usd_ars CASCADE;
+-- Luego ejecutá **`sql/reglas_de_negocio_tabla.sql`** (crea `reglas_de_negocio` + datos USD-ARS sin int).
+--
+-- Si necesitás conservar datos, exportá/ajustá manualmente o contactá; el esquema nuevo exige
+-- `tipo_operacion_codigo` y `monto_origen` con valores `me_prorrateado` / `mr_prorrateado` donde aplique.

@@ -1,0 +1,49 @@
+Tipo operación	Spec	Combinación (P/E)	Comando (ejecutar desde la raíz del repo; requiere .env.test y app levantada)
+CHEQUE-ARS	01-cc-combinaciones.spec.js	(todas las 12)	npm run test:e2e-cc-cheque-ars
+CHEQUE-ARS	01-cc-combinaciones.spec.js	P,P,P,P	COMBINACION_ID="P,P,P,P" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	P,P,P,E	COMBINACION_ID="P,P,P,E" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	P,E,P,P	COMBINACION_ID="P,E,P,P" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	P,E,P,E	COMBINACION_ID="P,E,P,E" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	E,P,P,P	COMBINACION_ID="E,P,P,P" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	E,P,P,E	COMBINACION_ID="E,P,P,E" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	E,P,E,P	COMBINACION_ID="E,P,E,P" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	E,P,E,E	COMBINACION_ID="E,P,E,E" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	E,E,P,P	COMBINACION_ID="E,E,P,P" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	E,E,P,E	COMBINACION_ID="E,E,P,E" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	E,E,E,P	COMBINACION_ID="E,E,E,P" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	01-cc-combinaciones.spec.js	E,E,E,E	COMBINACION_ID="E,E,E,E" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1
+CHEQUE-ARS	91-orden-cc.spec.js	(smoke 1 orden, sin COMBINACION_ID)	npx playwright test tests/e2e/91-orden-cc.spec.js -g "CHEQUE-ARS" --reporter=line --workers=1
+ARS-USD	02-cc-tipos-activos-combinaciones.spec.js	(todas 4: sin int)	npm run test:e2e-cc-ars-usd-sin-int
+ARS-USD	02-cc-tipos-activos-combinaciones.spec.js	P,P	TIPO_CODIGO=ARS-USD COMBINACION_ID="P,P" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+ARS-USD	02-cc-tipos-activos-combinaciones.spec.js	E,P	TIPO_CODIGO=ARS-USD COMBINACION_ID="E,P" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+ARS-USD	02-cc-tipos-activos-combinaciones.spec.js	P,E	TIPO_CODIGO=ARS-USD COMBINACION_ID="P,E" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+ARS-USD	02-cc-tipos-activos-combinaciones.spec.js	E,E	TIPO_CODIGO=ARS-USD COMBINACION_ID="E,E" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-ARS	02-cc-tipos-activos-combinaciones.spec.js	(todas 4: sin int)	npm run test:e2e-cc-usd-ars-sin-int
+USD-ARS	02-cc-tipos-activos-combinaciones.spec.js	P,P	TIPO_CODIGO=USD-ARS COMBINACION_ID="P,P" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-ARS	02-cc-tipos-activos-combinaciones.spec.js	E,P	TIPO_CODIGO=USD-ARS COMBINACION_ID="E,P" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-ARS	02-cc-tipos-activos-combinaciones.spec.js	P,E	TIPO_CODIGO=USD-ARS COMBINACION_ID="P,E" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-ARS	02-cc-tipos-activos-combinaciones.spec.js	E,E	TIPO_CODIGO=USD-ARS COMBINACION_ID="E,E" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-USD (sin intermediario)	02-cc-tipos-activos-combinaciones.spec.js	(todas 4)	npm run test:e2e-cc-usd-usd-sin-int
+USD-USD (sin intermediario)	02-cc-tipos-activos-combinaciones.spec.js	P,P	TIPO_CODIGO=USD-USD COMBINACION_ID="P,P" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-USD (sin intermediario)	02-cc-tipos-activos-combinaciones.spec.js	E,P	TIPO_CODIGO=USD-USD COMBINACION_ID="E,P" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-USD (sin intermediario)	02-cc-tipos-activos-combinaciones.spec.js	P,E	TIPO_CODIGO=USD-USD COMBINACION_ID="P,E" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-USD (sin intermediario)	02-cc-tipos-activos-combinaciones.spec.js	E,E	TIPO_CODIGO=USD-USD COMBINACION_ID="E,E" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-USD (con intermediario)	02-cc-tipos-activos-combinaciones.spec.js	(todas 4)	npm run test:e2e-cc-usd-usd-int-combos
+USD-USD (con intermediario)	02-cc-tipos-activos-combinaciones.spec.js	P,P	TIPO_CODIGO=USD-USD TIPO_USA_INTERMEDIARIO=true COMBINACION_ID="P,P" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-USD (con intermediario)	02-cc-tipos-activos-combinaciones.spec.js	E,P	TIPO_CODIGO=USD-USD TIPO_USA_INTERMEDIARIO=true COMBINACION_ID="E,P" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-USD (con intermediario)	02-cc-tipos-activos-combinaciones.spec.js	P,E	TIPO_CODIGO=USD-USD TIPO_USA_INTERMEDIARIO=true COMBINACION_ID="P,E" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-USD (con intermediario)	02-cc-tipos-activos-combinaciones.spec.js	E,E	TIPO_CODIGO=USD-USD TIPO_USA_INTERMEDIARIO=true COMBINACION_ID="E,E" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1
+USD-USD (con intermediario)	91-orden-cc.spec.js	(smoke)	npm run test:e2e-cc-usd-usd-int
+USD-ARS + intermediario (inversa)	03-cc-intermediario-inversa-combinaciones.spec.js	(todas)	npm run test:e2e-cc-usd-ars-int-inversa
+USD-ARS + intermediario (inversa)	03-cc-intermediario-inversa-combinaciones.spec.js	P,P	TIPO_CODIGO=USD-ARS COMBINACION_ID="P,P" npx playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1
+USD-ARS + intermediario (inversa)	03-cc-intermediario-inversa-combinaciones.spec.js	E,P	TIPO_CODIGO=USD-ARS COMBINACION_ID="E,P" npx playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1
+USD-ARS + intermediario (inversa)	03-cc-intermediario-inversa-combinaciones.spec.js	P,E	TIPO_CODIGO=USD-ARS COMBINACION_ID="P,E" npx playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1
+USD-ARS + intermediario (inversa)	03-cc-intermediario-inversa-combinaciones.spec.js	E,E	TIPO_CODIGO=USD-ARS COMBINACION_ID="E,E" npx playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1
+ARS-USD + intermediario (inversa)	03-cc-intermediario-inversa-combinaciones.spec.js	(todas)	npm run test:e2e-cc-ars-usd-int-inversa
+ARS-USD + intermediario (inversa)	03-cc-intermediario-inversa-combinaciones.spec.js	P,P	TIPO_CODIGO=ARS-USD COMBINACION_ID="P,P" npx playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1
+ARS-USD + intermediario (inversa)	03-cc-intermediario-inversa-combinaciones.spec.js	E,P	TIPO_CODIGO=ARS-USD COMBINACION_ID="E,P" npx playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1
+ARS-USD + intermediario (inversa)	03-cc-intermediario-inversa-combinaciones.spec.js	P,E	TIPO_CODIGO=ARS-USD COMBINACION_ID="P,E" npx playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1
+ARS-USD + intermediario (inversa)	03-cc-intermediario-inversa-combinaciones.spec.js	E,E	TIPO_CODIGO=ARS-USD COMBINACION_ID="E,E" npx playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1
+(paquete)	varios	01+02+03	npm run test:e2e-cc-activos-completo
+(paquete)	varios	02+03 sin 01	npm run test:e2e-cc-02-03
+(paquete)	varios	02 completo (todos los tipos 2 tx en un run)	npm run test:e2e-cc-tipos-2tx

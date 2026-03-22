@@ -131,33 +131,61 @@ function htmlSegmentoTipoOpLeg(leg, size = 22) {
   return '';
 }
 
+/** Círculo con icono de intermediario (misma línea visual que iconos de moneda en tipo op). */
+function htmlBadgeIntermediarioTipoOp() {
+  const t = escapeAttrTipoOp('Con intermediario');
+  return `<span class="tipo-op-icono-int" title="${t}" role="img" aria-label="Con intermediario"><svg class="tipo-op-icono-int-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>`;
+}
+
+function wrapTipoOperacionIconosHtml(innerHtml, titleBase, usaIntermediario, extraClass) {
+  const usaInt = usaIntermediario === true;
+  let titleFull = titleBase || '';
+  if (usaInt) titleFull = titleFull ? `${titleFull} · Con intermediario` : 'Con intermediario';
+  const title = escapeAttrTipoOp(titleFull);
+  const classes = ['tipo-op-iconos', extraClass || '', usaInt ? 'tipo-op-iconos--con-intermediario' : ''].filter(Boolean).join(' ');
+  if (!usaInt) {
+    return `<span class="${classes}" title="${title}">${innerHtml}</span>`;
+  }
+  return `<span class="${classes}" title="${title}"><span class="tipo-op-iconos-cuerpo" aria-hidden="true">${innerHtml}</span>${htmlBadgeIntermediarioTipoOp()}</span>`;
+}
+
 /**
  * HTML para mostrar un tipo de operación por código: iconos IN→OUT o solo cheque si el código incluye CHEQUE (ej. ARS-ARS-CHEQUE).
  * @param {string} codigo - tipos_operacion.codigo
  * @param {string} [nombreExtra] - para title accesible (nombre legible)
- * @param {{ iconoModo?: string, iconoUrlPublica?: string }} [opts] - icono_modo: auto | cheque | custom; custom requiere URL https válida
+ * @param {{ iconoModo?: string, iconoUrlPublica?: string, usaIntermediario?: boolean }} [opts] - icono_modo: auto | cheque | custom; custom requiere URL https válida; usaIntermediario agrega círculo con icono al lado del flujo
  * @returns {string}
  */
 export function htmlTipoOperacionIconos(codigo, nombreExtra, opts) {
   opts = opts || {};
+  const usaInt = opts.usaIntermediario === true;
   const modo = String(opts.iconoModo || 'auto').toLowerCase().trim();
   const urlCustom = String(opts.iconoUrlPublica || '').trim();
   const raw = (codigo || '').toString().trim();
   const c = raw.toUpperCase();
   const nombre = (nombreExtra || '').toString().trim();
   const titleText = raw && nombre ? `${raw} — ${nombre}` : (raw || nombre);
-  const title = escapeAttrTipoOp(titleText);
 
   if (modo === 'custom' && isHttpsUrlSegura(urlCustom)) {
-    return `<span class="tipo-op-iconos tipo-op-iconos--custom" title="${title}"><img src="${escapeAttrTipoOp(urlCustom)}" alt="" width="24" height="24" class="tipo-op-icono-custom" role="presentation"/></span>`;
+    return wrapTipoOperacionIconosHtml(
+      `<img src="${escapeAttrTipoOp(urlCustom)}" alt="" width="24" height="24" class="tipo-op-icono-custom" role="presentation"/>`,
+      titleText,
+      usaInt,
+      'tipo-op-iconos--custom'
+    );
   }
   if (modo === 'cheque') {
-    return `<span class="tipo-op-iconos" title="${title}"><img src="${TIPO_OP_ICONO_CHEQUE}" alt="" width="24" height="24" class="tipo-op-icono-cheque" role="presentation"/></span>`;
+    return wrapTipoOperacionIconosHtml(
+      `<img src="${TIPO_OP_ICONO_CHEQUE}" alt="" width="24" height="24" class="tipo-op-icono-cheque" role="presentation"/>`,
+      titleText,
+      usaInt,
+      ''
+    );
   }
 
   if (!c || c === '–') {
-    if (nombre) return `<span class="tipo-op-iconos" title="${escapeAttrTipoOp(nombre)}">${escapeHtmlTipoOp(nombre)}</span>`;
-    return '<span class="tipo-op-iconos">–</span>';
+    if (nombre) return wrapTipoOperacionIconosHtml(escapeHtmlTipoOp(nombre), nombre, usaInt, '');
+    return wrapTipoOperacionIconosHtml('–', '', false, '');
   }
 
   const partes = c.split('-').filter(Boolean);
@@ -169,17 +197,27 @@ export function htmlTipoOperacionIconos(codigo, nombreExtra, opts) {
     const ia = htmlSegmentoTipoOpLeg(partes[0], 22);
     const ib = htmlSegmentoTipoOpLeg(partes[1], 22);
     if (ia && ib) {
-      return `<span class="tipo-op-iconos" title="${title}"><span class="tipo-op-iconos-par" aria-hidden="true">${ia}<span class="tipo-op-iconos-sep">→</span>${ib}</span></span>`;
+      return wrapTipoOperacionIconosHtml(
+        `<span class="tipo-op-iconos-par" aria-hidden="true">${ia}<span class="tipo-op-iconos-sep">→</span>${ib}</span>`,
+        titleText,
+        usaInt,
+        ''
+      );
     }
   }
 
   if (c.includes('CHEQUE')) {
-    return `<span class="tipo-op-iconos" title="${title}"><img src="${TIPO_OP_ICONO_CHEQUE}" alt="" width="24" height="24" class="tipo-op-icono-cheque" role="presentation"/></span>`;
+    return wrapTipoOperacionIconosHtml(
+      `<img src="${TIPO_OP_ICONO_CHEQUE}" alt="" width="24" height="24" class="tipo-op-icono-cheque" role="presentation"/>`,
+      titleText,
+      usaInt,
+      ''
+    );
   }
 
   const parts = c.split('-');
   if (parts.length < 2) {
-    return `<span class="tipo-op-iconos" title="${title}">${escapeHtmlTipoOp(raw)}</span>`;
+    return wrapTipoOperacionIconosHtml(escapeHtmlTipoOp(raw), titleText, usaInt, '');
   }
 
   const a = parts[0];
@@ -187,8 +225,13 @@ export function htmlTipoOperacionIconos(codigo, nombreExtra, opts) {
   const ia = htmlSegmentoTipoOpLeg(a, 22);
   const ib = htmlSegmentoTipoOpLeg(b, 22);
   if (!ia || !ib) {
-    return `<span class="tipo-op-iconos" title="${title}">${escapeHtmlTipoOp(raw)}</span>`;
+    return wrapTipoOperacionIconosHtml(escapeHtmlTipoOp(raw), titleText, usaInt, '');
   }
 
-  return `<span class="tipo-op-iconos" title="${title}"><span class="tipo-op-iconos-par" aria-hidden="true">${ia}<span class="tipo-op-iconos-sep">→</span>${ib}</span></span>`;
+  return wrapTipoOperacionIconosHtml(
+    `<span class="tipo-op-iconos-par" aria-hidden="true">${ia}<span class="tipo-op-iconos-sep">→</span>${ib}</span>`,
+    titleText,
+    usaInt,
+    ''
+  );
 }

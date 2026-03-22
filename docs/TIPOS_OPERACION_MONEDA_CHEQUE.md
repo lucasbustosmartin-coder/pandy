@@ -17,7 +17,7 @@ Si el tipo es equivalente a cheque–ARS (`codigo === 'ARS-ARS'`, el código con
 - Wizard: importe + tasa cliente, intermediario obligatorio, tasa intermediario.
 - Auto instrumentación: 4 transacciones (cheque / efectivo cliente–Pandy e intermediario).
 - Comisión en ARS, concepto de comisión alineado al flujo ARS-ARS.
-- **Reglas CC**: `getReglasCcModelo` consulta `cc_modelo_reglas` con `tipo_operacion_codigo = 'ARS-ARS'` (las reglas en DB siguen ancladas a ese código hasta que exista migración explícita).
+- **Reglas CC**: **`reglas_de_negocio`** (`tipo_operacion_codigo = 'CHEQUE-ARS'`, `usa_intermediario = true`); motor en **`main.js`** vía `getReglasDeNegocio` + `aplicarMotorCcDesdeReglasDeNegocio`. Ver **`docs/CHEQUE_ARS_INTERMEDIARIO.md`**.
 
 ## Implementación (referencia)
 
@@ -25,7 +25,7 @@ Si el tipo es equivalente a cheque–ARS (`codigo === 'ARS-ARS'`, el código con
 - Selects del modal tipo: `index.html` (`tipo-operacion-moneda-in` / `out`).
 - Mapas de tipos en listados de órdenes incluyen `moneda_in`, `moneda_out` para resolver cheque sin depender solo del código.
 
-Los E2E **`cc-combinaciones.spec.js`** y **`orden-cc.spec.js`** usan **`data-codigo="CHEQUE-ARS"`**; ejecutá **`sql/seed_tipo_operacion_cheque_ars.sql`** en Supabase para que exista el tipo. Podés seguir usando **ARS-ARS** en manual u otros entornos; es equivalente en lógica de negocio.
+Los E2E **`01-cc-combinaciones.spec.js`** y **`91-orden-cc.spec.js`** usan **`data-codigo="CHEQUE-ARS"`**; ejecutá **`sql/seed_tipo_operacion_cheque_ars.sql`** en Supabase para que exista el tipo. Podés seguir usando **ARS-ARS** en manual u otros entornos; es equivalente en lógica de negocio.
 
 
 ## Migración recomendada en desarrollo

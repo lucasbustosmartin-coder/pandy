@@ -60,7 +60,8 @@ Todos estos movimientos **solo se añaden cuando las transacciones que los justi
 ## 5. Fuente de verdad
 
 - **Orden + transacciones (estado, pagador, cobrador, monto)** son la fuente de verdad.
-- **Saldo** = suma de movimientos por entidad por moneda. Solo se excluyen movimientos con `estado = 'anulado'`.
+- **Saldo (resumen CC y totales del modal detalle)** = **suma algebraica por moneda de los movimientos persistidos** en cuenta corriente para esa entidad, **excluyendo solo `anulado`**. Debe coincidir con lo que el usuario suma en la solapa **Movimientos** (mismas columnas USD/ARS/EUR).
+- **Reglas de negocio** (`reglas_de_negocio`, `cc_modelo_reglas`): deben generar los movimientos correctos para que la suma refleje la situación real; no se “corrige” el saldo en el front omitiendo filas.
 - No se usa el **texto del concepto** para decidir inserts/updates ni para el cálculo del saldo.
 
 ## 6. Resumen por tipo de flujo

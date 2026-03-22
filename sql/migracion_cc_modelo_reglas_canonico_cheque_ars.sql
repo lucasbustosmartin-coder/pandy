@@ -71,7 +71,7 @@ SELECT
   cc_intermediario_moneda_exposicion, cc_intermediario_monto_referencia
 FROM public.cc_modelo_reglas
 WHERE tipo_operacion_codigo = 'ARS-ARS-CHEQUE'
-ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada)
+ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada, linea_motor)
 DO UPDATE SET
   cc_cliente_signo = EXCLUDED.cc_cliente_signo,
   cc_cliente_suma_saldo = EXCLUDED.cc_cliente_suma_saldo,

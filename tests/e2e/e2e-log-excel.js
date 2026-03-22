@@ -3,6 +3,7 @@
 const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs');
+const { CC_COMBINACIONES_LOG } = require('./cc-combinaciones-log-workbook');
 
 const HEADERS_PASOS = ['Tipo operación', 'Paso', 'Acción', 'Resultado esperado', 'Comprobación', 'Estado', 'Observaciones', 'Fecha/Hora', 'Nro orden interno', 'Nro transacción (interno)'];
 const HEADERS_TRANSACCIONES = ['Tipo operación', 'Nro transacción', 'Pagador', 'Cobrador', 'Moneda', 'Modo pago', 'Monto', 'Saldo CC capturado (ARS)', 'Resultado', 'Fecha/Hora', 'Nro orden interno', 'Nro transacción (interno)'];
@@ -111,10 +112,11 @@ function logCajaControl(opts = {}) {
 /**
  * Escribe el log a un archivo Excel (hojas Pasos, Transacciones y Caja).
  * Si el archivo ya existe, agrega las nuevas filas en la primera fila libre (no vacía ni regenera), para poder comparar prueba vs app.
- * @param {string} [filePath] - Ruta del archivo. Si no se pasa, usa test-results/e2e-log-{tipoOperacion}.xlsx.
+ * Por defecto usa `test-results/cc-combinaciones-log.xlsx` y **conserva** otras hojas (p. ej. CC Combinaciones, CC Tipos 2tx).
+ * @param {string} [filePath] - Ruta del archivo; si se omite, `cc-combinaciones-log.xlsx`.
  */
 function writeLogToExcel(filePath) {
-  const outPath = filePath || path.join(process.cwd(), 'test-results', `e2e-log-${tipoOperacionActual || 'prueba'}.xlsx`);
+  const outPath = filePath || CC_COMBINACIONES_LOG;
   const dir = path.dirname(outPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -126,6 +128,7 @@ function writeLogToExcel(filePath) {
 
   if (fs.existsSync(outPath)) {
     const wb = XLSX.readFile(outPath);
+    if (!Array.isArray(wb.SheetNames)) wb.SheetNames = Object.keys(wb.Sheets || {});
     const wsPasos = wb.Sheets['Pasos'] || null;
     const wsTransacciones = wb.Sheets['Transacciones'] || null;
     const wsCaja = wb.Sheets['Caja'] || null;
@@ -142,8 +145,8 @@ function writeLogToExcel(filePath) {
     wb.Sheets['Pasos'] = wsPasosNew;
     wb.Sheets['Transacciones'] = wsTransNew;
     wb.Sheets['Caja'] = wsCajaNew;
-    if (!wb.SheetNames.includes('Caja')) {
-      wb.SheetNames.push('Caja');
+    for (const n of ['Pasos', 'Transacciones', 'Caja']) {
+      if (!wb.SheetNames.includes(n)) wb.SheetNames.push(n);
     }
     XLSX.writeFile(wb, outPath);
   } else {

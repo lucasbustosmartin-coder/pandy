@@ -47,6 +47,8 @@ let refreshDataIntervalId = null;
 const REFRESH_DATA_INTERVAL_MS = 30000;
 const SESSION_ACTIVITY_THROTTLE_MS = 30000; // actualizar lastActivityTime como máximo cada 30 s
 let lastActivityUpdate = 0;
+/** Evita carrera: si el usuario envía el login antes de que termine getSession() al cargar, el .then tardío no debe volver a mostrar login ni registrar de nuevo los listeners. */
+let authBootstrapFromGetSessionDone = false;
 
 function showLogin() {
   document.getElementById('sidebar').style.display = 'none';
@@ -110,6 +112,7 @@ function setupLoginAndRegister() {
           loginError.textContent = res.error.message || 'Error al iniciar sesión';
           return;
         }
+        authBootstrapFromGetSessionDone = true;
         onSessionReady(res.data.session);
       });
   });
@@ -128,6 +131,7 @@ function setupLoginAndRegister() {
           return;
         }
         if (res.data.session) {
+          authBootstrapFromGetSessionDone = true;
           onSessionReady(res.data.session);
         } else {
           registerError.textContent = 'Revisá tu email para confirmar la cuenta y luego iniciá sesión.';
@@ -672,28 +676,102 @@ function hayTipoOperacionActivoConMoneda(moneda) {
     .catch(() => true);
 }
 
-/** Muestra/oculta EUR en cards de Efectivo (Inicio y Cajas) y ajusta el grid a 2 monedas cuando se oculta. */
-function setVisibilidadEurCardsEfectivo(mostrarEur) {
-  const map = [
-    { cardId: 'inicio-card-efectivo', eurIds: ['inicio-efectivo-eur-inicial', 'inicio-efectivo-eur-actual', 'inicio-efectivo-eur-var', 'inicio-efectivo-eur-tendencia'] },
-    { cardId: 'cajas-card-efectivo', eurIds: ['cajas-saldo-efectivo-eur'] },
-  ];
+const MONEDAS_PANEL_CAJA_EFECTIVO = ['USD', 'ARS', 'EUR'];
+const MONEDAS_PANEL_CAJA_BANCO = ['USD', 'ARS'];
 
-  map.forEach(({ cardId, eurIds }) => {
-    const card = document.getElementById(cardId);
-    if (!card) return;
-    const filas = card.querySelectorAll('.inicio-caja-fila');
-    filas.forEach((fila) => {
-      if (mostrarEur) fila.classList.remove('inicio-caja-banco-fila');
-      else fila.classList.add('inicio-caja-banco-fila');
-      const eurCol = fila.children && fila.children[3] ? fila.children[3] : null;
-      if (eurCol) eurCol.style.display = mostrarEur ? '' : 'none';
-    });
-    eurIds.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = mostrarEur ? '' : 'none';
+/** Monedas en UI CC (resumen y movimientos): mismo criterio que Panel/Cajas (`hayTipoOperacionActivoConMoneda`). Orden resumen = USD, EUR, ARS. */
+const MONEDAS_CC_UI = ['USD', 'EUR', 'ARS'];
+/** Orden de columnas monetarias en tablas de movimientos CC (vista + modal). */
+const MONEDAS_CC_MOVIMIENTOS_COLS = ['USD', 'ARS', 'EUR'];
+let ccUiMonedasVisibles = { USD: true, EUR: true, ARS: true };
+
+function reaplicarVisibilidadMonedasCuentaCorrienteDom() {
+  ['#vista-cuenta-corriente', '#modal-cc-detalle-backdrop'].forEach((sel) => {
+    const root = document.querySelector(sel);
+    if (!root) return;
+    MONEDAS_CC_UI.forEach((m) => {
+      const show = !!ccUiMonedasVisibles[m];
+      root.querySelectorAll(`[data-cc-moneda-col="${m}"]`).forEach((el) => {
+        el.style.display = show ? '' : 'none';
+      });
     });
   });
+}
+
+/** Aplica visibilidad USD/EUR/ARS en CC según tipos de operación activos (IN/OUT). */
+function aplicarVisibilidadMonedasCuentaCorriente(flagsRaw) {
+  ccUiMonedasVisibles = normalizarFlagsCajaMonedas(flagsRaw, MONEDAS_CC_UI);
+  reaplicarVisibilidadMonedasCuentaCorrienteDom();
+}
+
+function ccColspanResumenSaldosVacio() {
+  const n = MONEDAS_CC_UI.filter((m) => ccUiMonedasVisibles[m]).length;
+  return 1 + n + 1;
+}
+
+function ccColspanVistaDetalleMovimientos() {
+  const n = MONEDAS_CC_MOVIMIENTOS_COLS.filter((m) => ccUiMonedasVisibles[m]).length;
+  return 5 + n + 3;
+}
+
+function ccColspanModalDetalleMovimientos() {
+  const n = MONEDAS_CC_MOVIMIENTOS_COLS.filter((m) => ccUiMonedasVisibles[m]).length;
+  return 5 + n + 1;
+}
+
+function htmlCcModalSaldosCards(saldos) {
+  const sal = saldos || { USD: 0, EUR: 0, ARS: 0 };
+  const iconUrls = { USD: '/assets/Icono_Dolar.avif', EUR: '/assets/Icono_Euro.avif', ARS: '/assets/Icono_ARS.webp' };
+  return MONEDAS_CC_UI.map((mon) => {
+    const s = Number(sal[mon]) || 0;
+    const label = s >= 0 ? 'Positivo' : 'Negativo';
+    const val = formatMonto(s >= 0 ? s : -s, mon);
+    const cls = 'valor ' + (s >= 0 ? 'positivo' : 'negativo');
+    return `<div class="card" data-cc-moneda-col="${mon}" style="min-width:120px;"><span class="card-titulo"><img src="${iconUrls[mon]}" alt="" class="cc-icono-moneda" width="20" height="20"/> ${mon}</span><span class="cc-saldo-label" aria-hidden="true">${label}</span><span class="${cls}">${val}</span></div>`;
+  }).join('');
+}
+
+function normalizarFlagsCajaMonedas(flags, ordenKeys) {
+  const out = {};
+  ordenKeys.forEach((k) => { out[k] = !!(flags && flags[k]); });
+  if (ordenKeys.every((k) => !out[k])) ordenKeys.forEach((k) => { out[k] = true; });
+  return out;
+}
+
+function labelWidthRemPanelCaja() {
+  try {
+    return window.matchMedia && window.matchMedia('(max-width: 768px)').matches ? '5.5rem' : '6.5rem';
+  } catch (_) {
+    return '6.5rem';
+  }
+}
+
+/** Oculta columnas USD/ARS/EUR (Efectivo) y USD/ARS (Banco) en Panel y Cajas si ningún tipo de operación activo usa esa moneda en IN/OUT. */
+function setVisibilidadColumnasMonedasPanelCajas(efectivoFlagsRaw, bancoFlagsRaw) {
+  const ef = normalizarFlagsCajaMonedas(efectivoFlagsRaw, MONEDAS_PANEL_CAJA_EFECTIVO);
+  const ba = normalizarFlagsCajaMonedas(bancoFlagsRaw, MONEDAS_PANEL_CAJA_BANCO);
+  const labelW = labelWidthRemPanelCaja();
+
+  function aplicarCard(cardId, flags, ordenMonedas) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const n = ordenMonedas.filter((m) => flags[m]).length;
+    const gridTpl = n === 0 ? labelW : `${labelW} repeat(${n}, minmax(0, 1fr))`;
+    ordenMonedas.forEach((m) => {
+      const show = !!flags[m];
+      card.querySelectorAll(`[data-caja-moneda-col="${m}"]`).forEach((el) => {
+        el.style.display = show ? '' : 'none';
+      });
+    });
+    card.querySelectorAll('.inicio-caja-fila').forEach((fila) => {
+      fila.style.gridTemplateColumns = gridTpl;
+    });
+  }
+
+  aplicarCard('inicio-card-efectivo', ef, MONEDAS_PANEL_CAJA_EFECTIVO);
+  aplicarCard('cajas-card-efectivo', ef, MONEDAS_PANEL_CAJA_EFECTIVO);
+  aplicarCard('inicio-card-banco', ba, MONEDAS_PANEL_CAJA_BANCO);
+  aplicarCard('cajas-card-banco', ba, MONEDAS_PANEL_CAJA_BANCO);
 }
 
 function loadCajas() {
@@ -726,12 +804,18 @@ function loadCajas() {
   Promise.all([
     getListaMovimientosCajaParaSaldos(),
     client.from('tipos_movimiento_caja').select('id, nombre'),
+    hayTipoOperacionActivoConMoneda('USD'),
+    hayTipoOperacionActivoConMoneda('ARS'),
     hayTipoOperacionActivoConMoneda('EUR'),
   ])
-    .then(([list, resTipos, mostrarEur]) => {
+    .then(([list, resTipos, monUsd, monArs, monEur]) => {
     return delayMinLoading(loadingShownAtCajas).then(() => {
     loadingEl.style.display = 'none';
-    setVisibilidadEurCardsEfectivo(!!mostrarEur);
+    const efRaw = { USD: !!monUsd, ARS: !!monArs, EUR: !!monEur };
+    const baRaw = { USD: !!monUsd, ARS: !!monArs };
+    setVisibilidadColumnasMonedasPanelCajas(efRaw, baRaw);
+    const efVis = normalizarFlagsCajaMonedas(efRaw, MONEDAS_PANEL_CAJA_EFECTIVO);
+    const baVis = normalizarFlagsCajaMonedas(baRaw, MONEDAS_PANEL_CAJA_BANCO);
     const saldos = saldosCajaDesdeLista(list);
     const tiposMap = {};
     (resTipos.data || []).forEach((t) => { tiposMap[t.id] = t.nombre || '–'; });
@@ -741,11 +825,11 @@ function loadCajas() {
       const base = el.id && el.id.startsWith('cajas-saldo-') ? 'inicio-caja-valor valor ' : 'valor ';
       el.className = base + (valor >= 0 ? 'positivo' : 'negativo');
     };
-    setVal(document.getElementById('cajas-saldo-efectivo-usd'), saldos.efectivo.USD, 'USD');
-    if (mostrarEur) setVal(document.getElementById('cajas-saldo-efectivo-eur'), saldos.efectivo.EUR, 'EUR');
-    setVal(document.getElementById('cajas-saldo-efectivo-ars'), saldos.efectivo.ARS, 'ARS');
-    setVal(document.getElementById('cajas-saldo-banco-usd'), saldos.banco.USD, 'USD');
-    setVal(document.getElementById('cajas-saldo-banco-ars'), saldos.banco.ARS, 'ARS');
+    if (efVis.USD) setVal(document.getElementById('cajas-saldo-efectivo-usd'), saldos.efectivo.USD, 'USD');
+    if (efVis.ARS) setVal(document.getElementById('cajas-saldo-efectivo-ars'), saldos.efectivo.ARS, 'ARS');
+    if (efVis.EUR) setVal(document.getElementById('cajas-saldo-efectivo-eur'), saldos.efectivo.EUR, 'EUR');
+    if (baVis.USD) setVal(document.getElementById('cajas-saldo-banco-usd'), saldos.banco.USD, 'USD');
+    if (baVis.ARS) setVal(document.getElementById('cajas-saldo-banco-ars'), saldos.banco.ARS, 'ARS');
     setVal(document.getElementById('cajas-saldo-cheque-ars'), saldos.cheque.ARS, 'ARS');
 
     const filtrados = (cajasMonedaActual === 'TODO' ? list : list.filter((m) => m.moneda === cajasMonedaActual))
@@ -833,13 +917,19 @@ function loadInicio() {
   ayer.setDate(ayer.getDate() - 1);
   const ayerStr = ayer.getFullYear() + '-' + String(ayer.getMonth() + 1).padStart(2, '0') + '-' + String(ayer.getDate()).padStart(2, '0');
 
-  const monedasEfectivo = ['USD', 'ARS', 'EUR'];
-  const monedasBanco = ['USD', 'ARS'];
-
   // Usar la misma lista y el mismo cálculo que la vista Cajas: Saldo Actual = saldos de las cards de Cajas.
-  Promise.all([getListaMovimientosCajaParaSaldos(), hayTipoOperacionActivoConMoneda('EUR')])
-    .then(([list, mostrarEur]) => {
-      setVisibilidadEurCardsEfectivo(!!mostrarEur);
+  Promise.all([
+    getListaMovimientosCajaParaSaldos(),
+    hayTipoOperacionActivoConMoneda('USD'),
+    hayTipoOperacionActivoConMoneda('ARS'),
+    hayTipoOperacionActivoConMoneda('EUR'),
+  ])
+    .then(([list, monUsd, monArs, monEur]) => {
+      const efRaw = { USD: !!monUsd, ARS: !!monArs, EUR: !!monEur };
+      const baRaw = { USD: !!monUsd, ARS: !!monArs };
+      setVisibilidadColumnasMonedasPanelCajas(efRaw, baRaw);
+      const efVis = normalizarFlagsCajaMonedas(efRaw, MONEDAS_PANEL_CAJA_EFECTIVO);
+      const baVis = normalizarFlagsCajaMonedas(baRaw, MONEDAS_PANEL_CAJA_BANCO);
       const saldoActual = saldosCajaDesdeLista(list);
       const saldoT1 = { efectivo: { USD: 0, EUR: 0, ARS: 0 }, banco: { USD: 0, EUR: 0, ARS: 0 }, cheque: { USD: 0, EUR: 0, ARS: 0 } };
       (list || []).forEach((m) => {
@@ -882,8 +972,8 @@ function loadInicio() {
           elTend.innerHTML = variacion > 0 ? svgSube : variacion < 0 ? svgBaja : svgIgual;
         }
       };
-      (mostrarEur ? monedasEfectivo : ['USD', 'ARS']).forEach((mon) => setFila('efectivo', mon));
-      monedasBanco.forEach((mon) => setFila('banco', mon));
+      MONEDAS_PANEL_CAJA_EFECTIVO.filter((mon) => efVis[mon]).forEach((mon) => setFila('efectivo', mon));
+      MONEDAS_PANEL_CAJA_BANCO.filter((mon) => baVis[mon]).forEach((mon) => setFila('banco', mon));
       setFila('cheque', 'ARS');
       loadInicioPendientes();
     });
@@ -1031,7 +1121,7 @@ function openModalOrdenesPendientes(estadoFilter) {
       const intIds = [...new Set(list.map((o) => o.intermediario_id).filter(Boolean))];
       return Promise.all([
         clienteIds.length ? client.from('clientes').select('id, nombre').in('id', clienteIds) : Promise.resolve({ data: [] }),
-        tipoOpIds.length ? client.from('tipos_operacion').select('id, nombre, codigo, moneda_in, moneda_out, icono_modo, icono_url_publica').in('id', tipoOpIds) : Promise.resolve({ data: [] }),
+        tipoOpIds.length ? client.from('tipos_operacion').select('id, nombre, codigo, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica').in('id', tipoOpIds) : Promise.resolve({ data: [] }),
         intIds.length ? client.from('intermediarios').select('id, nombre').in('id', intIds) : Promise.resolve({ data: [] }),
       ]).then(([cr, tr, ir]) => {
         const clientesMap = {};
@@ -1043,6 +1133,7 @@ function openModalOrdenesPendientes(estadoFilter) {
             nombre: t.nombre || '',
             moneda_in: (t.moneda_in || '').toString().trim(),
             moneda_out: (t.moneda_out || '').toString().trim(),
+            usa_intermediario: t.usa_intermediario === true,
             icono_modo: (t.icono_modo || 'auto').toString().trim().toLowerCase(),
             icono_url_publica: (t.icono_url_publica || '').toString().trim(),
           };
@@ -1276,7 +1367,7 @@ let ccDetalleModalSortDir = 1;
 function tiposOperacionNestedMeta(tiposNested) {
   const t = tiposNested && (Array.isArray(tiposNested) ? tiposNested[0] : tiposNested);
   if (!t || typeof t !== 'object') {
-    return { codigo: '–', nombre: '', icono_modo: 'auto', icono_url_publica: '' };
+    return { codigo: '–', nombre: '', icono_modo: 'auto', icono_url_publica: '', usa_intermediario: false };
   }
   const modRaw = (t.icono_modo != null ? String(t.icono_modo) : 'auto').trim().toLowerCase();
   const modo = modRaw === 'cheque' || modRaw === 'custom' ? modRaw : 'auto';
@@ -1285,6 +1376,7 @@ function tiposOperacionNestedMeta(tiposNested) {
     nombre: t.nombre != null ? String(t.nombre) : '',
     icono_modo: modo,
     icono_url_publica: t.icono_url_publica != null ? String(t.icono_url_publica).trim() : '',
+    usa_intermediario: t.usa_intermediario === true,
   };
 }
 
@@ -1309,6 +1401,7 @@ function ccDetalleRowsConTipoOpDesdeOrdenes(movimientos, ordenes) {
       tipo_op_nombre: meta ? meta.nombre : '',
       tipo_op_icono_modo: meta ? meta.icono_modo : 'auto',
       tipo_op_icono_url: meta ? meta.icono_url_publica : '',
+      tipo_op_usa_intermediario: meta ? meta.usa_intermediario === true : false,
     };
   });
 }
@@ -1340,7 +1433,7 @@ function contribucionPendienteCcUnificada(t, orden, transaccionesOrden) {
   // Intermediario: Pandy debe → restar del saldo (se muestra en rojo).
   if (orden.intermediario_id && pagador === 'pandy' && cobrador === 'intermediario') {
     out.intermediario = { id: orden.intermediario_id, delta: { USD: 0, EUR: 0, ARS: 0 } };
-    out.intermediario.delta[mon] = val;
+    out.intermediario.delta[mon] = -val;
   }
   // Cliente: mismo criterio por moneda (ingreso pendiente + egreso ejecutada → +mr; ingreso ejecutada + egreso pendiente → -me).
   if (orden.cliente_id && transaccionesOrden && transaccionesOrden.length) {
@@ -1481,7 +1574,7 @@ function incluirEnMovimientosCcIntermediarioModelo(orden, t) {
 }
 
 /**
- * Normaliza codigo de tipo de operación para coincidir con cc_modelo_reglas (ej. "CHEQUE - ARS" → "CHEQUE-ARS").
+ * Normaliza codigo de tipo de operación para coincidir con `reglas_de_negocio` / catálogo (ej. "CHEQUE - ARS" → "CHEQUE-ARS").
  * @param {string} codigo
  * @returns {string|null}
  */
@@ -1499,12 +1592,11 @@ function monedaCatalogoParaOrden(m) {
 }
 
 /**
- * Mismo flujo que ARS-ARS (CHEQUE + intermediario, comisión, reglas cc_modelo como ARS-ARS).
- * Código legacy ARS-ARS / *CHEQUE*, o moneda_in/out CHEQUE+ARS.
+ * Operación cheque en pesos: **CHEQUE-ARS** (catálogo) o moneda_in/out CHEQUE+ARS.
+ * El código **ARS-ARS** ya no se usa como tipo de operación (eliminado del catálogo).
  */
 function esTipoOperacionChequeArs(codigo, monedaIn, monedaOut) {
   const c = (codigo || '').toString().trim().toUpperCase();
-  if (c === 'ARS-ARS') return true;
   if (c.includes('CHEQUE')) return true;
   const mi = (monedaIn || '').toString().trim().toUpperCase();
   const mo = (monedaOut || '').toString().trim().toUpperCase();
@@ -1547,51 +1639,14 @@ function esOrdenChequeArsDesdeOrden(orden) {
 }
 
 /**
- * Carga reglas del modelo CC desde Supabase. Si no hay filas, el front usa fallback (incluir todo / suma desde movimientos).
- * docs/CC_MODELO_ENGINE_TABLA.md
- * @param {string} codigo - tipo_operacion.codigo (ej. 'CHEQUE-ARS', 'ARS-ARS')
- * @param {boolean} usaIntermediario
- * @returns {Promise<Array>} reglas o []
+ * Booleano desde Postgres/JSON (evita que el string "false" sea truthy con !!v en filtros de reglas).
  */
-function getReglasCcModelo(codigo, usaIntermediario, monedaIn, monedaOut) {
-  if (!codigo) return Promise.resolve([]);
-  const codigoNorm = normalizarCodigoTipoOperacion(codigo) || codigo;
-  if (esTipoOperacionChequeArs(codigo, monedaIn, monedaOut)) {
-    // Canonico nuevo: CHEQUE-ARS. Fallback legacy: ARS-ARS.
-    return client.from('cc_modelo_reglas').select('*').eq('tipo_operacion_codigo', 'CHEQUE-ARS').eq('usa_intermediario', !!usaIntermediario)
-      .then((r) => {
-        const rows = (r.data && Array.isArray(r.data)) ? r.data : [];
-        if (rows.length > 0) return rows;
-        return client.from('cc_modelo_reglas').select('*').eq('tipo_operacion_codigo', 'ARS-ARS').eq('usa_intermediario', !!usaIntermediario)
-          .then((r2) => (r2.data && Array.isArray(r2.data) ? r2.data : []))
-          .catch(() => []);
-      })
-      .catch(() => []);
-  }
-  return client.from('cc_modelo_reglas').select('*').eq('tipo_operacion_codigo', codigoNorm).eq('usa_intermediario', !!usaIntermediario)
-    .then((r) => (r.data && Array.isArray(r.data) ? r.data : []))
-    .catch(() => []);
-}
-
-/**
- * Busca una regla por (pagador, cobrador, tipo, es_comision, estado_transaccion, contrapartida_ejecutada).
- * Normaliza strings a minúsculas.
- */
-function lookupRegla(reglas, pagador, cobrador, tipoTransaccion, esComision, estadoTransaccion, contrapartidaEjecutada) {
-  if (!reglas || !reglas.length) return null;
-  const pag = String(pagador || '').toLowerCase();
-  const cob = String(cobrador || '').toLowerCase();
-  const tipo = String(tipoTransaccion || '').toLowerCase();
-  const est = String(estadoTransaccion || '').toLowerCase();
-  const cont = !!contrapartidaEjecutada;
-  return reglas.find((r) =>
-    (r.pagador || '').toLowerCase() === pag &&
-    (r.cobrador || '').toLowerCase() === cob &&
-    (r.tipo_transaccion || '').toLowerCase() === tipo &&
-    !!r.es_comision === !!esComision &&
-    (r.estado_transaccion || '').toLowerCase() === est &&
-    !!r.contrapartida_ejecutada === cont
-  ) || null;
+function coercePgBooleanStrict(v) {
+  if (v === true) return true;
+  if (v === false) return false;
+  if (v == null) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === 'true' || s === 't' || s === '1';
 }
 
 /** True si la contrapartida del par (cliente↔pandy o pandy↔intermediario) está ejecutada. */
@@ -1599,6 +1654,49 @@ function contrapartidaEjecutada(transacciones, pagador, cobrador, tipoTransaccio
   const pag = String(pagador || '').toLowerCase();
   const cob = String(cobrador || '').toLowerCase();
   const tipo = String(tipoTransaccion || '').toLowerCase();
+  // Flujo inverso operativo: Cliente->Intermediario se considera contrapartida de Pandy->Cliente.
+  if (tipo === 'ingreso' && pag === 'cliente' && cob === 'intermediario') {
+    return (transacciones || []).some((t) =>
+      (t.tipo || '').toLowerCase() === 'egreso' &&
+      String(t.pagador || '').toLowerCase() === 'pandy' &&
+      String(t.cobrador || '').toLowerCase() === 'cliente' &&
+      (t.estado || '').toLowerCase() === 'ejecutada'
+    );
+  }
+  if (tipo === 'egreso' && pag === 'pandy' && cob === 'cliente') {
+    return (transacciones || []).some((t) =>
+      (t.tipo || '').toLowerCase() === 'ingreso' &&
+      String(t.pagador || '').toLowerCase() === 'cliente' &&
+      (
+        String(t.cobrador || '').toLowerCase() === 'pandy' ||
+        String(t.cobrador || '').toLowerCase() === 'intermediario'
+      ) &&
+      (t.estado || '').toLowerCase() === 'ejecutada'
+    );
+  }
+  // Flujo intermediado (Pandy central): cuando la transacción es Int->Cliente (egreso),
+  // su contrapartida operativa es Cliente->Pandy (ingreso), no Cliente->Intermediario.
+  if (tipo === 'egreso' && pag === 'intermediario' && cob === 'cliente') {
+    return (transacciones || []).some((t) =>
+      (t.tipo || '').toLowerCase() === 'ingreso' &&
+      String(t.pagador || '').toLowerCase() === 'cliente' &&
+      String(t.cobrador || '').toLowerCase() === 'pandy' &&
+      (t.estado || '').toLowerCase() === 'ejecutada'
+    );
+  }
+  // Simétrico: para Cliente->Pandy (ingreso), considerar como contrapartida pagador hacia Cliente
+  // tanto Pandy->Cliente como Intermediario->Cliente.
+  if (tipo === 'ingreso' && pag === 'cliente' && cob === 'pandy') {
+    return (transacciones || []).some((t) =>
+      (t.tipo || '').toLowerCase() === 'egreso' &&
+      ((String(t.cobrador || '').toLowerCase() === 'cliente') || (String(t.cobrador || '').toLowerCase() === 'intermediario')) &&
+      ((String(t.pagador || '').toLowerCase() === 'pandy') || (String(t.pagador || '').toLowerCase() === 'intermediario')) &&
+      (t.estado || '').toLowerCase() === 'ejecutada'
+    );
+  }
+  // Pandy->Intermediario (egreso): sin caso especial. La contrapartida simétrica es
+  // Ingreso Intermediario->Pandy ejecutada (Tx4). No usar Cliente->Pandy: en E,P,P,P
+  // Tx1 ejecutada no debe marcar contrapartida de Tx3 si Tx4 sigue pendiente (CHEQUE-ARS).
   const otroTipo = tipo === 'ingreso' ? 'egreso' : 'ingreso';
   const otroPag = cob;
   const otroCob = pag;
@@ -1610,126 +1708,436 @@ function contrapartidaEjecutada(transacciones, pagador, cobrador, tipoTransaccio
   );
 }
 
+/** True si hay egreso ejecutado que entrega al cliente (Pandy→Cliente o Intermediario→Cliente). Usado para “par cliente cerrado” en USD-USD+int. */
+function egresoEntregaAClienteEjecutado(transacciones) {
+  return (transacciones || []).some((t) =>
+    (t.tipo || '').toLowerCase() === 'egreso' &&
+    String(t.cobrador || '').toLowerCase() === 'cliente' &&
+    (String(t.pagador || '').toLowerCase() === 'pandy' || String(t.pagador || '').toLowerCase() === 'intermediario') &&
+    (t.estado || '').toLowerCase() === 'ejecutada'
+  );
+}
+
+/** Ingreso ejecutado del cliente hacia Pandy o hacia intermediario (patrones USD-USD+int). */
+function ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) {
+  return (transacciones || []).some((t) =>
+    (t.tipo || '').toLowerCase() === 'ingreso' &&
+    String(t.pagador || '').toLowerCase() === 'cliente' &&
+    (String(t.cobrador || '').toLowerCase() === 'pandy' || String(t.cobrador || '').toLowerCase() === 'intermediario') &&
+    (t.estado || '').toLowerCase() === 'ejecutada'
+  );
+}
+
 /**
  * Estado efectivo para comisión sin transacción propia. La tabla define condicion_estado_comision; este motor solo interpreta el nombre.
- * par_pandy_int: ejecutada si al menos Tx3 o Tx4 ejecutada (simétrico al par cliente).
- * par_cliente: ejecutada si par cerrado (Tx1 y Tx2 ejecutadas) O Tx2 ejecutada (Pandy ya pagó → saldo cliente 200k con detalle 195k+5k).
+ * par_pandy_int: ejecutada si al menos Tx3 o Tx4 ejecutada. Si existen transacciones Pandy↔Intermediario
+ * en la instrumentación, no se usa el cierre Cliente↔Pandy como sustituto (comisión int. solo con actividad en ese par).
+ * par_cliente (comisión Pandy): ejecutada si Tx1 o Tx2 ejecutada.
  */
 function estadoEfectivoComision(transacciones, condicion) {
   if (condicion === 'par_pandy_int') {
     const hayTx3 = (transacciones || []).some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && (t.estado || '').toLowerCase() === 'ejecutada');
     const hayTx4 = (transacciones || []).some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'intermediario' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
-    return (hayTx3 || hayTx4) ? 'ejecutada' : 'pendiente';
+    if (hayTx3 || hayTx4) return 'ejecutada';
+    // Si la orden tiene patas Pandy↔Intermediario instrumentadas (CHEQUE-ARS canónico), la comisión int. no debe
+    // devengar solo por cerrar Cliente↔Pandy (evita E,E,P,P con comisión int. indebida; ver E2E 12 combinaciones).
+    const hayInstrumentacionPandyInt = (transacciones || []).some((t) => {
+      const tipo = (t.tipo || '').toLowerCase();
+      const pag = String(t.pagador || '').toLowerCase();
+      const cob = String(t.cobrador || '').toLowerCase();
+      return (tipo === 'egreso' && pag === 'pandy' && cob === 'intermediario')
+        || (tipo === 'ingreso' && pag === 'intermediario' && cob === 'pandy');
+    });
+    if (hayInstrumentacionPandyInt) return 'pendiente';
+    // Legacy: órdenes que solo instrumentan Cliente↔Pandy o Cliente↔Intermediario+Pandy→Cliente (sin filas Tx3/Tx4).
+    const tx1 = ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones);
+    const tx2 = egresoEntregaAClienteEjecutado(transacciones);
+    return tx1 && tx2 ? 'ejecutada' : 'pendiente';
   }
   if (condicion === 'par_cliente') {
-    const tx1 = (transacciones || []).some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
-    const tx2 = (transacciones || []).some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'cliente' && (t.estado || '').toLowerCase() === 'ejecutada');
-    return (tx1 && tx2) || tx2 ? 'ejecutada' : 'pendiente';
+    const tx1 = ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones);
+    const tx2 = egresoEntregaAClienteEjecutado(transacciones);
+    return (tx1 || tx2) ? 'ejecutada' : 'pendiente';
   }
   return 'ejecutada';
 }
 
-/**
- * Obtiene condicion_estado_comision de la tabla para (pagador, cobrador, tipo, es_comision=true). Solo una fila por tipo de comisión.
- */
-function getCondicionComision(reglas, pagador, cobrador, tipoTransaccion) {
-  const r = lookupRegla(reglas, pagador, cobrador, tipoTransaccion, true, 'ejecutada', false);
-  return (r && r.condicion_estado_comision) ? r.condicion_estado_comision : null;
+/** Condición de comisión desde `reglas_de_negocio` (filas es_comision con condicion_estado_comision). */
+function getCondicionComisionReglasNegocio(reglas, tipoCodigo, pagador, cobrador, tipoTransaccion) {
+  const tc = String(tipoCodigo || '').toUpperCase();
+  const pag = String(pagador || '').toLowerCase();
+  const cob = String(cobrador || '').toLowerCase();
+  const tip = String(tipoTransaccion || '').toLowerCase();
+  const candidates = (reglas || []).filter((r) =>
+    String(r.tipo_operacion_codigo || '').toUpperCase() === tc &&
+    coercePgBooleanStrict(r.es_comision) === true &&
+    (r.pagador || '').toLowerCase() === pag &&
+    (r.cobrador || '').toLowerCase() === cob &&
+    (r.tipo_transaccion || '').toLowerCase() === tip
+  );
+  const withC = candidates.find((r) => (r.condicion_estado_comision || '').trim() !== '');
+  return (withC && withC.condicion_estado_comision) ? withC.condicion_estado_comision : null;
 }
 
 /**
- * Moneda y monto base para CC cliente según cc_modelo_reglas (cc_cliente_moneda_exposicion / cc_cliente_monto_referencia).
- * Valores: orden_recibida | orden_entregada | transaccion; mr | me | monto_transaccion.
- * Si ambas columnas son null/vacías → comportamiento legacy del motor.
+ * Reglas de negocio (`reglas_de_negocio`): fuente de verdad del motor CC (ver docs/MIGRACION_UNA_TABLA_REGLAS_DE_NEGOCIO.md).
+ * Si no hay filas para el par `(codigo, usa_intermediario)`, el sync usa fallbacks legacy (sin motor de tabla).
  */
-function resolverMonedaYMontoCcClienteMotor(regla, orden, t, ctx) {
-  const montoT = Number(ctx.montoT) || 0;
-  const mrN = Number(ctx.mr) || 0;
-  const meN = Number(ctx.me) || 0;
-  const monR = (ctx.monR || 'USD').toUpperCase();
-  const monE = (ctx.monE || 'USD').toUpperCase();
-  const mon = (ctx.mon || 'USD').toUpperCase();
-  const pag = ctx.pag;
-  const cob = ctx.cob;
-  const tipo = ctx.tipo;
-  const expRaw = regla && regla.cc_cliente_moneda_exposicion != null ? String(regla.cc_cliente_moneda_exposicion).toLowerCase().trim() : '';
-  const refRaw = regla && regla.cc_cliente_monto_referencia != null ? String(regla.cc_cliente_monto_referencia).toLowerCase().trim() : '';
-  if (!expRaw && !refRaw) {
-    let base = montoT;
-    if (pag === 'cliente' && cob === 'pandy' && tipo === 'ingreso') base = mrN;
-    const monCc = (pag === 'cliente' && cob === 'pandy' && tipo === 'ingreso') ? monR : mon;
-    return { moneda: monCc, monto: base };
-  }
-  const monFromExp = (e) => {
-    if (e === 'orden_recibida' || e === 'recibida') return monR;
-    if (e === 'orden_entregada' || e === 'entregada') return monE;
-    if (e === 'transaccion') return mon;
-    return null;
-  };
-  const montoFromRef = (r0) => {
-    if (r0 === 'mr') return mrN;
-    if (r0 === 'me') return meN;
-    if (r0 === 'monto_transaccion') return montoT;
-    return montoT;
-  };
-  let monCc = monFromExp(expRaw);
-  if (!monCc) monCc = (pag === 'cliente' && cob === 'pandy' && tipo === 'ingreso') ? monR : mon;
-  let base;
-  if (refRaw) base = montoFromRef(refRaw);
-  else if (expRaw === 'orden_recibida' || expRaw === 'recibida') base = mrN;
-  else if (expRaw === 'orden_entregada' || expRaw === 'entregada') base = meN;
-  else if (expRaw === 'transaccion') base = montoT;
-  else {
-    base = montoT;
-    if (pag === 'cliente' && cob === 'pandy' && tipo === 'ingreso') base = mrN;
-  }
-  return { moneda: (monCc || monR).toUpperCase(), monto: base };
+function getReglasDeNegocio(codigoTipoOperacion, usaIntermediario) {
+  const c = String(codigoTipoOperacion || '').trim().toUpperCase();
+  if (!c) return Promise.resolve([]);
+  return client.from('reglas_de_negocio').select('*')
+    .eq('tipo_operacion_codigo', c)
+    .eq('usa_intermediario', !!usaIntermediario)
+    .then((r) => (r.data && Array.isArray(r.data) ? r.data : []))
+    .catch(() => []);
+}
+
+function lookupReglasDeNegocio(reglas, tipoOperacionCodigo, pagador, cobrador, tipoTransaccion, esComision, estadoTransaccion, contrapartidaEjecutada) {
+  if (!reglas || !reglas.length) return [];
+  const cod = String(tipoOperacionCodigo || '').toUpperCase();
+  const pag = String(pagador || '').toLowerCase();
+  const cob = String(cobrador || '').toLowerCase();
+  const tipo = String(tipoTransaccion || '').toLowerCase();
+  const est = String(estadoTransaccion || '').toLowerCase();
+  const cont = !!contrapartidaEjecutada;
+  const out = reglas.filter((r) =>
+    String(r.tipo_operacion_codigo || '').toUpperCase() === cod &&
+    (r.pagador || '').toLowerCase() === pag &&
+    (r.cobrador || '').toLowerCase() === cob &&
+    (r.tipo_transaccion || '').toLowerCase() === tipo &&
+    coercePgBooleanStrict(r.es_comision) === !!esComision &&
+    (r.estado_transaccion || '').toLowerCase() === est &&
+    coercePgBooleanStrict(r.contrapartida_ejecutada) === cont
+  );
+  out.sort((a, b) => (Number(a.linea) || 0) - (Number(b.linea) || 0));
+  return out;
 }
 
 /**
- * Moneda y monto base para CC intermediario (cc_intermediario_*). Incluye monto_efectivo_intermediario para la pata Int→Pandy con tasa.
+ * Base numérica para un movimiento CC según `monto_origen` de la regla.
+ * me_prorrateado / mr_prorrateado: permiten varias transacciones del mismo rol cuya suma concilia con el acuerdo (orden mr/me).
  */
-function resolverMonedaYMontoCcIntermediarioMotor(regla, orden, t, ctx) {
-  const montoT = Number(ctx.montoT) || 0;
+function montoBaseReglaNegocio(montoOrigen, ctx) {
+  const mo = String(montoOrigen || '').toLowerCase();
   const mrN = Number(ctx.mr) || 0;
   const meN = Number(ctx.me) || 0;
-  const monR = (ctx.monR || 'USD').toUpperCase();
-  const monE = (ctx.monE || 'USD').toUpperCase();
-  const mon = (ctx.mon || 'USD').toUpperCase();
-  const montoEfectivoInt = Number(ctx.montoEfectivoInt) || 0;
-  const pag = String(t.pagador || '').toLowerCase();
-  const cob = String(t.cobrador || '').toLowerCase();
-  const tipo = (t.tipo || '').toLowerCase();
-  let baseLegacy = montoT;
-  if (cob === 'pandy' && pag === 'intermediario' && tipo === 'ingreso' && regla && regla.usa_monto_efectivo) baseLegacy = montoEfectivoInt;
-  const expRaw = regla && regla.cc_intermediario_moneda_exposicion != null ? String(regla.cc_intermediario_moneda_exposicion).toLowerCase().trim() : '';
-  const refRaw = regla && regla.cc_intermediario_monto_referencia != null ? String(regla.cc_intermediario_monto_referencia).toLowerCase().trim() : '';
-  if (!expRaw && !refRaw) {
-    const monCc = (orden.moneda_recibida || mon || 'ARS').toUpperCase();
-    return { moneda: monCc, monto: baseLegacy };
+  const montoT = Number(ctx.montoT) || 0;
+  if (mo === 'mr') return mrN;
+  if (mo === 'me') return meN;
+  if (mo === 'monto_transaccion') return montoT;
+  if (mo === 'me_prorrateado') {
+    if (mrN < 1e-12) return 0;
+    return montoT * (meN / mrN);
   }
-  const monFromExp = (e) => {
-    if (e === 'orden_recibida' || e === 'recibida') return monR;
-    if (e === 'orden_entregada' || e === 'entregada') return monE;
-    if (e === 'transaccion') return mon;
-    return null;
-  };
-  const montoFromRef = (r0) => {
-    if (r0 === 'mr') return mrN;
-    if (r0 === 'me') return meN;
-    if (r0 === 'monto_transaccion') return montoT;
-    if (r0 === 'monto_efectivo_intermediario' || r0 === 'efectivo_intermediario') return montoEfectivoInt;
-    return montoT;
-  };
-  let monCc = monFromExp(expRaw) || (orden.moneda_recibida || mon || 'ARS');
-  monCc = (monCc || 'ARS').toUpperCase();
-  let base;
-  if (refRaw) base = montoFromRef(refRaw);
-  else if (expRaw === 'orden_recibida' || expRaw === 'recibida') base = mrN;
-  else if (expRaw === 'orden_entregada' || expRaw === 'entregada') base = meN;
-  else if (expRaw === 'transaccion') base = montoT;
-  else base = baseLegacy;
-  return { moneda: monCc, monto: base };
+  if (mo === 'mr_prorrateado') {
+    if (meN < 1e-12) return 0;
+    return montoT * (mrN / meN);
+  }
+  if (mo === 'mr_menos_me') return mrN - meN;
+  if (mo === 'monto_efectivo_intermediario') return Number(ctx.montoEfectivoInt) || 0;
+  if (mo === 'comision_intermediario') return Number(ctx.comisionIntMonto) || 0;
+  return montoT;
+}
+
+/**
+ * Motor CC desde `reglas_de_negocio` (una fila = un movimiento; `entidad_cc` → cliente o intermediario).
+ */
+function aplicarMotorCcDesdeReglasDeNegocio(opts) {
+  const {
+    tipoOperacionCodigo,
+    transacciones,
+    reglasDeNegocio,
+    orden,
+    clienteId,
+    intermediarioId,
+    ordenId,
+    rowsCcCliente,
+    rowsCcInt,
+    fecha,
+    ahora,
+    comisionPandyMonto,
+    comisionPandyMon,
+    comisionIntMonto,
+    comisionIntMon,
+    montoEfectivoInt,
+  } = opts;
+  if (!reglasDeNegocio || !reglasDeNegocio.length) return;
+  const mr = Number(orden.monto_recibido) || 0;
+  const me = Number(orden.monto_entregado) || 0;
+  const comM = Number(comisionPandyMonto) || 0;
+  (transacciones || []).forEach((t) => {
+    if ((t.concepto || '').includes('Ganancia del acuerdo')) return;
+    const montoT = Number(t.monto) || 0;
+    // Instrumentación USD-USD: el ingreso de cobro lleva monto = mr (acuerdo). `comisiones_orden` solo reparte el spread (Pandy/int.); si existiera otra fila ingreso con monto = parte Pandy de ese reparto, no duplicar aquí movimientos por transacción (la comisión implícita cliente sale de la fila `es_comision` + `mr_menos_me` en reglas, bloque más abajo). El cobro principal tiene siempre monto ≈ mr; solo omitir cuando el monto coincide con la parte Pandy y es claramente menor que mr (no es el cobro nominal).
+    if (
+      comM >= 1e-6 &&
+      (t.tipo || '').toLowerCase() === 'ingreso' &&
+      String(t.pagador || '').toLowerCase() === 'cliente' &&
+      String(t.cobrador || '').toLowerCase() === 'pandy' &&
+      Math.abs(montoT - comM) < 1e-6 &&
+      montoT < mr - 1e-6
+    ) {
+      return;
+    }
+    const pag = String(t.pagador || '').toLowerCase();
+    const cob = String(t.cobrador || '').toLowerCase();
+    const tipo = (t.tipo || '').toLowerCase();
+    const estado = (t.estado || '').toLowerCase();
+    const contrapartida = contrapartidaEjecutada(transacciones, t.pagador, t.cobrador, t.tipo);
+    const reglasTx = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, false, estado, contrapartida);
+    if (!reglasTx.length) return;
+    const estadoMov = (estado === 'ejecutada' ? 'cerrado' : 'pendiente');
+    const codOp = String(tipoOperacionCodigo || '').toUpperCase();
+    for (const regla of reglasTx) {
+      let entidad = (regla.entidad_cc == null || String(regla.entidad_cc).trim() === '')
+        ? 'cliente'
+        : String(regla.entidad_cc).toLowerCase();
+      const moR = String(regla.monto_origen || '').toLowerCase();
+      if (codOp === 'CHEQUE-ARS' && moR === 'monto_efectivo_intermediario') entidad = 'intermediario';
+      if (entidad === 'cliente' && !clienteId) continue;
+      if (entidad === 'intermediario' && !intermediarioId) continue;
+      // P,E: egreso ejecutado con ingreso aún pendiente (contrapartida=false) no debe duplicar la pata “equivalente” en moneda recibida (netea el compromiso pendiente del ingreso). Solo CC cliente (sin int).
+      if (entidad === 'cliente' && tipo === 'egreso' && estado === 'ejecutada' && !contrapartida) {
+        const monR = String(regla.moneda || '').toUpperCase();
+        const mo = String(regla.monto_origen || '').toLowerCase();
+        if (codOp === 'USD-ARS' && monR === 'USD' && mo === 'mr_prorrateado') continue;
+        if (codOp === 'ARS-USD' && monR === 'ARS' && mo === 'mr_prorrateado') continue;
+      }
+      const base = montoBaseReglaNegocio(regla.monto_origen, {
+        mr, me, montoT, montoEfectivoInt,
+        comisionIntMonto: Number(comisionIntMonto) || 0,
+      });
+      const montoCc = Number(regla.signo) * base;
+      if (Math.abs(montoCc) < 1e-12) continue;
+      const moneda = String(regla.moneda || 'USD').toUpperCase();
+      const ley = regla.concepto_leyenda || 'cobro_realizado';
+      const rowBase = {
+        orden_id: ordenId,
+        transaccion_id: t.id,
+        transaccion_numero: t.numero != null ? t.numero : null,
+        concepto: conceptoCcLeyenda(ley, orden.numero, t.numero),
+        fecha,
+        usuario_id: currentUserId,
+        moneda,
+        monto: montoCc,
+        estado: estadoMov,
+        estado_fecha: ahora,
+        incluir_en_detalle: coercePgBooleanStrict(regla.incluir_en_detalle),
+        ...montosCcPorMoneda(moneda, montoCc),
+      };
+      if (entidad === 'intermediario') {
+        rowsCcInt.push({
+          intermediario_id: intermediarioId,
+          ...rowBase,
+        });
+      } else {
+        rowsCcCliente.push({
+          cliente_id: clienteId,
+          ...rowBase,
+        });
+      }
+    }
+  });
+  // Comisión implícita USD-USD: `reglas_de_negocio` fila es_comision + monto_origen mr_menos_me (ver reglas_de_negocio_tabla / migraciones). Condición de negocio: acuerdo con spread (mr > me) en la orden; par cliente cerrado. No usar comisiones_orden como “llave” para esta fila — el monto sale de mr−me (tabla + orden), no del reparto Pandy/intermediario.
+  const spreadUsdUsd = mr - me;
+  if (String(tipoOperacionCodigo || '').toUpperCase() === 'USD-USD' && clienteId && spreadUsdUsd >= 1e-6) {
+    const parClienteCerrado =
+      ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
+      egresoEntregaAClienteEjecutado(transacciones);
+    const estadoComPandy = parClienteCerrado ? 'ejecutada' : 'pendiente';
+    const reglasCom = lookupReglasDeNegocio(
+      reglasDeNegocio,
+      tipoOperacionCodigo,
+      'cliente',
+      'pandy',
+      'ingreso',
+      true,
+      estadoComPandy,
+      parClienteCerrado
+    );
+    const reglaCom = reglasCom.length ? reglasCom[0] : null;
+    if (reglaCom) {
+      const base = montoBaseReglaNegocio(reglaCom.monto_origen, {
+        mr, me, montoT: 0,
+        comisionIntMonto: Number(comisionIntMonto) || 0,
+      });
+      const montoCc = Number(reglaCom.signo) * base;
+      if (Math.abs(montoCc) >= 1e-12) {
+        const trIngresoClienteAcuerdo = (transacciones || [])
+          .filter((t) =>
+            (t.tipo || '').toLowerCase() === 'ingreso' &&
+            String(t.pagador || '').toLowerCase() === 'cliente' &&
+            (String(t.cobrador || '').toLowerCase() === 'pandy' || String(t.cobrador || '').toLowerCase() === 'intermediario') &&
+            (t.estado || '').toLowerCase() === 'ejecutada' &&
+            Math.abs(Number(t.monto) - comM) >= 1e-6
+          )
+          .sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0))[0];
+        const nroTransComisionConcepto = trIngresoClienteAcuerdo && trIngresoClienteAcuerdo.numero != null ? trIngresoClienteAcuerdo.numero : null;
+        const moneda = String(reglaCom.moneda || 'USD').toUpperCase();
+        const ley = reglaCom.concepto_leyenda || 'comision_acuerdo';
+        const cerrado = estadoComPandy === 'ejecutada';
+        rowsCcCliente.push({
+          cliente_id: clienteId,
+          orden_id: ordenId,
+          transaccion_id: null,
+          transaccion_numero: null,
+          concepto: conceptoCcLeyenda(ley, orden.numero, nroTransComisionConcepto),
+          fecha,
+          usuario_id: currentUserId,
+          moneda,
+          monto: montoCc,
+          estado: cerrado ? 'cerrado' : 'pendiente',
+          estado_fecha: ahora,
+          incluir_en_detalle: coercePgBooleanStrict(reglaCom.incluir_en_detalle),
+          ...montosCcPorMoneda(moneda, montoCc),
+        });
+      }
+    }
+  }
+  // Comisión intermediario USD-USD (comisiones_orden; par cliente cerrado: ingreso desde cliente + entrega al cliente ejecutados).
+  if (String(tipoOperacionCodigo || '').toUpperCase() === 'USD-USD' && intermediarioId && Number(comisionIntMonto) >= 1e-6) {
+    const parClienteCerradoUsdInt =
+      ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
+      egresoEntregaAClienteEjecutado(transacciones);
+    const estadoComInt = parClienteCerradoUsdInt ? 'ejecutada' : 'pendiente';
+    const reglaComIntUsd = lookupReglasDeNegocio(
+      reglasDeNegocio,
+      tipoOperacionCodigo,
+      'pandy',
+      'intermediario',
+      'egreso',
+      true,
+      estadoComInt,
+      parClienteCerradoUsdInt
+    )[0];
+    if (reglaComIntUsd && coercePgBooleanStrict(reglaComIntUsd.incluir_en_detalle)) {
+      const baseInt = montoBaseReglaNegocio(reglaComIntUsd.monto_origen, {
+        mr, me, montoT: 0,
+        comisionIntMonto: Number(comisionIntMonto) || 0,
+      });
+      const montoCcInt = Number(reglaComIntUsd.signo) * baseInt;
+      if (Math.abs(montoCcInt) >= 1e-12) {
+        const monedaInt = String(comisionIntMon || reglaComIntUsd.moneda || 'USD').toUpperCase();
+        const cerradoInt = estadoComInt === 'ejecutada';
+        rowsCcInt.push({
+          intermediario_id: intermediarioId,
+          orden_id: ordenId,
+          transaccion_id: null,
+          transaccion_numero: null,
+          concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, null),
+          fecha,
+          usuario_id: currentUserId,
+          moneda: monedaInt,
+          monto: montoCcInt,
+          estado: cerradoInt ? 'cerrado' : 'pendiente',
+          estado_fecha: ahora,
+          incluir_en_detalle: coercePgBooleanStrict(reglaComIntUsd.incluir_en_detalle),
+          ...montosCcPorMoneda(monedaInt, montoCcInt),
+        });
+      }
+    }
+  }
+  // Comisión CHEQUE-ARS (comisiones_orden Pandy e intermediario; filas es_comision + condicion_estado_comision).
+  const codOpCh = String(tipoOperacionCodigo || '').toUpperCase();
+  if (codOpCh === 'CHEQUE-ARS' && clienteId && comM >= 1e-6) {
+    const parClienteCerrado =
+      (transacciones || []).some((t) =>
+        (t.tipo || '').toLowerCase() === 'ingreso' &&
+        String(t.pagador || '').toLowerCase() === 'cliente' &&
+        String(t.cobrador || '').toLowerCase() === 'pandy' &&
+        (t.estado || '').toLowerCase() === 'ejecutada'
+      ) &&
+      (transacciones || []).some((t) =>
+        (t.tipo || '').toLowerCase() === 'egreso' &&
+        String(t.pagador || '').toLowerCase() === 'pandy' &&
+        String(t.cobrador || '').toLowerCase() === 'cliente' &&
+        (t.estado || '').toLowerCase() === 'ejecutada'
+      );
+    const condicionPandy = getCondicionComisionReglasNegocio(reglasDeNegocio, tipoOperacionCodigo, 'cliente', 'pandy', 'ingreso');
+    const estadoComPandy = condicionPandy
+      ? estadoEfectivoComision(transacciones, condicionPandy)
+      : (parClienteCerrado ? 'ejecutada' : 'pendiente');
+    const reglaComPandy = lookupReglasDeNegocio(
+      reglasDeNegocio,
+      tipoOperacionCodigo,
+      'cliente',
+      'pandy',
+      'ingreso',
+      true,
+      estadoComPandy,
+      parClienteCerrado
+    )[0];
+    // Comisión Pandy: estado efectivo ejecutada si Tx1 o Tx2 ejecutada (ver estadoEfectivoComision par_cliente). P,P,P,P sin ninguna → pendiente → no fila.
+    if (estadoComPandy === 'ejecutada' && reglaComPandy && coercePgBooleanStrict(reglaComPandy.incluir_en_detalle)) {
+      const signo = Number(reglaComPandy.signo) != null ? Number(reglaComPandy.signo) : 1;
+      const cerrado = estadoComPandy === 'ejecutada';
+      const trIngresoClientePandy = (transacciones || [])
+        .filter((t) =>
+          (t.tipo || '').toLowerCase() === 'ingreso' &&
+          String(t.pagador || '').toLowerCase() === 'cliente' &&
+          String(t.cobrador || '').toLowerCase() === 'pandy' &&
+          (t.estado || '').toLowerCase() === 'ejecutada' &&
+          Math.abs(Number(t.monto) - comM) >= 1e-6
+        )
+        .sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0))[0];
+      const nroTransComisionConcepto = trIngresoClientePandy && trIngresoClientePandy.numero != null ? trIngresoClientePandy.numero : null;
+      const moneda = String(comisionPandyMon || reglaComPandy.moneda || 'ARS').toUpperCase();
+      rowsCcCliente.push({
+        cliente_id: clienteId,
+        orden_id: ordenId,
+        transaccion_id: null,
+        transaccion_numero: null,
+        concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConcepto),
+        fecha,
+        usuario_id: currentUserId,
+        moneda,
+        monto: signo * comM,
+        estado: cerrado ? 'cerrado' : 'pendiente',
+        estado_fecha: ahora,
+        incluir_en_detalle: coercePgBooleanStrict(reglaComPandy.incluir_en_detalle),
+        ...montosCcPorMoneda(moneda, signo * comM)
+      });
+    }
+  }
+  if (codOpCh === 'CHEQUE-ARS' && intermediarioId && Number(comisionIntMonto) >= 1e-6) {
+    const condicion = getCondicionComisionReglasNegocio(reglasDeNegocio, tipoOperacionCodigo, 'pandy', 'intermediario', 'egreso');
+    const estadoEf = condicion
+      ? estadoEfectivoComision(transacciones, condicion)
+      : estadoEfectivoComision(transacciones, 'par_pandy_int');
+    const parIntCerrado = estadoEf === 'ejecutada';
+    const reglaComInt = lookupReglasDeNegocio(
+      reglasDeNegocio,
+      tipoOperacionCodigo,
+      'pandy',
+      'intermediario',
+      'egreso',
+      true,
+      estadoEf,
+      parIntCerrado
+    )[0];
+    // Comisión intermediario en CC solo cuando Tx3 o Tx4 ejecutada (par_pandy_int efectivo); no fila con todo pendiente (E2E P,P,P,P).
+    if (estadoEf === 'ejecutada' && reglaComInt && coercePgBooleanStrict(reglaComInt.incluir_en_detalle)) {
+      const signo = Number(reglaComInt.signo) != null ? Number(reglaComInt.signo) : 1;
+      const comInt = Number(comisionIntMonto) || 0;
+      const monCom = String(comisionIntMon || 'ARS').toUpperCase();
+      rowsCcInt.push({
+        intermediario_id: intermediarioId,
+        orden_id: ordenId,
+        transaccion_id: null,
+        transaccion_numero: null,
+        concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, null),
+        fecha,
+        usuario_id: currentUserId,
+        moneda: monCom,
+        monto: signo * comInt,
+        estado: parIntCerrado ? 'cerrado' : 'pendiente',
+        estado_fecha: ahora,
+        incluir_en_detalle: coercePgBooleanStrict(reglaComInt.incluir_en_detalle),
+        ...montosCcPorMoneda(monCom, signo * comInt)
+      });
+    }
+  }
 }
 
 /** Actualiza las tarjetas de saldo de cuenta corriente: etiqueta "Saldo a favor" / "Saldo negativo" y monto. saldos = { USD, EUR, ARS } o null para reset. */
@@ -1762,7 +2170,12 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion() {
   return client.from('instrumentacion').select('orden_id').then((r) => {
     const ordenIds = (r.data || []).map((x) => x.orden_id).filter(Boolean);
     if (ordenIds.length === 0) return Promise.resolve();
-    return Promise.all(ordenIds.map((ordenId) => sincronizarCcYCajaDesdeOrden(ordenId)));
+    // Encadenar (no Promise.all): evita picos de carga y condiciones de carrera en DB al leer transacciones
+    // mientras otra orden termina su RPC sync_cc_caja_orden; el detalle/modal y el resumen quedan más alineados.
+    return ordenIds.reduce(
+      (prev, ordenId) => prev.then(() => sincronizarCcYCajaDesdeOrden(ordenId)),
+      Promise.resolve()
+    );
   });
 }
 
@@ -1787,8 +2200,8 @@ function loadCuentaCorriente() {
     .then(() => Promise.all([
       client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
       client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
-      client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, sumar_al_saldo, incluir_en_detalle'),
-      client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, sumar_al_saldo, incluir_en_detalle'),
+      client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle'),
+      client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle'),
     ]));
   promDatos.then(([rClientes, rInt, rMovCli, rMovInt]) => {
     const clientes = rClientes.data || [];
@@ -1856,7 +2269,7 @@ function loadCuentaCorriente() {
     return Promise.all([
       transaccionIds.length > 0 ? client.from('transacciones').select('id, estado, pagador, monto, moneda').in('id', transaccionIds) : Promise.resolve({ data: [] }),
       ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
-      ordenIds.length > 0 ? client.from('ordenes').select('id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out), monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tasa_descuento_intermediario').in('id', ordenIds) : Promise.resolve({ data: [] }),
+      ordenIds.length > 0 ? client.from('ordenes').select('id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario), monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tasa_descuento_intermediario').in('id', ordenIds) : Promise.resolve({ data: [] }),
       promPendientesCcGlobal,
     ]).then(([rTr, rInst, rOrdenes, pendientesResult]) => {
       const trById = {};
@@ -1925,10 +2338,11 @@ function loadCuentaCorriente() {
         return m;
       });
       // Saldos por modelo CC (docs/CC_MODELO_REFERENCIA.md): por orden, modelo ARS-ARS+int o suma de movimientos; responde a cualquier cambio y orden.
+      // Saldo por orden (precomp): suma de **todos** los movimientos no anulados (coherente con lo que se ve en Movimientos).
       function sumMovsPorMoneda(movs) {
         const acc = { USD: 0, EUR: 0, ARS: 0 };
         (movs || []).forEach((m) => {
-          if ((m.estado || '').toString().toLowerCase() === 'anulado' || (m.estado || '').toString().toLowerCase() === 'pendiente') return;
+          if ((m.estado || '').toString().toLowerCase() === 'anulado') return;
           const has = m.monto_usd != null || m.monto_ars != null || m.monto_eur != null;
           if (has) {
             acc.USD += Number(m.monto_usd) || 0;
@@ -2065,14 +2479,12 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     };
   }
   /**
-   * Regla CC: saldo = suma de movimientos que aportan al saldo (sumar_al_saldo), salvo anulados.
-   * Se incluyen cerrados y pendientes (según reglas, ej. Tx3 pendiente suma -200k para intermediario).
+   * Saldo CC resumen: suma algebraica por moneda de todos los movimientos no anulados (igual criterio que la lista Movimientos).
    */
   function saldosDesdeMovimientosPorOrden(movs) {
     const acc = { USD: 0, EUR: 0, ARS: 0 };
     (movs || []).forEach((m) => {
       if ((m.estado || '').toString().toLowerCase() === 'anulado') return;
-      if (m.sumar_al_saldo === false) return;
       const montos = getMontosPorMoneda(m);
       acc.USD += montos.USD;
       acc.ARS += montos.ARS;
@@ -2101,14 +2513,14 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
   const rows = [];
   const addedCli = new Set();
   const addedInt = new Set();
-  // Regla infalible: saldo CC = SOLO suma de movimientos (ejecutados). No se suma ni resta ningún pendiente al saldo. Pendientes solo se muestran cuando saldo = 0 (para no ocultar la fila).
+  // Pendiente “ajuste” global (legacy/UI): no reemplaza la suma de movimientos del resumen.
   function pendienteClienteAjusteForCli(clienteId) {
     const p = pendienteClienteAjusteByCli[clienteId];
     if (!p) return null;
     const has = Math.abs(p.USD || 0) + Math.abs(p.EUR || 0) + Math.abs(p.ARS || 0);
     return has >= 1e-6 ? p : null;
   }
-  // Saldo = solo suma de movimientos con sumar_al_saldo (regla de tabla); no usar precomp para que resumen y detalle coincidan.
+  // Saldo = suma de movimientos no anulados (coherente con listado).
   const saldosCliente = (id) => saldosDesdeMovimientosPorOrden(movsCliById[id] || []);
   clientes.forEach((c) => {
     const saldos = saldosCliente(c.id);
@@ -2133,7 +2545,7 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
   function pendientePandyDebeForInt(intId) {
     const p = pendientePandyDebeIntByInt[intId];
     if (!p) return null;
-    const has = (p.USD || 0) + (p.EUR || 0) + (p.ARS || 0);
+    const has = Math.abs(p.USD || 0) + Math.abs(p.EUR || 0) + Math.abs(p.ARS || 0);
     return has >= 1e-6 ? p : null;
   }
   const saldosInt = (id) => saldosDesdeMovimientosPorOrden(movsIntById[id] || []);
@@ -2174,6 +2586,7 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
       tipo_op_nombre: metaC ? metaC.nombre : '',
       tipo_op_icono_modo: metaC ? metaC.icono_modo : 'auto',
       tipo_op_icono_url: metaC ? metaC.icono_url_publica : '',
+      tipo_op_usa_intermediario: metaC ? metaC.usa_intermediario === true : false,
     });
   });
   (movInt || []).forEach((m) => {
@@ -2189,6 +2602,7 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
       tipo_op_nombre: metaI ? metaI.nombre : '',
       tipo_op_icono_modo: metaI ? metaI.icono_modo : 'auto',
       tipo_op_icono_url: metaI ? metaI.icono_url_publica : '',
+      tipo_op_usa_intermediario: metaI ? metaI.usa_intermediario === true : false,
     });
   });
   // Corazón de la app: un movimiento lógico = una fila. Dedupe por (tipo, orden, transacción, monto, concepto) por si la DB tuviera duplicados históricos.
@@ -2207,8 +2621,15 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     return (b.id || 0) - (a.id || 0);
   });
 
-  poblarSelectCcDetalleEntidad();
-  aplicarFiltroCcResumen();
+  Promise.all([
+    hayTipoOperacionActivoConMoneda('USD'),
+    hayTipoOperacionActivoConMoneda('ARS'),
+    hayTipoOperacionActivoConMoneda('EUR'),
+  ]).then(([u, a, e]) => {
+    aplicarVisibilidadMonedasCuentaCorriente({ USD: !!u, ARS: !!a, EUR: !!e });
+    poblarSelectCcDetalleEntidad();
+    aplicarFiltroCcResumen();
+  });
 }
 
 /** Rellena el combo Cliente/Intermediario en Movimientos según movimientos cargados y tipo actual. */
@@ -2294,7 +2715,7 @@ function aplicarFiltroCcResumen() {
   if (rangoWrap) rangoWrap.style.display = 'none';
   if (contenidoEl) contenidoEl.style.display = 'block';
   if (detalleWrap) detalleWrap.style.display = 'none';
-  // Resumen: solo registros con saldo distinto de cero (saldo = solo movimientos cerrados). Si todo está pendiente, saldo = 0 y no se muestra la fila.
+  // Resumen: solo filas con saldo ≠ 0 (saldo = suma movimientos no anulados).
   const EPSILON_SALDO = 1e-6;
   const conSaldo = (r) => Math.abs(Number(r.saldos.USD) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.EUR) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.ARS) || 0) >= EPSILON_SALDO;
   const filtrados = ccResumenRowsTodos.filter((r) => r.tipo === ccFiltroTipo).filter(conSaldo);
@@ -2305,32 +2726,26 @@ function renderCcResumenTable(rows) {
   const tbody = document.getElementById('cc-resumen-tbody');
   if (!tbody) return;
 
-  const monedas = ['USD', 'EUR', 'ARS'];
-  // Regla conceptual para cliente e intermediario: verde = a favor de Pandy, rojo = en contra de Pandy.
-  // Cliente: en DB positivo = a Pandy le deben → ya es "a favor" → factor 1. Intermediario: en DB negativo = Pandy entregó (claim a favor) → invertir para color → factor -1.
-  const signoParaColor = (row) => (row.tipo === 'intermediario' ? -1 : 1);
+  const monedas = MONEDAS_CC_UI;
+  // Mostrar saldos con su signo real almacenado en CC (tabla fuente de verdad).
   tbody.innerHTML = rows
     .map((row) => {
-      const EPSILON_SALDO = 1e-6;
-      const cels = [escapeHtml(row.nombre || '–')];
-      const mult = signoParaColor(row);
+      let tr = '<tr><td>' + escapeHtml(row.nombre || '–') + '</td>';
       monedas.forEach((mon) => {
         const s = Number(row.saldos[mon]) || 0;
-        const sParaColor = mult * s;
-        const val = s !== 0 ? formatMonto(s >= 0 ? s : -s, mon) : '–';
-        const cls = sParaColor > 0 ? 'valor-positivo' : (sParaColor < 0 ? 'valor-negativo' : '');
-        cels.push(`<span class="${cls}">${val}</span>`);
+        const val = s !== 0 ? formatMonto(s, mon) : '–';
+        const cls = s > 0 ? 'valor-positivo' : (s < 0 ? 'valor-negativo' : '');
+        tr += `<td data-cc-moneda-col="${mon}"><span class="${cls}">${val}</span></td>`;
       });
-      cels.push(
-        `<button type="button" class="btn-ver-detalle" data-tipo="${escapeHtml(row.tipo)}" data-id="${escapeHtml(row.id)}" data-nombre="${escapeHtml(row.nombre || '')}" title="Ver detalle de movimientos" aria-label="Ver detalle de movimientos"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="2.5" fill="none"/></svg></span></button>`
-      );
-      return `<tr><td>${cels.join('</td><td>')}</td></tr>`;
+      tr += '<td><button type="button" class="btn-ver-detalle" data-tipo="' + escapeHtml(row.tipo) + '" data-id="' + escapeHtml(row.id) + '" data-nombre="' + escapeHtml(row.nombre || '') + '" title="Ver detalle de movimientos" aria-label="Ver detalle de movimientos"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="2.5" fill="none"/></svg></span></button></td></tr>';
+      return tr;
     })
     .join('');
 
   if (rows.length === 0) {
     const tipoLabel = ccFiltroTipo === 'cliente' ? 'clientes' : 'intermediarios';
-    tbody.innerHTML = '<tr><td colspan="5">No hay ' + tipoLabel + ' con saldo distinto de cero.</td></tr>';
+    const colspan = ccColspanResumenSaldosVacio();
+    tbody.innerHTML = '<tr><td colspan="' + colspan + '">No hay ' + tipoLabel + ' con saldo distinto de cero.</td></tr>';
   } else {
     tbody.querySelectorAll('.btn-ver-detalle').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -2341,6 +2756,7 @@ function renderCcResumenTable(rows) {
       });
     });
   }
+  reaplicarVisibilidadMonedasCuentaCorrienteDom();
 }
 
 /** Inicializa o sincroniza Desde/Hasta de la vista Detalle con min/max de los datos cuando aún no hay rango elegido. */
@@ -2442,16 +2858,16 @@ function renderCcVistaDetalle(filtrados) {
       const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
       const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
       const tipoOp = (m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–';
-      const tipoOpHtml = tipoOp === '–' ? '–' : htmlTipoOperacionIconos(tipoOp, m.tipo_op_nombre || '', { iconoModo: m.tipo_op_icono_modo, iconoUrlPublica: m.tipo_op_icono_url });
+      const tipoOpHtml = tipoOp === '–' ? '–' : htmlTipoOperacionIconos(tipoOp, m.tipo_op_nombre || '', { iconoModo: m.tipo_op_icono_modo, iconoUrlPublica: m.tipo_op_icono_url, usaIntermediario: m.tipo_op_usa_intermediario === true });
       return `<tr>
           <td class="cc-col-fija cc-col-fija-1">${(m.fecha || '').toString().slice(0, 10)}</td>
           <td class="cc-col-fija cc-col-fija-2 cc-col-tipo-op-iconos">${tipoOpHtml}</td>
           <td>${escapeHtml(nroOrden)}</td>
           <td>${escapeHtml(nroTrans)}</td>
           <td class="td-concepto">${escapeHtml(m.concepto || '–')}</td>
-          <td>${celdaUsd}</td>
-          <td>${celdaArs}</td>
-          <td>${celdaEur}</td>
+          <td data-cc-moneda-col="USD">${celdaUsd}</td>
+          <td data-cc-moneda-col="ARS">${celdaArs}</td>
+          <td data-cc-moneda-col="EUR">${celdaEur}</td>
           <td>${escapeHtml(estadoLabel)}</td>
           <td>${escapeHtml(m.nombre || '–')}</td>
           <td>${escapeHtml(m.originante || '–')}</td>
@@ -2460,10 +2876,11 @@ function renderCcVistaDetalle(filtrados) {
     .join('');
 
   if (filtrados.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11">No hay movimientos para el filtro seleccionado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + ccColspanVistaDetalleMovimientos() + '">No hay movimientos para el filtro seleccionado.</td></tr>';
   } else {
     setupCcDetalleVistaSortHeaders();
   }
+  reaplicarVisibilidadMonedasCuentaCorrienteDom();
 }
 
 function setupCcDetalleVistaSortHeaders() {
@@ -2510,7 +2927,8 @@ function exportarCcResumenExcel() {
       return;
     }
     const entityHeader = ccFiltroTipo === 'cliente' ? 'Cliente' : 'Intermediario';
-    const header = ['Fecha', 'Tipo op.', 'Orden', 'Trans.', 'Concepto', 'USD', 'ARS', 'EUR', 'Estado', entityHeader, 'Originante'];
+    const monedasExp = MONEDAS_CC_MOVIMIENTOS_COLS.filter((mon) => ccUiMonedasVisibles[mon]);
+    const header = ['Fecha', 'Tipo op.', 'Orden', 'Trans.', 'Concepto', ...monedasExp, 'Estado', entityHeader, 'Originante'];
     const rows = filtrados.map((m) => {
       const tienePorMoneda = m.monto_usd != null || m.monto_ars != null || m.monto_eur != null;
       let usd = null, ars = null, eur = null;
@@ -2524,11 +2942,13 @@ function exportarCcResumenExcel() {
         else if (m.moneda === 'ARS') ars = val;
         else if (m.moneda === 'EUR') eur = val;
       }
+      const porMon = { USD: usd, ARS: ars, EUR: eur };
       const estado = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
       const nroOrden = m.orden_numero != null ? Number(m.orden_numero) : null;
       const nroTrans = m.transaccion_numero != null ? Number(m.transaccion_numero) : null;
       const tipoOp = (m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–';
-      return [(m.fecha || '').toString().slice(0, 10), tipoOp, nroOrden, nroTrans, m.concepto || '', usd, ars, eur, estado, m.nombre || '', m.originante || ''];
+      const celdasMon = monedasExp.map((mon) => porMon[mon]);
+      return [(m.fecha || '').toString().slice(0, 10), tipoOp, nroOrden, nroTrans, m.concepto || '', ...celdasMon, estado, m.nombre || '', m.originante || ''];
     });
     const aoa = [header, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -2547,12 +2967,12 @@ function exportarCcResumenExcel() {
     showToast('No hay filas para exportar.', 'info');
     return;
   }
-  const monedas = ['USD', 'EUR', 'ARS'];
-  const header = ['Nombre', 'Tipo', ...monedas];
+  const monedasExp = MONEDAS_CC_UI.filter((mon) => ccUiMonedasVisibles[mon]);
+  const header = ['Nombre', 'Tipo', ...monedasExp];
   const rows = filtrados.map((r) => {
     const tipoLabel = r.tipo === 'cliente' ? 'Cliente' : 'Intermediario';
     const cels = [r.nombre || '', tipoLabel];
-    monedas.forEach((mon) => {
+    monedasExp.forEach((mon) => {
       const s = Number(r.saldos[mon]) || 0;
       cels.push(s);
     });
@@ -2589,11 +3009,11 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
   const tablaMov = tipo === 'cliente' ? 'movimientos_cuenta_corriente' : 'movimientos_cuenta_corriente_intermediario';
   const filtroMov = tipo === 'cliente' ? { cliente_id: entityId } : { intermediario_id: entityId };
   const selectMov = tipo === 'cliente'
-    ? 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, sumar_al_saldo, incluir_en_detalle'
-    : 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, sumar_al_saldo, incluir_en_detalle';
+    ? 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, incluir_en_detalle'
+    : 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, incluir_en_detalle';
   return Promise.all([
     client.from(tablaMov).select(selectMov).match(filtroMov).order('fecha', { ascending: false }).order('created_at', { ascending: false }),
-    client.from('ordenes').select(ordenesTieneNumeroColumn ? 'id, numero, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out)' : 'id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out)').neq('estado', 'anulada').match({ [campoId]: entityId }),
+    client.from('ordenes').select(ordenesTieneNumeroColumn ? 'id, numero, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario)' : 'id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario)').neq('estado', 'anulada').match({ [campoId]: entityId }),
   ]).then(([rMov, rOrd]) => {
     if (rMov.error) return Promise.reject(rMov.error);
     if (rOrd.error) return Promise.reject(rOrd.error);
@@ -2622,10 +3042,9 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
       });
       return { trById, orderHasEjecutada };
     }).then(({ trById, orderHasEjecutada }) => {
-      // Saldo = solo movimientos cerrados (no anulado ni pendiente) y que aportan al saldo (sumar_al_saldo).
+      // Saldo modal detalle: suma de todos los movimientos no anulados (misma lógica que resumen CC).
       function incluirEnSaldo(m) {
         if ((m.estado || '').toString().toLowerCase() === 'anulado') return false;
-        if (m.sumar_al_saldo === false) return false;
         return true;
       }
       const sumAll = { USD: 0, EUR: 0, ARS: 0 };
@@ -2677,17 +3096,8 @@ function openModalCcDetalle(tipo, id, nombre) {
     ccDetalleOrdenesList = ordenes || [];
     if (loadingEl) loadingEl.style.display = 'none';
 
-    const monedas = ['USD', 'EUR', 'ARS'];
-    const iconUrls = { USD: '/assets/Icono_Dolar.avif', EUR: '/assets/Icono_Euro.avif', ARS: '/assets/Icono_ARS.webp' };
-    saldosWrap.innerHTML = monedas
-      .map((mon) => {
-        const s = Number(saldos[mon]) || 0;
-        const label = s >= 0 ? 'Positivo' : 'Negativo';
-        const val = formatMonto(s >= 0 ? s : -s, mon);
-        const cls = 'valor ' + (s >= 0 ? 'positivo' : 'negativo');
-        return `<div class="card" style="min-width:120px;"><span class="card-titulo"><img src="${iconUrls[mon]}" alt="" class="cc-icono-moneda" width="20" height="20"/> ${mon}</span><span class="cc-saldo-label" aria-hidden="true">${label}</span><span class="${cls}">${val}</span></div>`;
-      })
-      .join('');
+    saldosWrap.innerHTML = htmlCcModalSaldosCards(saldos);
+    reaplicarVisibilidadMonedasCuentaCorrienteDom();
 
     renderCcDetalleTable();
     tablaWrap.style.display = 'block';
@@ -2702,6 +3112,7 @@ function openModalCcDetalle(tipo, id, nombre) {
     ccDetalleMovimientosList = [];
     ccDetalleOrdenesList = [];
     renderCcDetalleTable();
+    reaplicarVisibilidadMonedasCuentaCorrienteDom();
   });
 }
 
@@ -2761,24 +3172,25 @@ function renderCcDetalleTable() {
       const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
       const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
       const tipoOp = (m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–';
-      const tipoOpHtml = tipoOp === '–' ? '–' : htmlTipoOperacionIconos(tipoOp, m.tipo_op_nombre || '', { iconoModo: m.tipo_op_icono_modo, iconoUrlPublica: m.tipo_op_icono_url });
+      const tipoOpHtml = tipoOp === '–' ? '–' : htmlTipoOperacionIconos(tipoOp, m.tipo_op_nombre || '', { iconoModo: m.tipo_op_icono_modo, iconoUrlPublica: m.tipo_op_icono_url, usaIntermediario: m.tipo_op_usa_intermediario === true });
       return `<tr>
           <td class="cc-col-fija cc-col-fija-1">${(m.fecha || '').toString().slice(0, 10)}</td>
           <td class="cc-col-fija cc-col-fija-2 cc-col-tipo-op-iconos">${tipoOpHtml}</td>
           <td>${escapeHtml(nroOrden)}</td>
           <td>${escapeHtml(nroTrans)}</td>
           <td class="td-concepto">${escapeHtml(m.concepto || '–')}</td>
-          <td>${celdaUsd}</td>
-          <td>${celdaArs}</td>
-          <td>${celdaEur}</td>
+          <td data-cc-moneda-col="USD">${celdaUsd}</td>
+          <td data-cc-moneda-col="ARS">${celdaArs}</td>
+          <td data-cc-moneda-col="EUR">${celdaEur}</td>
           <td>${escapeHtml(estadoLabel)}</td>
         </tr>`;
     })
     .join('');
 
   if (tfoot) tfoot.innerHTML = filtrados.length === 0 ? '' : '';
-  if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="9">No hay movimientos.</td></tr>';
+  if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="' + ccColspanModalDetalleMovimientos() + '">No hay movimientos.</td></tr>';
   else setupCcDetalleModalSortHeaders();
+  reaplicarVisibilidadMonedasCuentaCorrienteDom();
 }
 
 function setupCcDetalleModalSortHeaders() {
@@ -2956,15 +3368,8 @@ function saveMovimientoCc() {
           renderCcDetalleTable();
           const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
           if (saldosWrap && saldos) {
-            const monedas = ['USD', 'EUR', 'ARS'];
-            const iconUrls = { USD: '/assets/Icono_Dolar.avif', EUR: '/assets/Icono_Euro.avif', ARS: '/assets/Icono_ARS.webp' };
-            saldosWrap.innerHTML = monedas.map((mon) => {
-              const s = Number(saldos[mon]) || 0;
-              const label = s >= 0 ? 'Positivo' : 'Negativo';
-              const val = formatMonto(s >= 0 ? s : -s, mon);
-              const cls = 'valor ' + (s >= 0 ? 'positivo' : 'negativo');
-              return `<div class="card" style="min-width:120px;"><span class="card-titulo"><img src="${iconUrls[mon]}" alt="" class="cc-icono-moneda" width="20" height="20"/> ${mon}</span><span class="cc-saldo-label" aria-hidden="true">${label}</span><span class="${cls}">${val}</span></div>`;
-            }).join('');
+            saldosWrap.innerHTML = htmlCcModalSaldosCards(saldos);
+            reaplicarVisibilidadMonedasCuentaCorrienteDom();
           }
           renderCcDetalleOperaciones();
           const operacionesWrap = document.getElementById('modal-cc-detalle-operaciones-wrap');
@@ -3096,9 +3501,9 @@ function setupCuentaCorriente() {
         showToast('Cuenta corriente actualizada.', 'success');
         setTimeout(() => {
           const tbody = document.getElementById('cc-vista-detalle-tbody');
-          const sinMovimientos = tbody && tbody.querySelector('td[colspan="11"]') && tbody.textContent.includes('No hay movimientos');
+          const sinMovimientos = tbody && tbody.querySelector('td[colspan]') && tbody.textContent.includes('No hay movimientos');
           if (sinMovimientos) {
-            showToast('Si tenés órdenes con transacciones ejecutadas y no ves movimientos: ejecutá en Supabase (SQL Editor) el script sql/migracion_cc_modelo_reglas_alinear_excel_completo.sql y volvé a Refrescar.', 'info', 12000);
+            showToast('Si tenés órdenes con transacciones ejecutadas y no ves movimientos: verificá que existan filas en reglas_de_negocio para el tipo de operación (y usa_intermediario) de cada orden, o revisá permisos/sync. Volvé a Refrescar.', 'info', 12000);
           }
         }, 800);
       })
@@ -3468,7 +3873,7 @@ function parseImporteInput(str) {
   return isNaN(n) ? NaN : n;
 }
 
-/** Guarda solo el monto de una transacción. Si está ejecutada, reajusta CC y caja (revierte Cancelación/caja anterior, actualiza resto pendiente si hay momento cero, inserta nueva Cancelación y caja). Llama onSuccess() tras guardar. */
+/** Guarda solo el monto de una transacción. Si está ejecutada, reajusta CC y caja. Órdenes con filas en `reglas_de_negocio`: solo actualiza la trx y `sincronizarCcYCajaDesdeOrden` (sin insertar “Cancelación de deuda” legacy). Resto: lógica momento cero / Cancelación / caja heredada. Llama onSuccess() tras guardar. */
 function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
   const newMonto = parseImporteInput(typeof valorInput === 'string' ? valorInput : (valorInput && valorInput.value));
   if (isNaN(newMonto) || newMonto <= 0) {
@@ -3492,7 +3897,7 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
     return client.from('instrumentacion').select('orden_id').eq('id', instrumentacionId).single().then((rInst) => {
       const ordenId = rInst.data && rInst.data.orden_id;
       if (!ordenId) { showToast('No se encontró la orden.', 'error'); return Promise.resolve(); }
-      return client.from('ordenes').select('cliente_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, numero').eq('id', ordenId).single().then((rOrd) => {
+      return client.from('ordenes').select('cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, numero, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
         const orden = rOrd.data || {};
         const clienteId = orden.cliente_id || null;
         const mr = Number(orden.monto_recibido) || 0;
@@ -3502,7 +3907,33 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
         const ordenLabel = orden.numero != null ? 'nro orden ' + orden.numero : 'nro orden ' + (ordenId || '').toString().slice(0, 8);
         const fecha = new Date().toISOString().slice(0, 10);
         const ahora = new Date().toISOString();
-        return Promise.all([
+        const toJoinOrd = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+        const codigoTipoRaw = (toJoinOrd && toJoinOrd.codigo) || null;
+        const codigoTipoNorm = normalizarCodigoTipoOperacion(codigoTipoRaw) || codigoTipoRaw;
+        const usaIntermediarioOrd =
+          (toJoinOrd && toJoinOrd.usa_intermediario === true) || !!orden.intermediario_id;
+        return getReglasDeNegocio(codigoTipoNorm, usaIntermediarioOrd).then((reglasDeNegocio) => {
+          const usarMotorReglasNegocio = Array.isArray(reglasDeNegocio) && reglasDeNegocio.length > 0;
+          if (usarMotorReglasNegocio) {
+            return client
+              .from('transacciones')
+              .update({ monto: newMonto, updated_at: new Date().toISOString() })
+              .eq('id', transaccionId)
+              .then((rUp) => {
+                if (rUp.error) {
+                  showToast('Error al actualizar monto: ' + (rUp.error?.message || ''), 'error');
+                  return Promise.resolve();
+                }
+                return sincronizarCcYCajaDesdeOrden(ordenId);
+              })
+              .then(() => {
+                if (onSuccess) onSuccess();
+              })
+              .catch((err) => {
+                showToast('Error al reajustar CC/caja: ' + (err?.message || String(err)), 'error');
+              });
+          }
+          return Promise.all([
           client.from('movimientos_cuenta_corriente').select('id, transaccion_id, concepto, monto_usd, monto_ars, monto_eur').eq('orden_id', ordenId).eq('cliente_id', clienteId),
           client.from('transacciones').select('id, tipo, monto, estado, cobrador, pagador').eq('instrumentacion_id', instrumentacionId),
         ]).then(([rMov, rTrxList]) => {
@@ -3644,6 +4075,7 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
             });
           });
           return prom.then(() => { if (onSuccess) onSuccess(); }).catch((err) => { showToast('Error al reajustar CC/caja: ' + (err?.message || ''), 'error'); });
+        });
         });
       });
     });
@@ -3789,10 +4221,18 @@ function formatImporteInputOnType(inputEl, maxDecimales, soloComaDecimal) {
 
 function setupInputImporte(inputEl, maxDecimales, soloComaDecimal) {
   if (!inputEl) return;
+  // Evita acumular listeners si el mismo input se configura en cada apertura de modal (p. ej. transaccion-monto).
+  if (inputEl.dataset.importeInputBound === '1') {
+    inputEl._importeValorPrevio = inputEl.value;
+    return;
+  }
+  inputEl.dataset.importeInputBound = '1';
   inputEl.addEventListener('focus', () => {
     if (inputEl.value === '0' || inputEl.value === '') inputEl._importeValorPrevio = inputEl.value || '0';
   });
-  inputEl.addEventListener('input', () => formatImporteInputOnType(inputEl, maxDecimales, soloComaDecimal));
+  // Capture: corre antes que otros listeners en bubble (p. ej. actualizarMontoCalculado en transaccion-monto)
+  // para que miles/decimales queden aplicados antes de parsear el valor.
+  inputEl.addEventListener('input', () => formatImporteInputOnType(inputEl, maxDecimales, soloComaDecimal), true);
   inputEl.addEventListener('blur', () => {
     const val = inputEl.value.trim();
     const n = parseImporteInput(val);
@@ -3919,12 +4359,12 @@ let ordenesVistaTiposOpMap = {};
 let ordenesVistaIntermediariosMap = {};
 let ordenesFiltrosListenersAttached = false;
 
-/** tiposMap[id] = { codigo, nombre, icono_modo?, icono_url_publica? } o legacy string (solo código). */
+/** tiposMap[id] = { codigo, nombre, icono_modo?, icono_url_publica?, usa_intermediario? } o legacy string (solo código). */
 function htmlCeldaTipoOperacionDesdeMap(tipoOpId, tiposMap) {
   const t = tipoOpId ? tiposMap[tipoOpId] : null;
   if (t == null) return htmlTipoOperacionIconos('');
   if (typeof t === 'string') return htmlTipoOperacionIconos(t);
-  return htmlTipoOperacionIconos(t.codigo || '', t.nombre || '', { iconoModo: t.icono_modo, iconoUrlPublica: t.icono_url_publica });
+  return htmlTipoOperacionIconos(t.codigo || '', t.nombre || '', { iconoModo: t.icono_modo, iconoUrlPublica: t.icono_url_publica, usaIntermediario: t.usa_intermediario === true });
 }
 
 function clearOrdenTipoOperacionListboxFixedStyles(list) {
@@ -3992,13 +4432,14 @@ function rebuildOrdenTipoOperacionListbox() {
       const modoRaw = (opt.getAttribute('data-icono-modo')) || 'auto';
       const modo = modoRaw === 'cheque' || modoRaw === 'custom' ? modoRaw : 'auto';
       const url = (opt.getAttribute('data-icono-url')) || '';
+      const usaInt = opt.getAttribute('data-usa-intermediario') === 'true';
       const escV = escapeHtml(v).replace(/"/g, '&quot;');
       const selected = v === current ? 'true' : 'false';
       if (!v) {
         return `<li role="presentation"><button type="button" class="orden-tipo-operacion-option" role="option" data-value="" aria-selected="${selected}"><span class="orden-tipo-operacion-placeholder">Elegir…</span></button></li>`;
       }
       const iconsHtml = codigo
-        ? htmlTipoOperacionIconos(codigo, nombre, { iconoModo: modo, iconoUrlPublica: url })
+        ? htmlTipoOperacionIconos(codigo, nombre, { iconoModo: modo, iconoUrlPublica: url, usaIntermediario: usaInt })
         : `<span class="tipo-op-iconos">${escapeHtml(nombre)}</span>`;
       return `<li role="presentation"><button type="button" class="orden-tipo-operacion-option" role="option" data-value="${escV}" aria-selected="${selected}">${iconsHtml}<span class="orden-tipo-operacion-option-label">${escapeHtml(nombre)}</span></button></li>`;
     })
@@ -4019,7 +4460,8 @@ function syncOrdenTipoOperacionIconosPreview() {
   const modoRaw = (opt && opt.getAttribute('data-icono-modo')) || 'auto';
   const modo = modoRaw === 'cheque' || modoRaw === 'custom' ? modoRaw : 'auto';
   const url = (opt && opt.getAttribute('data-icono-url')) || '';
-  const ic = codigo ? htmlTipoOperacionIconos(codigo, nombre, { iconoModo: modo, iconoUrlPublica: url }) : '';
+  const usaInt = opt && opt.getAttribute('data-usa-intermediario') === 'true';
+  const ic = codigo ? htmlTipoOperacionIconos(codigo, nombre, { iconoModo: modo, iconoUrlPublica: url, usaIntermediario: usaInt }) : '';
   display.innerHTML = `<span class="orden-tipo-operacion-combo-display-inner">${ic}<span class="orden-tipo-operacion-combo-nombre">${escapeHtml(nombre)}</span></span>`;
 }
 
@@ -4173,7 +4615,7 @@ function loadOrdenes() {
         const intIds = [...new Set(list.map((o) => o.intermediario_id).filter(Boolean))];
         return Promise.all([
           client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
-          tipoOpIds.length ? client.from('tipos_operacion').select('id, nombre, codigo, moneda_in, moneda_out, icono_modo, icono_url_publica').in('id', tipoOpIds) : Promise.resolve({ data: [] }),
+          tipoOpIds.length ? client.from('tipos_operacion').select('id, nombre, codigo, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica').in('id', tipoOpIds) : Promise.resolve({ data: [] }),
           client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
         ]).then(([crClientes, tr, crInt]) => {
           const clientesMap = {};
@@ -4185,6 +4627,7 @@ function loadOrdenes() {
               nombre: t.nombre || '',
               moneda_in: (t.moneda_in || '').toString().trim(),
               moneda_out: (t.moneda_out || '').toString().trim(),
+              usa_intermediario: t.usa_intermediario === true,
               icono_modo: (t.icono_modo || 'auto').toString().trim().toLowerCase(),
               icono_url_publica: (t.icono_url_publica || '').toString().trim(),
             };
@@ -4246,6 +4689,68 @@ function crearOrdenBorrador() {
   });
 }
 
+function syncOrdenIntPatronInstrumentacionWrap() {
+  const wrap = document.getElementById('orden-wrap-int-patron-instrumentacion');
+  if (!wrap) return;
+  const opt = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+  if (!opt) return;
+  const codigo = opt.getAttribute('data-codigo') || '';
+  const mi = opt.getAttribute('data-moneda-in') || '';
+  const mo = opt.getAttribute('data-moneda-out') || '';
+  const usaInt = opt.getAttribute('data-usa-intermediario') === 'true';
+  const intVal = document.getElementById('orden-intermediario')?.value?.trim();
+  const esCheque = esTipoOperacionChequeArs(codigo, mi, mo);
+  const show = usaInt && !!intVal && !esCheque;
+  wrap.style.display = show ? 'block' : 'none';
+}
+
+function setupOrdenIntPatronRadiosOnce() {
+  if (typeof document === 'undefined' || document.body.dataset.ordenIntPatronRadiosBound === '1') return;
+  document.body.dataset.ordenIntPatronRadiosBound = '1';
+  document.querySelectorAll('input[name="orden-int-patron-radio"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      const hid = document.getElementById('orden-int-patron');
+      if (hid && radio.checked) hid.value = radio.value;
+    });
+  });
+}
+
+function resetOrdenIntPatronUi() {
+  const hid = document.getElementById('orden-int-patron');
+  const r0 = document.querySelector('input[name="orden-int-patron-radio"][value="cp_ic"]');
+  if (r0) r0.checked = true;
+  if (hid) hid.value = 'cp_ic';
+}
+
+/** Si ya hay 2 transacciones, alinea radios con patrón detectado (solo UI; no persiste en orden). */
+function syncPatronDesdeTransaccionesOrdenInt(ordenId) {
+  if (!ordenId || !client) return Promise.resolve();
+  return client.from('instrumentacion').select('id').eq('orden_id', ordenId).maybeSingle()
+    .then((rInst) => {
+      const instId = rInst.data && rInst.data.id;
+      if (!instId) return Promise.resolve();
+      return client.from('transacciones').select('tipo, pagador, cobrador, numero, created_at').eq('instrumentacion_id', instId).order('numero', { ascending: true }).order('created_at', { ascending: true });
+    })
+    .then((rTr) => {
+      const list = (rTr && rTr.data) || [];
+      if (list.length < 2) return;
+      const t1 = list[0];
+      const cob1 = String(t1.cobrador || '').toLowerCase();
+      const esIngreso = (t1.tipo || '').toLowerCase() === 'ingreso';
+      const hid = document.getElementById('orden-int-patron');
+      const rCi = document.querySelector('input[name="orden-int-patron-radio"][value="ci_pc"]');
+      const rCp = document.querySelector('input[name="orden-int-patron-radio"][value="cp_ic"]');
+      if (esIngreso && cob1 === 'intermediario') {
+        if (hid) hid.value = 'ci_pc';
+        if (rCi) rCi.checked = true;
+      } else {
+        if (hid) hid.value = 'cp_ic';
+        if (rCp) rCp.checked = true;
+      }
+    })
+    .catch(() => {});
+}
+
 function openModalOrden(registro) {
   const backdrop = document.getElementById('modal-orden-backdrop');
   const titulo = document.getElementById('modal-orden-titulo');
@@ -4274,7 +4779,7 @@ function openModalOrden(registro) {
 
   const promDatos = Promise.all([
     client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
-    client.from('tipos_operacion').select('id, codigo, nombre, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica').eq('activo', true).order('codigo'),
+    client.from('tipos_operacion').select('id, codigo, nombre, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica').eq('activo', true).order('codigo').order('usa_intermediario'),
     client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
   ]);
   const promRegistro = registro
@@ -4341,6 +4846,7 @@ function openModalOrden(registro) {
           if (pctIntEl) pctIntEl.disabled = false;
         }
       }
+      syncOrdenIntPatronInstrumentacionWrap();
     }
 
     function syncComisionPctOtro(campoCambiado) {
@@ -4360,10 +4866,11 @@ function openModalOrden(registro) {
     function onTipoChange() {
       const opt = selTipoEl && selTipoEl.selectedOptions && selTipoEl.selectedOptions[0];
       const codigo = opt ? (opt.getAttribute('data-codigo') || '') : '';
+      const tipoId = selTipoEl ? (selTipoEl.value || '') : '';
       if (codigo) {
         if (wizard) wizard.style.display = 'block';
         if (selCliente) selCliente.disabled = false;
-        adaptarFormularioOrden(codigo, tipos);
+        adaptarFormularioOrden(codigo, tipos, tipoId);
         showStep('participantes');
         toggleComisionSplit();
       } else {
@@ -4375,7 +4882,12 @@ function openModalOrden(registro) {
       rebuildOrdenTipoOperacionListbox();
     }
     if (selTipoEl) selTipoEl.onchange = onTipoChange;
-    if (selIntEl) selIntEl.addEventListener('change', toggleComisionSplit);
+    if (selIntEl) {
+      selIntEl.addEventListener('change', () => {
+        toggleComisionSplit();
+        syncOrdenIntPatronInstrumentacionWrap();
+      });
+    }
     if (pctPandyEl) pctPandyEl.addEventListener('change', () => syncComisionPctOtro('pandy'));
     if (pctPandyEl) pctPandyEl.addEventListener('input', () => syncComisionPctOtro('pandy'));
     if (pctIntEl) pctIntEl.addEventListener('change', () => syncComisionPctOtro('intermediario'));
@@ -4531,6 +5043,13 @@ function openModalOrden(registro) {
     promContinuar.then(() => {
       if (pctPandyEl && !pctPandyEl.value) pctPandyEl.value = '100';
       if (pctIntEl && !pctIntEl.value) pctIntEl.value = '0';
+      setupOrdenIntPatronRadiosOnce();
+      resetOrdenIntPatronUi();
+      if (registroActual && registroActual.id) {
+        syncPatronDesdeTransaccionesOrdenInt(registroActual.id).then(() => syncOrdenIntPatronInstrumentacionWrap());
+      } else {
+        syncOrdenIntPatronInstrumentacionWrap();
+      }
       backdrop.classList.add('activo');
       document.body.classList.add('modal-orden-abierto');
       showOrdenWizardStep('participantes');
@@ -4554,11 +5073,16 @@ function openModalOrden(registro) {
   });
 }
 
-function adaptarFormularioOrden(codigo, tipos) {
+function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
   // Prioridad: moneda_in/moneda_out del tipo (tabla); fallback: parsear código (primera = recibida, segunda = entregada)
   let recibidaDesdeTipo = null;
   let entregadaDesdeTipo = null;
-  const tipo = Array.isArray(tipos) && codigo ? tipos.find((t) => (t.codigo || '') === codigo) : null;
+  const tipo = Array.isArray(tipos)
+    ? (
+      (tipoIdSeleccionado ? tipos.find((t) => String(t.id || '') === String(tipoIdSeleccionado)) : null)
+      || (codigo ? tipos.find((t) => (t.codigo || '') === codigo) : null)
+    )
+    : null;
   const usaIntermediario = tipo && tipo.usa_intermediario === true;
 
   const wrapIntermediario = document.getElementById('orden-wrap-intermediario');
@@ -4972,9 +5496,13 @@ function adaptarFormularioOrden(codigo, tipos) {
     if (montoEntregadoEl) montoEntregadoEl.readOnly = false;
   }
   if (isTipoPrimerosDatos) actualizarPrimerosDatos();
+  const lblIntTxt = document.getElementById('orden-label-intermediario-texto');
+  if (lblIntTxt) lblIntTxt.textContent = usaIntermediario ? 'Intermediario *' : 'Intermediario (opcional)';
+  syncOrdenIntPatronInstrumentacionWrap();
 }
 
-function closeModalOrden() {
+/** Cierra el modal de orden (sin validar instrumentación). Usar solicitarCierreModalOrden desde la UI del wizard. */
+function ejecutarCierreModalOrden() {
   const idBorrador = ordenIdBorradorParaEliminar;
   const instId = ordenWizardInstrumentacionIdActual;
   ordenIdBorradorParaEliminar = null;
@@ -5006,6 +5534,10 @@ function closeModalOrden() {
   } else {
     doClose();
   }
+}
+
+function closeModalOrden() {
+  ejecutarCierreModalOrden();
 }
 
 function showOrdenWizardStep(which) {
@@ -5083,6 +5615,19 @@ function insertOrdenConProximoNumero(payload) {
   });
 }
 
+/** El split USD-USD/CHEQUE usa display:flex|none; no confundir style.display === '' con visible (rompe guardar e instrumentación). */
+function ordenWrapComisionSplitEsVisible() {
+  const wrapSplitEl = document.getElementById('orden-wrap-comision-split');
+  if (!wrapSplitEl) return false;
+  try {
+    return typeof window !== 'undefined' && window.getComputedStyle
+      ? window.getComputedStyle(wrapSplitEl).display !== 'none'
+      : (wrapSplitEl.style.display !== 'none' && wrapSplitEl.style.display !== '');
+  } catch (_) {
+    return wrapSplitEl.style.display !== 'none' && wrapSplitEl.style.display !== '';
+  }
+}
+
 /** Guarda la orden según el form, pero sin cerrar el modal. Devuelve Promise<ordenId>. */
 function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
   const idEl = document.getElementById('orden-id');
@@ -5112,6 +5657,10 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
     showToast('Elegí un tipo de operación.', 'error');
     return Promise.resolve(null);
   }
+  if (usaIntermediarioTipo && !intermediarioId) {
+    showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
+    return Promise.resolve(null);
+  }
   if (!fecha || isNaN(montoRecibido) || montoRecibido <= 0 || isNaN(montoEntregado) || montoEntregado <= 0) {
     showToast('Completá fecha, monto recibido y monto entregado (números positivos).', 'error');
     return Promise.resolve(null);
@@ -5135,10 +5684,6 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
       showToast('En operación con cheque (CHEQUE–ARS) el monto a recibir debe ser mayor al monto a entregar (descuento acuerdo).', 'error');
       return Promise.resolve(null);
     }
-    if (!intermediarioId) {
-      showToast('En operación con cheque (CHEQUE–ARS) es obligatorio elegir un intermediario.', 'error');
-      return Promise.resolve(null);
-    }
     const tasaPctRaw = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
     const tasaPct = tasaPctRaw ? parseImporteInput(tasaPctRaw) : null;
     if (typeof tasaPct !== 'number' || isNaN(tasaPct) || tasaPct <= 0 || tasaPct >= 100) {
@@ -5152,7 +5697,7 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
         : (tipoCodigo === 'USD-ARS' && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
   const pctPandy = parseImporteInput(document.getElementById('orden-comision-pandy-pct')?.value || '100');
   const pctInt = parseImporteInput(document.getElementById('orden-comision-intermediario-pct')?.value || '0');
-  const tieneSplitVisible = document.getElementById('orden-wrap-comision-split')?.style?.display !== 'none';
+  const tieneSplitVisible = ordenWrapComisionSplitEsVisible();
   if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-USD' || tipoCodigo === 'USD-ARS' || esChequeArsOrden) && intermediarioId && tieneSplitVisible) {
     const a = Number(pctPandy);
     const b = Number(pctInt);
@@ -5339,11 +5884,8 @@ function renderOrdenWizardInstrumentacion(instId) {
           if (instrumentadoTexto) instrumentadoTexto.textContent = '–';
         }
         if (acuerdoAviso && orden) {
-          const mr = Number(orden.monto_recibido) || 0;
-          const me = Number(orden.monto_entregado) || 0;
-          const okRec = totalRecibido <= mr + 1e-6;
-          const okEnt = totalEntregado <= me + 1e-6;
-          acuerdoAviso.textContent = (!okRec || !okEnt) ? ' (Supera acuerdo)' : '';
+          const avisoInst = textoAvisoFaltaOExcesoInstrumentacion(orden, lista);
+          acuerdoAviso.textContent = avisoInst ? ` (${avisoInst})` : '';
         }
         const modosMap = {};
         (rModos.data || []).forEach((m) => { modosMap[m.id] = m; });
@@ -5431,8 +5973,14 @@ function renderOrdenWizardInstrumentacion(instId) {
           if (esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out) && orden.intermediario_id) {
             return autoCompletarInstrumentacionChequeConIntermediario(ordenId, instId, orden);
           }
-          if (!orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-USD' || codigo === 'USD-ARS' || esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out))) {
+          const autoDosTxSinInt =
+            !orden.intermediario_id &&
+            (codigo === 'USD-USD' || codigo === 'ARS-USD' || codigo === 'USD-ARS' || esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out));
+          if (autoDosTxSinInt) {
             return autoCompletarInstrumentacionSinIntermediario(ordenId, instId, orden);
+          }
+          if (orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-USD' || codigo === 'USD-ARS') && !esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out)) {
+            return autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instId, orden);
           }
           return Promise.resolve();
         }).then(() =>
@@ -5490,6 +6038,10 @@ function saveOrden(aceptaComisionCero = false) {
     showToast('Elegí un tipo de operación.', 'error');
     return;
   }
+  if (usaIntermediarioSave && !intermediarioId) {
+    showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
+    return;
+  }
   if (!fecha || isNaN(montoRecibido) || montoRecibido <= 0 || isNaN(montoEntregado) || montoEntregado <= 0) {
     showToast('Completá fecha, monto recibido y monto entregado (números positivos).', 'error');
     return;
@@ -5519,10 +6071,6 @@ function saveOrden(aceptaComisionCero = false) {
       showToast('En operación con cheque (CHEQUE–ARS) el monto a recibir debe ser mayor al monto a entregar (descuento acuerdo).', 'error');
       return;
     }
-    if (!intermediarioId) {
-      showToast('En operación con cheque (CHEQUE–ARS) es obligatorio elegir un intermediario.', 'error');
-      return;
-    }
     const tasaPctRaw = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
     const tasaPct = tasaPctRaw ? parseImporteInput(tasaPctRaw) : null;
     if (typeof tasaPct !== 'number' || isNaN(tasaPct) || tasaPct <= 0 || tasaPct >= 100) {
@@ -5534,7 +6082,7 @@ function saveOrden(aceptaComisionCero = false) {
 
   const pctPandy = parseImporteInput(document.getElementById('orden-comision-pandy-pct')?.value || '100');
   const pctInt = parseImporteInput(document.getElementById('orden-comision-intermediario-pct')?.value || '0');
-  const tieneSplitVisible = document.getElementById('orden-wrap-comision-split')?.style?.display !== 'none';
+  const tieneSplitVisible = ordenWrapComisionSplitEsVisible();
   if ((tipoCodigo === 'USD-USD' || tipoCodigo === 'ARS-USD' || tipoCodigo === 'USD-ARS' || esChequeArsSave) && intermediarioId && tieneSplitVisible) {
     const a = Number(pctPandy);
     const b = Number(pctInt);
@@ -5594,7 +6142,7 @@ function saveOrden(aceptaComisionCero = false) {
     }
     const ordenId = id || (res.data && res.data[0] && res.data[0].id);
     if (!ordenId) {
-      closeModalOrden();
+      ejecutarCierreModalOrden();
       loadOrdenes();
       return;
     }
@@ -5627,7 +6175,7 @@ function saveOrden(aceptaComisionCero = false) {
       guardarComisionYContinuar(() => {
         client.from('instrumentacion').insert({ orden_id: ordenId }).then((rInst) => {
           if (rInst.error) console.warn('Instrumentación no creada:', rInst.error.message);
-          closeModalOrden();
+          ejecutarCierreModalOrden();
           loadOrdenes();
         });
       });
@@ -5643,7 +6191,7 @@ function saveOrden(aceptaComisionCero = false) {
         client.from('movimientos_caja').select('id').eq('orden_id', ordenId).eq('estado', 'cerrado').limit(1).then((r) => {
           const tieneMovimientosLegacy = r.data && r.data.length > 0;
           if (!tieneMovimientosLegacy) {
-            closeModalOrden();
+            ejecutarCierreModalOrden();
             loadOrdenes();
             return;
           }
@@ -5652,7 +6200,7 @@ function saveOrden(aceptaComisionCero = false) {
             if (rCc.error) showToast('Error al revertir cuenta corriente: ' + (rCc.error.message || ''), 'error');
             client.from('movimientos_caja').update({ estado: 'anulado', estado_fecha: ahora }).eq('orden_id', ordenId).then((rCaja) => {
               if (rCaja.error) showToast('Error al revertir caja: ' + (rCaja.error.message || ''), 'error');
-              closeModalOrden();
+              ejecutarCierreModalOrden();
               loadOrdenes();
               loadCajas();
               const vistaCc = document.getElementById('vista-cuenta-corriente');
@@ -5664,7 +6212,7 @@ function saveOrden(aceptaComisionCero = false) {
       }
       client.from('movimientos_caja').select('id').eq('orden_id', ordenId).eq('estado', 'cerrado').limit(1).then((r) => {
         if (r.data && r.data.length > 0) {
-          closeModalOrden();
+          ejecutarCierreModalOrden();
           loadOrdenes();
           return;
         }
@@ -5677,7 +6225,7 @@ function saveOrden(aceptaComisionCero = false) {
           ];
           client.from('movimientos_caja').insert(movCaja).then(() => {
             // Cuenta corriente solo se actualiza al ejecutar transacciones, nunca en concertada.
-            closeModalOrden();
+            ejecutarCierreModalOrden();
             loadOrdenes();
             loadCajas();
           });
@@ -5694,19 +6242,25 @@ function setupModalOrden() {
   const btnCancel = document.getElementById('modal-orden-cancelar');
   const form = document.getElementById('form-orden');
   const btnNuevo = document.getElementById('btn-nueva-orden');
-  const btnCerrarWizard = document.getElementById('orden-btn-cerrar-wizard');
-  const btnCancelarWizard = document.getElementById('orden-btn-cancelar-wizard');
-  if (btnClose) btnClose.addEventListener('click', closeModalOrden);
+  if (btnClose) btnClose.addEventListener('click', () => solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true }));
   if (btnCancel) btnCancel.addEventListener('click', () => {
-    showConfirm('Los datos se perderán. ¿Continuar?', 'Sí, salir', () => closeModalOrden());
+    const ordenId = (document.getElementById('orden-id') && document.getElementById('orden-id').value || '').trim();
+    const instId = ordenWizardInstrumentacionIdActual;
+    if (ordenId && instId) {
+      solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true });
+      return;
+    }
+    showConfirm('Los datos se perderán. ¿Continuar?', 'Sí, salir', () => {
+      ejecutarCierreModalOrden();
+      loadOrdenes();
+    });
   });
-  if (btnCerrarWizard) btnCerrarWizard.addEventListener('click', () => { closeModalOrden(); loadOrdenes(); });
-  if (btnCancelarWizard) btnCancelarWizard.addEventListener('click', closeModalOrden);
+  // Listo / Cerrar del paso instrumentación: solo delegación en document (evita doble disparo con addEventListener en el botón).
   // Delegación en document (capture): click y mousedown por si el click no llega (p. ej. en algunos entornos)
   function ordenWizardCerrar(btnId, back) {
     try {
-      if (btnId === 'orden-btn-cerrar-wizard') { closeModalOrden(); loadOrdenes(); }
-      else if (btnId === 'orden-btn-cancelar-wizard') closeModalOrden();
+      if (btnId === 'orden-btn-cerrar-wizard') solicitarCierreModalOrden({ modo: 'listo', refrescarOrdenes: true });
+      else if (btnId === 'orden-btn-cancelar-wizard') solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true });
     } catch (err) {
       if (typeof console !== 'undefined' && console.error) console.error('ordenWizardCerrar', err);
       if (back) { back.classList.remove('activo'); document.body.classList.remove('modal-orden-abierto'); }
@@ -5724,7 +6278,6 @@ function setupModalOrden() {
     };
   }
   document.addEventListener('click', ordenWizardCerrarHandler('click'), true);
-  document.addEventListener('mousedown', ordenWizardCerrarHandler('mousedown'), true);
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
     const back = document.getElementById('modal-orden-backdrop');
@@ -5737,10 +6290,9 @@ function setupModalOrden() {
       return;
     }
     e.preventDefault();
-    closeModalOrden();
-    loadOrdenes();
+    solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true });
   }, true);
-  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, closeModalOrden);
+  if (backdrop) setupBackdropCloseOnlyOnRealClick(backdrop, () => solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true }));
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveOrden(); });
   if (btnNuevo) btnNuevo.addEventListener('click', () => openModalOrden(null));
   ['orden-cotizacion', 'orden-monto-recibido', 'orden-monto-entregado', 'orden-importe-cheque', 'orden-tasa-descuento-cliente', 'orden-tasa-descuento-intermediario', 'orden-comision-pandy-pct', 'orden-comision-intermediario-pct'].forEach((id) => {
@@ -5957,7 +6509,7 @@ function openModalChatOrden() {
   if (inputEl) inputEl.focus();
   Promise.all([
     client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
-    client.from('tipos_operacion').select('id, codigo, nombre').eq('activo', true).order('codigo'),
+    client.from('tipos_operacion').select('id, codigo, nombre').eq('activo', true).order('codigo').order('usa_intermediario'),
   ]).then(([rC, rT]) => {
     chatOrdenClientes = rC.data || [];
     chatOrdenTipos = rT.data || [];
@@ -6129,6 +6681,8 @@ function setupModalChatOrden() {
 
 // --- Transacciones (panel debajo de la orden) ---
 let transaccionesOrdenIdActual = null;
+/** Sólo el último openModalTransaccion aplica UI: si hay doble click o reentradas, un callback tardío no debe ejecutar form.reset() pisando el formulario ya cargado (E2E 03 USD-ARS E,P: modal quedaba en Ingreso + modo Ninguno). */
+let openModalTransaccionSeq = 0;
 
 /** Convierte monto a la moneda destino. tipo_cambio = unidades ARS por 1 unidad de la otra (ej. ARS por 1 USD). */
 function convertirAMonedaOrden(monto, monedaOrigen, monedaDestino, tipoCambio) {
@@ -6142,12 +6696,13 @@ function convertirAMonedaOrden(monto, monedaOrigen, monedaDestino, tipoCambio) {
   return m;
 }
 
-/** Totales de transacciones en moneda del acuerdo. orden: { moneda_recibida, monto_recibido, moneda_entregada, monto_entregado }. */
+/** Totales de transacciones en moneda del acuerdo. orden: { moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion? }. */
 function totalesInstrumentacion(transacciones, orden) {
   if (!orden) return { totalRecibido: 0, totalEntregado: 0 };
   const requiereCliente = !!orden.cliente_id;
   const monedaRecibida = orden.moneda_recibida || 'USD';
   const monedaEntregada = orden.moneda_entregada || 'USD';
+  const tcAcuerdo = orden.cotizacion != null && !isNaN(Number(orden.cotizacion)) && Number(orden.cotizacion) > 0 ? Number(orden.cotizacion) : null;
   let totalRecibido = 0;
   let totalEntregado = 0;
   (transacciones || []).forEach((t) => {
@@ -6155,7 +6710,8 @@ function totalesInstrumentacion(transacciones, orden) {
     // Las transacciones Pandy ↔ Intermediario se permiten para conciliar cuentas, pero no deben bloquear el acuerdo.
     if (requiereCliente && !(t.cobrador === 'cliente' || t.pagador === 'cliente')) return;
     const monto = Number(t.monto);
-    const tc = t.tipo_cambio != null && !isNaN(t.tipo_cambio) ? Number(t.tipo_cambio) : null;
+    const tcTrx = t.tipo_cambio != null && !isNaN(t.tipo_cambio) ? Number(t.tipo_cambio) : null;
+    const tc = (tcTrx != null && tcTrx > 0) ? tcTrx : tcAcuerdo;
     if (t.tipo === 'ingreso') {
       totalRecibido += convertirAMonedaOrden(monto, t.moneda, monedaRecibida, tc);
     } else {
@@ -6204,6 +6760,113 @@ function estaConciliada(transacciones, orden) {
   return Math.abs(totalRecibido - montoRecibido) <= tol && Math.abs(totalEntregado - montoEntregado) <= tol;
 }
 
+/** Texto corto para UI: faltan ingresos/egresos por N o exceso respecto del acuerdo. */
+function textoAvisoFaltaOExcesoInstrumentacion(orden, transacciones) {
+  if (!orden) return '';
+  const { totalRecibido, totalEntregado } = totalesInstrumentacion(transacciones || [], orden);
+  const mr = Number(orden.monto_recibido) || 0;
+  const me = Number(orden.monto_entregado) || 0;
+  const monR = (orden.moneda_recibida || 'USD').trim();
+  const monE = (orden.moneda_entregada || 'USD').trim();
+  const tol = 1e-6;
+  if (estaConciliada(transacciones, orden)) return '';
+  const partes = [];
+  if (totalRecibido < mr - tol) partes.push(`Faltan ingresos por ${formatImporteDisplay(mr - totalRecibido)} ${monR}`);
+  else if (totalRecibido > mr + tol) partes.push(`Los ingresos superan el acuerdo en ${formatImporteDisplay(totalRecibido - mr)} ${monR}`);
+  if (totalEntregado < me - tol) partes.push(`Faltan egresos por ${formatImporteDisplay(me - totalEntregado)} ${monE}`);
+  else if (totalEntregado > me + tol) partes.push(`Los egresos superan el acuerdo en ${formatImporteDisplay(totalEntregado - me)} ${monE}`);
+  return partes.join(' · ');
+}
+
+function fetchOrdenYTransaccionesParaValidarCierreWizard(ordenId, instId) {
+  if (!ordenId || !instId) return Promise.resolve({ orden: null, transacciones: [] });
+  return client.from('ordenes').select('id, estado, cliente_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion').eq('id', ordenId).single().then((rOrd) => {
+    const orden = rOrd.data;
+    if (!orden) return { orden: null, transacciones: [] };
+    return client.from('transacciones').select('id, tipo, moneda, monto, cobrador, pagador, tipo_cambio').eq('instrumentacion_id', instId).order('created_at', { ascending: true }).then((rTr) => ({
+      orden,
+      transacciones: rTr.data || [],
+    }));
+  });
+}
+
+/** Aplica montos editados en la tabla del wizard (inputs sin blur) antes de validar cierre. */
+function aplicarMontosDesdeInputsWizardInstrumentacion(transacciones, rootEl) {
+  if (!rootEl || !transacciones || !transacciones.length) return transacciones || [];
+  const map = {};
+  rootEl.querySelectorAll('.input-monto-transaccion-tabla').forEach((input) => {
+    const id = input.getAttribute('data-id');
+    if (!id) return;
+    const v = parseImporteInput(input.value);
+    if (typeof v === 'number' && !isNaN(v)) map[id] = v;
+  });
+  return transacciones.map((t) => (map[t.id] != null ? { ...t, monto: map[t.id] } : t));
+}
+
+/**
+ * Listo: no cierra hasta estar conciliada (toast + scroll al acuerdo).
+ * Salir (X, Cerrar, Escape, backdrop, Cancelar con instrumentación abierta): confirmación si no está conciliada.
+ */
+function solicitarCierreModalOrden(options) {
+  const modo = options && options.modo === 'listo' ? 'listo' : 'salir';
+  const refrescarOrdenes = options && options.refrescarOrdenes !== false;
+  const backdrop = document.getElementById('modal-orden-backdrop');
+  if (!backdrop || !backdrop.classList.contains('activo')) return;
+
+  const ordenId = (document.getElementById('orden-id') && document.getElementById('orden-id').value || '').trim();
+  const instId = ordenWizardInstrumentacionIdActual;
+
+  function finalizar() {
+    ejecutarCierreModalOrden();
+    if (refrescarOrdenes && typeof loadOrdenes === 'function') loadOrdenes();
+  }
+
+  if (!ordenId || !instId) {
+    finalizar();
+    return;
+  }
+
+  fetchOrdenYTransaccionesParaValidarCierreWizard(ordenId, instId).then(({ orden, transacciones }) => {
+    const tx = aplicarMontosDesdeInputsWizardInstrumentacion(transacciones, backdrop);
+    if (!orden) {
+      finalizar();
+      return;
+    }
+    if (orden.estado === 'anulada') {
+      finalizar();
+      return;
+    }
+    if (estaConciliada(tx, orden)) {
+      finalizar();
+      return;
+    }
+    const aviso = textoAvisoFaltaOExcesoInstrumentacion(orden, tx);
+    if (modo === 'listo') {
+      showToast(
+        'Completá la instrumentación para cerrar con «Listo». ' + (aviso || 'Los totales no coinciden con el acuerdo.'),
+        'error'
+      );
+      const blk = document.getElementById('orden-inst-acuerdo-block');
+      const scrollRoot = document.querySelector('#orden-step-instrumentacion .orden-inst-contenido-scroll');
+      if (blk) {
+        if (scrollRoot && scrollRoot.contains(blk)) {
+          const top = blk.offsetTop - 8;
+          scrollRoot.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        } else {
+          blk.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+      return;
+    }
+    const cuerpo = aviso
+      ? `${aviso} ¿Salir igual? La orden quedará pendiente de instrumentar.`
+      : 'La instrumentación no coincide con el acuerdo. ¿Salir igual? La orden quedará pendiente de instrumentar.';
+    showConfirm(cuerpo, 'Sí, salir', () => finalizar());
+  }).catch(() => {
+    showToast('No se pudo verificar la instrumentación. Intentá de nuevo.', 'error');
+  });
+}
+
 /** Calcula el estado de la orden según transacciones y acuerdo. Devuelve { estado, conciliada, todasEjecutadas }.
  * Orden Ejecutada solo cuando TODAS las transacciones (incl. compensaciones Pandy–Intermediario) están ejecutadas. */
 function calcularEstadoOrden(transacciones, orden) {
@@ -6225,8 +6888,8 @@ function calcularEstadoOrden(transacciones, orden) {
 }
 
 /**
- * Si la orden es CHEQUE (ARS-ARS) con intermediario y ya tiene las 4 transacciones,
- * actualiza el monto de la 4.ª (ingreso efectivo del intermediario) según la tasa actual de la orden.
+ * Si existiera ingreso instrumentado Intermediario→Pandy (legacy), actualizaría su monto por la tasa.
+ * Con el modelo actual (solo Cliente↔Pandy en `transacciones`) no hay fila que actualizar.
  */
 function actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, orden) {
   if (!ordenId || !orden || !orden.intermediario_id || orden.tasa_descuento_intermediario == null) return Promise.resolve();
@@ -6335,7 +6998,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
                   intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero, moneda: monCom, monto: -comMonto,
                   concepto: conceptoCcLeyenda('comision_acuerdo', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                   ...montosCcPorMoneda(monCom, -comMonto),
-                }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, ordenNumero));
+                }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, ordenNumero, transNumero));
               }
               return Promise.resolve();
             });
@@ -6373,15 +7036,21 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
   const fecha = new Date().toISOString().slice(0, 10);
   const ahora = new Date().toISOString();
 
-  return client.from('ordenes').select('id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, tasa_descuento_intermediario').eq('id', ordenId).single()
+  return client.from('ordenes').select('id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, tasa_descuento_intermediario').eq('id', ordenId).single()
     .then((rOrd) => {
       if (rOrd.error || !rOrd.data) return Promise.resolve();
       const orden = rOrd.data;
       const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
       const codigoOrdenRaw = (toJoin && toJoin.codigo) || null;
       const codigoOrden = normalizarCodigoTipoOperacion(codigoOrdenRaw) || codigoOrdenRaw;
-      const usaIntermediario = !!orden.intermediario_id;
-      return getReglasCcModelo(codigoOrdenRaw || codigoOrden, usaIntermediario, toJoin?.moneda_in, toJoin?.moneda_out).then((reglas) => {
+      // `usa_intermediario` del catálogo o orden con intermediario: debe coincidir con el fetch a `reglas_de_negocio`.
+      const usaIntermediario =
+        (toJoin && toJoin.usa_intermediario === true) || !!orden.intermediario_id;
+      const codNorm = String(codigoOrden || '').toUpperCase();
+      return getReglasDeNegocio(codigoOrden, usaIntermediario).then((reglasDeNegocio) => {
+        const tieneReglasNeg = Array.isArray(reglasDeNegocio) && reglasDeNegocio.length > 0;
+        /** Una sola regla: si hay filas para este tipo + intermediario, el motor CC es solo `reglas_de_negocio` (sin cc_modelo_reglas). */
+        const usarMotorReglasNegocio = tieneReglasNeg;
         return client.from('instrumentacion').select('id').eq('orden_id', ordenId).maybeSingle().then((rInst) => {
         if (!rInst.data || !rInst.data.id) return Promise.resolve();
         const instId = rInst.data.id;
@@ -6429,27 +7098,55 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             const pag = String(t.pagador != null ? t.pagador : (t.tipo === 'egreso' ? 'pandy' : 'cliente')).toLowerCase();
             const esGananciaTrx = (t.concepto || '').includes('Ganancia del acuerdo');
 
-            // Caja: Pandy cobra +, Pandy paga -
-            const codigoModo = modosMap[t.modo_pago_id] || 'efectivo';
-            const cajaTipo = codigoCajaTipoDesdeCodigo(codigoModo);
-            const signoCaja = cob === 'pandy' ? 1 : -1;
-            const conceptoCaja = esGananciaTrx ? conceptoCajaTransaccionEspecial(t.concepto, mon, monto, orden.numero, t.numero) : conceptoCajaTransaccion(cob === 'pandy', mon, monto, orden.numero, t.numero);
-            rowsCaja.push({
-              moneda: mon,
-              monto: signoCaja * monto,
-              caja_tipo: cajaTipo,
-              transaccion_id: transaccionId,
-              orden_id: ordenId,
-              orden_numero: orden.numero != null ? orden.numero : null,
-              transaccion_numero: t.numero != null ? t.numero : null,
-              concepto: conceptoCaja,
-              fecha,
-              usuario_id: currentUserId,
-            });
+            // Caja solo se mueve cuando participa Pandy (pagador o cobrador).
+            if (pag === 'pandy' || cob === 'pandy') {
+              const codigoModo = modosMap[t.modo_pago_id] || 'efectivo';
+              const cajaTipo = codigoCajaTipoDesdeCodigo(codigoModo);
+              const signoCaja = cob === 'pandy' ? 1 : -1;
+              const conceptoCaja = esGananciaTrx ? conceptoCajaTransaccionEspecial(t.concepto, mon, monto, orden.numero, t.numero) : conceptoCajaTransaccion(cob === 'pandy', mon, monto, orden.numero, t.numero);
+              rowsCaja.push({
+                moneda: mon,
+                monto: signoCaja * monto,
+                caja_tipo: cajaTipo,
+                transaccion_id: transaccionId,
+                orden_id: ordenId,
+                orden_numero: orden.numero != null ? orden.numero : null,
+                transaccion_numero: t.numero != null ? t.numero : null,
+                concepto: conceptoCaja,
+                fecha,
+                usuario_id: currentUserId,
+              });
+            }
+            // Par con intermediario (USD-USD / ARS-USD / USD-ARS): la entrega al cliente como egreso Intermediario→Cliente
+            // materializa el mismo −me en caja de Pandy que un egreso Pandy→Cliente (compromiso de entrega del acuerdo).
+            if (
+              (codNorm === 'USD-USD' || codNorm === 'ARS-USD' || codNorm === 'USD-ARS') &&
+              intermediarioId &&
+              (t.tipo || '').toLowerCase() === 'egreso' &&
+              pag === 'intermediario' &&
+              cob === 'cliente'
+            ) {
+              const codigoModo = modosMap[t.modo_pago_id] || 'efectivo';
+              const cajaTipo = codigoCajaTipoDesdeCodigo(codigoModo);
+              const conceptoCaja = esGananciaTrx ? conceptoCajaTransaccionEspecial(t.concepto, mon, monto, orden.numero, t.numero) : conceptoCajaTransaccion(false, mon, monto, orden.numero, t.numero);
+              rowsCaja.push({
+                moneda: mon,
+                monto: -monto,
+                caja_tipo: cajaTipo,
+                transaccion_id: transaccionId,
+                orden_id: ordenId,
+                orden_numero: orden.numero != null ? orden.numero : null,
+                transaccion_numero: t.numero != null ? t.numero : null,
+                concepto: conceptoCaja,
+                fecha,
+                usuario_id: currentUserId,
+              });
+            }
+            // Ingreso Cliente→Intermediario (ejecutado): no genera movimiento de caja de Pandy — el efectivo lo cobra el intermediario, no la caja de la casa.
 
-            // CC: si hay reglas en tabla se construye después desde el motor; si no, lógica actual (modelo ARS-ARS hardcodeado).
+            // CC: con motor `reglas_de_negocio` se arma después; si no hay filas, lógica legacy por transacción.
             const esComisionPandyTrx = comisionPandyMonto >= 1e-6 && (t.tipo || '').toLowerCase() === 'ingreso' && pag === 'cliente' && cob === 'pandy' && Math.abs(monto - comisionPandyMonto) < 1e-6;
-            if ((!reglas || reglas.length === 0) && clienteId && !esGananciaTrx && !esComisionPandyTrx && incluirEnMovimientosCcClienteModelo(orden, t)) {
+            if (!usarMotorReglasNegocio && clienteId && !esGananciaTrx && !esComisionPandyTrx && incluirEnMovimientosCcClienteModelo(orden, t)) {
               if (pag === 'cliente' && cob !== 'intermediario') {
                 const codigo = (toJoin && toJoin.codigo) || null;
                 const esModeloCliente = esTipoOperacionChequeArs(codigo, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id;
@@ -6488,7 +7185,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               }
             }
 
-            if ((!reglas || reglas.length === 0) && intermediarioId && incluirEnMovimientosCcIntermediarioModelo(orden, t)) {
+            if (!usarMotorReglasNegocio && intermediarioId && incluirEnMovimientosCcIntermediarioModelo(orden, t)) {
               // Pandy→Int (egreso): solo -monto. La comisión se suma cuando se ejecuta Int→Pandy (ida y vuelta cerrada).
               // Según modelo (Excel): egreso Pandy→Int en CC intermediario = +200.000 (CC_INTERMEDIARIO positivo). Signo vital para reversa.
               if (cob === 'intermediario' && pag === 'pandy') {
@@ -6561,176 +7258,26 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             }
           });
 
-          // Motor desde tabla (docs/CC_MODELO_ENGINE_TABLA.md): una sola lógica — solo se lee la tabla. Crear movimiento cuando regla.incluir_en_mov_cc_* === true (la tabla ya tiene incluir = false donde no debe haber detalle).
-          if (reglas && reglas.length > 0) {
-            const parClienteCerrado = (() => {
-              const tx1 = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
-              const tx2 = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'cliente' && (t.estado || '').toLowerCase() === 'ejecutada');
-              return tx1 && tx2;
-            })();
-
-            transacciones.forEach((t) => {
-              if ((t.concepto || '').includes('Ganancia del acuerdo')) return;
-              const montoT = Number(t.monto) || 0;
-              if (comisionPandyMonto >= 1e-6 && (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && Math.abs(montoT - comisionPandyMonto) < 1e-6) return;
-              const pag = String(t.pagador || '').toLowerCase();
-              const cob = String(t.cobrador || '').toLowerCase();
-              const tipo = (t.tipo || '').toLowerCase();
-              const estado = (t.estado || '').toLowerCase();
-              const contrapartida = contrapartidaEjecutada(transacciones, t.pagador, t.cobrador, t.tipo);
-              const regla = lookupRegla(reglas, pag, cob, tipo, false, estado, contrapartida);
-              if (!regla) return;
-              const mon = (t.moneda || monR).toUpperCase();
-              const signoCli = regla.cc_cliente_signo != null ? regla.cc_cliente_signo : 0;
-              const signoInt = regla.cc_intermediario_signo != null ? regla.cc_intermediario_signo : 0;
-              const leyenda = regla.concepto_leyenda || 'cobro_realizado';
-              const estadoMov = (estado === 'ejecutada' ? 'cerrado' : 'pendiente');
-              // Dos flags por lado: sumar_al_saldo (aporta al saldo) e incluir_en_detalle (aparece en listado). Escribir cuando cualquiera sea true.
-              const escribirCcCliente = (regla.incluir_en_mov_cc_cliente || regla.cc_cliente_suma_saldo) && signoCli !== 0;
-              const escribirCcInt = (regla.incluir_en_mov_cc_intermediario || regla.cc_intermediario_suma_saldo) && signoInt !== 0;
-              if (clienteId && escribirCcCliente) {
-                const { moneda: monCc, monto: baseCli } = resolverMonedaYMontoCcClienteMotor(regla, orden, t, {
-                  montoT, mr, me, monR, monE, mon, pag, cob, tipo,
-                });
-                const montoCc = signoCli * baseCli;
-                rowsCcCliente.push({
-                  cliente_id: clienteId, orden_id: ordenId, transaccion_id: t.id, transaccion_numero: t.numero != null ? t.numero : null,
-                  concepto: conceptoCcLeyenda(leyenda, orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: monCc, monto: montoCc,
-                  estado: estadoMov, estado_fecha: ahora,
-                  sumar_al_saldo: !!regla.cc_cliente_suma_saldo,
-                  incluir_en_detalle: !!regla.incluir_en_mov_cc_cliente,
-                  ...montosCcPorMoneda(monCc, montoCc)
-                });
-                // Dos monedas sin intermediario: la exposición (p. ej. USD/me) cierra el saldo; el ingreso físico va en la moneda de la transacción (p. ej. ARS). Mostramos una línea espejo solo en detalle (no suma al saldo) para que el listado refleje el cobro en caja.
-                if (
-                  !intermediarioId &&
-                  monR !== monE &&
-                  pag === 'cliente' &&
-                  cob === 'pandy' &&
-                  tipo === 'ingreso' &&
-                  estado === 'ejecutada' &&
-                  monCc !== mon &&
-                  Math.abs(montoT) >= 1e-6
-                ) {
-                  const montoEspejo = signoCli * montoT;
-                  rowsCcCliente.push({
-                    cliente_id: clienteId, orden_id: ordenId, transaccion_id: t.id, transaccion_numero: t.numero != null ? t.numero : null,
-                    concepto: conceptoCcLeyenda(leyenda, orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: mon, monto: montoEspejo,
-                    estado: estadoMov, estado_fecha: ahora,
-                    sumar_al_saldo: false,
-                    incluir_en_detalle: true,
-                    ...montosCcPorMoneda(mon, montoEspejo)
-                  });
-                }
-                // Par simétrico al ingreso: el compromiso se registra en moneda entregada (transacción); una línea espejo en moneda recibida (mr)
-                // con transaccion_id del egreso hace que Originante = Pandy y la columna ARS/USD “cuadre” con el cobro en la otra moneda (solo detalle).
-                if (
-                  !intermediarioId &&
-                  monR !== monE &&
-                  pag === 'pandy' &&
-                  cob === 'cliente' &&
-                  tipo === 'egreso' &&
-                  estado === 'ejecutada' &&
-                  mon === monE &&
-                  Math.abs(mr) >= 1e-6
-                ) {
-                  const montoEspejoEgr = signoCli * mr;
-                  rowsCcCliente.push({
-                    cliente_id: clienteId, orden_id: ordenId, transaccion_id: t.id, transaccion_numero: t.numero != null ? t.numero : null,
-                    concepto: conceptoCcLeyenda(leyenda, orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: monR, monto: montoEspejoEgr,
-                    estado: estadoMov, estado_fecha: ahora,
-                    sumar_al_saldo: false,
-                    incluir_en_detalle: true,
-                    ...montosCcPorMoneda(monR, montoEspejoEgr)
-                  });
-                }
-              }
-              if (intermediarioId && escribirCcInt) {
-                const { moneda: monCcInt, monto: baseInt } = resolverMonedaYMontoCcIntermediarioMotor(regla, orden, t, {
-                  montoT, mr, me, monR, monE, mon, montoEfectivoInt,
-                });
-                const montoCc = signoInt * baseInt;
-                rowsCcInt.push({
-                  intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: t.id, transaccion_numero: t.numero != null ? t.numero : null,
-                  concepto: conceptoCcLeyenda(leyenda, orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: monCcInt, monto: montoCc,
-                  estado: estadoMov, estado_fecha: ahora,
-                  sumar_al_saldo: !!regla.cc_intermediario_suma_saldo,
-                  incluir_en_detalle: !!regla.incluir_en_mov_cc_intermediario,
-                  ...montosCcPorMoneda(monCcInt, montoCc)
-                });
-              }
+          // Motor único: filas en `reglas_de_negocio` para (codigo, usa_intermediario).
+          if (usarMotorReglasNegocio) {
+            aplicarMotorCcDesdeReglasDeNegocio({
+              tipoOperacionCodigo: codNorm,
+              transacciones,
+              reglasDeNegocio,
+              orden,
+              clienteId,
+              intermediarioId,
+              ordenId,
+              rowsCcCliente,
+              rowsCcInt,
+              fecha,
+              ahora,
+              comisionPandyMonto,
+              comisionPandyMon,
+              comisionIntMonto,
+              comisionIntMon,
+              montoEfectivoInt,
             });
-            if (clienteId && comisionPandyMonto >= 1e-6) {
-              const condicionPandy = getCondicionComision(reglas, 'cliente', 'pandy', 'ingreso');
-              const estadoComPandy = condicionPandy ? estadoEfectivoComision(transacciones, condicionPandy) : (parClienteCerrado ? 'ejecutada' : 'pendiente');
-              const reglaComPandy = lookupRegla(reglas, 'cliente', 'pandy', 'ingreso', true, estadoComPandy, parClienteCerrado);
-              if (reglaComPandy && (reglaComPandy.incluir_en_mov_cc_cliente || reglaComPandy.cc_cliente_suma_saldo)) {
-                const signo = reglaComPandy.cc_cliente_signo != null ? reglaComPandy.cc_cliente_signo : 1;
-                const cerrado = estadoComPandy === 'ejecutada';
-                /** Nro. trans. del ingreso Cliente→Pandy (no la fila de comisión) para el texto del concepto */
-                const trIngresoClientePandy = (transacciones || [])
-                  .filter((t) => (t.tipo || '').toLowerCase() === 'ingreso'
-                    && String(t.pagador || '').toLowerCase() === 'cliente'
-                    && String(t.cobrador || '').toLowerCase() === 'pandy'
-                    && (t.estado || '').toLowerCase() === 'ejecutada'
-                    && Math.abs(Number(t.monto) - comisionPandyMonto) >= 1e-6)
-                  .sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0))[0];
-                const nroTransComisionConcepto = trIngresoClientePandy && trIngresoClientePandy.numero != null ? trIngresoClientePandy.numero : null;
-                rowsCcCliente.push({
-                  cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null,
-                  concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConcepto), fecha, usuario_id: currentUserId,
-                  moneda: comisionPandyMon, monto: signo * comisionPandyMonto, estado: cerrado ? 'cerrado' : 'pendiente', estado_fecha: ahora,
-                  sumar_al_saldo: !!reglaComPandy.cc_cliente_suma_saldo,
-                  incluir_en_detalle: !!reglaComPandy.incluir_en_mov_cc_cliente,
-                  ...montosCcPorMoneda(comisionPandyMon, signo * comisionPandyMonto)
-                });
-              }
-            }
-            if (intermediarioId && comisionIntMonto >= 1e-6) {
-              const condicion = getCondicionComision(reglas, 'pandy', 'intermediario', 'egreso');
-              const estadoEf = estadoEfectivoComision(transacciones, condicion);
-              const parIntCerrado = estadoEf === 'ejecutada';
-              const reglaComInt = lookupRegla(reglas, 'pandy', 'intermediario', 'egreso', true, estadoEf, parIntCerrado);
-              if (reglaComInt && (reglaComInt.incluir_en_mov_cc_intermediario || reglaComInt.cc_intermediario_suma_saldo)) {
-                const signo = reglaComInt.cc_intermediario_signo != null ? reglaComInt.cc_intermediario_signo : -1;
-                rowsCcInt.push({
-                  intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null,
-                  concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, null), fecha, usuario_id: currentUserId,
-                  moneda: comisionIntMon, monto: signo * comisionIntMonto, estado: parIntCerrado ? 'cerrado' : 'pendiente', estado_fecha: ahora,
-                  sumar_al_saldo: !!reglaComInt.cc_intermediario_suma_saldo,
-                  incluir_en_detalle: !!reglaComInt.incluir_en_mov_cc_intermediario,
-                  ...montosCcPorMoneda(comisionIntMon, signo * comisionIntMonto)
-                });
-              }
-            }
-            // Respaldo: si la tabla dio reglas pero no se generó ningún movimiento cliente (p. ej. incluir=false o lookup falla), generar movimientos por modelo para no dejar el detalle vacío.
-            if (rowsCcCliente.length === 0 && clienteId && orden.intermediario_id) {
-              const tx1Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
-              const tx2Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'cliente' && (t.estado || '').toLowerCase() === 'ejecutada');
-              if (tx1Ejecutada || tx2Ejecutada) {
-                transacciones.forEach((t) => {
-                  if (!incluirEnMovimientosCcClienteModelo(orden, t)) return;
-                  const pag = String(t.pagador || '').toLowerCase();
-                  const cob = String(t.cobrador || '').toLowerCase();
-                  const mon = (t.moneda || monR).toUpperCase();
-                  const montoT = Number(t.monto) || 0;
-                  const estadoMov = ((t.estado || '').toLowerCase() === 'ejecutada' ? 'cerrado' : 'pendiente');
-                  if (pag === 'cliente' && cob !== 'intermediario') {
-                    const codigoFb = (toJoin && toJoin.codigo) || null;
-                    const esModeloCliente = esTipoOperacionChequeArs(codigoFb, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id;
-                    const esIngresoMismaMoneda = (t.tipo || '').toLowerCase() === 'ingreso' && monR === monE;
-                    const montoIngresoCc = esModeloCliente ? mr : (esIngresoMismaMoneda ? me : montoT);
-                    rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: t.id, transaccion_numero: t.numero != null ? t.numero : null, concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: mon, monto: -montoIngresoCc, estado: estadoMov, estado_fecha: ahora, ...montosCcPorMoneda(mon, -montoIngresoCc) });
-                  }
-                  if (cob === 'cliente' && pag !== 'intermediario') {
-                    rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: t.id, transaccion_numero: t.numero != null ? t.numero : null, concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, t.numero), fecha, usuario_id: currentUserId, moneda: mon, monto: montoT, estado: estadoMov, estado_fecha: ahora, ...montosCcPorMoneda(mon, montoT) });
-                  }
-                });
-                if (comisionPandyMonto >= 1e-6 && !(tx1Ejecutada && tx2Ejecutada)) {
-                  rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, null), fecha, usuario_id: currentUserId, moneda: comisionPandyMon, monto: comisionPandyMonto, estado: 'cerrado', estado_fecha: ahora, ...montosCcPorMoneda(comisionPandyMon, comisionPandyMonto) });
-                }
-              }
-            }
           } else if (esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id) {
             const tx1EjecutadaFb = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
             const tx2EjecutadaFb = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'cliente' && (t.estado || '').toLowerCase() === 'ejecutada');
@@ -6740,33 +7287,42 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             }
             const hayTx3Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && (t.estado || '').toLowerCase() === 'ejecutada');
             const hayTx4Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'intermediario' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
-            if (intermediarioId && comisionIntMonto >= 1e-6 && (hayTx3Ejecutada || hayTx4Ejecutada)) {
+            if (intermediarioId && comisionIntMonto >= 1e-6 && (hayTx3Ejecutada || hayTx4Ejecutada || parClienteCerradoFb)) {
               rowsCcInt.push({ intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, null), fecha, usuario_id: currentUserId, moneda: comisionIntMon, monto: -comisionIntMonto, estado: 'cerrado', estado_fecha: ahora, ...montosCcPorMoneda(comisionIntMon, -comisionIntMonto) });
+            }
+            if (intermediarioId && comisionIntMonto >= 1e-6 && parClienteCerradoFb) {
+              const monComCajaFb = (comisionIntMon || 'ARS').toUpperCase();
+              rowsCaja.push({
+                orden_id: ordenId,
+                transaccion_id: null,
+                moneda: monComCajaFb,
+                monto: -comisionIntMonto,
+                caja_tipo: 'efectivo',
+                orden_numero: orden.numero != null ? orden.numero : null,
+                transaccion_numero: null,
+                concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaFb, comisionIntMonto, orden.numero, null),
+                fecha,
+                usuario_id: currentUserId,
+              });
             }
           }
 
-          // Si la tabla define moneda/monto de exposición para cliente, el motor ya registra ambas patas en la moneda coherente (p. ej. todo USD) y el saldo cierra solo. El cierre sintético legacy (+monR / -monE) duplicaría el efecto y dejaría saldo en dos monedas (ej. USD -me y ARS +mr).
-          const reglasUsanExposicionCcCliente = (reglas || []).some((r) => {
-            if (!r) return false;
-            const exp = r.cc_cliente_moneda_exposicion != null ? String(r.cc_cliente_moneda_exposicion).trim() : '';
-            const ref = r.cc_cliente_monto_referencia != null ? String(r.cc_cliente_monto_referencia).trim() : '';
-            return !!(exp || ref);
-          });
-
-          // Cierre orden en dos monedas (sin intermediario, sin exposición en tabla): zerar saldo cuando ambas patas ejecutadas moviendo +recibido en monR y -entregado en monE.
-          if (clienteId && monR !== monE && !reglasUsanExposicionCcCliente) {
-            const ingresoCli = transacciones.find((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && t.estado === 'ejecutada');
-            const egresoCli = transacciones.find((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.cobrador || '').toLowerCase() === 'cliente' && String(t.pagador || '').toLowerCase() === 'pandy' && t.estado === 'ejecutada');
-            const montoRecibido = ingresoCli ? (Number(ingresoCli.monto) || 0) : 0;
-            const montoEntregado = egresoCli ? (Number(egresoCli.monto) || 0) : 0;
+          // Cierre sintético dos monedas: solo si no corre el motor `reglas_de_negocio` (evita duplicar cierre ya modelado en reglas).
+          if (clienteId && monR !== monE && !usarMotorReglasNegocio) {
+            const ingresosCli = transacciones.filter((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && t.estado === 'ejecutada');
+            const egresosCli = transacciones.filter((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.cobrador || '').toLowerCase() === 'cliente' && String(t.pagador || '').toLowerCase() === 'pandy' && t.estado === 'ejecutada');
+            const montoRecibido = ingresosCli.reduce((s, t) => s + (Number(t.monto) || 0), 0);
+            const montoEntregado = egresosCli.reduce((s, t) => s + (Number(t.monto) || 0), 0);
+            const egresoRef = egresosCli.slice().sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0)).pop() || null;
             if (montoRecibido >= 1e-6 && montoEntregado >= 1e-6) {
               const conceptoCierre = 'Cierre orden ' + (orden.numero != null ? orden.numero : ordenId);
               // Saldo real = -montoRecibido + montoEntregado. Cierre: +montoRecibido y -montoEntregado para total 0.
+              // Varios ingresos/egresos parciales (ej. 5k efectivo + 5k transferencia): se suman todos; ref. de nro. trans. = último egreso.
               rowsCcCliente.push({
                 cliente_id: clienteId,
                 orden_id: ordenId,
-                transaccion_id: egresoCli != null ? egresoCli.id : null,
-                transaccion_numero: egresoCli && egresoCli.numero != null ? egresoCli.numero : null,
+                transaccion_id: egresoRef != null ? egresoRef.id : null,
+                transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
                 concepto: conceptoCierre,
                 fecha,
                 usuario_id: currentUserId,
@@ -6779,8 +7335,8 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               rowsCcCliente.push({
                 cliente_id: clienteId,
                 orden_id: ordenId,
-                transaccion_id: egresoCli != null ? egresoCli.id : null,
-                transaccion_numero: egresoCli && egresoCli.numero != null ? egresoCli.numero : null,
+                transaccion_id: egresoRef != null ? egresoRef.id : null,
+                transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
                 concepto: conceptoCierre,
                 fecha,
                 usuario_id: currentUserId,
@@ -6796,17 +7352,33 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           // Misma moneda con comisión implícita (mr > me): el ingreso ya aportó -me y el egreso +me, saldo = 0. No se añade movimiento extra en CC.
           // La caja ya tiene +mr (ingreso) y -me (egreso); la diferencia es la comisión. Opcional: movimiento caja explícito por comisión si se desea desglose.
 
-          // Evitar duplicados: según Excel solo 3 movimientos CC cliente. Dedupe por clave lógica (entidad, orden, transacción, monto, concepto).
+          // Evitar duplicados: clave debe distinguir dos líneas válidas con mismo monto (p. ej. ARS-USD inversa P,E: +me USD en Tx1 pendiente y en Tx2 ejecutada).
           const seenCli = new Set();
           const rowsCcClienteUnicos = (rowsCcCliente || []).filter((r) => {
-            const key = [r.cliente_id, r.orden_id, r.transaccion_id, r.monto, (r.concepto || '').slice(0, 50)].join('\t');
+            const key = [
+              r.cliente_id,
+              r.orden_id,
+              r.transaccion_id || '',
+              r.transaccion_numero != null && r.transaccion_numero !== '' ? String(r.transaccion_numero) : '',
+              (r.moneda || '').toUpperCase(),
+              r.monto,
+              (r.concepto || '').slice(0, 72),
+            ].join('\t');
             if (seenCli.has(key)) return false;
             seenCli.add(key);
             return true;
           });
           const seenInt = new Set();
           const rowsCcIntUnicos = (rowsCcInt || []).filter((r) => {
-            const key = [r.intermediario_id, r.orden_id, r.transaccion_id, r.monto, (r.concepto || '').slice(0, 50)].join('\t');
+            const key = [
+              r.intermediario_id,
+              r.orden_id,
+              r.transaccion_id || '',
+              r.transaccion_numero != null && r.transaccion_numero !== '' ? String(r.transaccion_numero) : '',
+              (r.moneda || '').toUpperCase(),
+              r.monto,
+              (r.concepto || '').slice(0, 72),
+            ].join('\t');
             if (seenInt.has(key)) return false;
             seenInt.add(key);
             return true;
@@ -6999,66 +7571,67 @@ function revertirGananciaPandy(ordenId, orden, clienteId, comisionPandyMonto) {
     });
 }
 
-function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, montoCom, monCom, ordenNumero) {
-  if (!ordenId || !instrumentacionId || !intermediarioId || !montoCom || montoCom < 1e-6) return Promise.resolve();
+/** Comisión intermediario: solo caja (sin fila en `transacciones`). La CC de comisión ya la inserta el flujo que ejecuta la transacción cliente↔Pandy. Requiere migración `sql/migracion_orden_comisiones_movimiento_caja.sql` para `movimiento_caja_id` y `transaccion_id` nullable. */
+function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, montoCom, monCom, ordenNumero, transaccionNumeroRef) {
+  void instrumentacionId;
+  if (!ordenId || !intermediarioId || !montoCom || montoCom < 1e-6) return Promise.resolve();
   const ordNum = ordenNumero != null ? ordenNumero : null;
+  const nroRef = transaccionNumeroRef != null ? transaccionNumeroRef : null;
   return client.from('orden_comisiones_generadas').select('id').eq('orden_id', ordenId).eq('tipo', 'comision_intermediario').maybeSingle()
     .then((r) => {
       if (r.data && r.data.id) return Promise.resolve();
-      const ahora = new Date().toISOString();
-      const fecha = ahora.slice(0, 10);
-      return client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle()
-        .then((rModo) => {
-          const modoId = (rModo.data && rModo.data.id) || null;
-          return client.from('transacciones').insert({
-            instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoId, moneda: monCom, monto: montoCom,
-            cobrador: 'intermediario', pagador: 'pandy', owner: 'pandy', estado: 'ejecutada', concepto: 'Comisión del acuerdo',
-            fecha_ejecucion: fecha, usuario_id: currentUserId, updated_at: ahora,
-          }).select('id, numero').single();
-        })
-        .then((rNew) => {
-          const trComId = rNew.data && rNew.data.id;
-          const trComNumero = rNew.data && rNew.data.numero;
-          if (!trComId) return Promise.resolve();
-          const conceptoCom = conceptoCajaTransaccionEspecial('Comisión del acuerdo', monCom, montoCom, ordNum, trComNumero);
-          return client.from('movimientos_caja').insert({
-            moneda: monCom, monto: -montoCom, caja_tipo: 'efectivo', transaccion_id: trComId,
-            orden_numero: ordNum, transaccion_numero: trComNumero != null ? trComNumero : null,
-            concepto: conceptoCom, fecha, usuario_id: currentUserId,
-          }).then(() => {
-            const montos = montosCcPorMoneda(monCom, -montoCom);
-            const conceptoCc = conceptoCcLeyenda('comision_acuerdo', ordNum, trComNumero);
-            return client.from('movimientos_cuenta_corriente_intermediario').insert({
-              intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: trComId, transaccion_numero: trComNumero != null ? trComNumero : null,
-              concepto: conceptoCc, moneda: monCom, monto: -montoCom, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
-              monto_usd: montos.monto_usd, monto_ars: montos.monto_ars, monto_eur: montos.monto_eur,
-            });
-          }).then(() => client.from('orden_comisiones_generadas').insert({ orden_id: ordenId, tipo: 'comision_intermediario', transaccion_id: trComId }));
+      const fecha = new Date().toISOString().slice(0, 10);
+      const conceptoCom = conceptoCajaTransaccionEspecial('Comisión del acuerdo', monCom, montoCom, ordNum, nroRef);
+      return client.from('movimientos_caja').insert({
+        orden_id: ordenId,
+        moneda: monCom,
+        monto: -montoCom,
+        caja_tipo: 'efectivo',
+        transaccion_id: null,
+        orden_numero: ordNum,
+        transaccion_numero: nroRef,
+        concepto: conceptoCom,
+        fecha,
+        usuario_id: currentUserId,
+      }).select('id').single()
+        .then((rCaja) => {
+          const mcId = rCaja.data && rCaja.data.id;
+          const row = { orden_id: ordenId, tipo: 'comision_intermediario', transaccion_id: null };
+          if (mcId) row.movimiento_caja_id = mcId;
+          return client.from('orden_comisiones_generadas').insert(row);
         });
     });
 }
 
 function revertirComisionIntermediario(ordenId) {
   if (!ordenId) return Promise.resolve();
-  return client.from('orden_comisiones_generadas').select('transaccion_id').eq('orden_id', ordenId).eq('tipo', 'comision_intermediario').maybeSingle()
+  return client.from('orden_comisiones_generadas').select('transaccion_id, movimiento_caja_id').eq('orden_id', ordenId).eq('tipo', 'comision_intermediario').maybeSingle()
     .then((r) => {
-      if (!r.data || !r.data.transaccion_id) return Promise.resolve();
+      if (!r.data) return Promise.resolve();
       const trId = r.data.transaccion_id;
-      return client.from('movimientos_cuenta_corriente_intermediario').delete().eq('transaccion_id', trId)
-        .then(() => client.from('movimientos_caja').delete().eq('transaccion_id', trId))
-        .then(() => client.from('transacciones').delete().eq('id', trId))
-        .then(() => client.from('orden_comisiones_generadas').delete().eq('orden_id', ordenId).eq('tipo', 'comision_intermediario'));
+      const mcId = r.data.movimiento_caja_id;
+      const delRow = () => client.from('orden_comisiones_generadas').delete().eq('orden_id', ordenId).eq('tipo', 'comision_intermediario');
+      if (trId) {
+        return client.from('movimientos_cuenta_corriente_intermediario').delete().eq('transaccion_id', trId)
+          .then(() => client.from('movimientos_caja').delete().eq('transaccion_id', trId))
+          .then(() => client.from('transacciones').delete().eq('id', trId))
+          .then(() => delRow());
+      }
+      if (mcId) {
+        return client.from('movimientos_caja').delete().eq('id', mcId).then(() => delRow());
+      }
+      return delRow();
     });
 }
 
 /**
- * Inserta en movimientos_cuenta_corriente_intermediario los registros "momento cero" (regla simple):
- * un registro por evento/moneda, concepto "Compromiso - Orden Nro X y Trans Nro Y". CHEQUE: una moneda (monR).
- * egresoChequeTrId = egreso Pandy→Intermediario; ingresoEfectivoIntTrId = ingreso Intermediario→Pandy.
+ * Momento cero CC intermediario (CHEQUE + int.): referencia transacciones Cliente↔Pandy (Tx1/Tx2) para conceptos;
+ * el circuito Pandy↔Intermediario (Tx3/Tx4) se instrumenta aparte.
+ * transIngresoClienteId = ingreso cheque Cliente→Pandy; transEgresoClienteId = egreso efectivo Pandy→Cliente.
  */
-function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, egresoChequeTrId, ingresoEfectivoIntTrId) {
+function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, transIngresoClienteId, transEgresoClienteId) {
   const intermediarioId = orden.intermediario_id;
-  if (!intermediarioId || !ordenId || !currentUserId || !egresoChequeTrId || !ingresoEfectivoIntTrId) return Promise.resolve();
+  if (!intermediarioId || !ordenId || !currentUserId || !transIngresoClienteId || !transEgresoClienteId) return Promise.resolve();
   const mr = Number(orden.monto_recibido) || 0;
   const monR = orden.moneda_recibida || 'ARS';
   if (mr < 1e-6) return Promise.resolve();
@@ -7066,17 +7639,17 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, egresoChe
   return client.from('ordenes').select('numero').eq('id', ordenId).single()
     .then((rOrd) => rOrd.data?.numero)
     .then((ordenNum) =>
-      client.from('transacciones').select('id, numero').in('id', [egresoChequeTrId, ingresoEfectivoIntTrId]).then((rTr) => {
+      client.from('transacciones').select('id, numero').in('id', [transIngresoClienteId, transEgresoClienteId]).then((rTr) => {
         const trs = rTr.data || [];
-        const nroEgreso = trs.find((x) => x.id === egresoChequeTrId)?.numero;
-        const nroIngreso = trs.find((x) => x.id === ingresoEfectivoIntTrId)?.numero;
-        const conceptoDebe = conceptoCcLeyenda('compromiso_pago', ordenNum, nroEgreso);
-        const conceptoComp = conceptoCcLeyenda('compromiso_cobrar', ordenNum, nroIngreso);
+        const nroIngresoCli = trs.find((x) => x.id === transIngresoClienteId)?.numero;
+        const nroEgresoCli = trs.find((x) => x.id === transEgresoClienteId)?.numero;
+        const conceptoDebe = conceptoCcLeyenda('compromiso_pago', ordenNum, nroIngresoCli);
+        const conceptoComp = conceptoCcLeyenda('compromiso_cobrar', ordenNum, nroEgresoCli);
       const row1 = {
         intermediario_id: intermediarioId,
         orden_id: ordenId,
-        transaccion_id: egresoChequeTrId,
-        transaccion_numero: nroEgreso != null ? nroEgreso : null,
+        transaccion_id: transIngresoClienteId,
+        transaccion_numero: nroIngresoCli != null ? nroIngresoCli : null,
         concepto: conceptoDebe,
         moneda: monR,
         monto: -mr,
@@ -7090,8 +7663,8 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, egresoChe
       const row2 = {
         intermediario_id: intermediarioId,
         orden_id: ordenId,
-        transaccion_id: ingresoEfectivoIntTrId,
-        transaccion_numero: nroIngreso != null ? nroIngreso : null,
+        transaccion_id: transEgresoClienteId,
+        transaccion_numero: nroEgresoCli != null ? nroEgresoCli : null,
         concepto: conceptoComp,
         moneda: monR,
         monto: mr,
@@ -7114,12 +7687,10 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, egresoChe
 }
 
 /**
- * Operación CHEQUE (ARS-ARS) con intermediario: crea 4 transacciones por defecto.
- * 1) Ingreso cheques 10M ARS – paga cliente, cobra Pandy
- * 2) Egreso efectivo 9,8M ARS – paga Pandy, cobra cliente
- * 3) Egreso cheques 10M ARS – paga Pandy, cobra intermediario
- * 4) Ingreso efectivo 10M*(1-tasa) ARS – paga intermediario, cobra Pandy
- * Cuenta corriente intermediario: momento cero (una fila "Debe" pendiente por el cheque), igual que cliente.
+ * Operación CHEQUE (ARS) con intermediario: 4 transacciones por defecto (instrumentación explícita).
+ * 1) Ingreso cheque Cliente→Pandy · 2) Egreso efectivo Pandy→Cliente · 3) Egreso cheque Pandy→Intermediario ·
+ * 4) Ingreso efectivo Intermediario→Pandy (monto neto con tasa). No son compensatorias automáticas al editar.
+ * Momento cero CC cliente e intermediario anclado a Tx1/Tx2.
  */
 function autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumentacionId, orden) {
   if (!ordenId || !instrumentacionId || !orden || !orden.intermediario_id || !orden.tipo_operacion_id) return Promise.resolve();
@@ -7134,15 +7705,23 @@ function autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumenta
     const modoChequeId = byCodigo.cheque;
     if (!modoEfectivoId || !modoChequeId) return Promise.resolve();
     const ahora = new Date().toISOString();
-    // Orden por pagador: 1) Cliente, 2) Pandy, 3) Intermediario. Insertar en secuencia para que numero quede 1,2,3,4.
-    const rows = [
-      { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoChequeId, moneda: 'ARS', monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora },
-      { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoEfectivoId, moneda: 'ARS', monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora },
-      { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoChequeId, moneda: 'ARS', monto: mr, cobrador: 'intermediario', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora },
-      { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoEfectivoId, moneda: 'ARS', monto: montoEfectivoInt, cobrador: 'pandy', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora },
-    ];
-    return rows.reduce((prom, row) => prom.then(() => client.from('transacciones').insert(row).select('id').single()), Promise.resolve()).then(() => {
-      return actualizarEstadoOrden(ordenId);
+    const row1 = { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoChequeId, moneda: 'ARS', monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora };
+    const row2 = { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoEfectivoId, moneda: 'ARS', monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora };
+    const row3 = { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoChequeId, moneda: 'ARS', monto: mr, cobrador: 'intermediario', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora };
+    const row4 = { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoEfectivoId, moneda: 'ARS', monto: montoEfectivoInt, cobrador: 'pandy', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora };
+    const rows = [row1, row2, row3, row4];
+    return rows.reduce((prom, row) => prom.then((ids) =>
+      client.from('transacciones').insert(row).select('id').single().then((rIns) => {
+        const id = rIns.data && rIns.data.id;
+        return id ? ids.concat([id]) : ids;
+      })
+    ), Promise.resolve([])).then((ids) => {
+      const id1 = ids[0];
+      const id2 = ids[1];
+      if (!id1 || !id2 || ids.length < 4) return actualizarEstadoOrden(ordenId);
+      return insertarMovimientosCcMomentoCero(ordenId, orden, id1, id2)
+        .then(() => insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, id1, id2))
+        .then(() => actualizarEstadoOrden(ordenId));
     });
   });
 }
@@ -7210,14 +7789,16 @@ function insertarMovimientosCcMomentoCero(ordenId, orden, ingresoId, egresoId) {
 
 /**
  * Si la orden es sin intermediario y la instrumentación está vacía, crea dos transacciones por defecto
- * (ingreso moneda recibida, egreso moneda entregada). Soporta USD-USD, ARS-USD, USD-ARS, ARS-ARS.
+ * (ingreso moneda recibida, egreso moneda entregada). Soporta USD-USD, ARS-USD, USD-ARS y CHEQUE-ARS (sin intermediario, ARS/ARS vía cheque).
  * Modo de pago efectivo, estado pendiente.
  */
 function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId, orden) {
-  if (!ordenId || !instrumentacionId || !orden || orden.intermediario_id || !orden.tipo_operacion_id) return Promise.resolve();
+  if (!ordenId || !instrumentacionId || !orden || !orden.tipo_operacion_id) return Promise.resolve();
   return client.from('tipos_operacion').select('codigo, moneda_in, moneda_out').eq('id', orden.tipo_operacion_id).single().then((rTipo) => {
     const row = rTipo.data || {};
     const codigo = row.codigo || '';
+    // Con intermediario no entra aquí (USD-USD/ARS-USD/USD-ARS+int → autoCompletarInstrumentacionUsdUsdConIntermediario; CHEQUE-ARS+int → cheque 4 tx).
+    if (orden.intermediario_id) return Promise.resolve();
     const esUsdUsd = codigo === 'USD-USD';
     const esArsUsd = codigo === 'ARS-USD';
     const esUsdArs = codigo === 'USD-ARS';
@@ -7250,6 +7831,60 @@ function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId
       return rows.reduce((prom, row) => prom.then(() => client.from('transacciones').insert(row).select('id').single()), Promise.resolve()).then(() => {
         return actualizarEstadoOrden(ordenId);
       });
+    });
+  });
+}
+
+/**
+ * Patrón de instrumentación con intermediario elegido en el wizard (`cp_ic` | `ci_pc`). Fuera del wizard (panel) se fuerza `cp_ic` al autocompletar.
+ */
+function getOrdenPatronInstrumentacionInt() {
+  const hid = document.getElementById('orden-int-patron');
+  const v = hid && String(hid.value || '').trim().toLowerCase();
+  return v === 'ci_pc' ? 'ci_pc' : 'cp_ic';
+}
+
+/**
+ * Par cliente (USD-USD, ARS-USD, USD-ARS) con intermediario: 2 transacciones (mismo patrón que USD-USD+int).
+ * - `cp_ic` (defecto): ingreso Cliente→Pandy (mr), egreso Intermediario→Cliente (me).
+ * - `ci_pc`: ingreso Cliente→Intermediario (mr), egreso Pandy→Cliente (me).
+ * ARS-USD / USD-ARS: `tipo_cambio` en la pata que corresponde (como sin intermediario). No aplica a CHEQUE-ARS.
+ * @param {string} [patron] Si no se pasa, se usa `getOrdenPatronInstrumentacionInt()` en contexto wizard.
+ */
+function autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instrumentacionId, orden, patron) {
+  if (!ordenId || !instrumentacionId || !orden || !orden.intermediario_id || !orden.tipo_operacion_id) return Promise.resolve();
+  const pat = patron || (typeof document !== 'undefined' ? getOrdenPatronInstrumentacionInt() : 'cp_ic');
+  return client.from('tipos_operacion').select('codigo, moneda_in, moneda_out').eq('id', orden.tipo_operacion_id).single().then((rTipo) => {
+    const rowTipo = rTipo.data || {};
+    const codigoTipo = rowTipo.codigo || '';
+    if (esTipoOperacionChequeArs(codigoTipo, rowTipo.moneda_in, rowTipo.moneda_out)) return Promise.resolve();
+    const esPar = codigoTipo === 'USD-USD' || codigoTipo === 'ARS-USD' || codigoTipo === 'USD-ARS';
+    if (!esPar) return Promise.resolve();
+    const cotizacion = Number(orden.cotizacion) || null;
+    if (codigoTipo === 'ARS-USD' && !(cotizacion > 0)) return Promise.resolve();
+    if (codigoTipo === 'USD-ARS' && !(cotizacion > 0)) return Promise.resolve();
+    let tcIngreso = null;
+    let tcEgreso = null;
+    if (codigoTipo === 'ARS-USD') tcIngreso = cotizacion;
+    else if (codigoTipo === 'USD-ARS') tcEgreso = cotizacion;
+    return client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle().then((rModo) => {
+      const modoPagoEfectivoId = (rModo.data && rModo.data.id) || null;
+      if (!modoPagoEfectivoId) return Promise.resolve();
+      const mr = Number(orden.monto_recibido) || 0;
+      const me = Number(orden.monto_entregado) || 0;
+      const monR = orden.moneda_recibida || 'USD';
+      const monE = orden.moneda_entregada || 'USD';
+      const ahora = new Date().toISOString();
+      const rows = pat === 'ci_pc'
+        ? [
+            { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'intermediario', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcIngreso, updated_at: ahora },
+            { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcEgreso, updated_at: ahora },
+          ]
+        : [
+            { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcIngreso, updated_at: ahora },
+            { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcEgreso, updated_at: ahora },
+          ];
+      return rows.reduce((prom, row) => prom.then(() => client.from('transacciones').insert(row).select('id').single()), Promise.resolve()).then(() => actualizarEstadoOrden(ordenId));
     });
   });
 }
@@ -7419,6 +8054,9 @@ function expandOrdenTransacciones(ordenId, orden) {
               const codigo = row.codigo || '';
               if (esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out) && orden.intermediario_id) {
                 return autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumentacionId, orden);
+              }
+              if (orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-USD' || codigo === 'USD-ARS') && !esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out)) {
+                return autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instrumentacionId, orden, 'cp_ic');
               }
               if (!orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-USD' || codigo === 'USD-ARS' || esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out))) {
                 return autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId, orden);
@@ -7646,12 +8284,14 @@ function openModalTransaccion(registro, instrumentacionId) {
   const selMoneda = document.getElementById('transaccion-moneda');
   if (!backdrop || !titulo || !idEl || !instIdEl) return;
 
-  instIdEl.value = instrumentacionId || '';
+  const seq = ++openModalTransaccionSeq;
+
   function cargarParticipantesYOrden() {
-    if (!instrumentacionId) return Promise.resolve({ cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '', clienteNombre: '', montoRecibido: null, montoEntregado: null });
+    const vacio = { cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '', clienteNombre: '', montoRecibido: null, montoEntregado: null };
+    if (!instrumentacionId) return Promise.resolve(vacio);
     return client.from('instrumentacion').select('orden_id').eq('id', instrumentacionId).single().then((rInst) => {
       const ordenId = rInst.data && rInst.data.orden_id;
-      if (!ordenId) return { cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '', clienteNombre: '', montoRecibido: null, montoEntregado: null };
+      if (!ordenId) return vacio;
       return client.from('ordenes').select('cliente_id, intermediario_id, cotizacion, tipo_operacion_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, clientes(nombre)').eq('id', ordenId).single().then((rOrd) => {
         const o = rOrd.data || {};
         const cot = o.cotizacion != null && Number(o.cotizacion) > 0 ? Number(o.cotizacion) : null;
@@ -7662,20 +8302,30 @@ function openModalTransaccion(registro, instrumentacionId) {
         const clienteNombre = (clientesRef && (typeof clientesRef === 'object' && !Array.isArray(clientesRef) ? clientesRef.nombre : (Array.isArray(clientesRef) ? clientesRef[0]?.nombre : null))) || '';
         const montoRecibido = o.monto_recibido != null && !isNaN(Number(o.monto_recibido)) ? Number(o.monto_recibido) : null;
         const montoEntregado = o.monto_entregado != null && !isNaN(Number(o.monto_entregado)) ? Number(o.monto_entregado) : null;
-        const base = { cliente: !!o.cliente_id, intermediario: !!o.intermediario_id, cotizacion: cot, monedaRecibida, monedaEntregada, clienteNombre, montoRecibido, montoEntregado };
+        const base = {
+          cliente: !!o.cliente_id,
+          intermediario: !!o.intermediario_id,
+          cotizacion: cot,
+          monedaRecibida,
+          monedaEntregada,
+          clienteNombre,
+          montoRecibido,
+          montoEntregado,
+        };
         if (!tipoOpId) return { ...base, esCheque: false };
         return client.from('tipos_operacion').select('codigo, moneda_in, moneda_out').eq('id', tipoOpId).single().then((rTipo) => {
           const row = rTipo.data || {};
           return { ...base, esCheque: esTipoOperacionChequeArs(row.codigo, row.moneda_in, row.moneda_out) };
         }).catch(() => ({ ...base, esCheque: false }));
       });
-    }).catch(() => ({ cliente: false, intermediario: false, cotizacion: null, esCheque: false, monedaRecibida: '', monedaEntregada: '', clienteNombre: '', montoRecibido: null, montoEntregado: null }));
+    }).catch(() => vacio);
   }
 
   Promise.all([
     client.from('modos_pago').select('id, codigo, nombre').eq('activo', true).order('nombre'),
     cargarParticipantesYOrden(),
   ]).then(([r, participantes]) => {
+    if (seq !== openModalTransaccionSeq) return;
     const sel = document.getElementById('transaccion-modo-pago');
     if (sel) sel.innerHTML = '<option value="">Ninguno</option>' + (r.data || []).map((m) => `<option value="${m.id}" data-codigo="${escapeHtml(m.codigo)}">${escapeHtml(m.nombre)}</option>`).join('');
 
@@ -7696,6 +8346,7 @@ function openModalTransaccion(registro, instrumentacionId) {
     if (elEsCheque) elEsCheque.value = esCheque ? '1' : '0';
 
     if (sel) sel.disabled = false;
+
     if (registro) {
       titulo.textContent = 'Editar transacción';
       idEl.value = registro.id;
@@ -7721,11 +8372,12 @@ function openModalTransaccion(registro, instrumentacionId) {
       document.getElementById('form-transaccion').reset();
       if (elEsCheque) elEsCheque.value = esCheque ? '1' : '0';
       if (sel) sel.disabled = false;
+      const pagIng = participantes?.cliente ? 'cliente' : (participantes?.intermediario ? 'intermediario' : 'pandy');
       document.getElementById('transaccion-tipo').value = 'ingreso';
       document.getElementById('transaccion-moneda').value = esCheque ? 'ARS' : 'USD';
       document.getElementById('transaccion-modo-pago').value = '';
       document.getElementById('transaccion-cobrador').value = 'pandy';
-      document.getElementById('transaccion-pagador').value = participantes?.cliente ? 'cliente' : (participantes?.intermediario ? 'intermediario' : 'pandy');
+      document.getElementById('transaccion-pagador').value = pagIng;
       document.getElementById('transaccion-estado').value = 'pendiente';
       document.getElementById('transaccion-monto').value = '';
       if (!esCheque) {
@@ -7747,10 +8399,42 @@ function openModalTransaccion(registro, instrumentacionId) {
     if (elMonRec) elMonRec.textContent = participantes?.monedaRecibida ? String(participantes.monedaRecibida) : '';
     if (elMontoEnt) elMontoEnt.textContent = participantes?.montoEntregado != null ? formatImporteDisplay(participantes.montoEntregado) : '–';
     if (elMonEnt) elMonEnt.textContent = participantes?.monedaEntregada ? String(participantes.monedaEntregada) : '';
+    // form.reset() (rama "Nueva transacción") restaura el valor por defecto del hidden y borraba instrumentacion_id → segundo guardado fallaba / modal no cerraba.
+    instIdEl.value = instrumentacionId || '';
     adaptarTransaccionTipoYMoneda();
     toggleTransaccionMonedaArs();
+    // Nueva transacción: sugerir monto completo del acuerdo según tipo + moneda (sin “restante” ni lógica automática vs otras trx).
+    if (!registro) {
+      const montoEl = document.getElementById('transaccion-monto');
+      const tipoSel = document.getElementById('transaccion-tipo')?.value;
+      const monSel = (document.getElementById('transaccion-moneda')?.value || '').toString().toUpperCase().trim();
+      const monR = (participantes?.monedaRecibida || '').toString().toUpperCase().trim();
+      const monE = (participantes?.monedaEntregada || '').toString().toUpperCase().trim();
+      const mRec = participantes?.montoRecibido;
+      const mEnt = participantes?.montoEntregado;
+      let sugg = null;
+      if (tipoSel === 'ingreso' && monSel && monSel === monR && mRec != null && !isNaN(Number(mRec))) {
+        sugg = Number(mRec);
+      }
+      if (tipoSel === 'egreso' && monSel && monSel === monE && mEnt != null && !isNaN(Number(mEnt))) {
+        sugg = Number(mEnt);
+      }
+      if (montoEl && sugg != null) {
+        montoEl.value = formatImporteParaInput(sugg);
+      }
+    }
+    const montoFinal = document.getElementById('transaccion-monto');
+    if (montoFinal) {
+      const raw = (montoFinal.value || '').trim();
+      if (raw !== '') {
+        const n = parseImporteInput(raw);
+        if (!isNaN(n)) montoFinal.value = formatImporteParaInput(n);
+      }
+      montoFinal._importeValorPrevio = montoFinal.value;
+    }
     backdrop.classList.add('activo');
-    setupInputImporte(document.getElementById('transaccion-monto'));
+    setupInputImporte(montoFinal);
+    actualizarMontoCalculado();
   });
 }
 
@@ -8302,7 +8986,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                                       moneda: monCom, monto: -comMonto,
                                       concepto: conceptoCcLeyenda('comision_acuerdo', orden && orden.numero != null ? orden.numero : null, item.numero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                                       ...montosCcPorMoneda(monCom, -comMonto),
-                                    }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, orden && orden.numero != null ? orden.numero : null));
+                                    }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, orden && orden.numero != null ? orden.numero : null, item.numero != null ? item.numero : null));
                                   }
                                   return Promise.resolve();
                                 });
@@ -8475,7 +9159,7 @@ function saveTransaccion() {
       showToast('No se encontró la orden de esta instrumentación.', 'error');
       return;
     }
-    client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado').eq('id', ordenId).single().then((rOrd) => {
+    client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion').eq('id', ordenId).single().then((rOrd) => {
       const orden = rOrd.data;
       if (!orden) {
         showToast('No se encontró la orden.', 'error');
@@ -8492,6 +9176,8 @@ function saveTransaccion() {
         const oldMonto = trActual != null && !isNaN(Number(trActual.monto)) ? Number(trActual.monto) : null;
         const bajandoImporte = id && oldMonto != null && monto < oldMonto - 1e-6;
         const diferenciaComp = bajandoImporte ? oldMonto - monto : null;
+        const esParPandyIntermediario =
+          (cobrador === 'pandy' && pagador === 'intermediario') || (cobrador === 'intermediario' && pagador === 'pandy');
         if (bajandoImporte && diferenciaComp > 0) {
           // Si es momento cero + guardamos ejecutada + monto menor: el split crea la diferencia; no ofrecer "compensatoria" para no duplicar.
           return client.from('movimientos_cuenta_corriente').select('id, monto_usd, monto_ars, monto_eur').eq('transaccion_id', id).then((rMov) => {
@@ -8503,7 +9189,7 @@ function saveTransaccion() {
               (tipo === 'ingreso' && mr > 1e-6 && monto > 1e-6 && (mr - monto) > 1e-6) ||
               (tipo === 'egreso' && me > 1e-6 && monto > 1e-6 && (me - monto) > 1e-6)
             );
-            if (esSplit) {
+            if (esSplit || esParPandyIntermediario) {
               guardarTransaccionPayload();
             } else {
               showConfirm(
@@ -8590,15 +9276,8 @@ function saveTransaccion() {
           renderCcDetalleTable();
           const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
           if (saldosWrap && saldos) {
-            const monedas = ['USD', 'EUR', 'ARS'];
-            const iconUrls = { USD: '/assets/Icono_Dolar.avif', EUR: '/assets/Icono_Euro.avif', ARS: '/assets/Icono_ARS.webp' };
-            saldosWrap.innerHTML = monedas.map((mon) => {
-              const s = Number(saldos[mon]) || 0;
-              const label = s >= 0 ? 'Positivo' : 'Negativo';
-              const val = formatMonto(s >= 0 ? s : -s, mon);
-              const cls = 'valor ' + (s >= 0 ? 'positivo' : 'negativo');
-              return `<div class="card" style="min-width:120px;"><span class="card-titulo"><img src="${iconUrls[mon]}" alt="" class="cc-icono-moneda" width="20" height="20"/> ${mon}</span><span class="cc-saldo-label" aria-hidden="true">${label}</span><span class="${cls}">${val}</span></div>`;
-            }).join('');
+            saldosWrap.innerHTML = htmlCcModalSaldosCards(saldos);
+            reaplicarVisibilidadMonedasCuentaCorrienteDom();
           }
           renderCcDetalleOperaciones();
           const operacionesWrap = document.getElementById('modal-cc-detalle-operaciones-wrap');
@@ -8622,11 +9301,15 @@ function saveTransaccion() {
           })
           .then((res) => {
             if (res && res.estado === 'instrumentacion_cerrada_ejecucion') {
-              return client.from('ordenes').select('intermediario_id, tipos_operacion(codigo, moneda_in, moneda_out)').eq('id', ordenId).single().then((rOrd) => {
+              return client.from('ordenes').select('intermediario_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
                 const orden = rOrd.data || {};
-                const esChequeConIntermediario = esTipoOperacionChequeArsDesdeJoin(orden.tipos_operacion) && orden.intermediario_id;
-                if (esChequeConIntermediario) return res;
-                return generarTransaccionesCompensacionPandyIntermediario(ordenId, instrumentacionId).then(() => res);
+                const codigoTipo = String((orden.tipos_operacion && orden.tipos_operacion.codigo) || '').toUpperCase();
+                const usaIntermediarioTipo = !!(orden.tipos_operacion && orden.tipos_operacion.usa_intermediario);
+                const esDosMonedasConIntermediario =
+                  (codigoTipo === 'USD-ARS' || codigoTipo === 'ARS-USD') && usaIntermediarioTipo;
+                if (esDosMonedasConIntermediario) return res;
+                // No generar transacciones automáticas Pandy↔Intermediario (compensación/comisiones en instrumentación): va por CC y carga manual si aplica.
+                return res;
               });
             }
             return res;
@@ -8918,7 +9601,7 @@ function saveTransaccion() {
                       moneda: monCom, monto: -comMonto,
                       concepto: conceptoCcLeyenda('comision_acuerdo', orden && orden.numero != null ? orden.numero : null, transaccionNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                       ...montosCcPorMoneda(monCom, -comMonto),
-                    }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, orden && orden.numero != null ? orden.numero : null));
+                    }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, orden && orden.numero != null ? orden.numero : null, transaccionNumero != null ? transaccionNumero : null));
                   }
                   return Promise.resolve();
                 })
@@ -9062,85 +9745,13 @@ function netoIntermediarioClientePorMoneda(transacciones) {
 }
 
 /**
- * Crea transacciones de compensación Pandy → Intermediario:
- * 1) Por el neto que el intermediario pagó al cliente (ej. 45.000 - 25.000 = 20.000 USD a compensar).
- * 2) Por comisiones_orden con beneficiario = intermediario (ej. 2.500 USD).
- * Por defecto se crean con modo de pago Efectivo. Solo se ejecuta si aún no existe ninguna transacción Pandy↔Intermediario.
+ * Desactivado: no se crean transacciones automáticas de compensación Pandy↔Intermediario.
+ * El acuerdo instrumentado es con el cliente; la relación con el intermediario se lleva en cuenta corriente.
  */
 function generarTransaccionesCompensacionPandyIntermediario(ordenId, instrumentacionId) {
-  if (!ordenId || !instrumentacionId || !currentUserId) return Promise.resolve();
-  return client.from('ordenes').select('id, intermediario_id, cliente_id').eq('id', ordenId).single().then((rOrd) => {
-    const orden = rOrd.data;
-    if (!orden || !orden.intermediario_id) return Promise.resolve();
-    const intermediarioId = orden.intermediario_id;
-    return client.from('transacciones').select('id').eq('instrumentacion_id', instrumentacionId).eq('cobrador', 'intermediario').eq('pagador', 'pandy').limit(1).then((rExist) => {
-      if (rExist.data && rExist.data.length > 0) return Promise.resolve();
-      return Promise.all([
-        client.from('transacciones').select('tipo, moneda, monto, cobrador, pagador').eq('instrumentacion_id', instrumentacionId),
-        client.from('comisiones_orden').select('moneda, monto, concepto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario'),
-        client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle(),
-      ]).then(([rTr, rCom, rModo]) => {
-        const list = rTr.data || [];
-        const comisiones = rCom.data || [];
-        const modoPagoEfectivoId = (rModo.data && rModo.data.id) || null;
-        const aCrear = [];
-        if (orden.cliente_id) {
-          const neto = netoIntermediarioClientePorMoneda(list);
-          Object.keys(neto).forEach((moneda) => {
-            const monto = neto[moneda];
-            if (monto > 1e-6) aCrear.push({ moneda, monto, concepto: 'Compensación intermediario' });
-          });
-        }
-        comisiones.forEach((c) => {
-          const monto = Number(c.monto) || 0;
-          if (monto > 0) aCrear.push({ moneda: c.moneda || 'USD', monto, concepto: (c.concepto && c.concepto.trim()) ? c.concepto : 'Comisión intermediario' });
-        });
-        if (aCrear.length === 0) return Promise.resolve();
-        const fecha = new Date().toISOString().slice(0, 10);
-        const ahora = new Date().toISOString();
-        function insertarUna(item) {
-          const payload = {
-            instrumentacion_id: instrumentacionId,
-            tipo: 'egreso',
-            modo_pago_id: modoPagoEfectivoId,
-            moneda: item.moneda,
-            monto: item.monto,
-            cobrador: 'intermediario',
-            pagador: 'pandy',
-            owner: 'pandy',
-            estado: 'pendiente',
-            concepto: item.concepto,
-            tipo_cambio: null,
-            updated_at: ahora,
-          };
-          return client.from('transacciones').insert(payload).select('id').single().then((rTr) => {
-            if (rTr.error) return Promise.reject(new Error(rTr.error.message || 'Error al crear transacción de compensación'));
-            const trId = rTr.data && rTr.data.id;
-            if (!trId) return Promise.reject(new Error('No se devolvió id de la transacción'));
-            return client.from('movimientos_cuenta_corriente_intermediario').insert({
-              intermediario_id: intermediarioId,
-              moneda: payload.moneda,
-              monto: -item.monto,
-              orden_id: ordenId,
-              transaccion_id: trId,
-              concepto: item.concepto,
-              fecha,
-              usuario_id: currentUserId,
-              estado: 'cerrado',
-              estado_fecha: ahora,
-            }).then((rCc) => {
-              if (rCc.error) return Promise.reject(new Error(rCc.error.message || 'Error al crear movimiento CC intermediario'));
-            });
-          });
-        }
-        return aCrear.reduce((p, item) => p.then(() => insertarUna(item)), Promise.resolve()).then(() => {
-          showToast('Se crearon ' + aCrear.length + ' transacción(es) de compensación Pandy → Intermediario (Efectivo por defecto).', 'success');
-        }).catch((err) => {
-          showToast('Error al crear transacciones de compensación: ' + (err && err.message ? err.message : String(err)), 'error');
-        });
-      });
-    });
-  });
+  void ordenId;
+  void instrumentacionId;
+  return Promise.resolve();
 }
 
 /**
@@ -9811,7 +10422,9 @@ function syncTipoOperacionModalIconoPreview() {
   const modoRaw = rad ? rad.value : 'auto';
   const modo = modoRaw === 'cheque' || modoRaw === 'custom' ? modoRaw : 'auto';
   const url = (urlEl && urlEl.value || '').trim();
-  wrap.innerHTML = htmlTipoOperacionIconos(codigo || '–', nombre, { iconoModo: modo, iconoUrlPublica: url });
+  const usaIntEl = document.getElementById('tipo-operacion-usa-intermediario');
+  const usaInt = !!(usaIntEl && usaIntEl.checked);
+  wrap.innerHTML = htmlTipoOperacionIconos(codigo || '–', nombre, { iconoModo: modo, iconoUrlPublica: url, usaIntermediario: usaInt });
 }
 
 function loadTiposOperacion() {
@@ -9828,10 +10441,10 @@ function loadTiposOperacion() {
   wrapEl.style.display = 'none';
   tbody.innerHTML = '';
 
-  client.from('tipos_operacion').select('id, codigo, nombre, moneda_in, moneda_out, usa_intermediario, activo, icono_modo, icono_url_publica').order('codigo').then((res) => {
+  client.from('tipos_operacion').select('id, codigo, nombre, moneda_in, moneda_out, usa_intermediario, activo, icono_modo, icono_url_publica').order('codigo').order('usa_intermediario').then((res) => {
     loadingEl.style.display = 'none';
     if (res.error) {
-      tbody.innerHTML = '<tr><td colspan="7">Error: ' + (res.error.message || '') + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8">Error: ' + (res.error.message || '') + '</td></tr>';
       wrapEl.style.display = 'block';
       return;
     }
@@ -9842,8 +10455,9 @@ function loadTiposOperacion() {
       const monIn = (t.moneda_in || '').toUpperCase();
       const monOut = (t.moneda_out || '').toUpperCase();
       return `<tr data-id="${t.id}">
-        <td class="td-tipo-op-iconos">${htmlTipoOperacionIconos(t.codigo || '', t.nombre || '', { iconoModo: t.icono_modo, iconoUrlPublica: t.icono_url_publica })}</td>
+        <td class="td-tipo-op-iconos">${htmlTipoOperacionIconos(t.codigo || '', t.nombre || '', { iconoModo: t.icono_modo, iconoUrlPublica: t.icono_url_publica, usaIntermediario: t.usa_intermediario === true })}</td>
         <td>${escapeHtml(t.nombre || '')}</td>
+        <td><code style="font-size:0.85rem;">${escapeHtml(t.codigo || '')}</code>${t.usa_intermediario === true ? ' <span style="color:#666;font-size:0.8rem;">(int.)</span>' : ''}</td>
         <td><span class="tipo-op-moneda-celda">${htmlIconoMonedaTipoOp(monIn, 18)} <span class="tipo-op-moneda-codigo">${escapeHtml(monIn)}</span></span></td>
         <td><span class="tipo-op-moneda-celda">${htmlIconoMonedaTipoOp(monOut, 18)} <span class="tipo-op-moneda-codigo">${escapeHtml(monOut)}</span></span></td>
         <td>${switchCell(t.id, 'usa_intermediario', t.usa_intermediario === true)}</td>
@@ -9857,9 +10471,29 @@ function loadTiposOperacion() {
         const id = this.getAttribute('data-id');
         const field = this.getAttribute('data-field');
         const newVal = this.checked;
-        client.from('tipos_operacion').update({ [field]: newVal }).eq('id', id).then((res) => {
-          if (res.error) showToast('Error: ' + (res.error.message || 'No se pudo actualizar.'), 'error');
-          else showToast('Actualizado.');
+        const row = list.find((r) => String(r.id) === String(id));
+        const aplicar = () => {
+          client.from('tipos_operacion').update({ [field]: newVal }).eq('id', id).then((resU) => {
+            if (resU.error) showToast('Error: ' + (resU.error.message || 'No se pudo actualizar.'), 'error');
+            else showToast('Actualizado.');
+          });
+        };
+        if (field !== 'usa_intermediario' || !row || !row.codigo) {
+          aplicar();
+          return;
+        }
+        client.from('tipos_operacion').select('id').eq('codigo', row.codigo).eq('usa_intermediario', newVal).neq('id', id).limit(1).then((rDup) => {
+          if (rDup.error) {
+            showToast('Error: ' + (rDup.error.message || 'No se pudo validar.'), 'error');
+            this.checked = !newVal;
+            return;
+          }
+          if (rDup.data && rDup.data.length) {
+            this.checked = !newVal;
+            showToast('Ya existe un tipo con el mismo código y la misma opción Intermediario.', 'error');
+            return;
+          }
+          aplicar();
         });
       });
     });
@@ -9957,17 +10591,29 @@ function saveTipoOperacion() {
     icono_modo: iconoModo,
     icono_url_publica: iconoModo === 'custom' ? urlIcono : null,
   };
-  const prom = id
-    ? client.from('tipos_operacion').update(payload).eq('id', id)
-    : client.from('tipos_operacion').insert(payload);
-  prom.then((res) => {
-    if (res.error) {
-      showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+  let dupQ = client.from('tipos_operacion').select('id').eq('codigo', codigo).eq('usa_intermediario', payload.usa_intermediario).limit(1);
+  if (id) dupQ = dupQ.neq('id', id);
+  dupQ.then((rDup) => {
+    if (rDup.error) {
+      showToast('Error: ' + (rDup.error.message || 'No se pudo validar.'), 'error');
       return;
     }
-    closeModalTipoOperacion();
-    loadTiposOperacion();
-    showToast(id ? 'Tipo de operación actualizado.' : 'Tipo de operación creado.', 'success');
+    if (rDup.data && rDup.data.length) {
+      showToast('Ya existe un tipo con el mismo código y la misma opción Intermediario. Usá otro código o cambiá el toggle Intermediario.', 'error');
+      return;
+    }
+    const prom = id
+      ? client.from('tipos_operacion').update(payload).eq('id', id)
+      : client.from('tipos_operacion').insert(payload);
+    return prom.then((res) => {
+      if (res.error) {
+        showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+        return;
+      }
+      closeModalTipoOperacion();
+      loadTiposOperacion();
+      showToast(id ? 'Tipo de operación actualizado.' : 'Tipo de operación creado.', 'success');
+    });
   });
 }
 
@@ -9996,6 +10642,8 @@ function setupModalTipoOperacion() {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', syncTipoOperacionModalIconoPreview);
   });
+  const chkUsaInt = document.getElementById('tipo-operacion-usa-intermediario');
+  if (chkUsaInt) chkUsaInt.addEventListener('change', syncTipoOperacionModalIconoPreview);
   const fileIconoEl = document.getElementById('tipo-operacion-icono-file');
   const btnSubirIcono = document.getElementById('tipo-operacion-icono-subir');
   if (btnSubirIcono && fileIconoEl) {
@@ -10191,8 +10839,8 @@ function onSessionReady(session) {
       setupModalTipoOperacion();
       setupModalOrden();
       if (typeof window !== 'undefined') {
-        window.__closeModalOrden = function () { closeModalOrden(); loadOrdenes(); };
-        window.__closeModalOrdenSolo = closeModalOrden;
+        window.__closeModalOrden = function () { solicitarCierreModalOrden({ modo: 'listo', refrescarOrdenes: true }); };
+        window.__closeModalOrdenSolo = function () { solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true }); };
       }
       setupModalChatOrden();
       setupModalTransacciones();
@@ -10252,8 +10900,10 @@ function setupHelpPopovers() {
   });
 }
 
-// Inicio
+// Inicio: getSession puede resolver *después* de un login rápido (autocompletar + Enter); sin guarda, el callback tardío llamaba showLogin() otra vez y duplicaba listeners.
 client.auth.getSession().then(({ data: { session } }) => {
+  if (authBootstrapFromGetSessionDone) return;
+  authBootstrapFromGetSessionDone = true;
   if (!session) {
     showLogin();
     setupLoginAndRegister();

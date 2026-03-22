@@ -8,7 +8,8 @@ Referencia del modelo conceptual: **docs/CC_MODELO_REFERENCIA.md** y **docs/CC_M
 
 ## Propósito
 
-- **Una sola fuente de verdad** para: signo en CC cliente/intermediario, si el movimiento suma al saldo, si se incluye en el detalle de movimientos CC.
+- **USD-ARS sin intermediario** no usa esta tabla: ver **`reglas_de_negocio`** y **`docs/REGLAS_DE_NEGOCIO.md`** (`sql/reglas_de_negocio_tabla.sql`).
+- **Una sola fuente de verdad** (para el resto de tipos en esta tabla): signo en CC cliente/intermediario, si el movimiento suma al saldo, si se incluye en el detalle de movimientos CC.
 - La app puede **consultar esta tabla** en lugar de lógica dispersa en `main.js` (helpers como `contribucionSaldoClienteModeloCc`, `incluirEnMovimientosCcClienteModelo`, etc.).
 - Permite **agregar nuevos tipos de operación** o ajustar reglas sin tocar código, editando filas en Supabase.
 
@@ -36,8 +37,9 @@ Referencia del modelo conceptual: **docs/CC_MODELO_REFERENCIA.md** y **docs/CC_M
 | `concepto_leyenda` | text | Clave para el concepto: `cobro_realizado`, `pago_realizado`, `compromiso_pago`, `comision_acuerdo`. |
 | `usa_monto_efectivo` | boolean | Si usar monto con tasa de descuento (ej. Int→Pandy 197k). |
 | `condicion_estado_comision` | text | Para es_comision=true: condicion para derivar estado efectivo. `par_pandy_int` = ejecutada si alguna Tx Pandy↔Int ejecutada. Null = siempre ejecutada. |
+| `linea_motor` | smallint | `0`, `1`, … Varias filas con la misma clave lógica (mismos campos anteriores salvo `linea_motor`) permiten **varios movimientos CC** para la misma transacción; el motor aplica todas ordenadas. |
 
-**Clave única:** `(tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada)`.
+**Clave única:** `(tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada, linea_motor)`.
 
 ---
 
@@ -52,7 +54,7 @@ Por cada **tipo de transacción** (pagador, cobrador, tipo_transaccion, es_comis
 | pendiente | false | Todo pendiente → no aplica (signo 0, no suma, no incluir). |
 | pendiente | true | Contrapartida ejecutada, esta pendiente → **suma al saldo** (solo en Tx2 y Tx4 del modelo). |
 
-Así la app puede buscar **siempre** por (pagador, cobrador, tipo, es_comision, estado_transaccion, contrapartida_ejecutada) y obtener una única fila.
+La app busca por (pagador, cobrador, tipo, es_comision, estado_transaccion, contrapartida_ejecutada) y obtiene **cero o más filas** (ordenadas por `linea_motor`); en el caso típico hay **una** fila por combinación (`linea_motor = 0`). Casos excepcionales declarados en tabla (ej. ARS-USD+int) usan `linea_motor = 1` para un segundo movimiento.
 
 ---
 
@@ -83,7 +85,7 @@ Resumen de las filas que tienen efecto (signo ≠ 0 o suma o incluir):
 
 ## Motor impulsado por la tabla
 
-La sync de CC (**sincronizarCcYCajaDesdeOrden**) **consume la tabla**: carga reglas con `getReglasCcModelo(codigo, usa_intermediario)`. Si hay filas, construye movimientos CC solo desde las reglas (lookup por transacción y por comisiones); si no hay reglas, usa el fallback actual (lógica ARS-ARS hardcodeada). Así el comportamiento es **indiferente al tipo de operación**: basta con tener filas en la tabla para ese tipo. Ver **docs/CC_MODELO_ENGINE_TABLA.md**.
+**Nota 2026:** el front **ya no** consume esta tabla en **`sincronizarCcYCajaDesdeOrden`**; la fuente de verdad operativa es **`reglas_de_negocio`**. Este documento describe la semántica histórica de columnas de `cc_modelo_reglas` para quien migre o audite datos viejos. Ver **`docs/REGLAS_DE_NEGOCIO.md`** y **`docs/MIGRACION_UNA_TABLA_REGLAS_DE_NEGOCIO.md`**.
 
 ---
 

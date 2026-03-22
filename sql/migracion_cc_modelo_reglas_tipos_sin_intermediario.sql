@@ -45,9 +45,10 @@ CROSS JOIN (VALUES
   ('pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, true, true, 'compromiso_pago', false, 'transaccion', 'monto_transaccion'),
   ('pandy', 'cliente', 'egreso', false, 'ejecutada', true,  1, true, true, 'compromiso_pago', false, 'transaccion', 'monto_transaccion'),
   ('pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, false, false, NULL, false, 'transaccion', 'monto_transaccion'),
-  ('pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, false, false, NULL, false, 'transaccion', 'monto_transaccion')
+  -- Egreso pendiente con contrapartida ejecutada (Tx1 cerrada): espejo en moneda recibida (+mr) solo detalle, no saldo.
+  ('pandy', 'cliente', 'egreso', false, 'pendiente', true,  1, false, true, 'compromiso_pago', false, 'orden_recibida', 'mr')
 ) AS r(pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada, cc_cliente_signo, cc_cliente_suma_saldo, incluir_en_mov_cc_cliente, concepto_leyenda, usa_monto_efectivo, cli_mon_exp, cli_monto_ref)
-ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada) DO UPDATE SET
+ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada, linea_motor) DO UPDATE SET
   cc_cliente_signo = EXCLUDED.cc_cliente_signo,
   cc_cliente_suma_saldo = EXCLUDED.cc_cliente_suma_saldo,
   incluir_en_mov_cc_cliente = EXCLUDED.incluir_en_mov_cc_cliente,

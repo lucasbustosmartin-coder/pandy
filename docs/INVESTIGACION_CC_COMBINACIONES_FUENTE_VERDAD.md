@@ -8,7 +8,7 @@ Objetivo: determinar si hay que tocar la **única fuente de verdad** (tabla `cc_
 
 - **Tests:** `tests/e2e/cc-combinaciones-esperado.js` y `docs/CC_COMBINACIONES_ESPERADO_DERIVACION.md` definen saldo y detalle por combinación.
 - **Fuente de verdad:** `sql/cc_modelo_reglas_todas_combinaciones.sql`. Lookup por `(pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada)`. Contrapartida: Tx1↔Tx2 (cliente–pandy), Tx3↔Tx4 (pandy–intermediario).
-- **Motor:** `main.js` → `sincronizarCcYCajaDesdeOrden` carga reglas con `getReglasCcModelo(codigo, usaIntermediario)`, recorre cada transacción, calcula `contrapartida = contrapartidaEjecutada(transacciones, pagador, cobrador, tipo)`, hace `lookupRegla(reglas, pag, cob, tipo, false, estado, contrapartida)` y, si `escribirCcCliente` (signo ≠ 0 y (incluir o suma_saldo)), hace push a `rowsCcCliente`. Luego un bloque aparte agrega la comisión Pandy si aplica.
+- **Motor (actualizado):** `main.js` → `sincronizarCcYCajaDesdeOrden` carga **`reglas_de_negocio`** con `getReglasDeNegocio`, y si hay filas aplica **`aplicarMotorCcDesdeReglasDeNegocio`** (`lookupReglasDeNegocio`, `contrapartidaEjecutada`, etc.). Ya no se usa `cc_modelo_reglas` en el front.
 
 ---
 

@@ -9,6 +9,11 @@
 --   transacciones, comisiones_orden, instrumentacion, ordenes.
 -- No se tocan: clientes, intermediarios, modos_pago, tipos_operacion, tipos_movimiento_caja, app_config, usuarios/seguridad.
 -- Orden: de hijas a madres (quien referencia primero). Tras truncar se resetean ordenes_numero_seq y transacciones_numero_seq (próxima orden nº 1, próxima transacción nº 1).
+--
+-- E2E: si además querés borrar clientes/intermediarios creado por los tests, NO alcanza con este archivo:
+--   ejecutá la RPC public.limpiar_base_e2e() (sql/rpc_limpiar_base_e2e.sql) o node scripts/limpiar-base-e2e.js
+--   (trunca igual que acá + DELETE clientes E2E + DELETE intermediarios E2E).
+-- Bloque OPCIONAL al final de este archivo: mismo DELETE que la RPC, a ejecutar *después* de los TRUNCATE.
 
 TRUNCATE TABLE public.movimientos_cuenta_corriente CASCADE;
 TRUNCATE TABLE public.movimientos_cuenta_corriente_intermediario CASCADE;
@@ -41,3 +46,12 @@ BEGIN
     PERFORM setval('public.transacciones_numero_seq', 1, false);
   END IF;
 END $$;
+
+-- =============================================================================
+-- OPCIONAL — E2E / suciedad de tests (mismo criterio que public.limpiar_base_e2e)
+-- Descomentá las dos líneas DELETE de abajo si corrés este script a mano y querés
+-- eliminar también clientes e intermediarios creados por Playwright.
+-- IMPORTANTE: debe ir DESPUÉS de los TRUNCATE (ya no hay órdenes que referencien esos ids).
+-- =============================================================================
+-- DELETE FROM public.clientes WHERE nombre LIKE 'E2E %';
+-- DELETE FROM public.intermediarios WHERE nombre LIKE 'E2E Int %' OR nombre = 'E2E CC TiposActivos Int';

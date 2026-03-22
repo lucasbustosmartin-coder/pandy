@@ -23,7 +23,7 @@ En la carpeta Pandi creá `.env` con:
 ```env
 SUPABASE_URL=https://TU_PROYECTO.supabase.co
 SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=<TU_SERVICE_ROLE_KEY>
 ```
 
 No subas este archivo a Git (está en `.gitignore`).

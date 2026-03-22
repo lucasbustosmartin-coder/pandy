@@ -4,6 +4,12 @@ require('dotenv').config({ path: '.env.test' });
 
 const baseURL = process.env.TEST_BASE_URL || 'http://localhost:5173';
 
+/**
+ * Orden de archivos E2E (workers=1, fullyParallel=false): Playwright ejecuta los `.spec.js`
+ * en orden lexicográfico. Los nombres con prefijo numérico aseguran:
+ *   01 CHEQUE-ARS (12 combinaciones) → 02 tipos 2 tx (ARS-USD, USD-ARS, USD-USD) →
+ *   03 intermediario inversa (USD-ARS / ARS-USD con int.) → 90 login → 91 orden-cc.
+ */
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
 module.exports = {
   testDir: 'tests/e2e',

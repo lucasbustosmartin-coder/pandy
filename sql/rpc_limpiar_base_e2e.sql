@@ -1,7 +1,9 @@
 -- =============================================================================
 -- RPC limpiar_base_e2e: para ambiente de desarrollo / E2E.
 -- Ejecutar este archivo en Supabase SQL Editor una vez.
--- 1) Borra clientes e intermediarios creados por los tests (nombre LIKE 'E2E %' / 'E2E Int %').
+-- 1) Borra clientes e intermediarios creados por los tests:
+--    clientes: nombre LIKE 'E2E %'
+--    intermediarios: nombre LIKE 'E2E Int %' (p. ej. E2E Int 1739…) o nombre fijo del spec 02 (E2E CC TiposActivos Int).
 -- 2) Trunca transaccionalidad en el mismo orden que truncar_ordenes_transacciones.sql
 --    y resetea secuencias ordenes_numero_seq y transacciones_numero_seq.
 -- El test (o scripts/limpiar-base-e2e.js) puede invocar esta RPC antes de correr E2E.
@@ -16,7 +18,9 @@ AS $$
 BEGIN
   -- 1) Borrar datos creados por tests E2E (no incrementar suciedad en la base)
   DELETE FROM public.clientes WHERE nombre LIKE 'E2E %';
-  DELETE FROM public.intermediarios WHERE nombre LIKE 'E2E Int %';
+  DELETE FROM public.intermediarios
+  WHERE nombre LIKE 'E2E Int %'
+     OR nombre = 'E2E CC TiposActivos Int';
 
   -- 2) Truncar transaccionalidad (mismo orden que truncar_ordenes_transacciones.sql)
   TRUNCATE TABLE public.movimientos_cuenta_corriente CASCADE;

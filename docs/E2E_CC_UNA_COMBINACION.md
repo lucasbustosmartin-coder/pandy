@@ -3,7 +3,7 @@
 Para revisar en la app que las **reglas** y el **caso de prueba** cierran para una combinación concreta (Tx1,Tx2,Tx3,Tx4), podés ejecutar solo esa combinación con:
 
 ```bash
-COMBINACION_ID="E,P,E,P" npx playwright test tests/e2e/cc-combinaciones.spec.js --headed
+COMBINACION_ID="E,P,E,P" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --headed
 ```
 
 - Reemplazá **E,P,E,P** por la que quieras. Las 12 válidas son:

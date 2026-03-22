@@ -1,21 +1,20 @@
 // @ts-check
 /**
- * Tests E2E: todas las combinaciones de estados (Tx1,Tx2,Tx3,Tx4) para CHEQUE-ARS con intermediario.
+ * Tests E2E: **12 combinaciones** Tx1..Tx4 para CHEQUE-ARS con intermediario.
+ * Tx1–Tx2: Cliente↔Pandy; Tx3–Tx4: Pandy↔Intermediario (instrumentación explícita en momento cero).
  * Prerrequisito: tipo `CHEQUE-ARS` en catálogo (sql/seed_tipo_operacion_cheque_ars.sql).
  * Mismos datos fijos (200k, 195k, 197k, 5k, 3k). Valida saldo y detalle CC cliente e intermediario.
  * Escribe un log en Excel (test-results/cc-combinaciones-log.xlsx) con expectativa, real y resultado (PASS/ERR) por combinación.
  *
- * Fuente de verdad: las tablas. El saldo CC = suma de movimientos con sumar_al_saldo = true
- * (movimientos_cuenta_corriente / movimientos_cuenta_corriente_intermediario). Par cerrado (ej. E,E,P,P)
- * requiere que cc_modelo_reglas tenga las filas (estado_transaccion, contrapartida_ejecutada) correctas
- * para que el sync escriba -200k, +195k y +5k con sumar_al_saldo true → saldo 0. Si falla E,E,P,P con
- * "saldo CC cliente esperado 0, app -200000", ejecutá en Supabase: migracion_cc_sumar_saldo_incluir_detalle.sql
- * y cc_modelo_reglas_todas_combinaciones.sql (ver docs/TESTING_E2E_GUIA.md §1.5).
+ * Fuente de verdad: **`reglas_de_negocio`** para CHEQUE-ARS + intermediario (ver `docs/CHEQUE_ARS_INTERMEDIARIO.md`). El saldo CC = suma por moneda de movimientos persistidos (no anulados).
+ * Solo si en algún momento ejecutaste `sql/migracion_reglas_cheque_ars_sin_trx_pandy_int.sql`, volvé a correr **`sql/migracion_reglas_de_negocio_cheque_ars.sql`** para recuperar reglas ancladas a Tx3/Tx4. Si **nunca** corriste ese script, no hace falta tocar Supabase por eso.
+ * Par cerrado cliente (E,E,*,*) requiere reglas correctas para que el sync cierre CC cliente. Si falla, revisá `sql/migracion_reglas_de_negocio_cheque_ars.sql` y sync (ver docs/TESTING_E2E_GUIA.md §1.5).
  * Si falla sync con "cannot cast jsonb null to type integer", re-ejecutá sql/rpc_sync_cc_caja_orden.sql (§1.6).
  * Timeouts del test: 15 min global y 90 s por paso a ejecutada (§1.7).
  *
+ * NPM: `npm run test:e2e-cc-cheque-ars` (equivale a correr este spec).
  * Una sola combinación (para revisar en la app que reglas y caso de prueba cierran):
- *   COMBINACION_ID="E,P,E,P" npx playwright test tests/e2e/cc-combinaciones.spec.js --headed
+ *   COMBINACION_ID="E,P,E,P" npx playwright test tests/e2e/01-cc-combinaciones.spec.js --headed
  * (Comillas obligatorias para respetar las comas. Reemplazá por: P,P,P,P | P,P,P,E | P,E,P,P | P,E,P,E | E,P,P,P | E,P,P,E | E,P,E,P | E,P,E,E | E,E,P,P | E,E,P,E | E,E,E,P | E,E,E,E)
  *
  * Convención: al inicio de cada combinación se limpia la base (limpiar-base-e2e) y se crea una orden
@@ -25,10 +24,9 @@
  * (no cambiar el esperado para "hacer pasar" el test).
  */
 const path = require('path');
-const fs = require('fs');
 const { execSync } = require('child_process');
-const XLSX = require('xlsx');
 const { test, expect } = require('@playwright/test');
+const { writeSuiteSheet } = require('./cc-combinaciones-log-workbook');
 const { COMBINACIONES_ESPERADO, DATOS_FIJOS } = require('./cc-combinaciones-esperado');
 
 const LOG_HEADERS = [
@@ -42,14 +40,7 @@ const LOG_HEADERS = [
 ];
 
 function escribirLogExcel(logRows) {
-  if (!logRows || logRows.length < 2) return;
-  const dir = path.join(process.cwd(), 'test-results');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(logRows);
-  XLSX.utils.book_append_sheet(wb, ws, 'CC Combinaciones');
-  const outPath = path.join(dir, 'cc-combinaciones-log.xlsx');
-  XLSX.writeFile(wb, outPath);
+  writeSuiteSheet('CC Combinaciones', logRows);
 }
 
 const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL || '';
@@ -113,7 +104,14 @@ function saldoLeidoANumero(saldoStr) {
  */
 function saldoResumenANumero(saldoStr, esIntermediario) {
   const n = saldoLeidoANumero(saldoStr);
-  return esIntermediario ? -n : n;
+  if (!esIntermediario) return n;
+  const s = String(saldoStr || '').trim();
+  // Históricamente, en intermediario algunas vistas mostraban el signo invertido por color:
+  // si viene explícitamente "+" interpretamos deuda (negativo real); si viene "-" respetamos tal cual.
+  if (/^\+/.test(s)) return -Math.abs(n);
+  if (/^[-−]/.test(s)) return n;
+  // Fallback legacy cuando no hay signo explícito.
+  return -n;
 }
 
 /** Va a Cajas, lee saldo efectivo ARS (#cajas-saldo-efectivo-ars). La app muestra valor absoluto; el signo viene de la clase negativo. Si sale "–", espera 2s y relee una vez (sync puede tardar). */
@@ -229,7 +227,7 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       if (filtrarCombinacionId != null && filtrarCombinacionId !== '' && esperado.id !== filtrarCombinacionId) continue;
       const numComb = COMBINACIONES_ESPERADO.filter(c => !filtrarCombinacionId || c.id === filtrarCombinacionId).indexOf(esperado) + 1;
       const totalComb = filtrarCombinacionId ? 1 : COMBINACIONES_ESPERADO.length;
-      console.log(`>>> Combinación ${numComb}/${totalComb}: ${esperado.id}`);
+      console.log(`>>> [CHEQUE-ARS] Combinación ${numComb}/${totalComb} de ${COMBINACIONES_ESPERADO.length}: ${esperado.id}`);
       const estados = [esperado.tx1, esperado.tx2, esperado.tx3, esperado.tx4];
       // Siempre tener el esperado de detalle (aunque no abramos el modal) para log y para no dar PASS falso
       const esperadoSorted = [...(esperado.detalleCliente || [])].sort((a, b) => a - b);
@@ -238,6 +236,7 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       let appIntSorted = [];
 
       const STEP_TIMEOUT_MS = 180000; // 3 min por combinación
+      try {
       await test.step(`Combinación ${esperado.id}`, async () => {
       const stepDone = Promise.resolve();
       const stepTimeout = new Promise((_, reject) => {
@@ -256,7 +255,7 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       } catch (e) {
         if (e.status !== 0) console.warn(`  [${esperado.id}] limpiar-base-e2e falló o no se ejecutó; continuando.`);
       }
-      await page.reload({ waitUntil: 'networkidle' }).catch(() => {});
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
       await expect(page.locator('#sidebar')).toBeVisible({ timeout: 15000 });
 
       // Crear cliente fijo (la limpieza borra clientes E2E)
@@ -293,7 +292,9 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
       await page.locator('#btn-nueva-orden').click();
       await expect(page.locator('#modal-orden-backdrop.activo')).toBeVisible({ timeout: 5000 });
-      const valueChequeArs = await page.locator('#orden-tipo-operacion option[data-codigo="CHEQUE-ARS"]').getAttribute('value');
+      const optChequeArs = page.locator('#orden-tipo-operacion option[data-codigo="CHEQUE-ARS"][data-usa-intermediario="true"]');
+      await expect(optChequeArs).toHaveCount(1, { timeout: 5000 });
+      const valueChequeArs = await optChequeArs.getAttribute('value');
       await page.locator('#orden-tipo-operacion').selectOption(valueChequeArs);
       await page.locator('#orden-cliente').selectOption({ label: nombreCliente });
       await page.locator('#orden-intermediario').selectOption({ label: nombreIntermediario });
@@ -433,7 +434,7 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       else if (countInt === 0 && saldoIntEsperadoCero) resDetalleInt = 'PASS'; // sin fila porque saldo 0
       else if (countInt === 0) resDetalleInt = 'N/A';
       else if (appIntSorted.length === esperadoIntSorted.length && esperadoIntSorted.every((v, i) => Math.abs((appIntSorted[i] || 0) - v) <= 1)) resDetalleInt = 'PASS';
-      // Control caja efectivo (solo efectivo; banco se ignora). Si esperado ≠ 0 y la primera lectura da 0, reintentar tras 3s (sync puede tardar al abrir Cajas).
+      // Control caja efectivo (Tx2, Tx4) y cheque (Tx1 ingreso, Tx3 egreso). Si esperado ≠ 0 y la primera lectura da 0, reintentar tras 3s.
       const expSdoCE = Number(esperado.saldoCajaEfectivoARS) || 0;
       let realSaldoCE = await leerSaldoCajaEfectivoARS(page);
       if (expSdoCE !== 0 && realSaldoCE === 0) {
@@ -442,7 +443,7 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       }
       const diffCE = Math.abs(realSaldoCE - expSdoCE);
       const saldoCE_Rdo = diffCE <= 1 ? 'PASS' : 'ERR';
-      // Control caja cheque (Tx1 ingreso cheque, Tx3 Pandy entrega cheque): se lee en la misma vista Cajas.
+      // Control caja cheque: +mr si Tx1 E, −mr si Tx3 E.
       const expSdoCCh = Number(esperado.saldoCajaChequeARS) ?? 0;
       const realSaldoCCh = await leerSaldoCajaChequeARS(page);
       const diffCCh = Math.abs(realSaldoCCh - expSdoCCh);
@@ -469,7 +470,11 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       if (countInt === 0 && esperado.saldoIntARS !== 0) {
         expect(countInt, `Combinación ${esperado.id}: se esperaba saldo int ${esperado.saldoIntARS}, no hay fila de intermediario`).toBeGreaterThan(0);
       }
-      expect(diffInt, `Combinación ${esperado.id}: saldo CC intermediario esperado ${esperado.saldoIntARS}, app ${saldoIntARS}`).toBeLessThanOrEqual(1);
+      const hintReglasInt = '';
+      expect(
+        diffInt,
+        `Combinación ${esperado.id}: saldo CC intermediario esperado ${esperado.saldoIntARS}, app ${saldoIntARS}.${hintReglasInt}`
+      ).toBeLessThanOrEqual(1);
       if (countInt > 0 && esperado.detalleInt && esperado.detalleInt.length >= 0) {
         expect(appIntSorted.length, `Combinación ${esperado.id}: detalle intermediario: cantidad esperada ${esperadoIntSorted.length}, app ${appIntSorted.length}`).toBe(esperadoIntSorted.length);
         for (let i = 0; i < esperadoIntSorted.length; i++) {
@@ -479,11 +484,20 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       }
       expect(diffCE, `Combinación ${esperado.id}: saldo caja efectivo ARS esperado ${expSdoCE}, app ${realSaldoCE}`).toBeLessThanOrEqual(1);
       expect(diffCCh, `Combinación ${esperado.id}: saldo caja cheque ARS esperado ${expSdoCCh}, app ${realSaldoCCh}`).toBeLessThanOrEqual(1);
+      console.log(`    ✓ [CHEQUE-ARS] ${esperado.id} OK (${numComb}/${totalComb})\n`);
         }),
         stepTimeout,
       ]);
       }); // fin test.step Combinación
+      } catch (err) {
+        console.error(`    ✗ [CHEQUE-ARS] ${esperado.id} FALLÓ (${numComb}/${totalComb})`);
+        throw err;
+      }
     }
+    const finChequeMsg = filtrarCombinacionId
+      ? '\n======== [E2E 1/5] CHEQUE-ARS: fin (ejecución filtrada) ========\n'
+      : '\n======== [E2E 1/5] CHEQUE-ARS: fin de las 12 combinaciones ========\n';
+    console.log(finChequeMsg);
     } finally {
       escribirLogExcel(logRows);
     }

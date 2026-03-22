@@ -5,6 +5,10 @@ const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL || '';
 const TEST_USER_PASSWORD = process.env.TEST_USER_PASSWORD || '';
 
 test.describe('Login y smoke', () => {
+  test.beforeAll(() => {
+    console.log('\n======== [E2E 4/5] Login y smoke — 90-login.spec.js ========\n');
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
   });

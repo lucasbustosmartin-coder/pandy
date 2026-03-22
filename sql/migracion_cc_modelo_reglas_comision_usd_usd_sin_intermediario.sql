@@ -18,7 +18,7 @@ INSERT INTO public.cc_modelo_reglas (
   ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true,  1, true,  true, 0, false, false, 'comision_acuerdo', false, 'transaccion', 'monto_transaccion', NULL, NULL, NULL),
   ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 1, false, false, 0, false, false, NULL, false, 'transaccion', 'monto_transaccion', NULL, NULL, NULL),
   ('USD-USD', false, 'cliente', 'pandy', 'ingreso', true, 'pendiente', true,  1, false, false, 0, false, false, NULL, false, 'transaccion', 'monto_transaccion', NULL, NULL, NULL)
-ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada)
+ON CONFLICT (tipo_operacion_codigo, usa_intermediario, pagador, cobrador, tipo_transaccion, es_comision, estado_transaccion, contrapartida_ejecutada, linea_motor)
 DO UPDATE SET
   cc_cliente_signo = EXCLUDED.cc_cliente_signo,
   cc_cliente_suma_saldo = EXCLUDED.cc_cliente_suma_saldo,

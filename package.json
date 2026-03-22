@@ -4,22 +4,35 @@
   "private": true,
   "scripts": {
     "bitacora": "node scripts/crear-bitacora-excel.js",
+    "assets:iconos-transparentes": "node scripts/quitar-fondo-blanco-iconos.js",
     "dev": "vite --port 5173",
     "dev:open": "vite --open",
     "preview": "vite preview",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --reporter=line --workers=1",
     "test:e2e:orden": "playwright test --grep-invert \"Reversa\"",
     "test:e2e:reversa": "playwright test -g \"Reversa\"",
-    "test:e2e-cc-tipos-2tx": "playwright test tests/e2e/cc-tipos-activos-combinaciones.spec.js",
-    "test:e2e-cc-activos-completo": "playwright test tests/e2e/cc-combinaciones.spec.js tests/e2e/cc-tipos-activos-combinaciones.spec.js"
+    "test:e2e-cc-tipos-2tx": "playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js",
+    "test:e2e-cc-usd-ars-sin-int": "TIPO_CODIGO=USD-ARS playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1",
+    "test:e2e-cc-ars-usd-sin-int": "TIPO_CODIGO=ARS-USD playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1",
+    "test:e2e-cc-usd-usd-sin-int": "TIPO_CODIGO=USD-USD playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1",
+    "test:e2e-cc-usd-usd-int-combos": "TIPO_CODIGO=USD-USD TIPO_USA_INTERMEDIARIO=true playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1",
+    "test:e2e-cc-usd-usd-int": "playwright test tests/e2e/91-orden-cc.spec.js -g \"crear orden USD-USD con intermediario\" --reporter=line --workers=1",
+    "test:e2e-cc-usd-ars-int-inversa": "TIPO_CODIGO=USD-ARS playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1",
+    "test:e2e-cc-ars-usd-int-inversa": "TIPO_CODIGO=ARS-USD playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1",
+    "test:e2e-cc-02-03": "playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1",
+    "test:e2e-cc-cheque-ars": "playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1",
+    "test:e2e-cc-activos-completo": "playwright test tests/e2e/01-cc-combinaciones.spec.js tests/e2e/02-cc-tipos-activos-combinaciones.spec.js tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1",
+    "playwright:install": "playwright install chromium"
   },
   "dependencies": {
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "vite": "^5.4.0",
     "@playwright/test": "^1.49.0",
     "@supabase/supabase-js": "^2.45.0",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "playwright": "^1.49.0",
+    "sharp": "^0.34.5",
+    "vite": "^5.4.0"
   }
 }

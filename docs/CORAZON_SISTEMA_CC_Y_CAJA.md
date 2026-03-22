@@ -10,6 +10,8 @@ Este documento define los principios que **siempre** deben cumplirse. El sistema
   - **Pandy y el cliente**
   - **Pandy y el intermediario**
 - Lo que muestra la CC (resumen y detalle) debe coincidir con quién le debe a quién en la realidad: signos, pendientes, ejecutadas, comisiones implícitas, misma convención de colores (verde = nos deben, rojo = Pandy debe). Referencia de regla: `docs/REGLA_CC_SIMPLE_INFALIBLE.md`.
+- **USD-ARS sin intermediario** (dos monedas, dos transacciones): modelo teórico de **dos movimientos CC por transacción** cuando ambas patas aplican; con todo ejecutado (**E,E**) **cuatro** movimientos que netean por moneda. Ver `docs/MODELO_CC_USD_ARS_TEORICO.md` y `docs/REGLAS_DE_NEGOCIO.md`.
+- **Varias transacciones por el mismo acuerdo** (parciales, distintos modos de pago): válido si los totales cierran; CC/caja se derivan **por transacción ejecutada**; cierre legacy dos monedas suma todos los montos Cliente↔Pandy. Ver `docs/INSTRUMENTACION_MULTITRANSACCION_Y_CC.md`.
 
 ---
 
@@ -26,6 +28,15 @@ Este documento define los principios que **siempre** deben cumplirse. El sistema
   - **Deterministas:** misma entrada (órdenes + transacciones y estados) → mismo resultado.
   - **Derivadas de una sola fuente de verdad:** órdenes e instrumentación (transacciones); no depender de textos de concepto ni de lógica duplicada.
 - Cualquier cambio que toque CC o caja debe respetar estos principios y no introducir excepciones ocultas.
+
+---
+
+## Regla de ORO (reglas vs. código en `main.js`)
+
+- La **verdad de negocio** de la cuenta corriente (montos que impactan saldo, exposición, comisiones, contrapartida) vive en **`reglas_de_negocio`** (y migraciones en `sql/`); ver **`docs/REGLAS_DE_NEGOCIO.md`**. **CHEQUE-ARS con intermediario** también en esa tabla. La tabla legacy **`cc_modelo_reglas`** ya **no** la lee el front; puede eliminarse en DB (`sql/migracion_drop_cc_modelo_reglas.sql`). No duplicar reglas contables en el frontend.
+- El código en `main.js` debe **interpretar `reglas_de_negocio` de forma genérica** (motor de lookup y aplicación de filas). Evitar excepciones por código de operación salvo infraestructura; si hace falta un comportamiento nuevo, **cambiar o ampliar la matriz en Supabase** (y documentar la semántica).
+- Ver también la regla del proyecto **Regla de ORO** en `.cursor/rules/reglas-pandi.mdc`.
+- **Multi‑pata / varias transacciones:** `docs/CC_FUENTE_DE_VERDAD_TABLA_Y_MULTI_PATA.md` — contexto histórico; nuevas extensiones van sobre **`reglas_de_negocio`** (`linea`, `monto_origen`, etc.).
 
 ---
 

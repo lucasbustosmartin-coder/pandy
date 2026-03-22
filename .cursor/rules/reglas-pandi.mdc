@@ -30,6 +30,13 @@ alwaysApply: true
 - **Revisión de impacto (RCA):** Tras modificar movimientos de CC, caja o flujos de ejecución, revisar que los cambios no rompan la regla ni introduzcan duplicados; contrastar con `docs/FLUJOS_CC_REGLA.md`, `docs/REGLA_CC_SIMPLE_INFALIBLE.md` y, si aplica, `docs/REGLA_CC.xlsx`. **Incluir siempre:** impacto en CC cliente **y** en CC intermediario.
 - **Regla por transacción:** Los movimientos de CC y caja deben estar ligados a una transacción (`transaccion_id` / `transaccion_numero`). La lógica debe actuar por transacción (insertar/actualizar/borrar solo los movimientos de esa transacción), no depender de borrar y repoblar toda la orden para no volver el sistema ineficiente a escala.
 
+## Regla de ORO (motor CC y reglas en Supabase)
+
+- **Todo el comportamiento de negocio** (qué suma al saldo, en qué moneda, comisiones, condición de contrapartida, detalle, etc.) debe **salir de las reglas persistidas** en **`reglas_de_negocio`** (y scripts/migraciones en `sql/`), no de casos especiales en `main.js` por código de tipo de operación o por una combinación concreta de estados. La tabla legacy **`cc_modelo_reglas`** quedó fuera del front; no usarla como fuente de verdad nueva.
+- **`main.js` debe ser un motor genérico:** leer `reglas_de_negocio`, armar claves de lookup (estado transacción, contrapartida ejecutada, `linea`, etc.) y aplicar lo que diga la fila. Helpers neutros (p. ej. simetría pagador/cobrador para “contrapartida”, normalización de estados) están bien; **no** sumar ramas del estilo “si es CHEQUE-ARS / esta combinación entonces otro cálculo” salvo que sea **estrictamente infraestructura** (UI, iconos, validaciones de formulario), no la verdad contable.
+- Si un flujo no cierra o un test espera un resultado distinto: **primero revisar y ajustar la matriz en Supabase** (`reglas_de_negocio`); solo si el modelo tabular no alcanza, extender el **modelo de reglas** (columnas / semántica documentada), no parchear el saldo en el front. Si hace falta **más de un movimiento CC** para la misma transacción y la misma clave lógica, usar **filas adicionales** con distinto **`linea`** en `reglas_de_negocio` (el motor aplica todas ordenadas); **prohibido** agregar ramas en `main.js` del estilo `if (codigoTipo === '…')` para verdad contable.
+- Referencia alineada: `docs/CORAZON_SISTEMA_CC_Y_CAJA.md` (principio de una sola fuente de verdad).
+
 ## Mensajería interna (no usar diálogos del navegador)
 
 - **Toda comunicación con el usuario** debe usar la **mensajería interna** de la app:

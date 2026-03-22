@@ -50,6 +50,8 @@ SET
       THEN 'transaccion'
     WHEN r.pagador = 'cliente' AND r.cobrador = 'pandy' AND r.tipo_transaccion = 'ingreso' AND r.es_comision = false
       AND NOT (r.estado_transaccion = 'pendiente' AND r.contrapartida_ejecutada = true) THEN 'orden_entregada'
+    WHEN r.pagador = 'pandy' AND r.cobrador = 'cliente' AND r.tipo_transaccion = 'egreso' AND r.es_comision = false
+      AND r.estado_transaccion = 'pendiente' AND r.contrapartida_ejecutada = true THEN 'orden_recibida'
     WHEN r.pagador = 'pandy' AND r.cobrador = 'cliente' AND r.tipo_transaccion = 'egreso' AND r.es_comision = false THEN 'transaccion'
     ELSE r.cc_cliente_moneda_exposicion
   END,
@@ -59,6 +61,8 @@ SET
       THEN 'monto_transaccion'
     WHEN r.pagador = 'cliente' AND r.cobrador = 'pandy' AND r.tipo_transaccion = 'ingreso' AND r.es_comision = false
       AND NOT (r.estado_transaccion = 'pendiente' AND r.contrapartida_ejecutada = true) THEN 'me'
+    WHEN r.pagador = 'pandy' AND r.cobrador = 'cliente' AND r.tipo_transaccion = 'egreso' AND r.es_comision = false
+      AND r.estado_transaccion = 'pendiente' AND r.contrapartida_ejecutada = true THEN 'mr'
     WHEN r.pagador = 'pandy' AND r.cobrador = 'cliente' AND r.tipo_transaccion = 'egreso' AND r.es_comision = false THEN 'monto_transaccion'
     ELSE r.cc_cliente_monto_referencia
   END

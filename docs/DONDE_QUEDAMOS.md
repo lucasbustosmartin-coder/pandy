@@ -9,7 +9,7 @@ Cuando Cursor muestra "re open" y perdés el hilo del chat, abrí este archivo p
 **Hecho recientemente (E2E + RPC + docs):**
 
 1. **RPC `sync_cc_caja_orden`:** casts con `->>` para `transaccion_numero` / `orden_numero` en caja (filas con null en JSON no rompen el INSERT). Script: `sql/rpc_sync_cc_caja_orden.sql` — volver a ejecutar en Supabase si aún no está.
-2. **Tests E2E:** `cc-combinaciones.spec.js` con timeout global 15 min y espera de “Actualizando estado…” 90 s por cambio a ejecutada.
+2. **Tests E2E:** `01-cc-combinaciones.spec.js` con timeout global 15 min y espera de “Actualizando estado…” 90 s por cambio a ejecutada.
 3. **Documentación:** `docs/TESTING_E2E_GUIA.md` (§1.6–1.7), `docs/CONTEXTO_TEST_CC_COMBINACIONES.md`, `docs/INVESTIGACION_CC_COMBINACIONES_FUENTE_VERDAD.md` §7, `docs/FUNCIONES_CRITICAS_SUPABASE_VS_FRONT.md`.
 4. **main.js:** sin `console.log` de depuración en el sync CC.
 

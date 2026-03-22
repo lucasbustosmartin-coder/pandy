@@ -1,5 +1,6 @@
--- CC: dos flags por movimiento (suma al saldo / aparece en detalle).
--- Permite que saldo = suma(movimientos donde sumar_al_saldo) y detalle = solo filas con incluir_en_detalle.
+-- CC: flags por movimiento (histórico: incluía sumar_al_saldo; hoy el saldo es suma de todo lo persistido).
+-- Para **quitar** sumar_al_saldo en entornos ya migrados: **`sql/migracion_cc_drop_sumar_al_saldo.sql`**.
+-- Detalle en app: `incluir_en_detalle`.
 -- Referencia: docs/ANALISIS_POR_QUE_CUESTA_CC_REGLAS.md, docs/CC_MODELO_MATRIZ_COMPLETA.md
 -- Ejecutar en Supabase SQL Editor.
 

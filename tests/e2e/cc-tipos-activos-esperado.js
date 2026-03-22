@@ -1,15 +1,15 @@
 // @ts-check
 /**
- * Expectativas por combinación (Tx1, Tx2) para tipos de operación sin intermediario con 2 transacciones.
+ * Expectativas por combinación (Tx1, Tx2) para tipos de operación con 2 transacciones (sin intermediario y USD-USD con intermediario).
  * Montos fijos enteros para control manual y Excel.
  *
- * Convención filas instrumentación (orden por número): Tx1 = ingreso Cliente→Pandy, Tx2 = egreso Pandy→Cliente.
+ * Convención filas instrumentación (orden por número): Tx1 = ingreso Cliente→Pandy; Tx2 = egreso Pandy→Cliente (sin int.) o egreso Intermediario→Cliente (USD-USD con intermediario).
  * saldoClienteUSD / saldoClienteARS: resumen CC (convención app; tolerancia ±1 en tests).
  * detalleCliente: montos en modal Ver detalle (todas las celdas USD/ARS con valor), ordenados ascendente.
  * cajaEfectivoUSD / cajaEfectivoARS: vista Cajas efectivo tras la combinación.
  *
- * Fuente de verdad: cc_modelo_reglas + sincronizarCcYCajaDesdeOrden (suma saldo = filas con cc_cliente_suma_saldo).
- * P,E: ingreso pendiente + egreso ejecutada → compromiso a cobrar en mr (moneda recibida) + compromiso de pago en me/transacción.
+ * Fuente de verdad: sync. USD-ARS, ARS-USD y USD-USD sin int → `reglas_de_negocio` (comisión implícita mr−me en USD-USD; ver docs/USD_USD_SIN_INTERMEDIARIO.md). Saldo = suma simple por moneda de movimientos persistidos (no anulados).
+ * P,E (USD-USD): solo Tx1 ingreso pendiente (+10.000); Tx2 egreso ejecutado −9.700/+9.700 anula el pago en CC; saldo +10.000 (deuda cliente a favor Pandy).
  */
 
 /** ARS-USD: TC 1000, recibir 5.000.000 ARS, entregar 5.000 USD */
@@ -44,14 +44,15 @@ const USD_USD_FIJOS = {
  */
 const COMBINACIONES_ARS_USD = [
   { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
-  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -5000, saldoARS: 0, detalleCliente: [-5000000, -5000], cajaUSD: 0, cajaARS: 5000000 },
+  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -5000, saldoARS: 0, detalleCliente: [-5000000, -5000, 5000000], cajaUSD: 0, cajaARS: 5000000 },
   {
     id: 'P,E',
     tx1: 'P',
     tx2: 'E',
-    saldoUSD: 5000,
+    // Tres líneas en detalle: dos USD −me/+me anulan el egreso ejecutado en CC; una ARS −mr es el compromiso cobrar pendiente (Tx1). Saldo neto USD 0, ARS −mr. Ver docs/CC_NETEO_USD_ARS_VS_ARS_USD.md.
+    saldoUSD: 0,
     saldoARS: -5000000,
-    detalleCliente: [-5000000, 5000, 5000000],
+    detalleCliente: [-5000000, -5000, 5000],
     cajaUSD: -5000,
     cajaARS: 0,
   },
@@ -69,14 +70,15 @@ const COMBINACIONES_ARS_USD = [
 
 const COMBINACIONES_USD_ARS = [
   { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
-  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: 0, saldoARS: -5000000, detalleCliente: [-5000000, -5000], cajaUSD: 5000, cajaARS: 0 },
+  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: 0, saldoARS: -5000000, detalleCliente: [-5000000, -5000, 5000], cajaUSD: 5000, cajaARS: 0 },
   {
     id: 'P,E',
     tx1: 'P',
     tx2: 'E',
+    // Tx2 ejecutada solo materializa ARS; USD queda en compromiso a cobrar pendiente (Tx1) → no línea USD en egreso con contrapartida false.
     saldoUSD: -5000,
     saldoARS: 5000000,
-    detalleCliente: [-5000, 5000, 5000000],
+    detalleCliente: [-5000, 5000000],
     cajaUSD: 0,
     cajaARS: -5000000,
   },
@@ -84,6 +86,7 @@ const COMBINACIONES_USD_ARS = [
     id: 'E,E',
     tx1: 'E',
     tx2: 'E',
+    // Par cerrado: 2 movimientos CC por trx × 2 monedas → 4 líneas que netean (saldo 0). Ver docs/MODELO_CC_USD_ARS_TEORICO.md.
     saldoUSD: 0,
     saldoARS: 0,
     detalleCliente: [-5000000, -5000, 5000, 5000000],
@@ -94,15 +97,16 @@ const COMBINACIONES_USD_ARS = [
 
 const COMBINACIONES_USD_USD = [
   { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
-  // E,P: Tx1 cobró 10.000 (caja +10.000). CC muestra cobro bruto en monto_transaccion (−10.000); la comisión (+300) se incorpora al saldo cuando el par queda cerrado (E,E).
-  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -10000, saldoARS: 0, detalleCliente: [-10000], cajaUSD: 10000, cajaARS: 0 },
+  // E,P: cobro −10.000; egreso pendiente: +10.000 (mr, anula deuda) y −9.700 (me, lo que Pandy debe) → saldo −9.700.
+  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -9700, saldoARS: 0, detalleCliente: [-10000, 10000, -9700], cajaUSD: 10000, cajaARS: 0 },
+  // P,E: compromiso cobrar +10.000; pago Pandy anulado en CC (−9.700/+9.700); saldo +10.000 (convención positivo = cliente nos debe).
   {
     id: 'P,E',
     tx1: 'P',
     tx2: 'E',
-    saldoUSD: -300,
+    saldoUSD: 10000,
     saldoARS: 0,
-    detalleCliente: [-10000, 9700],
+    detalleCliente: [-9700, 9700, 10000],
     cajaUSD: -9700,
     cajaARS: 0,
   },
@@ -118,12 +122,24 @@ const COMBINACIONES_USD_USD = [
   },
 ];
 
-/** Catálogo activo (sync con tipos_operacion activo en Supabase) */
+/**
+ * USD-USD con intermediario: mismas expectativas **cliente** / caja / detalle que sin int (`reglas_de_negocio` cliente + mr_menos_me).
+ * CC intermediario: comisión explícita (`comision_intermediario`) solo con par cliente cerrado (**E,E**); 50% / 50% sobre comisión total (mr−me).
+ */
+const COMISION_USD_USD_INT_INTERMEDIARIO = Math.round(USD_USD_FIJOS.comision / 2);
+const COMBINACIONES_USD_USD_INT = COMBINACIONES_USD_USD.map((c) => ({
+  ...c,
+  saldoIntermediarioUSD: c.id === 'E,E' ? COMISION_USD_USD_INT_INTERMEDIARIO : 0,
+}));
+
+/** Catálogo activo (sync con tipos_operacion activo en Supabase). Puede haber dos filas mismo codigo (usa_intermediario distinto). */
 const TIPOS_ACTIVOS_CATALOGO = [
   { codigo: 'ARS-USD', activo: true, nTx: 2, intermediario: false },
   { codigo: 'CHEQUE-ARS', activo: true, nTx: 4, intermediario: true },
   { codigo: 'USD-USD', activo: true, nTx: 2, intermediario: false },
+  { codigo: 'USD-USD', activo: true, nTx: 2, intermediario: true },
   { codigo: 'USD-ARS', activo: true, nTx: 2, intermediario: false },
+  { codigo: 'USD-ARS', activo: true, nTx: 4, intermediario: true },
 ];
 
 module.exports = {
@@ -133,5 +149,7 @@ module.exports = {
   COMBINACIONES_ARS_USD,
   COMBINACIONES_USD_ARS,
   COMBINACIONES_USD_USD,
+  COMISION_USD_USD_INT_INTERMEDIARIO,
+  COMBINACIONES_USD_USD_INT,
   TIPOS_ACTIVOS_CATALOGO,
 };

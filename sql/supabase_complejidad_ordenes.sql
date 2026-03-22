@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS public.tipos_operacion (
   activo boolean DEFAULT true,
   created_at timestamptz DEFAULT now()
 );
+-- Nota: en bases reales, tras migracion_tipos_operacion_usa_intermediario + migracion_tipos_operacion_unique_codigo_usa_intermediario.sql,
+-- el UNIQUE pasa a ser (codigo, usa_intermediario) y codigo puede repetirse entre variantes con/sin intermediario.
 
 INSERT INTO public.tipos_operacion (codigo, nombre) VALUES
   ('USD-USD', 'USD - USD'),

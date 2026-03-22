@@ -3,7 +3,7 @@
 **Para retomar después de un "re open" de Cursor:** este doc resume en qué quedamos con el test de 12 combinaciones y el modal que no cerraba.
 
 ## Problema
-- Test `tests/e2e/cc-combinaciones.spec.js` se quedaba trabado en la pantalla de instrumentación (modal "Nueva orden" abierto, paso instrumentación con los 4 combos).
+- Test `tests/e2e/01-cc-combinaciones.spec.js` se quedaba trabado en la pantalla de instrumentación (modal "Nueva orden" abierto, paso instrumentación con los 4 combos).
 - Al hacer clic en "Listo" o "Cerrar" el modal no se cerraba; la vista de Órdenes cargaba atrás en gris y el modal perdía el foco.
 
 ## Cambios ya hechos en la app
@@ -22,14 +22,14 @@
 
 ## Test (estado actual)
 - **Tipo de operación:** los tests eligen **`CHEQUE-ARS`** en el select de orden. En Supabase ejecutá **`sql/seed_tipo_operacion_cheque_ars.sql`** si ese código no está en `tipos_operacion`.
-- **Referencia que sí avanza:** `tests/e2e/cc-combinaciones.spec.js` (test de las 12 combinaciones).
+- **Referencia que sí avanza:** `tests/e2e/01-cc-combinaciones.spec.js` (test de las 12 combinaciones).
 - **orden-cc** (test individual) está alineado con cc-combinaciones:
   - **Flujo:** un solo cambio de combo por apertura del modal → Listo y cerrar → reabrir para el siguiente; **no se va a CC entre medio** (igual que cc-combinaciones). Toda la validación de CC y caja se hace **después** del loop de 4 pasos.
   - **Cierre:** mismas dos líneas, sin X ni fallbacks:  
     `await page.locator('#orden-btn-cerrar-wizard').click();`  
     `await expect(page.locator('#modal-orden-backdrop.activo')).toBeHidden({ timeout: 20000 });`
   - **esperarActualizacionEstadoOrden:** timeout **90000 ms** (90 s) por cada paso a ejecutada; espera a que `#orden-inst-actualizando-msg` desaparezca.
-  - **Timeout del test completo (`cc-combinaciones.spec.js`):** **15 min** (`test.setTimeout(900000)`) para las 12 combinaciones con sync repetido.
+  - **Timeout del test completo (`01-cc-combinaciones.spec.js`):** **15 min** (`test.setTimeout(900000)`) para las 12 combinaciones con sync repetido.
 
 ## RPC sync (si “Actualizando estado…” no termina o falla el sync)
 
@@ -37,7 +37,7 @@ Si en consola aparece **`sync_cc_caja_orden: cannot cast jsonb null to type inte
 
 ## Qué probar si sigue fallando
 - Ejecutar el test con el navegador visible:  
-  `npx playwright test tests/e2e/cc-combinaciones.spec.js --headed`
+  `npx playwright test tests/e2e/01-cc-combinaciones.spec.js --headed`
 - Si el modal sigue sin cerrar al hacer clic en Listo, revisar en consola del navegador si hay errores de JS al hacer clic.
 - Confirmar que con los cambios de la app (no cargar Órdenes atrás) el modal ya no pierde el foco al terminar de cargar la instrumentación.
 

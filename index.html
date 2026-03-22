@@ -126,7 +126,7 @@
     .toggle-switch input:disabled { cursor: not-allowed; }
     .toggle-switch input:disabled + .slider { opacity: 0.65; }
     .tipo-op-toggle-cell { display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0.5rem 0; }
-    #tabla-tipos-operacion th:nth-child(5), #tabla-tipos-operacion th:nth-child(6), #tabla-tipos-operacion td:nth-child(5), #tabla-tipos-operacion td:nth-child(6) { text-align: center; vertical-align: middle; }
+    #tabla-tipos-operacion th:nth-child(6), #tabla-tipos-operacion th:nth-child(7), #tabla-tipos-operacion td:nth-child(6), #tabla-tipos-operacion td:nth-child(7) { text-align: center; vertical-align: middle; }
     #tabla-tipos-operacion .tipo-op-toggle-cell .toggle-switch { flex-shrink: 0; display: inline-block; width: 48px; height: 26px; }
     #tabla-tipos-operacion .tipo-op-toggle-cell .toggle-switch .slider { border: 1px solid #9ca3af; box-sizing: border-box; }
     #tabla-clientes th:nth-child(5), #tabla-clientes td:nth-child(5), #tabla-intermediarios th:nth-child(5), #tabla-intermediarios td:nth-child(5) { text-align: center; vertical-align: middle; }
@@ -155,6 +155,12 @@
     /* Modal orden abierto: el contenido de fondo no recibe clics ni foco (evita que "quede atrás" el modal) */
     body.modal-orden-abierto #app-content { pointer-events: none; }
     #modal-orden-backdrop.activo { z-index: 1000; }
+    /* Desde el wizard de orden: Nueva transacción / listado instrumentación deben quedar por encima del modal orden */
+    #modal-transaccion-backdrop.activo,
+    #modal-transacciones-backdrop.activo { z-index: 1100; }
+    /* Confirmación y ayuda por encima de cualquier otro modal (orden + transacción) */
+    #modal-help-backdrop.activo,
+    #modal-confirm-backdrop.activo { z-index: 1200; }
     .chat-orden-log .chat-msg { margin-bottom: 0.5rem; }
     .chat-orden-log .chat-msg.user { text-align: right; color: #1a1a1a; }
     .chat-orden-log .chat-msg.bot { color: #555; font-size: 0.9rem; }
@@ -217,6 +223,8 @@
     .modal.modal-orden.modal-orden-con-instrumentacion { max-width: min(95vw, 1020px); width: 95%; }
     .orden-inst-form-actions-sticky { position: sticky; bottom: 0; background: #fff; z-index: 10; padding-top: 0.5rem; margin-bottom: -0.5rem; box-shadow: 0 -2px 8px rgba(0,0,0,0.06); pointer-events: auto; }
     #orden-step-instrumentacion .orden-inst-contenido-scroll { max-height: min(60vh, 480px); overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.75rem; }
+    /* Acuerdo visible al scrollear la tabla de transacciones (instrumentación manual) */
+    #orden-step-instrumentacion .orden-inst-acuerdo-sticky { position: sticky; top: 0; z-index: 6; background: #f5f5f5; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
     .orden-beneficio-acuerdo { color: #0066cc !important; font-weight: 700 !important; background: #f0f0f0 !important; }
     .orden-label-verb-destacado { color: #b91c1c; font-weight: 700; }
     #orden-step-detalles .form-row.dos-columnas,
@@ -236,9 +244,59 @@
       border-top: 1px solid rgba(180, 200, 235, 0.65);
       gap: 1rem;
     }
-    #orden-step-detalles .form-group input,
+    /* No forzar ancho 100% en radio/checkbox (rompe filas tipo “opción + texto”) */
+    #orden-step-detalles .form-group input:not([type="radio"]):not([type="checkbox"]):not([type="hidden"]),
     #orden-step-detalles .form-group select,
     #orden-step-detalles .form-group textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+    /* Patrón instrumentación + intermediario: 2 columnas (radio fijo | texto fluido).
+       Importante: este bloque lleva .form-group y #orden-step-detalles .form-group input { width:100% }
+       estiraba los radios; se anula solo acá. */
+    #orden-step-detalles #orden-form-resto {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      min-width: 0;
+    }
+    #orden-wrap-int-patron-instrumentacion {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      align-self: stretch;
+    }
+    #orden-wrap-int-patron-instrumentacion input[type="radio"] {
+      width: auto;
+      min-width: 1.125rem;
+      max-width: none;
+      margin: 0.15rem 0 0 0;
+      flex-shrink: 0;
+      accent-color: #2563eb;
+    }
+    label.orden-int-patron-opcion {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      column-gap: 0.65rem;
+      row-gap: 0;
+      align-items: start;
+      margin-bottom: 0.55rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+    }
+    label.orden-int-patron-opcion:last-of-type { margin-bottom: 0; }
+    label.orden-int-patron-opcion > input[type="radio"] {
+      grid-column: 1;
+      justify-self: start;
+    }
+    .orden-int-patron-opcion-text {
+      grid-column: 2;
+      min-width: 0;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
     #orden-step-detalles input:disabled,
     #orden-step-detalles select:disabled,
     #orden-step-detalles input[readonly],
@@ -273,9 +331,9 @@
     .inicio-cajas-dos { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin-bottom: 1rem; }
     .inicio-caja-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1rem 1.25rem; }
     .inicio-caja-card-titulo { margin: 0 0 0.75rem 0; font-size: 1.1rem; font-weight: 600; color: #1a1a1a; display: flex; align-items: center; gap: 0.5rem; }
-    .inicio-caja-icono-caja { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; color: #555; flex-shrink: 0; }
+    .inicio-caja-icono-caja { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; color: #555; flex-shrink: 0; box-sizing: content-box; padding: 4px; border-radius: 50%; background: var(--lyp-icono-halo-bg); border: 1px solid var(--lyp-icono-halo-border); box-shadow: var(--lyp-icono-halo-shadow); }
     .inicio-caja-icono-caja svg { width: 100%; height: 100%; }
-    .inicio-caja-icono-caja img { width: 100%; height: 100%; object-fit: contain; }
+    .inicio-caja-icono-caja img { width: 100%; height: 100%; object-fit: contain; background: transparent; }
     .inicio-caja-tabla { display: flex; flex-direction: column; gap: 0.4rem; overscroll-behavior-x: contain; }
     .inicio-caja-fila { display: grid; grid-template-columns: 6.5rem 1fr 1fr 1fr; align-items: center; gap: 0.75rem 1rem; font-size: 0.9rem; }
     .inicio-caja-banco-fila { grid-template-columns: 6.5rem 1fr 1fr; }
@@ -387,22 +445,54 @@
     }
     .tipo-op-iconos-par { display: inline-flex; align-items: center; gap: 0.15rem; }
     .tipo-op-iconos-sep { display: inline-block; font-size: 0.72rem; color: #9ca3af; font-weight: 600; margin: 0 0.05rem; line-height: 1; align-self: center; }
-    .tipo-op-icono-moneda, .tipo-op-icono-cheque, .tipo-op-icono-custom { display: inline-block; vertical-align: middle; object-fit: contain; flex-shrink: 0; max-height: 24px; width: auto; }
+    /* Halo circular suave (no el disco gris sólido anterior): contiene iconos moneda/cheque */
+    :root {
+      --lyp-icono-halo-bg: rgba(248, 250, 252, 0.88);
+      --lyp-icono-halo-border: rgba(226, 232, 240, 0.95);
+      --lyp-icono-halo-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+    }
+    .tipo-op-icono-moneda, .tipo-op-icono-cheque, .tipo-op-icono-custom {
+      display: inline-block;
+      vertical-align: middle;
+      object-fit: contain;
+      flex-shrink: 0;
+      max-height: 24px;
+      width: auto;
+      box-sizing: content-box;
+      padding: 3px;
+      border-radius: 50%;
+      background: var(--lyp-icono-halo-bg);
+      border: 1px solid var(--lyp-icono-halo-border);
+      box-shadow: var(--lyp-icono-halo-shadow);
+    }
     .tipo-op-icono-moneda {
       width: 24px;
       height: 24px;
-      padding: 1px;
-      background: #f1f3f5;
-      border-radius: 50%;
-      border: 0.5px solid rgba(107,114,128,0.65);
-      box-shadow: none;
     }
+    .tipo-op-iconos--con-intermediario { gap: 0.35rem; flex-wrap: nowrap; }
+    .tipo-op-iconos-cuerpo { display: inline-flex; align-items: center; }
+    .tipo-op-icono-int {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 2px;
+      flex-shrink: 0;
+      box-sizing: content-box;
+      background: var(--lyp-icono-halo-bg);
+      border-radius: 50%;
+      border: 1px solid var(--lyp-icono-halo-border);
+      box-shadow: var(--lyp-icono-halo-shadow);
+      color: #4b5563;
+    }
+    .tipo-op-icono-int-svg { width: 13px; height: 13px; display: block; }
     .td-tipo-op-iconos, .cc-col-tipo-op-iconos { text-align: center; vertical-align: middle; }
     .tipo-op-moneda-celda { display: inline-flex; align-items: center; gap: 0.35rem; }
     .tipo-op-moneda-codigo { font-weight: 500; color: #374151; }
     .inicio-caja-fila-header { padding-bottom: 0.35rem; border-bottom: 1px solid #e5e7eb; }
     .inicio-caja-col-header { font-weight: 600; color: #374151; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; }
-    .inicio-caja-icono-moneda { object-fit: contain; flex-shrink: 0; vertical-align: middle; width: 26px; height: 26px; padding: 1px; background: #f1f3f5; border-radius: 50%; border: 0.5px solid rgba(107,114,128,0.65); box-shadow: none; }
+    .inicio-caja-icono-moneda { object-fit: contain; flex-shrink: 0; vertical-align: middle; width: 20px; height: 20px; box-sizing: content-box; padding: 3px; border-radius: 50%; background: var(--lyp-icono-halo-bg); border: 1px solid var(--lyp-icono-halo-border); box-shadow: var(--lyp-icono-halo-shadow); }
     .inicio-caja-etiqueta { color: #6b7280; }
     .inicio-caja-valor { font-weight: 600; text-align: right; }
     .inicio-caja-valor.positivo { color: #0d7d3d; }
@@ -462,10 +552,30 @@
     .tabla-cc-resumen td:first-child { text-align: left; padding-left: 0.75rem; border-right: 2px solid #9ca3af; }
     .tabla-cc-resumen td:nth-child(3), .tabla-cc-resumen td:nth-child(5), .tabla-cc-resumen td:nth-child(7) { border-right: 2px solid #9ca3af; }
     .tabla-cc-resumen td:nth-last-child(1) { border-left: 2px solid #9ca3af; }
-    .tabla-cc-resumen th.th-moneda .th-moneda-icon { display: inline-flex; align-items: center; margin-right: 0.25rem; vertical-align: middle; }
-    .cc-icono-moneda { width: 20px; height: 20px; object-fit: contain; vertical-align: middle; }
+    .tabla-cc-resumen th.th-moneda .th-moneda-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 0.25rem;
+      vertical-align: middle;
+      padding: 3px;
+      border-radius: 50%;
+      background: var(--lyp-icono-halo-bg);
+      border: 1px solid var(--lyp-icono-halo-border);
+      box-shadow: var(--lyp-icono-halo-shadow);
+    }
+    .cc-icono-moneda { width: 20px; height: 20px; object-fit: contain; vertical-align: middle; background: transparent; }
     .tabla-cc-resumen .cc-icono-moneda { flex-shrink: 0; }
-    .modal-cc-saldos .card-titulo .cc-icono-moneda { margin-right: 0.25rem; }
+    .modal-cc-saldos .card-titulo { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; }
+    .modal-cc-saldos .card-titulo .cc-icono-moneda {
+      margin-right: 0.15rem;
+      box-sizing: content-box;
+      padding: 3px;
+      border-radius: 50%;
+      background: var(--lyp-icono-halo-bg);
+      border: 1px solid var(--lyp-icono-halo-border);
+      box-shadow: var(--lyp-icono-halo-shadow);
+    }
     .tabla-cc-resumen th.th-sub { font-weight: 500; font-size: 0.9em; }
     .tabla-cc-resumen .valor-positivo { color: #059669; }
     .tabla-cc-resumen .valor-negativo { color: #dc2626; }
@@ -645,7 +755,8 @@
     #tabla-transacciones td:nth-child(4) { min-width: 15rem; }
     .combo-modo-pago-transaccion-tabla { min-width: 8rem; max-width: 12rem; padding: 0.35rem 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
     .combo-modo-pago-transaccion-tabla:focus { outline: none; border-color: #3b82f6; }
-    .toast-container { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; max-width: 90vw; }
+    /* Por encima de modal orden (1000) y modal transacción/instrumentación (1100); por debajo de confirmación y ayuda (1200) */
+    .toast-container { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 1150; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; max-width: 90vw; }
     .toast { padding: 0.85rem 1.25rem; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); font-size: 0.95rem; font-weight: 500; color: #fff; pointer-events: auto; animation: toast-in 0.3s ease; display: flex; align-items: center; gap: 0.6rem; min-width: 280px; max-width: 420px; transition: opacity 0.2s ease, transform 0.2s ease; }
     .toast.toast-success { background: #0d7d3d; }
     .toast.toast-info { background: #1e40af; }
@@ -780,7 +891,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.49</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.50</div>
   </aside>
 
   <main class="main-content">
@@ -840,27 +951,27 @@
             <div class="inicio-caja-tabla">
               <div class="inicio-caja-fila inicio-caja-fila-header">
                 <span class="inicio-caja-etiqueta"></span>
-                <span class="inicio-caja-col-header"><img src="/assets/Icono_Dolar.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>USD</span>
-                <span class="inicio-caja-col-header"><img src="/assets/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
-                <span class="inicio-caja-col-header"><img src="/assets/Icono_Euro.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>EUR</span>
+                <span class="inicio-caja-col-header" data-caja-moneda-col="USD"><img src="/assets/Icono_Dolar.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>USD</span>
+                <span class="inicio-caja-col-header" data-caja-moneda-col="ARS"><img src="/assets/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
+                <span class="inicio-caja-col-header" data-caja-moneda-col="EUR"><img src="/assets/Icono_Euro.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>EUR</span>
               </div>
               <div class="inicio-caja-fila">
                 <span class="inicio-caja-etiqueta">Saldo Inicial</span>
-                <span class="inicio-caja-valor" id="inicio-efectivo-usd-inicial">–</span>
-                <span class="inicio-caja-valor" id="inicio-efectivo-ars-inicial">–</span>
-                <span class="inicio-caja-valor" id="inicio-efectivo-eur-inicial">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="USD" id="inicio-efectivo-usd-inicial">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="ARS" id="inicio-efectivo-ars-inicial">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="EUR" id="inicio-efectivo-eur-inicial">–</span>
               </div>
               <div class="inicio-caja-fila inicio-caja-fila-actual">
                 <span class="inicio-caja-etiqueta">Saldo Actual</span>
-                <span class="inicio-caja-valor" id="inicio-efectivo-usd-actual">–</span>
-                <span class="inicio-caja-valor" id="inicio-efectivo-ars-actual">–</span>
-                <span class="inicio-caja-valor" id="inicio-efectivo-eur-actual">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="USD" id="inicio-efectivo-usd-actual">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="ARS" id="inicio-efectivo-ars-actual">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="EUR" id="inicio-efectivo-eur-actual">–</span>
               </div>
               <div class="inicio-caja-fila inicio-caja-fila-var">
                 <span class="inicio-caja-etiqueta">Var.</span>
-                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-efectivo-usd-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-efectivo-usd-var">–</span></span>
-                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-efectivo-ars-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-efectivo-ars-var">–</span></span>
-                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-efectivo-eur-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-efectivo-eur-var">–</span></span>
+                <span class="inicio-caja-var-derecha" data-caja-moneda-col="USD"><span class="inicio-caja-tendencia" id="inicio-efectivo-usd-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-efectivo-usd-var">–</span></span>
+                <span class="inicio-caja-var-derecha" data-caja-moneda-col="ARS"><span class="inicio-caja-tendencia" id="inicio-efectivo-ars-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-efectivo-ars-var">–</span></span>
+                <span class="inicio-caja-var-derecha" data-caja-moneda-col="EUR"><span class="inicio-caja-tendencia" id="inicio-efectivo-eur-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-efectivo-eur-var">–</span></span>
               </div>
             </div>
           </div>
@@ -869,23 +980,23 @@
             <div class="inicio-caja-tabla">
               <div class="inicio-caja-fila inicio-caja-fila-header inicio-caja-banco-fila">
                 <span class="inicio-caja-etiqueta"></span>
-                <span class="inicio-caja-col-header"><img src="/assets/Icono_Dolar.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>USD</span>
-                <span class="inicio-caja-col-header"><img src="/assets/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
+                <span class="inicio-caja-col-header" data-caja-moneda-col="USD"><img src="/assets/Icono_Dolar.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>USD</span>
+                <span class="inicio-caja-col-header" data-caja-moneda-col="ARS"><img src="/assets/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
               </div>
               <div class="inicio-caja-fila inicio-caja-banco-fila">
                 <span class="inicio-caja-etiqueta">Saldo Inicial</span>
-                <span class="inicio-caja-valor" id="inicio-banco-usd-inicial">–</span>
-                <span class="inicio-caja-valor" id="inicio-banco-ars-inicial">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="USD" id="inicio-banco-usd-inicial">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="ARS" id="inicio-banco-ars-inicial">–</span>
               </div>
               <div class="inicio-caja-fila inicio-caja-banco-fila inicio-caja-fila-actual">
                 <span class="inicio-caja-etiqueta">Saldo Actual</span>
-                <span class="inicio-caja-valor" id="inicio-banco-usd-actual">–</span>
-                <span class="inicio-caja-valor" id="inicio-banco-ars-actual">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="USD" id="inicio-banco-usd-actual">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="ARS" id="inicio-banco-ars-actual">–</span>
               </div>
               <div class="inicio-caja-fila inicio-caja-fila-var inicio-caja-banco-fila">
                 <span class="inicio-caja-etiqueta">Var.</span>
-                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-banco-usd-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-banco-usd-var">–</span></span>
-                <span class="inicio-caja-var-derecha"><span class="inicio-caja-tendencia" id="inicio-banco-ars-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-banco-ars-var">–</span></span>
+                <span class="inicio-caja-var-derecha" data-caja-moneda-col="USD"><span class="inicio-caja-tendencia" id="inicio-banco-usd-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-banco-usd-var">–</span></span>
+                <span class="inicio-caja-var-derecha" data-caja-moneda-col="ARS"><span class="inicio-caja-tendencia" id="inicio-banco-ars-tendencia" aria-hidden="true"></span><span class="inicio-caja-var-valor" id="inicio-banco-ars-var">–</span></span>
               </div>
             </div>
           </div>
@@ -976,15 +1087,15 @@
             <div class="inicio-caja-tabla">
               <div class="inicio-caja-fila inicio-caja-fila-header">
                 <span class="inicio-caja-etiqueta"></span>
-                <span class="inicio-caja-col-header"><img src="/assets/Icono_Dolar.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>USD</span>
-                <span class="inicio-caja-col-header"><img src="/assets/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
-                <span class="inicio-caja-col-header"><img src="/assets/Icono_Euro.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>EUR</span>
+                <span class="inicio-caja-col-header" data-caja-moneda-col="USD"><img src="/assets/Icono_Dolar.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>USD</span>
+                <span class="inicio-caja-col-header" data-caja-moneda-col="ARS"><img src="/assets/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
+                <span class="inicio-caja-col-header" data-caja-moneda-col="EUR"><img src="/assets/Icono_Euro.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>EUR</span>
               </div>
               <div class="inicio-caja-fila inicio-caja-fila-actual">
                 <span class="inicio-caja-etiqueta">Saldo</span>
-                <span class="inicio-caja-valor" id="cajas-saldo-efectivo-usd">–</span>
-                <span class="inicio-caja-valor" id="cajas-saldo-efectivo-ars">–</span>
-                <span class="inicio-caja-valor" id="cajas-saldo-efectivo-eur">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="USD" id="cajas-saldo-efectivo-usd">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="ARS" id="cajas-saldo-efectivo-ars">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="EUR" id="cajas-saldo-efectivo-eur">–</span>
               </div>
             </div>
           </div>
@@ -993,13 +1104,13 @@
             <div class="inicio-caja-tabla">
               <div class="inicio-caja-fila inicio-caja-fila-header inicio-caja-banco-fila">
                 <span class="inicio-caja-etiqueta"></span>
-                <span class="inicio-caja-col-header"><img src="/assets/Icono_Dolar.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>USD</span>
-                <span class="inicio-caja-col-header"><img src="/assets/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
+                <span class="inicio-caja-col-header" data-caja-moneda-col="USD"><img src="/assets/Icono_Dolar.avif" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>USD</span>
+                <span class="inicio-caja-col-header" data-caja-moneda-col="ARS"><img src="/assets/Icono_ARS.webp" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>ARS</span>
               </div>
               <div class="inicio-caja-fila inicio-caja-banco-fila inicio-caja-fila-actual">
                 <span class="inicio-caja-etiqueta">Saldo</span>
-                <span class="inicio-caja-valor" id="cajas-saldo-banco-usd">–</span>
-                <span class="inicio-caja-valor" id="cajas-saldo-banco-ars">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="USD" id="cajas-saldo-banco-usd">–</span>
+                <span class="inicio-caja-valor" data-caja-moneda-col="ARS" id="cajas-saldo-banco-ars">–</span>
               </div>
             </div>
           </div>
@@ -1092,14 +1203,14 @@
           <span style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/><circle cx="12" cy="12" r="3"/></svg></span>
           Tipos de operación
         </h3>
-        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Catálogo de tipos (moneda IN = recibida, moneda OUT = entregada). En el listado, la columna <strong>Tipo</strong> muestra iconos según el código (ej. USD→ARS; si el código incluye <strong>CHEQUE</strong>, solo el icono de cheques). El nombre y el código siguen siendo la referencia en formularios y exportaciones.</p>
+        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Catálogo de tipos (moneda IN = recibida, moneda OUT = entregada). En el listado, la columna <strong>Tipo</strong> muestra iconos según el código (ej. USD→ARS; si el código incluye <strong>CHEQUE</strong>, solo el icono de cheques). El <strong>código</strong> puede repetirse si cambia <strong>Intermediario</strong> (ej. USD-ARS directo vs con intermediario); el <strong>nombre</strong> diferencia la opción en el selector de órdenes. Ver <code>docs/TIPOS_OPERACION_UNICIDAD_CODIGO.md</code>.</p>
         <div class="vista-toolbar">
           <button type="button" id="btn-nuevo-tipo-operacion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo tipo</button>
         </div>
         <div id="tipos-operacion-loading" class="clientes-loading">Cargando tipos…</div>
         <div id="tipos-operacion-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
           <table id="tabla-tipos-operacion">
-            <thead><tr><th>Tipo</th><th>Nombre</th><th>Moneda IN</th><th>Moneda OUT</th><th>Intermediario</th><th>Activo</th><th></th></tr></thead>
+            <thead><tr><th>Tipo</th><th>Nombre</th><th>Código</th><th>Moneda IN</th><th>Moneda OUT</th><th>Intermediario</th><th>Activo</th><th></th></tr></thead>
             <tbody id="tipos-operacion-tbody"></tbody>
           </table>
         </div>
@@ -1147,9 +1258,9 @@
               <thead>
                 <tr>
                   <th class="th-nombre">Nombre</th>
-                  <th class="th-moneda"><span class="th-moneda-icon"><img src="/assets/Icono_Dolar.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span> USD</th>
-                  <th class="th-moneda"><span class="th-moneda-icon"><img src="/assets/Icono_Euro.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span> EUR</th>
-                  <th class="th-moneda"><span class="th-moneda-icon"><img src="/assets/Icono_ARS.webp" alt="" class="cc-icono-moneda" width="20" height="20"/></span> ARS</th>
+                  <th class="th-moneda" data-cc-moneda-col="USD"><span class="th-moneda-icon"><img src="/assets/Icono_Dolar.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span> USD</th>
+                  <th class="th-moneda" data-cc-moneda-col="EUR"><span class="th-moneda-icon"><img src="/assets/Icono_Euro.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span> EUR</th>
+                  <th class="th-moneda" data-cc-moneda-col="ARS"><span class="th-moneda-icon"><img src="/assets/Icono_ARS.webp" alt="" class="cc-icono-moneda" width="20" height="20"/></span> ARS</th>
                   <th class="th-ver">Acción</th>
                 </tr>
               </thead>
@@ -1191,9 +1302,9 @@
                   <th class="th-sub th-sortable" data-sort="nroOrden" scope="col">Orden</th>
                   <th class="th-sub th-sortable" data-sort="nroTrans" scope="col">Trans.</th>
                   <th class="th-nombre cc-detalle-concepto-th th-sortable" data-sort="concepto" scope="col">Concepto</th>
-                  <th class="th-moneda th-sortable" data-sort="usd" scope="col">USD</th>
-                  <th class="th-moneda th-sortable" data-sort="ars" scope="col">ARS</th>
-                  <th class="th-moneda th-sortable" data-sort="eur" scope="col">EUR</th>
+                  <th class="th-moneda th-sortable" data-sort="usd" data-cc-moneda-col="USD" scope="col">USD</th>
+                  <th class="th-moneda th-sortable" data-sort="ars" data-cc-moneda-col="ARS" scope="col">ARS</th>
+                  <th class="th-moneda th-sortable" data-sort="eur" data-cc-moneda-col="EUR" scope="col">EUR</th>
                   <th class="th-sub th-sortable" data-sort="estado" scope="col">Estado</th>
                   <th class="th-nombre th-sortable" id="cc-detalle-th-entity" data-sort="nombre" scope="col">Cliente</th>
                   <th class="th-nombre th-sortable" id="cc-detalle-th-originante" data-sort="originante" scope="col">Originante</th>
@@ -1297,6 +1408,7 @@
           <div class="form-group">
             <label for="tipo-operacion-codigo">Código *</label>
             <input type="text" id="tipo-operacion-codigo" required maxlength="32" placeholder="ej. ARS-USD" />
+            <p style="margin:0.35rem 0 0 0; font-size:0.8rem; color:#6b7280;">El mismo código puede existir dos veces si una fila tiene <strong>Intermediario</strong> en Sí y otra en No. La unicidad en base es (código + intermediario).</p>
           </div>
           <div class="form-group">
             <label for="tipo-operacion-nombre">Nombre *</label>
@@ -1549,7 +1661,7 @@
                 </div>
               </div>
               <div class="form-group" id="orden-wrap-intermediario">
-                <label for="orden-intermediario">Intermediario (opcional) <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Puede haber operaciones Pandy ↔ Intermediario sin cliente.</span></span></label>
+                <label for="orden-intermediario" id="orden-label-intermediario"><span id="orden-label-intermediario-texto">Intermediario (opcional)</span> <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Si el tipo de operación lleva intermediario, es obligatorio elegir uno antes de continuar. Puede haber operaciones Pandy ↔ Intermediario sin cliente en otros tipos.</span></span></label>
                 <select id="orden-intermediario"><option value="">Sin asignar</option></select>
               </div>
               <div class="form-actions" style="justify-content:flex-end;">
@@ -1637,6 +1749,13 @@
             </div>
             <p style="grid-column:1/-1; margin-top:-0.25rem;" class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Al cambiar uno, el otro se ajusta para que la suma sea siempre 100%.</span></span></p>
           </div>
+          <div id="orden-wrap-int-patron-instrumentacion" class="form-group orden-int-patron-bloque" style="display:none; margin-bottom:0.75rem; padding:0.75rem 1rem; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;">
+            <p id="orden-int-patron-titulo" style="margin:0 0 0.5rem 0; font-size:0.9rem; font-weight:600;">Instrumentación sugerida (con intermediario)</p>
+            <p style="margin:0 0 0.5rem 0; font-size:0.85rem; color:#555;">Elegí cómo se generan las dos transacciones al entrar a Instrumentación si la lista está vacía. No aplica a CHEQUE-ARS (cuatro transacciones fijas).</p>
+            <label class="orden-int-patron-opcion"><input type="radio" name="orden-int-patron-radio" value="cp_ic" checked /><span class="orden-int-patron-opcion-text">Cliente paga a Pandy y el intermediario entrega al cliente</span></label>
+            <label class="orden-int-patron-opcion"><input type="radio" name="orden-int-patron-radio" value="ci_pc" /><span class="orden-int-patron-opcion-text">Cliente paga al intermediario y Pandy entrega al cliente</span></label>
+            <input type="hidden" id="orden-int-patron" value="cp_ic" />
+          </div>
           <div class="form-group">
             <label for="orden-estado">Estado *</label>
             <select id="orden-estado" required>
@@ -1669,7 +1788,7 @@
               </div>
               <h3 style="margin:0 0 0.5rem 0; font-size:1rem;">Instrumentación <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Cargá y editá transacciones sin salir del modal. El estado de la orden se recalcula automáticamente.</span></span></h3>
 
-              <div id="orden-inst-acuerdo-block" class="orden-inst-acuerdo" style="margin-bottom:1rem; padding:0.75rem 1rem; background:#f5f5f5; border-radius:8px; border:1px solid #e0e0e0;">
+              <div id="orden-inst-acuerdo-block" class="orden-inst-acuerdo orden-inst-acuerdo-sticky" style="margin-bottom:1rem; padding:0.75rem 1rem; background:#f5f5f5; border-radius:8px; border:1px solid #e0e0e0;">
                 <div id="orden-inst-participantes-wrap" style="margin-bottom:0.5rem; font-size:0.9rem; color:#555;">
                   <span id="orden-inst-participantes-texto">–</span>
                 </div>
@@ -1697,8 +1816,8 @@
               </div>
             </div>
             <div class="form-actions orden-inst-form-actions-sticky" style="margin-top:0;">
-              <button type="button" class="btn-primary" id="orden-btn-cerrar-wizard" onclick="typeof window.__closeModalOrden==='function'&&window.__closeModalOrden(); return false;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Listo</button>
-              <button type="button" class="btn-secondary" id="orden-btn-cancelar-wizard" onclick="typeof window.__closeModalOrdenSolo==='function'&&window.__closeModalOrdenSolo(); return false;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cerrar</button>
+              <button type="button" class="btn-primary" id="orden-btn-cerrar-wizard"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Listo</button>
+              <button type="button" class="btn-secondary" id="orden-btn-cancelar-wizard"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cerrar</button>
             </div>
           </div>
         </form>
@@ -1911,9 +2030,9 @@
                 <th class="th-sortable" data-sort="nroOrden">Nro Orden</th>
                 <th class="th-sortable" data-sort="nroTrans">Nro Trans.</th>
                 <th class="cc-detalle-concepto-th th-sortable" data-sort="concepto">Concepto</th>
-                <th class="th-sortable" data-sort="usd">USD</th>
-                <th class="th-sortable" data-sort="ars">ARS</th>
-                <th class="th-sortable" data-sort="eur">EUR</th>
+                <th class="th-sortable" data-sort="usd" data-cc-moneda-col="USD">USD</th>
+                <th class="th-sortable" data-sort="ars" data-cc-moneda-col="ARS">ARS</th>
+                <th class="th-sortable" data-sort="eur" data-cc-moneda-col="EUR">EUR</th>
                 <th class="th-sortable" data-sort="estado">Estado</th>
               </tr>
             </thead>

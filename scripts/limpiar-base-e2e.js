@@ -1,6 +1,6 @@
 /**
  * Limpia la base para tests E2E (solo desarrollo).
- * 1) Borra clientes e intermediarios creados por los tests (E2E % / E2E Int %).
+ * 1) Borra clientes e intermediarios creados por los tests (RPC: E2E % clientes; intermediarios E2E Int % o E2E CC TiposActivos Int).
  * 2) Trunca órdenes, transacciones, instrumentación, movimientos CC y caja; resetea secuencias.
  *
  * Requiere en .env.test (o .env): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.

@@ -39,7 +39,7 @@ async function reversarTransaccionEnWizard(page, combosEstado, indexCombo, timeo
   await esperarActualizacionEstadoOrden(page, timeoutActualizacion);
 }
 
-/** Hace login y deja la app en estado listo (sidebar + app-content visibles). Idéntico a cc-combinaciones para evitar frenos por diferencia de flujo. */
+/** Hace login y deja la app en estado listo (sidebar + app-content visibles). Idéntico a 01-cc-combinaciones para evitar frenos por diferencia de flujo. */
 async function loginAndSeeApp(page) {
   await page.goto('/');
   await expect(page.locator('#login-screen')).toBeVisible();
@@ -163,10 +163,13 @@ async function irACajasYLeerSaldos(page) {
   return { ok: true, efUsd, efArs, efEur, baUsd, baArs, efArsNum };
 }
 
-/** Cliente fijo para test CHEQUE-ARS individual. Arranque limpio = anular todas sus órdenes antes de crear una (igual que cc-combinaciones). */
+/** Cliente fijo para test CHEQUE-ARS individual. Arranque limpio = anular todas sus órdenes antes de crear una (igual que 01-cc-combinaciones). */
 const CLIENTE_ORDEN_CC_CHEQUE_ARS = 'E2E Orden CC Individual';
 
 test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
+  test.beforeAll(() => {
+    console.log('\n======== [E2E 5/5] Flujos orden-cc (CHEQUE-ARS, ARS-USD, USD-ARS, USD-USD, reversa) — 91-orden-cc.spec.js ========\n');
+  });
   test.beforeEach(async ({ page }) => {
     if (!TEST_USER_EMAIL || !TEST_USER_PASSWORD) {
       test.skip(true, 'Faltan TEST_USER_EMAIL o TEST_USER_PASSWORD en .env.test');
@@ -180,7 +183,7 @@ test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
       await loginAndSeeApp(page);
       logStep('0', 'Login con usuario de prueba', 'Sidebar y app-content visibles', 'expect #login-screen hidden, #sidebar y #app-content visible', 'OK');
 
-      // Arranque limpio igual que cc-combinaciones: anular todas las órdenes del cliente fijo para que al reabrir haya una sola orden
+      // Arranque limpio igual que 01-cc-combinaciones: anular todas las órdenes del cliente fijo para que al reabrir haya una sola orden
       const nombreCliente = CLIENTE_ORDEN_CC_CHEQUE_ARS;
       await page.locator('#menu-ordenes').click();
       await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
@@ -232,7 +235,9 @@ test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
       await expect(page.locator('#modal-orden-backdrop.activo')).toBeVisible({ timeout: 5000 });
       logStep('1', 'Abrir Nueva orden', 'Modal de orden visible', 'expect #modal-orden-backdrop.activo visible', 'OK');
 
-      const valueChequeArs = await page.locator('#orden-tipo-operacion option[data-codigo="CHEQUE-ARS"]').getAttribute('value');
+      const optChequeArs = page.locator('#orden-tipo-operacion option[data-codigo="CHEQUE-ARS"][data-usa-intermediario="true"]');
+      await expect(optChequeArs).toHaveCount(1, { timeout: 5000 });
+      const valueChequeArs = await optChequeArs.getAttribute('value');
       await page.locator('#orden-tipo-operacion').selectOption(valueChequeArs);
       await page.locator('#orden-cliente').selectOption({ label: nombreCliente });
       await page.locator('#orden-intermediario').selectOption({ label: nombreIntermediario });
@@ -253,8 +258,8 @@ test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
       const meNum = parseFloat(String(montoEntregado).replace(/\./g, '').replace(',', '.')) || 195000;
       const montoEfectivoInt = Math.round(mrNum * 0.985) || 197000;
       const montoEfectivoIntStr = String(montoEfectivoInt);
-      const comisionPandy = Math.round(mrNum - meNum);
-      const espEfArsPorPaso = [0, -meNum, -meNum, -meNum + montoEfectivoInt + comisionPandy];
+      // Tras Tx1..Tx4 ejecutadas: efectivo −me + efectivo int.; cheque +mr −mr (Tx3 egreso cheque).
+      const espEfArsPorPaso = [0, -meNum, -meNum, -meNum + montoEfectivoInt];
       const espBaArsPorPaso = [mrNum, mrNum, 0, 0];
       const fmtEsp = (n) => (typeof n === 'number' && !isNaN(n) ? String(Math.round(n)) : '');
 
@@ -303,8 +308,8 @@ test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
       await expect(page.locator('#cc-loading')).toBeHidden({ timeout: 45000 });
       await page.waitForTimeout(1500);
 
-      logStep('3', 'Datos CHEQUE-ARS e Ir a instrumentación', 'Paso Instrumentación con 4 transacciones', 'expect 4 filas con combo estado', 'OK', 'UI orden: pagador cliente→pandy→intermediario; ingreso y su egreso. Paso 1..4 = fila 0..3');
-      // Validación estado final: con las 4 ejecutadas, CC cliente e intermediario deben cerrar en 0
+      logStep('3', 'Datos CHEQUE-ARS e Ir a instrumentación', 'Paso Instrumentación con 4 transacciones (Cliente↔Pandy y Pandy↔Intermediario)', 'expect 4 filas con combo estado', 'OK', 'Instrumentación explícita momento cero; no compensatorias automáticas al editar.');
+      // Con las 4 ejecutadas, CC cliente e intermediario deben cerrar en 0
       await page.locator('#cc-filtro-tipo button[data-tipo="cliente"]').click();
       await expect(page.locator('#cc-filtro-tipo button[data-tipo="cliente"].activo')).toBeVisible({ timeout: 5000 });
       await page.waitForTimeout(800);
@@ -334,12 +339,12 @@ test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
       }
       const intCero = countInt === 0 || saldoInt === '–' || normalizarMontoSaldo(saldoInt) === 0;
       expect(intCero, `Tras 4 ejecutadas CC intermediario debe ser 0. Se capturó: ${saldoInt}, filas: ${countInt}`).toBe(true);
-      logStep('4.3', 'Paso 3: Pandy paga a Intermediario (fila 2)', 'CC intermediario con saldo ARS.', 'Filtro Intermediario; celda ARS', 'OK', '', '0 (final)', numerosTransaccion[2]);
+      logStep('4.3', 'Paso 3: Pandy paga a Intermediario (fila 2)', 'CC intermediario según reglas.', 'Filtro Intermediario; celda ARS', 'OK', '', '0 (final)', numerosTransaccion[2]);
       logTransaccion(3, 'Pandy', 'Intermediario', 'ARS', 'Cheque', montoRecibido, '0 (final)', 'OK', numerosTransaccion[2]);
-      logStep('4.4', 'Paso 4: Intermediario paga a Pandy (fila 3)', 'CC intermediario cierra en 0.', 'Filtro Intermediario; sin fila o celda 0', 'OK', '', countInt === 0 ? '0 (sin fila)' : saldoInt, numerosTransaccion[3]);
+      logStep('4.4', 'Paso 4: Intermediario paga a Pandy (fila 3)', 'CC intermediario cierra en 0.', 'Filtro Intermediario', 'OK', '', countInt === 0 ? '0 (sin fila)' : saldoInt, numerosTransaccion[3]);
       logTransaccion(4, 'Intermediario', 'Pandy', 'ARS', 'Efectivo', montoEfectivoIntStr, countInt === 0 ? '0' : saldoInt, 'OK', numerosTransaccion[3]);
 
-      // Control de caja: una lectura al final, 4 filas en el log (una por transacción). Exp_Sdo_CE / Real_Sdo_CE / Saldo_CE_Rdo (solo efectivo; banco se ignora).
+      // Control de caja: una lectura por paso (4 transacciones ejecutadas en secuencia).
       for (let i = 0; i < 4; i++) {
         try {
           const saldos = await irACajasYLeerSaldos(page);
@@ -375,7 +380,7 @@ test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
 
       await page.locator('#cc-filtro-tipo button[data-tipo="intermediario"]').click();
       await expect(tbodyCc.locator('tr').first()).toBeVisible({ timeout: 15000 });
-      logStep('5', 'Verificación final CC', 'Con las 4 transacciones ejecutadas el saldo en ambas CC es 0 (regla cierra).', 'Vista CC carga; filtros Cliente e Intermediario con tabla visible', 'OK');
+      logStep('5', 'Verificación final CC', 'Con las 4 transacciones ejecutadas el saldo en ambas CC es 0.', 'Vista CC carga; filtros Cliente e Intermediario con tabla visible', 'OK');
 
       // Paso 6: Control de caja final
       let controlCajaOk = false;
@@ -449,7 +454,8 @@ test.describe('Orden ARS-USD, transacciones y cuenta corriente', () => {
       await expect(page.locator('#modal-orden-backdrop.activo')).toBeVisible({ timeout: 5000 });
       logStep('1', 'Abrir Nueva orden', 'Modal de orden visible', 'expect #modal-orden-backdrop.activo visible', 'OK');
 
-      const optArsUsd = page.locator('#orden-tipo-operacion option[data-codigo="ARS-USD"]');
+      // Misma clave que catálogo: codigo + usa_intermediario (hay ARS-USD sin y con intermediario).
+      const optArsUsd = page.locator('#orden-tipo-operacion option[data-codigo="ARS-USD"][data-usa-intermediario="false"]');
       await expect(optArsUsd).toHaveCount(1, { timeout: 5000 });
       const valueArsUsd = await optArsUsd.getAttribute('value');
       await page.locator('#orden-tipo-operacion').selectOption(valueArsUsd);
@@ -635,7 +641,7 @@ test.describe('Orden USD-ARS, transacciones y cuenta corriente (sin intermediari
       await expect(page.locator('#modal-orden-backdrop.activo')).toBeVisible({ timeout: 5000 });
       logStep('1', 'Abrir Nueva orden', 'Modal de orden visible', 'expect #modal-orden-backdrop.activo visible', 'OK');
 
-      const optUsdArs = page.locator('#orden-tipo-operacion option[data-codigo="USD-ARS"]');
+      const optUsdArs = page.locator('#orden-tipo-operacion option[data-codigo="USD-ARS"][data-usa-intermediario="false"]');
       await expect(optUsdArs).toHaveCount(1, { timeout: 5000 });
       const valueUsdArs = await optUsdArs.getAttribute('value');
       await page.locator('#orden-tipo-operacion').selectOption(valueUsdArs);
@@ -821,7 +827,7 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
       await expect(page.locator('#modal-orden-backdrop.activo')).toBeVisible({ timeout: 5000 });
       logStep('1', 'Abrir Nueva orden', 'Modal de orden visible', 'expect #modal-orden-backdrop.activo visible', 'OK');
 
-      const optUsdUsd = page.locator('#orden-tipo-operacion option[data-codigo="USD-USD"]');
+      const optUsdUsd = page.locator('#orden-tipo-operacion option[data-codigo="USD-USD"][data-usa-intermediario="false"]');
       await expect(optUsdUsd).toHaveCount(1, { timeout: 5000 });
       const valueUsdUsd = await optUsdUsd.getAttribute('value');
       await page.locator('#orden-tipo-operacion').selectOption(valueUsdUsd);
@@ -1020,6 +1026,135 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
   });
 });
 
+test.describe('Orden USD-USD con intermediario, comisión repartida y CC', () => {
+  test.beforeEach(async ({ page }) => {
+    if (!TEST_USER_EMAIL || !TEST_USER_PASSWORD) {
+      // eslint-disable-next-line no-console
+      console.warn('[E2E USD-USD+int] SKIP: definí TEST_USER_EMAIL y TEST_USER_PASSWORD en .env.test');
+      test.skip(true, 'Faltan TEST_USER_EMAIL o TEST_USER_PASSWORD en .env.test');
+    }
+  });
+
+  test('crear orden USD-USD con intermediario: 2 tx, CC cliente y comisión en CC intermediario', async ({ page }) => {
+    test.setTimeout(180000);
+    initLog('USD-USD-Int');
+    try {
+      await loginAndSeeApp(page);
+      logStep('0', 'Login', 'App lista', 'sidebar visible', 'OK');
+
+      const optUsdUsdInt = page.locator('#orden-tipo-operacion option[data-codigo="USD-USD"][data-usa-intermediario="true"]');
+
+      const nombreIntermediario = `E2E Int USDUSD ${Date.now().toString(36)}`;
+      await page.locator('#menu-intermediarios').click();
+      await expect(page.locator('#vista-intermediarios')).toBeVisible({ timeout: 5000 });
+      const btnNuevoInt = page.locator('#btn-nuevo-intermediario');
+      if ((await btnNuevoInt.count()) === 0 || !(await btnNuevoInt.isVisible())) {
+        // eslint-disable-next-line no-console
+        console.warn('[E2E USD-USD+int] SKIP: falta #btn-nuevo-intermediario (permiso abm_intermediarios).');
+        test.skip(true, 'Se necesita permiso abm_intermediarios y botón Nuevo intermediario.');
+      }
+      await btnNuevoInt.click();
+      await expect(page.locator('#modal-intermediario-backdrop.activo')).toBeVisible({ timeout: 5000 });
+      await page.locator('#intermediario-nombre').fill(nombreIntermediario);
+      await page.locator('#form-intermediario').getByRole('button', { name: /guardar/i }).click();
+      await expect(page.locator('#modal-intermediario-backdrop.activo')).toBeHidden({ timeout: 10000 });
+
+      await page.locator('#menu-ordenes').click();
+      await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
+      await page.locator('#btn-nueva-orden').click();
+      await expect(page.locator('#modal-orden-backdrop.activo')).toBeVisible({ timeout: 5000 });
+      // El <select> #orden-tipo-operacion solo se puebla al abrir el modal (fetch en openModalOrden); antes solo existe "Elegir…".
+      await expect(optUsdUsdInt.first()).toBeAttached({ timeout: 20000 });
+
+      const valueUsdUsdInt = await optUsdUsdInt.getAttribute('value');
+      await page.locator('#orden-tipo-operacion').selectOption(valueUsdUsdInt || '');
+      await expect(page.locator('#orden-wrap-intermediario')).toBeVisible({ timeout: 5000 });
+
+      const optsCliente = page.locator('#orden-cliente option');
+      const countClientes = await optsCliente.count();
+      if (countClientes < 2) {
+        // eslint-disable-next-line no-console
+        console.warn('[E2E USD-USD+int] SKIP: hace falta al menos 1 cliente además de "Sin asignar" (options count < 2).');
+        test.skip(true, 'Se necesita al menos un cliente en la base de prueba.');
+      }
+      const indexCliente = randomInt(1, countClientes - 1);
+      await page.locator('#orden-cliente').selectOption({ index: indexCliente });
+      const nombreCliente = (await page.locator('#orden-cliente option:checked').textContent())?.trim() || '';
+      await page.locator('#orden-intermediario').selectOption({ label: nombreIntermediario });
+
+      await page.locator('#orden-btn-next').click();
+      await expect(page.locator('#orden-step-detalles')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('#orden-wrap-comision-split')).toBeVisible({ timeout: 5000 });
+
+      // Montos fijos legibles: recibir 5000, entregar 4700 (tasa cliente 6%), comisión total 300; 50% Pandy / 50% intermediario → 150 USD a int.
+      await page.locator('#orden-importe-cheque').fill('5000');
+      await page.locator('#orden-tasa-descuento-cliente').fill('6');
+      await page.waitForTimeout(400);
+      const montoRecibidoStr = (await page.locator('#orden-monto-recibido').inputValue()) || '';
+      const montoEntregadoStr = (await page.locator('#orden-monto-entregado').inputValue()) || '';
+      const mrNum = parseFloat(String(montoRecibidoStr).replace(/\./g, '').replace(',', '.')) || 0;
+      const meNum = parseFloat(String(montoEntregadoStr).replace(/\./g, '').replace(',', '.')) || 0;
+      expect(Math.abs(mrNum - 5000) < 1 && Math.abs(meNum - 4700) < 1, `Esperado mr≈5000 me≈4700; obtenido mr=${mrNum} me=${meNum}`).toBe(true);
+      await page.locator('#orden-comision-pandy-pct').fill('50');
+      await page.locator('#orden-comision-intermediario-pct').fill('50');
+      await page.waitForTimeout(300);
+
+      const comisionInterEsperada = Math.round((mrNum - meNum) * 0.5);
+
+      await page.locator('#orden-btn-ir-instrumentacion').click();
+      await expect(page.locator('#orden-step-instrumentacion')).toBeVisible({ timeout: 15000 });
+      await expect(page.locator('#orden-inst-tbody tr:has(.combo-estado-transaccion)')).toHaveCount(2, { timeout: 20000 });
+
+      const combosEstado = page.locator('#orden-inst-tbody .combo-estado-transaccion');
+      const tbodyCc = page.locator('#cc-resumen-tbody');
+
+      for (let i = 0; i < 2; i++) {
+        await combosEstado.nth(i).selectOption('ejecutada');
+        await expect(combosEstado.nth(i)).toHaveValue('ejecutada', { timeout: 5000 });
+        await esperarActualizacionEstadoOrden(page);
+        await page.locator('#orden-btn-cerrar-wizard').click();
+        await expect(page.locator('#modal-orden-backdrop.activo')).toBeHidden({ timeout: 15000 });
+        if (i < 1) await reopenOrderAndGoToInstrumentacion(page, nombreCliente);
+      }
+
+      await page.locator('#menu-cuenta-corriente').click();
+      await expect(page.locator('#vista-cuenta-corriente')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('#cc-loading')).toBeHidden({ timeout: 45000 });
+      await page.locator('#cc-btn-refrescar').click();
+      await expect(page.locator('#cc-loading')).toBeHidden({ timeout: 45000 });
+
+      await page.locator('#cc-filtro-tipo button[data-tipo="cliente"]').click();
+      await esperarCcClienteSaldoCero(page, tbodyCc, nombreCliente, 2, 25000);
+      const filaCli = await obtenerFilaClientePorNombre(tbodyCc, page, nombreCliente);
+      const countCli = await filaCli.count();
+      const celdaUsd = filaCli.first().locator('td:nth-child(2)');
+      const saldoCli = countCli > 0 ? await leerSaldoConSigno(celdaUsd) : '–';
+      const esCeroCli = countCli === 0 || saldoCli === '–' || normalizarMontoSaldo(saldoCli) === 0;
+      expect(esCeroCli, `Tras 2 transacciones ejecutadas, CC cliente USD debe ser 0 (obtenido: ${saldoCli})`).toBe(true);
+
+      await page.locator('#cc-filtro-tipo button[data-tipo="intermediario"]').click();
+      await expect(page.locator('#cc-filtro-tipo button[data-tipo="intermediario"].activo')).toBeVisible({ timeout: 5000 });
+      const filaInt = tbodyCc.locator('tr').filter({ has: page.locator('button[data-tipo="intermediario"]') }).filter({ hasText: nombreIntermediario });
+      await expect(filaInt.first()).toBeVisible({ timeout: 12000 });
+      const celdaIntUsd = filaInt.first().locator('td:nth-child(2)');
+      const saldoIntTxt = await leerSaldoConSigno(celdaIntUsd);
+      const saldoIntNum = normalizarMontoSaldo(saldoIntTxt);
+      expect(
+        Math.abs(Math.abs(saldoIntNum) - comisionInterEsperada) <= 2,
+        `CC intermediario USD debe reflejar la parte de comisión (~${comisionInterEsperada}); capturado: ${saldoIntTxt} (${saldoIntNum})`
+      ).toBe(true);
+
+      logStep('OK', 'USD-USD+int', 'CC cliente 0; CC int ≈ comisión 40%', 'resumen', 'OK');
+    } catch (err) {
+      logStep('Error', 'Test falló', '-', '-', 'Fallo', (err && (err.message || err.toString())) || 'Error desconocido');
+      throw err;
+    } finally {
+      const outPath = writeLogToExcel();
+      console.log('Log E2E escrito en:', outPath);
+    }
+  });
+});
+
 // --- Tests de reversa: regla infalible en CC y Caja ---
 test.describe('Reversa (ejecutada → pendiente): CC y Caja deben volver al estado correcto', () => {
   test.beforeEach(async ({ page }) => {
@@ -1038,7 +1173,9 @@ test.describe('Reversa (ejecutada → pendiente): CC y Caja deben volver al esta
       await page.locator('#btn-nueva-orden').click();
       await expect(page.locator('#modal-orden-backdrop.activo')).toBeVisible({ timeout: 5000 });
 
-      const valueUsdUsd = await page.locator('#orden-tipo-operacion option[data-codigo="USD-USD"]').getAttribute('value');
+      const optUsdUsdRev = page.locator('#orden-tipo-operacion option[data-codigo="USD-USD"][data-usa-intermediario="false"]');
+      await expect(optUsdUsdRev).toHaveCount(1, { timeout: 5000 });
+      const valueUsdUsd = await optUsdUsdRev.getAttribute('value');
       await page.locator('#orden-tipo-operacion').selectOption(valueUsdUsd);
       const optsCliente = page.locator('#orden-cliente option');
       const countClientes = await optsCliente.count();

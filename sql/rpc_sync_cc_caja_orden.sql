@@ -41,12 +41,12 @@ BEGIN
   END IF;
   DELETE FROM public.movimientos_caja WHERE orden_id = p_orden_id AND transaccion_id IS NULL;
 
-  -- 4) Insertar movimientos CC cliente (sumar_al_saldo e incluir_en_detalle desde JSON para que saldo = suma de los que deben sumar)
+  -- 4) Insertar movimientos CC cliente (incluir_en_detalle desde JSON; saldo = suma de todos los no anulados)
   FOR r IN SELECT * FROM jsonb_array_elements(p_rows_cc_cliente)
   LOOP
     INSERT INTO public.movimientos_cuenta_corriente (
       cliente_id, orden_id, transaccion_id, transaccion_numero, concepto, fecha, usuario_id,
-      moneda, monto, monto_usd, monto_ars, monto_eur, estado, estado_fecha, sumar_al_saldo, incluir_en_detalle
+      moneda, monto, monto_usd, monto_ars, monto_eur, estado, estado_fecha, incluir_en_detalle
     ) VALUES (
       (r->>'cliente_id')::uuid,
       (r->>'orden_id')::uuid,
@@ -62,17 +62,16 @@ BEGIN
       COALESCE((r->>'monto_eur')::numeric, 0),
       COALESCE(r->>'estado', 'cerrado'),
       COALESCE((r->>'estado_fecha')::timestamptz, now()),
-      COALESCE((r->>'sumar_al_saldo')::boolean, true),
       COALESCE((r->>'incluir_en_detalle')::boolean, true)
     );
   END LOOP;
 
-  -- 5) Insertar movimientos CC intermediario (sumar_al_saldo e incluir_en_detalle desde JSON; si el front manda false, no debe quedar en true por default)
+  -- 5) Insertar movimientos CC intermediario
   FOR r IN SELECT * FROM jsonb_array_elements(p_rows_cc_int)
   LOOP
     INSERT INTO public.movimientos_cuenta_corriente_intermediario (
       intermediario_id, orden_id, transaccion_id, transaccion_numero, concepto, fecha, usuario_id,
-      moneda, monto, monto_usd, monto_ars, monto_eur, estado, estado_fecha, sumar_al_saldo, incluir_en_detalle
+      moneda, monto, monto_usd, monto_ars, monto_eur, estado, estado_fecha, incluir_en_detalle
     ) VALUES (
       (r->>'intermediario_id')::uuid,
       (r->>'orden_id')::uuid,
@@ -88,7 +87,6 @@ BEGIN
       COALESCE((r->>'monto_eur')::numeric, 0),
       COALESCE(r->>'estado', 'cerrado'),
       COALESCE((r->>'estado_fecha')::timestamptz, now()),
-      COALESCE((r->>'sumar_al_saldo')::boolean, true),
       COALESCE((r->>'incluir_en_detalle')::boolean, true)
     );
   END LOOP;
