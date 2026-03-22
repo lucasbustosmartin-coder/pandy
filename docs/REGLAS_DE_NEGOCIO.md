@@ -19,12 +19,12 @@ Reglas explícitas que la sync traduce en **movimientos de cuenta corriente** (y
 - **`ARS-USD`** con **`usa_intermediario = true`**: `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql` — ver `docs/REG_NEG_ARS_USD_INT_PASO1.md`.
 - **`USD-USD`** con **`usa_intermediario = false`**: **`reglas_de_negocio`** (única fuente; **`sql/migracion_reglas_usd_usd_sin_int.sql`** o `sql/reglas_de_negocio_tabla.sql` actualizado). Comisión = **`mr_menos_me`**. Resumen: **`docs/USD_USD_SIN_INTERMEDIARIO.md`**.
 - **`USD-USD`** con **`usa_intermediario = true`**: **`reglas_de_negocio`** — misma matriz cliente que sin int + fila intermediario con **`comision_intermediario`**. **`sql/migracion_usd_usd_intermediario_tipo_y_reglas.sql`**. Resumen: **`docs/USD_USD_CON_INTERMEDIARIO.md`**.
-- **`CHEQUE-ARS`** con **`usa_intermediario = true`**: la matriz CC vive en **`reglas_de_negocio`** (`tipo_operacion_codigo = 'CHEQUE-ARS'`, `usa_intermediario = true`). Comisiones Pandy e intermediario como filas `es_comision` con **`condicion_estado_comision`** (`par_cliente` / `par_pandy_int`). **`cc_modelo_reglas` no debe tener filas CHEQUE-ARS** (ver **`sql/migracion_reglas_de_negocio_cheque_ars.sql`**). Resumen: **`docs/CHEQUE_ARS_INTERMEDIARIO.md`**.
+- **`CHEQUE-ARS`** con **`usa_intermediario = true`**: la matriz CC vive en **`reglas_de_negocio`** (`tipo_operacion_codigo = 'CHEQUE-ARS'`, `usa_intermediario = true`). Comisiones Pandy e intermediario como filas `es_comision` con **`condicion_estado_comision`** (`par_cliente` / `par_pandy_int`). Ver **`sql/migracion_reglas_de_negocio_cheque_ars.sql`**. Resumen: **`docs/CHEQUE_ARS_INTERMEDIARIO.md`**.
 - Tipos **sin** filas en `reglas_de_negocio`: el sync usa **fallbacks legacy** (por transacción, CHEQUE, cierre sintético dos monedas). Conviene cargar reglas en tabla para todo tipo **activo** (ver query de cobertura en la doc de migración).
 
 ## Script SQL
 
-- **`sql/reglas_de_negocio_tabla.sql`** — crea tabla, datos USD-ARS + ARS-USD + USD-USD sin int + **USD-USD con int** + **CHEQUE-ARS con int**, RLS, y elimina filas duplicadas en `cc_modelo_reglas` (tipos sin int + **CHEQUE-ARS** + **USD-USD con int**).
+- **`sql/reglas_de_negocio_tabla.sql`** — crea tabla, **USD-ARS** y **ARS-USD** (sin int y **con int**), **USD-USD** (sin int y con int), **CHEQUE-ARS** con int, RLS. Ya **no** incluye limpieza sobre `cc_modelo_reglas` (tabla legacy eliminada; backup en **`sql/archive/cc_modelo_legacy/`**).
 - Carga puntual ARS-USD: **`sql/migracion_reglas_ars_usd_sin_int.sql`**.
 - Carga puntual USD-USD sin int (entornos que ya tenían `reglas_de_negocio` sin `mr_menos_me`): **`sql/migracion_reglas_usd_usd_sin_int.sql`**.
 - Si existía la tabla previa **`cc_reglas_usd_ars`**: ver **`sql/migracion_cc_reglas_usd_ars_a_reglas_de_negocio.sql`**.

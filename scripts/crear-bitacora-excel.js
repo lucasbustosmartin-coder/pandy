@@ -21,6 +21,10 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Despliegue producción v1.51', 'Versión sidebar v1.51; bitácora Versiones + Excel; push main y vercel --prod. Incluye fix ARS-USD/USD-ARS+int CC (ci_pc/cp_ic, SQL, docs).', 'Despliegue'],
+  ['__HOY__', '__AHORA__', 'ARS-USD+int: reglas cp_ic + panel ci_pc', 'Causa CC vacía: reglas solo ci_pc pero panel autocompletaba cp_ic. main.js: autofill ARS-USD/USD-ARS+int → ci_pc; SQL cp_ic 8 filas (insert_reglas_ars_usd_int_cp_ic_si_faltan.sql + reglas_de_negocio_tabla); USD-ARS cp_ic espejo. Docs REG_NEG_*_INT_PASO1.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'SQL: insert ARS-USD+int solo si falta', 'sql/insert_reglas_ars_usd_con_intermediario_si_faltan.sql: SELECT count previo + INSERT ON CONFLICT DO NOTHING (sin reemplazar tabla). docs/REG_NEG_ARS_USD_INT_PASO1.md.', 'SQL / Documentación'],
+  ['__HOY__', '__AHORA__', 'reglas_de_negocio_tabla: ARS-USD+int y sin cc_modelo', 'INSERT ARS-USD usa_intermediario=true (motor CC). Eliminado bloque DO $$ que borraba en cc_modelo_reglas (tabla ya dropeada; backup sql/archive/cc_modelo_legacy). docs/REGLAS_DE_NEGOCIO.md alineado.', 'SQL / Documentación'],
   ['__HOY__', '__AHORA__', 'Despliegue producción v1.50', 'Versión sidebar v1.50; bitácora Versiones + Excel regenerado; push main y vercel --prod. Incluye ajustes E2E CHEQUE-ARS, limpieza base E2E (rpc_limpiar_base_e2e, truncar) y documentación asociada.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'Modal orden: layout radios instrumentación sugerida', '#orden-step-detalles .form-group input excluye radio/checkbox del width:100%. Bloque patron: grid 2 cols (auto 1fr), #orden-form-resto flex column, textos con overflow-wrap. Evita radios estirados y leyendas cortadas a la derecha.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'E2E 03 inversa: ci_pc + 2 tx autocompletadas', 'Tras autofill USD-ARS/ARS-USD+int el spec ya no asume lista vacía ni carga manual Tx1/Tx2 (chocaba con validarTotalesVsAcuerdo y el modal no cerraba). crearOrdenConIntermediario marca radio ci_pc antes de Ir a instrumentación; assert 2 filas; solo setearEstadosTx. tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js.', 'Testing'],
@@ -538,6 +542,7 @@ const versiones = [
   ['1.48', '__HOY__', 'Ajuste visual final: iconos de moneda con círculo gris sutil (borde fino) en tipos de operación y cards de cajas, manteniendo el estilo previo de botones. Incluye insumo para presentación (HTML/PDF de main.js) y bitácora actualizada.'],
   ['1.49', '__HOY__', 'Panel/Cajas dinámicos por catálogo activo: EUR se oculta en cards de Efectivo cuando no hay tipos de operación activos que usen EUR (IN/OUT), y reaparece automáticamente al activar alguno.'],
   ['1.50', '__HOY__', 'Despliegue: E2E CHEQUE-ARS E,P,* con saldo cliente −195k y detalle [−200k, +5k]; doc CC_COMBINACIONES_ESPERADO_DERIVACION. Limpieza E2E: rpc_limpiar_base_e2e borra intermediario E2E CC TiposActivos Int; truncar_ordenes_transacciones con nota y DELETE opcionales comentados; guía TESTING_E2E_GUIA §1.4.'],
+  ['1.51', '__HOY__', 'ARS-USD/USD-ARS + int: CC alineada a reglas (panel ci_pc, SQL cp_ic, inserts idempotentes). reglas_de_negocio_tabla sin limpieza cc_modelo legacy; docs REG_NEG_* y REGLAS_DE_NEGOCIO. Tras cambio de reglas conviene re-sync o orden nueva.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

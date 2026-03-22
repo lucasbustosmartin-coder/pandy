@@ -2,17 +2,24 @@
 
 ## Objetivo
 
-- Misma convención que **USD-ARS con intermediario** (`docs/REG_NEG_USD_ARS_INT_PASO1.md`), con **espejo de monedas**: acuerdo **recibe ARS (mr)** y **entrega USD (me)**; transacciones **Cliente→Intermediario** (ingreso en ARS) y **Pandy→Cliente** (egreso en USD).
-- Script canónico: **`sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql`**.
+- Misma convención que **USD-ARS con intermediario** (`docs/REG_NEG_USD_ARS_INT_PASO1.md`), con **espejo de monedas**: acuerdo **recibe ARS (mr)** y **entrega USD (me)**.
+- Hay **dos patrones de instrumentación** de dos transacciones; el motor necesita filas para el que uses:
+  - **`ci_pc`:** ingreso **Cliente→Intermediario** (ARS) + egreso **Pandy→Cliente** (USD). Es el que usa el **wizard** si elegís ese radio y el que usa el **panel de órdenes** desde el fix de `main.js` (autocompletado por defecto).
+  - **`cp_ic`:** ingreso **Cliente→Pandy** (ARS) + egreso **Intermediario→Cliente** (USD). **USD-USD+int** tenía reglas para **ambos** patrones; **ARS-USD+int** al principio solo tenía `ci_pc`, y el panel autocompletaba `cp_ic` → **no matcheaba ninguna regla** y la CC quedaba vacía aunque hubiera 12 filas.
+- Script canónico (ambos patrones): **`sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql`** (incluye bloque `cp_ic`).
 
 ## Qué ejecutar en Supabase (orden)
 
 1. `sql/migracion_reglas_de_negocio_entidad_cc.sql` (si aún no está aplicada).
-2. `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql`
+2. Cargar las reglas **ARS-USD + int** (elegí una):
+   - **Solo `ci_pc` (12 filas):** `sql/insert_reglas_ars_usd_con_intermediario_si_faltan.sql`.
+   - **Solo `cp_ic` (8 filas; órdenes ya creadas desde el panel antes del fix):** `sql/insert_reglas_ars_usd_int_cp_ic_si_faltan.sql`.
+   - **Todo junto (upsert):** `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql` o `sql/reglas_de_negocio_tabla.sql`.
 
 ## App (`main.js`)
 
 - Si hay filas en **`reglas_de_negocio`** para **ARS-USD** + **`usa_intermediario`**, la sync usa **`aplicarMotorCcDesdeReglasDeNegocio`** y **no** aplica **`cc_modelo_reglas`** para ese caso (misma bandera que USD-ARS+int con filas en tabla).
+- **Panel órdenes:** autocompletado de transacciones vacías para **ARS-USD** y **USD-ARS** con intermediario usa **`ci_pc`** por defecto (alineado a las reglas `ci_pc`). **USD-USD+int** sigue en **`cp_ic`** (tiene reglas para ambos en DB).
 - El motor ya omitía `mr_prorrateado` en egreso **ARS** para ARS-USD sin int (`aplicarMotorCcDesdeReglasDeNegocio`); se mantiene igual con **+int**.
 
 ## E2E

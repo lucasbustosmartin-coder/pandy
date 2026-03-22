@@ -19,6 +19,7 @@
 - **E,P (ingreso C→Int ejecutado, egreso P→C pendiente):** hacen falta **tres** filas para CC cliente con `contrapartida_ejecutada = false`: **−mr y +mr en USD** y **−me en ARS** (detalle alineado a §5 `cc_modelo_reglas`). Migración: `sql/migracion_reglas_usd_ars_int_ep_ingreso_ejecutada_contrapartida_false_tres_lineas.sql`.
 - **E,E (ambas transacciones ejecutadas):** en el ingreso con `ejecutada` + `contrapartida_ejecutada = true` hacen falta **tres** filas cliente (**−me ARS**, **−mr USD**, **+mr USD**); el egreso aporta **+me ARS** → **cuatro** importes en detalle. Si en Supabase faltaban las USD, el E2E fallaba (esperaba 4 montos, recibía 2). Migración: `sql/migracion_reglas_usd_ars_int_ee_ingreso_ejecutada_true_par_usd.sql` (o reaplicar `sql/reglas_usd_ars_int_inversa_reglas_de_negocio.sql`).
 - **ARS-USD** con intermediario: **`sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql`** + **`docs/REG_NEG_ARS_USD_INT_PASO1.md`** (misma idea que USD-ARS+int con espejo de monedas).
+- **Patrón `cp_ic`** (Cliente→Pandy + Intermediario→Cliente) para **USD-ARS+int:** filas en `sql/reglas_de_negocio_tabla.sql` (bloque USD-ARS true `cp_ic`); carga puntual análoga a `sql/insert_reglas_ars_usd_int_cp_ic_si_faltan.sql` si hiciera falta.
 - **No** borra filas de `cc_modelo_reglas` (conviven hasta migración completa y E2E verdes).
 - **No** cubre todavía el esquema “Pandy central” / 4 transacciones (CHEQUE-like): habrá más filas en un paso posterior.
 

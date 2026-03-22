@@ -8055,8 +8055,10 @@ function expandOrdenTransacciones(ordenId, orden) {
               if (esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out) && orden.intermediario_id) {
                 return autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumentacionId, orden);
               }
+              // USD-USD+int: reglas en DB para cp_ic (C→Pandy + Int→C) y ci_pc. ARS-USD / USD-ARS +int: reglas solo ci_pc (C→Int + P→C) — autofill panel = ci_pc para que el motor CC matchee (ver docs/REG_NEG_ARS_USD_INT_PASO1.md).
               if (orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-USD' || codigo === 'USD-ARS') && !esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out)) {
-                return autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instrumentacionId, orden, 'cp_ic');
+                const patronPanelPar = (codigo === 'ARS-USD' || codigo === 'USD-ARS') ? 'ci_pc' : 'cp_ic';
+                return autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instrumentacionId, orden, patronPanelPar);
               }
               if (!orden.intermediario_id && (codigo === 'USD-USD' || codigo === 'ARS-USD' || codigo === 'USD-ARS' || esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out))) {
                 return autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId, orden);

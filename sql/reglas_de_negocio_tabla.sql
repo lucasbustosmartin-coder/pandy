@@ -1,6 +1,6 @@
 -- Pandi – Tabla **reglas_de_negocio**: reglas explícitas de CC (y futuros dominios) por tipo de operación.
 -- Sin intermediario: **USD-ARS**, **ARS-USD** y **USD-USD** (`usa_intermediario = false`).
--- Con intermediario: **CHEQUE-ARS** y **USD-USD** (con intermediario) en `reglas_de_negocio`; ver `sql/migracion_reglas_de_negocio_cheque_ars.sql`, `sql/migracion_usd_usd_intermediario_tipo_y_reglas.sql`.
+-- Con intermediario: **USD-ARS** y **ARS-USD** (flujo inverso 2 tx C→Int + P→C), **USD-USD**, **CHEQUE-ARS** — todo en este archivo; scripts puntuales: `sql/reglas_usd_ars_int_inversa_reglas_de_negocio.sql`, `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql`, `sql/migracion_reglas_de_negocio_cheque_ars.sql`, `sql/migracion_usd_usd_intermediario_tipo_y_reglas.sql`.
 -- Con intermediario: usar **entidad_cc** `cliente` | `intermediario` (ver `sql/migracion_reglas_de_negocio_entidad_cc.sql`).
 -- Una fila = un movimiento CC cliente. Varios movimientos = varias filas (linea).
 -- Varios movimientos de **transacción** (2..N) que suman el acuerdo: usar **monto_transaccion**,
@@ -94,6 +94,62 @@ ON CONFLICT (
   incluir_en_detalle = EXCLUDED.incluir_en_detalle,
   concepto_leyenda = EXCLUDED.concepto_leyenda;
 
+-- USD-ARS con intermediario — flujo inverso (2 tx: Cliente→Intermediario, Pandy→Cliente). Ver docs/REG_NEG_USD_ARS_INT_PASO1.md
+INSERT INTO public.reglas_de_negocio (
+  tipo_operacion_codigo, usa_intermediario, entidad_cc,
+  pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada, linea,
+  moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
+) VALUES
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'mr', true, 'cobro_realizado'),
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 1, 'USD', 1, 'mr', true, 'cobro_realizado'),
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 2, 'ARS', -1, 'me', true, 'cobro_realizado'),
+  ('USD-ARS', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 0, 'USD', 1, 'mr', true, 'cobro_realizado'),
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'ARS', -1, 'me', true, 'cobro_realizado'),
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 1, 'USD', -1, 'mr', true, 'cobro_realizado'),
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 2, 'USD', 1, 'mr', true, 'cobro_realizado'),
+  ('USD-ARS', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'USD', 1, 'mr', true, 'cobro_realizado'),
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'ARS', -1, 'me', true, 'compromiso_cobrar'),
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 1, 'USD', -1, 'mr', true, 'compromiso_cobrar'),
+  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', 1, 'me', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'me', true, 'compromiso_pago')
+ON CONFLICT (
+  tipo_operacion_codigo, usa_intermediario, entidad_cc,
+  pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada, linea
+) DO UPDATE SET
+  moneda = EXCLUDED.moneda,
+  signo = EXCLUDED.signo,
+  monto_origen = EXCLUDED.monto_origen,
+  incluir_en_detalle = EXCLUDED.incluir_en_detalle,
+  concepto_leyenda = EXCLUDED.concepto_leyenda;
+
+-- USD-ARS + int, patrón **cp_ic** (ingreso Cliente→Pandy USD, egreso Intermediario→Cliente ARS). Espejo de ARS-USD+int cp_ic con monedas invertidas (mr USD, me ARS).
+INSERT INTO public.reglas_de_negocio (
+  tipo_operacion_codigo, usa_intermediario, entidad_cc,
+  pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada, linea,
+  moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
+) VALUES
+  ('USD-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('USD-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('USD-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', true, 1, 'ARS', -1, 'me', true, 'compromiso_pago')
+ON CONFLICT (
+  tipo_operacion_codigo, usa_intermediario, entidad_cc,
+  pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada, linea
+) DO UPDATE SET
+  moneda = EXCLUDED.moneda,
+  signo = EXCLUDED.signo,
+  monto_origen = EXCLUDED.monto_origen,
+  incluir_en_detalle = EXCLUDED.incluir_en_detalle,
+  concepto_leyenda = EXCLUDED.concepto_leyenda;
+
 -- ARS-USD sin intermediario (mr ARS, me USD). Espejo lógico de USD-ARS: prorrateos y P,E / E,E alineados a tests COMBINACIONES_ARS_USD.
 INSERT INTO public.reglas_de_negocio (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
@@ -113,6 +169,62 @@ INSERT INTO public.reglas_de_negocio (
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', 1, 'mr_prorrateado', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada, linea
+) DO UPDATE SET
+  moneda = EXCLUDED.moneda,
+  signo = EXCLUDED.signo,
+  monto_origen = EXCLUDED.monto_origen,
+  incluir_en_detalle = EXCLUDED.incluir_en_detalle,
+  concepto_leyenda = EXCLUDED.concepto_leyenda;
+
+-- ARS-USD con intermediario — flujo inverso (2 tx: Cliente→Intermediario en ARS, Pandy→Cliente en USD). Ver docs/REG_NEG_ARS_USD_INT_PASO1.md
+INSERT INTO public.reglas_de_negocio (
+  tipo_operacion_codigo, usa_intermediario, entidad_cc,
+  pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada, linea,
+  moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
+) VALUES
+  ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 0, 'ARS', -1, 'mr', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 1, 'ARS', 1, 'mr', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 2, 'USD', -1, 'me', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 0, 'ARS', 1, 'mr', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'USD', -1, 'me', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 1, 'ARS', -1, 'mr', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 2, 'ARS', 1, 'mr', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'ARS', 1, 'mr', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'USD', -1, 'me', true, 'compromiso_cobrar'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 1, 'ARS', -1, 'mr', true, 'compromiso_cobrar'),
+  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', 1, 'me', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'me', true, 'compromiso_pago')
+ON CONFLICT (
+  tipo_operacion_codigo, usa_intermediario, entidad_cc,
+  pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada, linea
+) DO UPDATE SET
+  moneda = EXCLUDED.moneda,
+  signo = EXCLUDED.signo,
+  monto_origen = EXCLUDED.monto_origen,
+  incluir_en_detalle = EXCLUDED.incluir_en_detalle,
+  concepto_leyenda = EXCLUDED.concepto_leyenda;
+
+-- ARS-USD + int, patrón **cp_ic** (ingreso Cliente→Pandy ARS, egreso Intermediario→Cliente USD). El panel de órdenes usaba este patrón por defecto; sin estas filas el motor no matcheaba (solo existía ci_pc arriba). Alineado a USD-USD+int cp_ic con mr/me en monedas del acuerdo.
+INSERT INTO public.reglas_de_negocio (
+  tipo_operacion_codigo, usa_intermediario, entidad_cc,
+  pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada, linea,
+  moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
+) VALUES
+  ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', 1, 'mr', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', true, 1, 'USD', -1, 'me', true, 'compromiso_pago')
+ON CONFLICT (
+  tipo_operacion_codigo, usa_intermediario, entidad_cc,
+  pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada, linea
 ) DO UPDATE SET
   moneda = EXCLUDED.moneda,
@@ -218,23 +330,8 @@ ON CONFLICT (
   concepto_leyenda = EXCLUDED.concepto_leyenda,
   condicion_estado_comision = EXCLUDED.condicion_estado_comision;
 
--- Limpieza legacy (solo si la tabla aún existe; tras sql/migracion_drop_cc_modelo_reglas.sql no aplica).
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'cc_modelo_reglas'
-  ) THEN
-    DELETE FROM public.cc_modelo_reglas
-    WHERE tipo_operacion_codigo IN ('USD-ARS', 'ARS-USD', 'USD-USD')
-      AND usa_intermediario = false;
-    DELETE FROM public.cc_modelo_reglas
-    WHERE tipo_operacion_codigo = 'CHEQUE-ARS';
-    DELETE FROM public.cc_modelo_reglas
-    WHERE tipo_operacion_codigo = 'USD-USD'
-      AND usa_intermediario = true;
-  END IF;
-END $$;
+-- `cc_modelo_reglas` ya no se usa: la app solo lee `reglas_de_negocio`. Para dropear la tabla en DB: `sql/migracion_drop_cc_modelo_reglas.sql`.
+-- Backup / histórico del modelo anterior: `sql/archive/cc_modelo_legacy/` (snapshot JSON en `snapshots/`).
 
 ALTER TABLE public.reglas_de_negocio ENABLE ROW LEVEL SECURITY;
 
