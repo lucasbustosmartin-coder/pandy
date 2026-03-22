@@ -21,6 +21,8 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Despliegue producción v1.54', 'Versión sidebar v1.54; ayudas modal en index.html + bitácora; push main y vercel --prod.', 'Despliegue'],
+  ['__HOY__', '__AHORA__', 'UI: ayudas largas → ícono help + modal', 'index.html: textos tipo guía en Inicio, Órdenes, Cajas, Tipos op., Intermediarios, Seguridad, reglas (aviso crítico), modales (chat, orden, replicar, tipo op., CC detalle, pendientes); patrón help-inline + help-popover existente.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Despliegue producción v1.53', 'Versión sidebar v1.53; commit main + vercel --prod. Incluye cruces sin int, migraciones EUR, orden visual tipos, docs CC/reglas, E2E.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'Doc: autocompensación CC misma trx vs dos trx (orden)', 'REG_INTERMEDIARIO_CRUCES_REVISION_PAR_EJECUTADA.md §0: definición producto (neteo por orden; P,P sin mov; compromiso Tx1 + cierre Tx2); tabla revisión por tipo + enlace E2E 01/02/03.', 'Documentación'],
   ['__HOY__', '__AHORA__', 'Doc: revisión reglas intermediario cruces (par ± en CC)', 'docs/REG_INTERMEDIARIO_CRUCES_REVISION_PAR_EJECUTADA.md: auditoría USD-ARS/ARS-USD/EUR+int (excl. CHEQUE-ARS y USD-USD+int): ci_pc P,E par −me/+me entre Tx1 y Tx2; cp_ic par ± misma trx; sin es_comision en cruces USD-ARS/ARS-USD+int. Enlaces CC_NETEO, REGLAS_DE_NEGOCIO, E2E intermediario inversa.', 'Documentación'],
@@ -425,6 +427,7 @@ const funcionalidades = [
   ['Bitácora', 'Node.js + SheetJS (xlsx). Script scripts/crear-bitacora-excel.js genera Bitacora_tareas.xlsx con Log, Resumen, Ref Git y Vercel, Versiones, Tecnología, Presupuesto.'],
   ['Tablas de negocio (Supabase)', 'clientes, tipos_movimiento_caja, ordenes, movimientos_caja, movimientos_cuenta_corriente. Órdenes: cotizacion, cerrada, concertada. CC por cliente y moneda.'],
   ['Seguridad (Supabase)', 'Roles Admin/Encargado/Visor. Permisos abm_*. RLS. RPC set_user_role.'],
+  ['Ayudas en pantalla', 'Ícono ? estándar (help-inline): al clic abre modal con texto largo; usado en vistas principales, reglas críticas y modales (orden, CC, chat, etc.).'],
   ['UI base Pandi', 'index.html + main.js: sidebar colapsable, login/registro, 6 vistas (Inicio, Órdenes, Cajas, Clientes, Cuenta corriente, Seguridad). Estilos Everfit. Vista Seguridad funcional (asignar rol).'],
   ['ABM Clientes', 'Listado de clientes (tabla clientes), Nuevo cliente y Editar en modal. Campos: nombre, documento, email, teléfono, dirección, activo. Solo usuarios con permiso abm_clientes pueden crear/editar.'],
   ['Vista Cajas', 'Cards Efectivo, Banco y Cheque (Cheque solo saldo ARS; icono Icono_Cheques.png). Visibilidad según ver_cajas_efectivo, ver_cajas_banco, ver_cajas_cheque (mismos permisos que en Panel de Control). Columnas de moneda en Efectivo (USD/ARS/EUR) y Banco (USD/ARS) solo si existe al menos un tipo de operación activo que use esa moneda en IN u OUT. Filtro por moneda y tabla de movimientos; ABM movimientos y tipos según permisos.'],
@@ -564,6 +567,7 @@ const versiones = [
   ['1.51', '__HOY__', 'ARS-USD/USD-ARS + int: CC alineada a reglas (panel ci_pc, SQL cp_ic, inserts idempotentes). reglas_de_negocio_tabla sin limpieza cc_modelo legacy; docs REG_NEG_* y REGLAS_DE_NEGOCIO. Tras cambio de reglas conviene re-sync o orden nueva.'],
   ['1.52', '__HOY__', 'Menú crítico ABM reglas_de_negocio (CC): permiso abm_reglas_negocio, RLS I/U/D (sql/migracion_permiso_abm_reglas_negocio.sql), vista con tabla, validaciones, replicar matriz, ayudas en columnas (CC, Monto origen, Cond. com.), encabezados sticky, docs MENU_REGLAS_NEGOCIO.md.'],
   ['1.53', '__HOY__', 'Cruces dos monedas sin int (P,E ARS ±), migraciones EUR y canonico sql/; orden_visual tipos operación; MONEDAS IN/OUT y motor CC; doc REG_INTERMEDIARIO autocompensación CC; revisión reglas/E2E; ABM reglas refinamientos.'],
+  ['1.54', '__HOY__', 'Ayudas UI: textos largos tras ícono ? (modal help) en vistas, reglas, modales orden/CC/chat/pendientes; fix botón Guardar duplicado Seguridad; bitácora Resumen ayudas.'],
 ];
 const versionesParaExcel = aplicarHoyAhora(versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);

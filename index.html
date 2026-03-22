@@ -168,7 +168,6 @@
     .form-group-toggle { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
     .form-group-toggle .label-with-toggle { margin-bottom: 0; flex-shrink: 0; font-weight: 500; }
     .form-group-toggle .toggle-switch { flex-shrink: 0; }
-    .vista-def-monedas-tipo-op { margin: 0 0 0.75rem 0; font-size: 0.9rem; color: #555; line-height: 1.45; }
     .vista-placeholder { color: #666; padding: 1rem 0; }
     .vista-toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
     .btn-nuevo, .btn-editar, .btn-primary, .btn-secondary, .btn-login, .btn-cerrar, .btn-excel { display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; min-height: 2.25rem; box-sizing: border-box; }
@@ -929,7 +928,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.53</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.54</div>
   </aside>
 
   <main class="main-content">
@@ -982,7 +981,10 @@
       </header>
 
       <div id="vista-inicio" class="card">
-        <p style="margin:0 0 1rem 0; font-size:0.9rem; color:#555;">Resumen de cajas y accesos rápidos.</p>
+        <div style="display:flex;align-items:center;gap:0.35rem;margin-bottom:1rem;flex-wrap:wrap;">
+          <span style="font-size:1.05rem;font-weight:600;">Inicio</span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: panel de inicio"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Resumen de cajas</strong> (Efectivo, Banco, Cheque): saldos iniciales, actuales y variación.<br/><br/><strong>Tarjetas pendientes:</strong> órdenes y transacciones que aún no están cerradas; el ojo abre el listado.<br/><br/><strong>Accesos rápidos:</strong> atajos a Órdenes, Cajas, Clientes y Cuenta corriente.</span></span>
+        </div>
         <div class="inicio-cajas-dos" id="inicio-saldos">
           <div class="inicio-caja-card inicio-caja-efectivo" id="inicio-card-efectivo">
             <h3 class="inicio-caja-card-titulo"><span class="inicio-caja-icono-caja" aria-hidden="true"><img src="/assets/cash.png" alt="" width="30" height="30"/></span>Efectivo</h3>
@@ -1085,7 +1087,7 @@
           </div>
         </div>
         <div class="inicio-accesos">
-          <p style="margin:0 0 0.5rem 0; font-size:0.9rem; color:#555;">Accesos rápidos</p>
+          <p style="margin:0 0 0.5rem 0; font-size:0.95rem; font-weight:600;">Accesos rápidos</p>
           <div class="vista-toolbar" style="flex-wrap:wrap;">
             <button type="button" id="btn-orden-por-chat-inicio" class="btn-chat" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>Cargar por chat</button>
             <a href="#" class="btn-secondary link-inicio" data-vista="vista-ordenes"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>Órdenes</a>
@@ -1096,12 +1098,11 @@
         </div>
       </div>
       <div id="vista-ordenes" class="card" style="display:none;">
-        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
           Órdenes de compra/venta de divisas
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: órdenes"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Los importes se alinean con el <strong>tipo de operación</strong>: <strong>Moneda IN</strong> = recibido en el acuerdo, <strong>Moneda OUT</strong> = entregado. La <strong>instrumentación</strong> y la <strong>cuenta corriente</strong> usan las mismas monedas y montos (ARS, USD, EUR u otras según el catálogo).<br/><br/>Cada orden es un <strong>acuerdo comercial</strong> con transacciones. El <strong>estado</strong> pasa por Pendiente instrumentar → Parcial / Cerrada en ejecución → Orden ejecutada (o anulada), según cómo cargues y ejecutes las transacciones.</span></span>
         </h3>
-        <p class="vista-def-monedas-tipo-op">Los importes se alinean con el <strong>tipo de operación</strong>: <strong>Moneda IN</strong> = recibido en el acuerdo, <strong>Moneda OUT</strong> = entregado. La <strong>instrumentación</strong> y la <strong>cuenta corriente</strong> derivan de esas mismas monedas y montos (cruces con USD: ARS, EUR, etc., según el catálogo).</p>
-        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Acuerdo comercial con instrumentación (transacciones). Estado: Abierta / Parcialmente cerrada / Cerrada según transacciones ejecutadas.</p>
         <div class="vista-toolbar">
           <button type="button" id="btn-nueva-orden" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva orden</button>
           <button type="button" id="btn-orden-por-chat" class="btn-chat" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>Cargar por chat</button>
@@ -1120,6 +1121,11 @@
         </div>
       </div>
       <div id="vista-cajas" class="card" style="display:none;">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+          <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg></span>
+          Cajas
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: cajas"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Saldos por caja (Efectivo, Banco, Cheque) y <strong>movimientos</strong> que impactan caja (en general, <strong>ejecutados</strong>). Podés filtrar por moneda.<br/><br/>La convención de montos sigue el <strong>tipo de operación</strong> de cada orden: Moneda IN / OUT del acuerdo.</span></span>
+        </h3>
         <div class="inicio-cajas-dos" id="cajas-saldos">
           <div class="inicio-caja-card inicio-caja-efectivo" id="cajas-card-efectivo">
             <h3 class="inicio-caja-card-titulo"><span class="inicio-caja-icono-caja" aria-hidden="true"><img src="/assets/cash.png" alt="" width="30" height="30"/></span>Efectivo</h3>
@@ -1187,11 +1193,11 @@
           </table>
         </div>
         <div class="card" style="margin-top:1.5rem;">
-          <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
+          <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
             <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg></span>
             Tipos de movimiento de caja
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: tipos de movimiento de caja"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Definí los <strong>tipos</strong> que usás al cargar <strong>movimientos manuales</strong> (no generados por una orden). Cada tipo tiene <strong>dirección</strong>: Ingreso o Egreso respecto de la caja.</span></span>
           </h3>
-          <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Definí los tipos para movimientos manuales (ingreso o egreso). Al cargar un tipo indicás si es Ingreso o Egreso.</p>
           <div class="vista-toolbar" style="margin-bottom:0.75rem;">
             <button type="button" id="btn-nuevo-tipo-movimiento" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo tipo</button>
           </div>
@@ -1205,11 +1211,11 @@
         </div>
       </div>
       <div id="vista-intermediarios" class="card" style="display:none;">
-        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5a2 2 0 012-2h12a2 2 0 012 2v2"/><path d="M4 7h16v12a2 2 0 01-2 2H6a2 2 0 01-2-2V7"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M12 11v6"/><path d="M9 14h6"/></svg></span>
           Intermediarios
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: intermediarios"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Intermediarios</strong> son terceros con los que Pandy opera en circuitos intermediados. Pueden tener <strong>cuenta corriente</strong> propia en la app cuando el tipo de operación lo prevé.</span></span>
         </h3>
-        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Terceros con cuenta corriente propia (operaciones intermediadas).</p>
         <div class="vista-toolbar">
           <button type="button" id="btn-nuevo-intermediario" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo intermediario</button>
         </div>
@@ -1238,11 +1244,11 @@
         </div>
       </div>
       <div id="vista-tipos-operacion" class="card" style="display:none;">
-        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/><circle cx="12" cy="12" r="3"/></svg></span>
           Tipos de operación
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: tipos de operación"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Catálogo de tipos: <strong>Moneda IN</strong> = recibida en el acuerdo, <strong>Moneda OUT</strong> = entregada.<br/><br/>Con permiso de ABM, la columna <strong>Orden</strong> sube/baja filas; ese orden se usa en <strong>Nueva orden</strong> y <strong>Cargar por chat</strong>. La columna <strong>Tipo</strong> muestra iconos (flujo de monedas o solo cheques si el código incluye CHEQUE).<br/><br/>El <strong>código</strong> puede repetirse si cambia <strong>Intermediario</strong> (ej. USD-ARS con/sin int.); el <strong>nombre</strong> diferencia la opción. Docs: <code>docs/TIPOS_OPERACION_UNICIDAD_CODIGO.md</code>, <code>docs/TIPOS_OPERACION_ORDEN_VISUAL.md</code>. <em>Nota:</em> la instrumentación se alinea cada vez más a las monedas IN/OUT del tipo, no solo al código.</span></span>
         </h3>
-        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Catálogo de tipos (moneda IN = recibida, moneda OUT = entregada). Con permiso de ABM, la columna <strong>Orden</strong> permite subir o bajar cada fila: ese orden se respeta en el selector de <strong>Nueva orden</strong> y en <strong>Cargar por chat</strong>. En el listado, la columna <strong>Tipo</strong> muestra iconos según el código (ej. USD→ARS; si el código incluye <strong>CHEQUE</strong>, solo el icono de cheques). El <strong>código</strong> puede repetirse si cambia <strong>Intermediario</strong> (ej. USD-ARS directo vs con intermediario); el <strong>nombre</strong> diferencia la opción en el selector. Ver <code>docs/TIPOS_OPERACION_UNICIDAD_CODIGO.md</code> y <code>docs/TIPOS_OPERACION_ORDEN_VISUAL.md</code>. <em>Nota:</em> a futuro la instrumentación deberá adaptarse a las monedas que participan (no solo al código del tipo).</p>
         <div class="vista-toolbar">
           <button type="button" id="btn-nuevo-tipo-operacion" class="btn-nuevo"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo tipo</button>
         </div>
@@ -1258,9 +1264,8 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
           Cuenta corriente
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de Pandy</strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado en la orden). En <strong>Saldos</strong> el resumen por moneda usa solo <strong>movimientos que suman al saldo</strong> (ejecutados según reglas). En <strong>Movimientos</strong> ves el listado de líneas de detalle. Cobro por = Pandy cobró (positivo); Deuda por = Pandy debe entregar (negativo). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de Pandy</strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado). Los importes y cruces (ARS, USD, EUR, etc.) siguen el <strong>tipo de operación</strong> del catálogo.<br/><br/>En <strong>Saldos</strong> el resumen por moneda usa solo <strong>movimientos que suman al saldo</strong> (ejecutados según reglas). En <strong>Movimientos</strong> ves el listado de líneas de detalle. Cobro por = Pandy cobró (positivo); Deuda por = Pandy debe entregar (negativo). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
         </h3>
-        <p class="vista-def-monedas-tipo-op">Los importes se alinean con el <strong>tipo de operación</strong>: <strong>Moneda IN</strong> = recibido en el acuerdo, <strong>Moneda OUT</strong> = entregado. La <strong>instrumentación</strong> y esta <strong>cuenta corriente</strong> derivan de esas mismas monedas y montos (cruces con USD: ARS, EUR, etc., según el catálogo).</p>
         <div class="vista-toolbar cc-toolbar-compartido">
           <label style="display:flex; align-items:center; gap:0.5rem;">
             <span>Tipo:</span>
@@ -1361,8 +1366,9 @@
           Reglas de negocio (cuenta corriente)
           <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda reglas de negocio"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Qué es esto.</strong> Cada fila define cómo el motor de CC traduce una transacción (pagador, cobrador, tipo, estado, contrapartida) en un movimiento para el cliente o el intermediario. La clave única en base es la combinación de tipo de operación, intermediario, entidad CC, pagador/cobrador, tipo de transacción, comisión, estado, contrapartida y <strong>línea</strong>.<br/><br/><strong>Riesgo.</strong> Cambios incorrectos pueden dejar saldos que no cierran o duplicar movimientos. Preferí primero <strong>Replicar matriz</strong> desde un tipo ya probado (ej. USD-ARS) hacia un código nuevo (ej. EUR-USD) y luego ajustar monedas/signos con calma.<br/><br/><strong>Permiso.</strong> Solo perfiles con <code>abm_reglas_negocio</code> (por defecto Admin). Podés delegarlo desde Seguridad → permisos por rol.</span></span>
         </h3>
-        <div class="panel-reglas-negocio-aviso" role="status">
-          <strong>Menú crítico.</strong> Las reglas alimentan directamente el motor de cuenta corriente (<code>main.js</code> → <code>aplicarMotorCcDesdeReglasDeNegocio</code>). Antes de editar, leé <code>docs/REGLAS_DE_NEGOCIO.md</code> y el tipo de operación en el catálogo. Para nuevos pares de moneda, creá primero el <strong>tipo de operación</strong> y usá <strong>Replicar matriz</strong> desde un tipo análogo.
+        <div class="panel-reglas-negocio-aviso" role="status" style="display:flex;align-items:flex-start;gap:0.5rem;flex-wrap:wrap;">
+          <span><strong>Menú crítico.</strong> Cambios incorrectos pueden romper saldos en CC.</span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: menú crítico reglas"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Las reglas alimentan directamente el <strong>motor de cuenta corriente</strong> (<code>main.js</code> → <code>aplicarMotorCcDesdeReglasDeNegocio</code>).<br/><br/>Antes de editar: leé <code>docs/REGLAS_DE_NEGOCIO.md</code> y revisá el <strong>tipo de operación</strong> en el catálogo. Para nuevos cruces o monedas, creá primero el tipo y usá <strong>Replicar matriz</strong> desde un tipo ya probado (ej. USD-ARS → EUR-USD) y luego ajustá filas.</span></span>
         </div>
         <div class="reglas-negocio-toolbar vista-toolbar">
           <div class="form-group">
@@ -1424,14 +1430,15 @@
         </div>
       </div>
       <div id="vista-seguridad" class="card panel-seguridad" style="display:none;">
-        <h2 style="margin:0 0 0.5rem 0; display:flex; align-items:center; gap:0.5rem;">
+        <h2 style="margin:0 0 0.75rem 0; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span style="width:24px; height:24px; color:#555; flex-shrink:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
           Seguridad – Usuarios y roles
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: seguridad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Asigná el <strong>rol</strong> (Admin, Encargado, Visor) a cada usuario. Más abajo podés configurar <strong>permisos por rol</strong> (qué menús ve y en cuáles puede operar) y, si sos Admin, el <strong>tiempo de inactividad</strong> antes del cierre de sesión automático.</span></span>
         </h2>
-        <p style="margin:0 0 0.75rem 0; font-size:0.95rem; color:#555;">Asigná el rol (Admin, Encargado, Visor) a cada usuario.</p>
         <div id="seguridad-tiempo-sesion-wrap" class="seguridad-tiempo-sesion" style="display:none; margin-bottom:1.25rem; padding:1rem; background:#f9fafb; border-radius:10px; border:1px solid #e5e7eb;">
-          <h3 style="margin:0 0 0.5rem 0; font-size:1rem;">Tiempo de inactividad</h3>
-          <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Si el usuario no interactúa con la app (clic, teclado, scroll) durante esta cantidad de minutos, se cierra la sesión automáticamente para que la información no quede expuesta. Solo el Admin puede modificar este valor.</p>
+          <h3 style="margin:0 0 0.5rem 0; font-size:1rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Tiempo de inactividad
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: tiempo de inactividad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Si el usuario no interactúa con la app (clic, teclado, scroll) durante esta cantidad de <strong>minutos</strong>, se <strong>cierra la sesión</strong> automáticamente para que la información no quede expuesta. Solo el <strong>Admin</strong> puede modificar este valor.</span></span>
+          </h3>
           <div class="vista-toolbar" style="align-items:center; gap:0.5rem;">
             <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
               <span>Minutos sin actividad:</span>
@@ -1439,7 +1446,6 @@
             </label>
             <button type="button" class="btn-primary" id="seguridad-session-timeout-guardar">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar
-              Guardar
             </button>
           </div>
         </div>
@@ -1451,8 +1457,9 @@
           </table>
         </div>
         <div id="seguridad-permisos-wrap" style="margin-top:1.5rem; display:none;">
-          <h3 style="margin:0 0 0.5rem 0; font-size:1.05rem;">Permisos por rol</h3>
-          <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Para cada opción de menú podés permitir <strong>Ver</strong> (acceso a la vista y a la información) y <strong>Operar</strong> (crear, editar o anular según corresponda). Los cambios aplican a todos los usuarios con ese rol.</p>
+          <h3 style="margin:0 0 0.75rem 0; font-size:1.05rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Permisos por rol
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: permisos por rol"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Para cada opción de menú podés permitir <strong>Ver</strong> (acceso a la vista y a la información) y <strong>Operar</strong> (crear, editar o anular según corresponda). Los cambios aplican a <strong>todos los usuarios</strong> con ese rol.</span></span>
+          </h3>
           <div id="seguridad-permisos-grid"></div>
         </div>
       </div>
@@ -1514,16 +1521,19 @@
         <form id="form-tipo-operacion">
           <input type="hidden" id="tipo-operacion-id" value="" />
           <div class="form-group">
-            <label for="tipo-operacion-codigo">Código *</label>
+            <label for="tipo-operacion-codigo" style="display:flex;align-items:center;flex-wrap:wrap;gap:0.25rem;">Código *
+              <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: código tipo de operación"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">El mismo <strong>código</strong> puede existir <strong>dos veces</strong> si una fila tiene <strong>Intermediario</strong> en Sí y otra en No. La unicidad en base es <strong>(código + intermediario)</strong>.</span></span>
+            </label>
             <input type="text" id="tipo-operacion-codigo" required maxlength="32" placeholder="ej. ARS-USD" />
-            <p style="margin:0.35rem 0 0 0; font-size:0.8rem; color:#6b7280;">El mismo código puede existir dos veces si una fila tiene <strong>Intermediario</strong> en Sí y otra en No. La unicidad en base es (código + intermediario).</p>
           </div>
           <div class="form-group">
             <label for="tipo-operacion-nombre">Nombre *</label>
             <input type="text" id="tipo-operacion-nombre" required maxlength="128" placeholder="ej. ARS - USD" />
           </div>
           <fieldset class="tipo-operacion-icono-fieldset" style="border:1px solid #e5e7eb; padding:0.75rem 1rem; border-radius:8px; margin:0.5rem 0;">
-            <legend style="font-size:0.9rem; padding:0 0.35rem;">Icono en listados</legend>
+            <legend style="font-size:0.9rem; padding:0 0.35rem; display:flex; align-items:center; gap:0.25rem; flex-wrap:wrap;">Icono en listados
+              <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: icono tipo de operación"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Automático:</strong> según el código (monedas IN→OUT o solo cheques si el código incluye CHEQUE).<br/><strong>Siempre cheques:</strong> fuerza el icono de cheques.<br/><strong>Personalizado:</strong> URL https o imagen subida al bucket Supabase <code>tipo-operacion-iconos</code> (público). Ver <code>docs/TIPOS_OPERACION_ICONO.md</code>.</span></span>
+            </legend>
             <div class="tipo-op-icono-modos" style="display:flex; flex-direction:column; gap:0.35rem;">
               <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="radio" name="tipo-operacion-icono-modo" value="auto" checked /> Automático (según código: monedas o CHEQUE en código)</label>
               <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="radio" name="tipo-operacion-icono-modo" value="cheque" /> Siempre icono cheques</label>
@@ -1535,7 +1545,7 @@
               <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem; margin-top:0.4rem;">
                 <input type="file" id="tipo-operacion-icono-file" accept="image/png,image/jpeg,image/webp,image/avif,image/gif,image/svg+xml" style="display:none" />
                 <button type="button" class="btn-secondary" id="tipo-operacion-icono-subir"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>Subir imagen</button>
-                <span style="font-size:0.8rem; color:#6b7280;">Bucket Supabase: <code>tipo-operacion-iconos</code> (público). Ver <code>docs/TIPOS_OPERACION_ICONO.md</code></span>
+                <span style="font-size:0.8rem; color:#6b7280;">Subida → bucket <code>tipo-operacion-iconos</code></span>
               </div>
             </div>
             <div style="margin-top:0.65rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
@@ -1585,8 +1595,9 @@
       <div class="modal-body">
         <form id="form-regla-negocio">
           <input type="hidden" id="regla-negocio-id" value="" />
-          <p style="margin:0 0 0.75rem 0; font-size:0.85rem; color:#6b7280;">Los valores deben coincidir con el CHECK de PostgreSQL y la clave única. Si cambiás pagador/cobrador/estado/línea podés chocar con otra fila.
-            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda general regla"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Resumen.</strong> Usá los íconos ℹ junto a <strong>Entidad CC</strong>, <strong>Monto de origen</strong> y <strong>Condición comisión</strong> para el detalle. <strong>Signo (+/−):</strong> +1 o −1 según la convención del tipo (ver docs del tipo, ej. CHEQUE-ARS intermediario). <strong>Es comisión:</strong> marca filas especiales de comisión. Doc: <code>docs/REGLAS_DE_NEGOCIO.md</code>.</span></span>
+          <p style="margin:0 0 0.75rem 0; font-size:0.85rem; color:#6b7280; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">
+            <span>Validá unicidad y CHECK en base antes de guardar.</span>
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: formulario regla de negocio"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Los valores deben coincidir con el <strong>CHECK</strong> de PostgreSQL y la <strong>clave única</strong>. Si cambiás pagador/cobrador/estado/línea podés chocar con otra fila.<br/><br/><strong>Resumen de campos:</strong> usá los íconos junto a <strong>Entidad CC</strong>, <strong>Monto de origen</strong> y <strong>Condición comisión</strong> en la tabla o en este formulario. <strong>Signo (+/−):</strong> según convención del tipo (ej. CHEQUE-ARS con intermediario). <strong>Es comisión:</strong> filas especiales de comisión. Doc: <code>docs/REGLAS_DE_NEGOCIO.md</code>.</span></span>
           </p>
           <div class="reglas-negocio-form-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem 1rem;">
             <div class="form-group">
@@ -1712,11 +1723,12 @@
   <div id="modal-replicar-reglas-backdrop" class="modal-backdrop">
     <div class="modal" style="max-width:min(95vw, 560px); width: 95%;">
       <div class="modal-header">
-        <h2>Replicar matriz de reglas</h2>
+        <h2 style="display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;">Replicar matriz de reglas
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: replicar matriz"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Copia <strong>todas</strong> las filas de un tipo <strong>fuente</strong> al <strong>destino</strong>. El destino debe existir en <strong>Tipos de operación</strong> y <strong>no</strong> tener aún reglas (si ya hay filas, por ahora se bloquea la replicación).<br/><br/><strong>Monedas:</strong> la acción copia USD/ARS/EUR tal cual en cada fila. Si el nuevo tipo usa otras monedas IN/OUT, editá las filas replicadas o replicá desde un tipo con la misma estructura monetaria.</span></span>
+        </h2>
         <button type="button" class="modal-close" id="modal-replicar-reglas-close" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
-        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Copia <strong>todas</strong> las filas de un tipo fuente al tipo destino. El destino debe existir en <strong>Tipos de operación</strong> y <strong>no</strong> tener aún reglas (o elegí sobrescribir en el paso de confirmación no implementado — por ahora se bloquea si ya hay filas).</p>
         <div class="form-group">
           <label for="replicar-reglas-origen">Origen (tipo + intermediario)</label>
           <select id="replicar-reglas-origen" class="select-filtro" style="width:100%; max-width:100%;"></select>
@@ -1729,7 +1741,6 @@
         <div class="form-group">
           <label><input type="checkbox" id="replicar-reglas-destino-usa-int" /> Destino usa intermediario</label>
         </div>
-        <p style="margin:0.75rem 0 0 0; font-size:0.85rem; color:#92400e;"><strong>Monedas.</strong> Esta acción copia las filas tal cual (USD/ARS/EUR). Si el nuevo tipo usa otras monedas IN/OUT, editá las filas replicadas o replicá desde un tipo con la misma estructura monetaria.</p>
         <div class="form-actions">
           <button type="button" class="btn-primary" id="replicar-reglas-btn-ejecutar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Replicar</button>
           <button type="button" class="btn-secondary" id="modal-replicar-reglas-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
@@ -1869,11 +1880,12 @@
   <div id="modal-chat-orden-backdrop" class="modal-backdrop">
     <div class="modal modal-ancho" style="max-width: 480px;">
       <div class="modal-header">
-        <h2 class="modal-chat-titulo"><span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>Cargar orden por chat</h2>
+        <h2 class="modal-chat-titulo" style="display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;"><span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>Cargar orden por chat
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: cargar orden por chat"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Escribí la orden en <strong>lenguaje natural</strong>. Ej.: «Para Alvarito, recibo 3000 USD, a tc 1500, y entrego ARS». Si cargás un monto y el TC, el otro monto puede calcularse solo. Al <strong>confirmar</strong> se crean la orden y la instrumentación. El orden de tipos en el selector respeta <strong>Orden visual</strong> del catálogo.</span></span>
+        </h2>
         <button type="button" class="modal-close" id="modal-chat-orden-close" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
-        <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Escribí la orden en lenguaje natural. Ej.: &quot;Para Alvarito, recibo 3000 USD, a tc 1500, y entrego ARS&quot; (si ponés un monto y el TC, el otro monto se calcula solo). Al confirmar se crean la orden y la instrumentación.</p>
         <div id="chat-orden-log" class="chat-orden-log" style="min-height: 120px; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem; background: #fafafa;"></div>
         <div id="chat-orden-preview" style="display:none; margin-bottom: 0.75rem; padding: 0.75rem; background: #e8f4ea; border-radius: 8px; font-size: 0.9rem;"></div>
         <div class="chat-orden-input-row">
@@ -1944,7 +1956,9 @@
                 <button type="button" class="btn-secondary" id="orden-btn-back"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M11 18l-6-6 6-6"/></svg></span>Participantes</button>
               </div>
               <div id="orden-wrap-primeros-datos" style="display:none; margin-bottom:1rem; padding:0.85rem 1rem 1rem; background:#f0f7ff; border-radius:8px; border:1px solid #cce0ff;">
-                <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Completá primero estos datos; el resto se calculará y desbloqueará.</p>
+                <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#1e3a5f; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;"><strong>Datos del acuerdo</strong>
+                  <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: primeros datos de la orden"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Completá primero estos campos; el resto del formulario se <strong>calcula</strong> y <strong>desbloquea</strong> según el tipo (ej. CHEQUE-ARS: importe y tasas antes de montos derivados).</span></span>
+                </p>
                 <div class="form-row tres-columnas orden-primeros-datos-row">
                   <label for="orden-importe-cheque" id="orden-label-importe-cheque" class="orden-primeros-datos-label">Importe en Cheque (ARS) *</label>
                   <label for="orden-tasa-descuento-cliente" class="orden-primeros-datos-label">Tasa al Cliente (%) *</label>
@@ -2020,8 +2034,9 @@
             <p style="grid-column:1/-1; margin-top:-0.25rem;" class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Al cambiar uno, el otro se ajusta para que la suma sea siempre 100%.</span></span></p>
           </div>
           <div id="orden-wrap-int-patron-instrumentacion" class="form-group orden-int-patron-bloque" style="display:none; margin-bottom:0.75rem; padding:0.75rem 1rem; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;">
-            <p id="orden-int-patron-titulo" style="margin:0 0 0.5rem 0; font-size:0.9rem; font-weight:600;">Instrumentación sugerida (con intermediario)</p>
-            <p style="margin:0 0 0.5rem 0; font-size:0.85rem; color:#555;">Elegí cómo se generan las dos transacciones al entrar a Instrumentación si la lista está vacía. No aplica a CHEQUE-ARS (cuatro transacciones fijas).</p>
+            <p id="orden-int-patron-titulo" style="margin:0 0 0.5rem 0; font-size:0.9rem; font-weight:600; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Instrumentación sugerida (con intermediario)
+              <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: patrón de instrumentación con intermediario"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Elegí cómo se <strong>generan las dos transacciones</strong> al entrar a Instrumentación si la lista está <strong>vacía</strong>. El patrón afecta pagador/cobrador por defecto y el autocompletado.<br/><br/><strong>No aplica</strong> a CHEQUE-ARS (cuatro transacciones fijas).</span></span>
+            </p>
             <label class="orden-int-patron-opcion"><input type="radio" name="orden-int-patron-radio" value="cp_ic" checked /><span class="orden-int-patron-opcion-text">Cliente paga a Pandy y el intermediario entrega al cliente</span></label>
             <label class="orden-int-patron-opcion"><input type="radio" name="orden-int-patron-radio" value="ci_pc" /><span class="orden-int-patron-opcion-text">Cliente paga al intermediario y Pandy entrega al cliente</span></label>
             <input type="hidden" id="orden-int-patron" value="cp_ic" />
@@ -2211,7 +2226,9 @@
       <div class="modal-header">
         <div class="modal-header-titulo-wrap">
           <span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
-          <h2>Órdenes pendientes</h2>
+          <h2 style="display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;">Órdenes pendientes
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: órdenes pendientes"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Listado de órdenes que <strong>no</strong> están en estado <strong>Orden ejecutada</strong>. Podés <strong>editar</strong> o abrir la <strong>instrumentación</strong>. Usá los filtros por cliente, intermediario o estado.</span></span>
+          </h2>
         </div>
         <button type="button" class="modal-close" id="modal-ordenes-pendientes-close" aria-label="Cerrar">×</button>
       </div>
@@ -2232,7 +2249,6 @@
         </div>
         <div id="ordenes-pendientes-loading" class="clientes-loading">Cargando…</div>
         <div id="ordenes-pendientes-tabla-wrap" style="display:none;">
-          <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#555;">Órdenes que no están en estado Ejecutada. Podés editar o abrir la instrumentación.</p>
           <div class="tabla-clientes-wrap">
             <table class="tabla-clientes">
               <thead><tr><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Recibido</th><th>Entregado</th><th></th></tr></thead>
@@ -2249,7 +2265,9 @@
       <div class="modal-header">
         <div class="modal-header-titulo-wrap">
           <span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2h4a1 1 0 011 1v4"/><path d="M7 22H3a1 1 0 01-1-1v-4"/><path d="M22 7l-5 5-5-5"/><path d="M2 17l5-5 5 5"/></svg></span>
-          <h2>Transacciones pendientes</h2>
+          <h2 style="display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;">Transacciones pendientes
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: transacciones pendientes"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Transacciones en estado <strong>Pendiente</strong> en órdenes activas. Podés filtrar por cliente o intermediario y marcar <strong>Solo Pandy</strong> si Pandy es pagador o cobrador en la transacción.</span></span>
+          </h2>
         </div>
         <button type="button" class="modal-close" id="modal-transacciones-pendientes-close" aria-label="Cerrar">×</button>
       </div>
@@ -2284,7 +2302,10 @@
   <div id="modal-cc-detalle-backdrop" class="modal-backdrop">
     <div class="modal modal-cc-detalle">
       <div class="modal-header">
-        <h2 id="modal-cc-detalle-titulo">Detalle de movimientos</h2>
+        <div style="display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;flex:1;min-width:0;">
+          <h2 id="modal-cc-detalle-titulo" style="margin:0;">Detalle de movimientos</h2>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: detalle de movimientos CC"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Movimientos de cuenta corriente de la entidad elegida. Podés ordenar columnas haciendo clic en el encabezado.<br/><br/>En <strong>Operaciones vinculadas</strong> (más abajo) se listan órdenes no anuladas en las que participa el cliente o intermediario: el bloque de saldos resume movimientos que ya impactan; si todo está pendiente puede verse saldo cero con compromisos en la tabla (ej. «Deuda por…»).</span></span>
+        </div>
         <button type="button" class="modal-close" id="modal-cc-detalle-close" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
@@ -2311,8 +2332,9 @@
           </table>
         </div>
         <div id="modal-cc-detalle-operaciones-wrap" class="tabla-clientes-wrap" style="margin-top:1.25rem; display:none; overflow-x:auto;">
-          <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem;">Operaciones vinculadas</h4>
-          <p style="margin:0 0 0.5rem 0; font-size:0.85rem; color:#555;">Órdenes (no anuladas) en las que participa este cliente/intermediario. El saldo de arriba es solo por movimientos ya ejecutados; si todo está pendiente, el saldo es cero. En la tabla podés ver además los compromisos pendientes (Deuda por…).</p>
+          <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Operaciones vinculadas
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: operaciones vinculadas"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Órdenes <strong>no anuladas</strong> en las que participa este cliente o intermediario. El <strong>saldo</strong> mostrado arriba corresponde a movimientos que ya impactan según reglas; si todo está pendiente puede ser <strong>cero</strong> aunque haya compromisos: en esta tabla ves también filas de <strong>compromiso pendiente</strong> (ej. «Deuda por…»).</span></span>
+          </h4>
           <table class="tabla-cc-debe-haber" id="tabla-cc-detalle-operaciones">
             <thead>
               <tr>
