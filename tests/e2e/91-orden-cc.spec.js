@@ -924,6 +924,7 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
           // Validar que en Movimientos de CC quede visible la comisión explícita de USD-USD.
           await page.locator('#cc-vista-toggle button[data-vista="detalle"]').click();
           await expect(page.locator('#cc-detalle-wrap')).toBeVisible({ timeout: 5000 });
+          await page.locator('#cc-detalle-btn-todo-historial').click({ timeout: 5000 }).catch(() => {});
           await page.locator('#cc-detalle-entidad-select').selectOption({ label: nombreCliente }).catch(async () => {
             const val = await page.locator('#cc-detalle-entidad-select option').filter({ hasText: nombreCliente }).first().getAttribute('value');
             if (val) await page.locator('#cc-detalle-entidad-select').selectOption(val);

@@ -670,6 +670,63 @@
     .cc-solapa .btn-icon { display: inline-flex; width: 18px; height: 18px; flex-shrink: 0; align-items: center; justify-content: center; }
     .cc-solapa .btn-icon svg { width: 18px; height: 18px; stroke: currentColor; }
     .cc-panel-cc { margin-top: 0; }
+    /* Cajas: más aire bajo solapas (no afecta CC) */
+    #vista-cajas #cajas-vista-tabs.cc-solapas {
+      margin-bottom: 1.35rem;
+    }
+    /* Cajas — fila 1: moneda + Nuevo; fila 2: filtros por caja, luego fechas/calendario */
+    #cajas-panel-movimientos .cajas-mov-toolbar-fila-primera {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 0.75rem;
+      margin-top: 0.5rem;
+      margin-bottom: 1.05rem;
+    }
+    #cajas-panel-movimientos .cajas-mov-toolbar-fila-segunda {
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 0.45rem 0.55rem;
+      margin-top: 0.15rem;
+      margin-bottom: 0.85rem;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 0.15rem;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    #cajas-panel-movimientos .cajas-mov-toolbar-grupo {
+      display: inline-flex;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 0.35rem;
+      flex-shrink: 0;
+    }
+    #cajas-panel-movimientos .cajas-mov-toolbar-sep {
+      width: 1px;
+      min-height: 1.65rem;
+      align-self: center;
+      background: #e5e7eb;
+      flex-shrink: 0;
+      margin: 0 0.2rem;
+    }
+    #cajas-panel-movimientos .cajas-mov-toolbar-fila-segunda .cc-input-fecha {
+      max-width: 9.5rem;
+    }
+    #cajas-panel-movimientos .cajas-btn-exportar-solo-icono.btn-excel {
+      padding: 0.45rem;
+      min-width: 2.25rem;
+    }
+    #cajas-panel-movimientos .cajas-btn-exportar-solo-icono .btn-icon {
+      margin: 0;
+    }
+    @media (max-width: 900px) {
+      #cajas-panel-movimientos .cajas-mov-toolbar-fila-segunda {
+        flex-wrap: wrap;
+      }
+    }
     .cc-toolbar-compartido { margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.75rem; }
     .cc-panel-toolbar { margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
     /* Movimientos CC: grid 3 columnas (Cliente | Fechas expandible | Acciones) — no usa vista-toolbar para evitar gap global */
@@ -928,7 +985,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.54</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.55</div>
   </aside>
 
   <main class="main-content">
@@ -1110,7 +1167,7 @@
         <div class="vista-toolbar ordenes-filtros-wrap" id="ordenes-filtros-wrap" style="flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem; display:none;">
           <label class="ordenes-filtro-label"><span>Cliente:</span><select id="ordenes-filtro-cliente" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select></label>
           <label class="ordenes-filtro-label"><span>Intermediario:</span><select id="ordenes-filtro-intermediario" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select></label>
-          <label class="ordenes-filtro-label"><span>Estado:</span><select id="ordenes-filtro-estado" class="select-filtro" style="min-width:180px;"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option><option value="orden_ejecutada">Orden Ejecutada</option><option value="anulada">Anulada</option></select></label>
+          <label class="ordenes-filtro-label"><span>Estado:</span><select id="ordenes-filtro-estado" class="select-filtro" style="min-width:220px;"><option value="__activas__" selected>Activas (no ejecutadas ni anuladas)</option><option value="">Todas las órdenes</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option><option value="orden_ejecutada">Orden Ejecutada</option><option value="anulada">Anulada</option></select></label>
         </div>
         <div id="ordenes-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap" style="display:none;">
@@ -1124,7 +1181,7 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg></span>
           Cajas
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: cajas"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Saldos por caja (Efectivo, Banco, Cheque) y <strong>movimientos</strong> que impactan caja (en general, <strong>ejecutados</strong>). Podés filtrar por moneda.<br/><br/>La convención de montos sigue el <strong>tipo de operación</strong> de cada orden: Moneda IN / OUT del acuerdo.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: cajas"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Los <strong>saldos</strong> de las tarjetas son el total histórico. Usá las solapas <strong>Movimientos de caja</strong> (filtros y tabla) y <strong>Tipos de movimiento</strong> (catálogo para movimientos manuales). En movimientos, por defecto se lista el <strong>día de hoy</strong>; podés ampliar fechas o «Todo el historial», y filtrar por caja y moneda.<br/><br/>La convención de montos sigue el <strong>tipo de operación</strong> de cada orden: Moneda IN / OUT del acuerdo.</span></span>
         </h3>
         <div class="inicio-cajas-dos" id="cajas-saldos">
           <div class="inicio-caja-card inicio-caja-efectivo" id="cajas-card-efectivo">
@@ -1173,32 +1230,68 @@
             </div>
           </div>
         </div>
-        <div class="vista-toolbar">
-          <label style="display:flex; align-items:center; gap:0.5rem;">
-            <span>Moneda:</span>
-            <div class="toggle-moneda" id="cajas-toggle-moneda" role="group">
+        <div class="cc-solapas" id="cajas-vista-tabs" role="tablist" aria-label="Secciones de cajas">
+          <button type="button" class="cc-solapa activo" role="tab" id="cajas-tab-movimientos" aria-selected="true" aria-controls="cajas-panel-movimientos" data-cajas-vista="movimientos">
+            <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>
+            Movimientos de caja
+          </button>
+          <button type="button" class="cc-solapa" role="tab" id="cajas-tab-tipos" aria-selected="false" aria-controls="cajas-panel-tipos" data-cajas-vista="tipos">
+            <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg></span>
+            Tipos de movimiento
+          </button>
+        </div>
+        <div id="cajas-panel-movimientos" class="cc-panel-cc" role="tabpanel" aria-labelledby="cajas-tab-movimientos">
+          <div class="cajas-mov-toolbar-fila-primera vista-toolbar" role="toolbar" aria-label="Moneda y nuevo movimiento">
+            <div class="toggle-moneda" id="cajas-toggle-moneda" role="group" aria-label="Filtrar movimientos por moneda">
               <button type="button" class="activo" data-moneda="TODO">Todo</button>
               <button type="button" data-moneda="USD">USD</button>
               <button type="button" data-moneda="EUR">EUR</button>
               <button type="button" data-moneda="ARS">ARS</button>
             </div>
-          </label>
-          <button type="button" id="btn-nuevo-movimiento-caja" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo movimiento</button>
+            <button type="button" id="btn-nuevo-movimiento-caja" class="btn-nuevo" style="display:none;" title="Nuevo movimiento de caja" aria-label="Nuevo movimiento de caja"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo</button>
+          </div>
+          <div class="cajas-mov-toolbar-fila-segunda vista-toolbar" role="toolbar" aria-label="Filtros por caja y por fecha">
+            <div class="cajas-tabs-caja-tipo cajas-mov-toolbar-grupo" role="group" aria-label="Filtrar tabla por tipo de caja">
+              <button type="button" class="btn-secondary activo" data-caja-tab="todo" aria-pressed="true">
+                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>Todas las cajas
+              </button>
+              <button type="button" class="btn-secondary" data-caja-tab="efectivo" aria-pressed="false">
+                <span class="btn-icon"><img src="/assets/cash.png" alt="" width="18" height="18"/></span>Efectivo
+              </button>
+              <button type="button" class="btn-secondary" data-caja-tab="banco" aria-pressed="false">
+                <span class="btn-icon"><img src="/assets/Banco.webp" alt="" width="18" height="18"/></span>Banco
+              </button>
+              <button type="button" class="btn-secondary" data-caja-tab="cheque" aria-pressed="false">
+                <span class="btn-icon"><img src="/assets/Icono_Cheques.png" alt="" width="18" height="18"/></span>Cheque
+              </button>
+            </div>
+            <span class="cajas-mov-toolbar-sep" aria-hidden="true"></span>
+            <div class="cajas-mov-toolbar-grupo cajas-mov-toolbar-grupo-fechas" role="group" aria-label="Rango de fechas y exportar">
+              <label class="ordenes-filtro-label cc-fecha-filtro-label" style="margin:0;"><span>Desde:</span><input type="date" id="cajas-mov-desde" class="cc-input-fecha" aria-label="Movimientos de caja desde"/></label>
+              <label class="ordenes-filtro-label cc-fecha-filtro-label" style="margin:0;"><span>Hasta:</span><input type="date" id="cajas-mov-hasta" class="cc-input-fecha" aria-label="Movimientos de caja hasta"/></label>
+              <button type="button" class="btn-secondary" id="cajas-mov-btn-hoy" title="Tabla: solo movimientos de hoy (los saldos de arriba siguen siendo el total)" aria-label="Solo movimientos de hoy en tabla">
+                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>Solo hoy
+              </button>
+              <button type="button" class="btn-secondary" id="cajas-mov-btn-todo" title="Tabla: todos los movimientos" aria-label="Todo el historial en tabla">
+                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></span>Todo el historial
+              </button>
+              <button type="button" class="btn-excel cajas-btn-exportar-solo-icono btn-icon-only" id="cajas-btn-exportar-excel" title="Exportar a Excel los movimientos visibles (filtros actuales)" aria-label="Exportar movimientos de caja a Excel">
+                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg></span>
+              </button>
+            </div>
+          </div>
+          <div id="cajas-loading" class="cajas-loading vista-loading-spinner" style="display:none;">Cargando movimientos…</div>
+          <div id="cajas-tabla-wrap" class="tabla-movimientos-wrap" style="display:none;">
+            <table class="tabla-movimientos" id="tabla-movimientos-caja">
+              <thead><tr><th>Fecha</th><th>Origen</th><th>Nro orden</th><th>Nro transacción</th><th>Tipo</th><th>Moneda</th><th>Monto</th><th>Caja</th><th>Concepto</th><th></th></tr></thead>
+              <tbody id="movimientos-caja-tbody"></tbody>
+            </table>
+          </div>
         </div>
-        <div id="cajas-loading" class="cajas-loading vista-loading-spinner" style="display:none;">Cargando movimientos…</div>
-        <div id="cajas-tabla-wrap" class="tabla-movimientos-wrap" style="display:none;">
-          <table class="tabla-movimientos" id="tabla-movimientos-caja">
-            <thead><tr><th>Fecha</th><th>Origen</th><th>Nro orden</th><th>Nro transacción</th><th>Tipo</th><th>Moneda</th><th>Monto</th><th>Caja</th><th>Concepto</th><th></th></tr></thead>
-            <tbody id="movimientos-caja-tbody"></tbody>
-          </table>
-        </div>
-        <div class="card" style="margin-top:1.5rem;">
-          <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-            <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg></span>
-            Tipos de movimiento de caja
+        <div id="cajas-panel-tipos" class="cc-panel-cc" role="tabpanel" aria-labelledby="cajas-tab-tipos" style="display:none;">
+          <div class="vista-toolbar" style="flex-wrap:wrap; gap:0.5rem; align-items:center; margin-bottom:0.75rem;">
+            <span style="font-weight:600; font-size:1rem; color:#1a1a1a;">Catálogo de tipos</span>
             <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: tipos de movimiento de caja"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Definí los <strong>tipos</strong> que usás al cargar <strong>movimientos manuales</strong> (no generados por una orden). Cada tipo tiene <strong>dirección</strong>: Ingreso o Egreso respecto de la caja.</span></span>
-          </h3>
-          <div class="vista-toolbar" style="margin-bottom:0.75rem;">
             <button type="button" id="btn-nuevo-tipo-movimiento" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo tipo</button>
           </div>
           <div id="tipos-mov-loading" class="cajas-loading" style="display:none;">Cargando tipos…</div>
@@ -1264,7 +1357,7 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
           Cuenta corriente
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de Pandy</strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado). Los importes y cruces (ARS, USD, EUR, etc.) siguen el <strong>tipo de operación</strong> del catálogo.<br/><br/>En <strong>Saldos</strong> el resumen por moneda usa solo <strong>movimientos que suman al saldo</strong> (ejecutados según reglas). En <strong>Movimientos</strong> ves el listado de líneas de detalle. Cobro por = Pandy cobró (positivo); Deuda por = Pandy debe entregar (negativo). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de Pandy</strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado). Los importes y cruces (ARS, USD, EUR, etc.) siguen el <strong>tipo de operación</strong> del catálogo.<br/><br/>En <strong>Saldos</strong> el resumen por moneda usa el <strong>historial completo</strong> de movimientos que suman al saldo (ejecutados según reglas). En <strong>Movimientos</strong> el listado, por defecto, muestra solo el <strong>día de hoy</strong> (Argentina); podés cambiar fechas o usar «Todo el historial». Cobro por = Pandy cobró (positivo); Deuda por = Pandy debe entregar (negativo). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
         </h3>
         <div class="vista-toolbar cc-toolbar-compartido">
           <label style="display:flex; align-items:center; gap:0.5rem;">
@@ -1328,6 +1421,14 @@
                 <label class="ordenes-filtro-label cc-fecha-filtro-label"><span>Desde:</span><input type="date" id="cc-detalle-desde" class="cc-input-fecha" aria-label="Fecha desde"/></label>
                 <label class="ordenes-filtro-label cc-fecha-filtro-label"><span>Hasta:</span><input type="date" id="cc-detalle-hasta" class="cc-input-fecha" aria-label="Fecha hasta"/></label>
               </span>
+              <div class="cc-detalle-rango-acciones" style="display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center; margin-top:0.35rem;">
+                <button type="button" class="btn-secondary" id="cc-detalle-btn-hoy" title="Ver solo movimientos del día (hoy)" aria-label="Solo movimientos de hoy">
+                  <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>Solo hoy
+                </button>
+                <button type="button" class="btn-secondary" id="cc-detalle-btn-todo-historial" title="Ver todos los movimientos (sin filtro de fechas)" aria-label="Todo el historial de movimientos">
+                  <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="16" y2="11"/></svg></span>Todo el historial
+                </button>
+              </div>
             </div>
             <div class="cc-toolbar-mov-col-acciones">
               <button type="button" class="btn-secondary" id="cc-btn-refrescar-movimientos" title="Recalcular saldos y movimientos" aria-label="Refrescar movimientos cuenta corriente">

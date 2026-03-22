@@ -215,6 +215,7 @@ async function leerMontosDesdeVistaMovimientos(page, tipo, nombreEntidad) {
     await page.waitForTimeout(300);
     await page.locator('#cc-vista-toggle button[data-vista="detalle"]').click();
     await page.locator('#cc-detalle-wrap').waitFor({ state: 'visible', timeout: 6000 });
+    await page.locator('#cc-detalle-btn-todo-historial').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
     const tbody = page.locator('#cc-vista-detalle-tbody');
     await tbody.waitFor({ state: 'visible', timeout: 4000 });

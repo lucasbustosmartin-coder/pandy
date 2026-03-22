@@ -484,8 +484,31 @@ function loadSeguridad() {
   });
 }
 
+/** Fecha calendario YYYY-MM-DD en zona Argentina (operación del negocio). */
+function fechaHoyYYYYMMDDArgentina() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === 'year').value;
+  const mo = parts.find((p) => p.type === 'month').value;
+  const d = parts.find((p) => p.type === 'day').value;
+  return y + '-' + mo + '-' + d;
+}
+
 // --- Cajas ---
 let cajasMonedaActual = 'TODO';
+/** Tabla movimientos: por defecto solo el día (fechas en AR); «Todo el historial» sin filtro de fecha. */
+let cajasMovMostrarTodoHistorial = false;
+let cajasMovFechaDesde = '';
+let cajasMovFechaHasta = '';
+/** 'todo' | 'efectivo' | 'banco' | 'cheque' — filtro de la tabla (no afecta saldos de las cards). */
+let cajasMovCajaTipoTab = 'todo';
+let cajasMovFiltrosListenersAttached = false;
+/** Solapa principal vista Cajas: 'movimientos' | 'tipos' (mismo patrón que CC). */
+let cajasVistaSolapa = 'movimientos';
 let tiposMovimientoCaja = [];
 
 /** Concepto para movimientos de cuenta corriente: "Cobro por USD 5.000,00" (Pandy cobró), "Deuda por ARS 4.170.000,00" (Pandy debe), "Pago por comisión USD 60,00". */
@@ -794,7 +817,90 @@ function setVisibilidadColumnasMonedasPanelCajas(efectivoFlagsRaw, bancoFlagsRaw
   aplicarCard('cajas-card-banco', ba, MONEDAS_PANEL_CAJA_BANCO);
 }
 
+function syncCajasMovFechaInputs() {
+  const dEl = document.getElementById('cajas-mov-desde');
+  const hEl = document.getElementById('cajas-mov-hasta');
+  if (!dEl || !hEl) return;
+  if (cajasMovMostrarTodoHistorial) {
+    dEl.value = '';
+    hEl.value = '';
+    return;
+  }
+  dEl.value = cajasMovFechaDesde || '';
+  hEl.value = cajasMovFechaHasta || '';
+}
+
+/** Filtra la lista completa para la tabla (moneda, tipo caja, rango fechas). Los saldos usan `list` sin este filtro. */
+function filtrarMovimientosCajaVista(list) {
+  let filtrados = (cajasMonedaActual === 'TODO' ? list : list.filter((m) => m.moneda === cajasMonedaActual))
+    .filter((m) => ['efectivo', 'banco', 'cheque'].includes((m.caja_tipo || 'efectivo').toLowerCase()));
+  if (cajasMovCajaTipoTab !== 'todo') {
+    const tab = cajasMovCajaTipoTab;
+    filtrados = filtrados.filter((m) => (m.caja_tipo || 'efectivo').toLowerCase() === tab);
+  }
+  if (!cajasMovMostrarTodoHistorial) {
+    const hoyM = fechaHoyYYYYMMDDArgentina();
+    const desde = cajasMovFechaDesde || hoyM;
+    const hasta = cajasMovFechaHasta || hoyM;
+    filtrados = filtrados.filter((m) => {
+      const f = (m.fecha || '').toString().slice(0, 10);
+      if (desde && f < desde) return false;
+      if (hasta && f > hasta) return false;
+      return true;
+    });
+  }
+  return filtrados;
+}
+
+function exportarMovimientosCajaExcel() {
+  getListaMovimientosCajaParaSaldos().then((list) => {
+    const filtrados = filtrarMovimientosCajaVista(list);
+    if (filtrados.length === 0) {
+      showToast('No hay movimientos para exportar con el filtro actual.', 'info');
+      return;
+    }
+    const origenLabel = (m) => {
+      if (m.tipo_movimiento_id) return 'Manual';
+      if (m.transaccion_id) return 'Acuerdo';
+      if (m.orden_id) return 'Orden concertada';
+      return '–';
+    };
+    const tipoIngresoEgreso = (m) => (Number(m.monto) >= 0 ? 'Ingreso' : 'Egreso');
+    const cajaTipoLabel = (m) => {
+      const t = (m.caja_tipo || 'efectivo').toLowerCase();
+      if (t === 'banco') return 'Banco';
+      if (t === 'cheque') return 'Cheque';
+      return 'Efectivo';
+    };
+    const header = ['Fecha', 'Origen', 'Nro orden', 'Nro transacción', 'Tipo', 'Moneda', 'Monto', 'Caja', 'Concepto'];
+    const rows = filtrados.map((m) => {
+      const nroOrden = m.orden_numero != null ? Number(m.orden_numero) : null;
+      const nroTrans = m.transaccion_numero != null ? Number(m.transaccion_numero) : null;
+      const fecha = (m.fecha || '').toString().slice(0, 10);
+      return [
+        fecha,
+        origenLabel(m),
+        nroOrden,
+        nroTrans,
+        tipoIngresoEgreso(m),
+        (m.moneda || '').toString(),
+        m.monto != null ? Number(m.monto) : null,
+        cajaTipoLabel(m),
+        (m.concepto || '').toString(),
+      ];
+    });
+    const aoa = [header, ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Movimientos caja');
+    const nombreArchivo = 'caja_movimientos_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    XLSX.writeFile(wb, nombreArchivo);
+    showToast('Exportado: ' + nombreArchivo, 'success');
+  });
+}
+
 function loadCajas() {
+  syncCajasPaneles();
   const loadingEl = document.getElementById('cajas-loading');
   const wrapEl = document.getElementById('cajas-tabla-wrap');
   const tbody = document.getElementById('movimientos-caja-tbody');
@@ -852,8 +958,20 @@ function loadCajas() {
     if (baVis.ARS) setVal(document.getElementById('cajas-saldo-banco-ars'), saldos.banco.ARS, 'ARS');
     setVal(document.getElementById('cajas-saldo-cheque-ars'), saldos.cheque.ARS, 'ARS');
 
-    const filtrados = (cajasMonedaActual === 'TODO' ? list : list.filter((m) => m.moneda === cajasMonedaActual))
-      .filter((m) => ['efectivo', 'banco', 'cheque'].includes((m.caja_tipo || 'efectivo').toLowerCase()));
+    if (!cajasMovMostrarTodoHistorial && !cajasMovFechaDesde && !cajasMovFechaHasta) {
+      const hm = fechaHoyYYYYMMDDArgentina();
+      cajasMovFechaDesde = hm;
+      cajasMovFechaHasta = hm;
+    }
+    syncCajasMovFechaInputs();
+    document.querySelectorAll('[data-caja-tab]').forEach((b) => {
+      const v = (b.getAttribute('data-caja-tab') || 'todo').toLowerCase();
+      const on = cajasMovCajaTipoTab === 'todo' ? v === 'todo' : v === cajasMovCajaTipoTab;
+      b.classList.toggle('activo', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+
+    const filtrados = filtrarMovimientosCajaVista(list);
     const origenLabel = (m) => {
       if (m.tipo_movimiento_id) return 'Manual';
       if (m.transaccion_id) return 'Acuerdo';
@@ -890,7 +1008,7 @@ function loadCajas() {
         tbody.querySelectorAll('.btn-editar-mov-caja').forEach((btn) => {
           btn.addEventListener('click', () => {
             const id = btn.getAttribute('data-id');
-            const mov = filtrados.find((x) => x.id === id);
+            const mov = list.find((x) => String(x.id) === String(id));
             if (mov) openModalMovimientoCaja(mov);
           });
         });
@@ -899,7 +1017,9 @@ function loadCajas() {
     });
     });
 
-  loadTiposMovimientoCajaTable();
+  if (cajasVistaSolapa === 'tipos') {
+    loadTiposMovimientoCajaTable();
+  }
 }
 
 function loadInicio() {
@@ -1369,9 +1489,11 @@ let ccMovimientosDetalleList = [];
 let ccFiltroTipo = 'cliente';
 /** 'resumen' | 'detalle': vista actual en Cuenta corriente. */
 let ccVistaToggle = 'resumen';
-/** Filtro de fechas para vista Detalle de movimientos (desde/hasta). Valores '' = no filtrar por ese lado. */
+/** Filtro de fechas para vista Detalle de movimientos (desde/hasta). Con «solo día» ambos suelen ser hoy. */
 let ccDetalleDesde = '';
 let ccDetalleHasta = '';
+/** Si true, no se filtra por fecha en la tabla detalle (todo el historial). Los saldos del resumen siguen siendo históricos completos. */
+let ccMovimientosMostrarTodoHistorial = false;
 /** Filtro opcional por cliente_id o intermediario_id en solapa Movimientos (vacío = todos). */
 let ccDetalleFiltroEntidadId = '';
 /** Filas actuales de la vista Detalle (para ordenar sin volver a filtrar). */
@@ -2647,6 +2769,11 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     hayTipoOperacionActivoConMoneda('ARS'),
     hayTipoOperacionActivoConMoneda('EUR'),
   ]).then(([u, a, e]) => {
+    // Por defecto: movimientos del día (hoy AR); el resumen de saldos sigue usando toda la historia en ccResumenRowsTodos.
+    ccMovimientosMostrarTodoHistorial = false;
+    const hoyCc = fechaHoyYYYYMMDDArgentina();
+    ccDetalleDesde = hoyCc;
+    ccDetalleHasta = hoyCc;
     aplicarVisibilidadMonedasCuentaCorriente({ USD: !!u, ARS: !!a, EUR: !!e });
     poblarSelectCcDetalleEntidad();
     aplicarFiltroCcResumen();
@@ -2719,15 +2846,18 @@ function aplicarFiltroCcResumen() {
         filtrados = filtrados.filter((m) => m.intermediario_id === ccDetalleFiltroEntidadId);
       }
     }
-    if (filtrados.length > 0 && (ccDetalleDesde || ccDetalleHasta)) {
+    if (!ccMovimientosMostrarTodoHistorial) {
+      const hoyStr = fechaHoyYYYYMMDDArgentina();
+      const desde = ccDetalleDesde || hoyStr;
+      const hasta = ccDetalleHasta || hoyStr;
       filtrados = filtrados.filter((m) => {
         const f = (m.fecha || '').toString().slice(0, 10);
-        if (ccDetalleDesde && f < ccDetalleDesde) return false;
-        if (ccDetalleHasta && f > ccDetalleHasta) return false;
+        if (desde && f < desde) return false;
+        if (hasta && f > hasta) return false;
         return true;
       });
     }
-    actualizarRangoDetalleDefaults(filtrados);
+    actualizarRangoDetalleDefaults();
     renderCcVistaDetalle(filtrados);
     return;
   }
@@ -2780,28 +2910,18 @@ function renderCcResumenTable(rows) {
   reaplicarVisibilidadMonedasCuentaCorrienteDom();
 }
 
-/** Inicializa o sincroniza Desde/Hasta de la vista Detalle con min/max de los datos cuando aún no hay rango elegido. */
-function actualizarRangoDetalleDefaults(filtrados) {
+/** Sincroniza inputs Desde/Hasta con el estado (no expande solo al rango de filas visibles). */
+function actualizarRangoDetalleDefaults() {
   const desdeEl = document.getElementById('cc-detalle-desde');
   const hastaEl = document.getElementById('cc-detalle-hasta');
   if (!desdeEl || !hastaEl) return;
-  if (filtrados.length === 0) {
+  if (ccMovimientosMostrarTodoHistorial) {
     desdeEl.value = '';
     hastaEl.value = '';
     return;
   }
-  if (ccDetalleDesde === '' && ccDetalleHasta === '') {
-    const fechas = filtrados.map((m) => (m.fecha || '').toString().slice(0, 10)).filter(Boolean);
-    const minF = fechas.length ? fechas.reduce((a, b) => (a < b ? a : b)) : '';
-    const maxF = fechas.length ? fechas.reduce((a, b) => (a > b ? a : b)) : '';
-    ccDetalleDesde = minF;
-    ccDetalleHasta = maxF;
-    desdeEl.value = minF;
-    hastaEl.value = maxF;
-  } else {
-    desdeEl.value = ccDetalleDesde || '';
-    hastaEl.value = ccDetalleHasta || '';
-  }
+  desdeEl.value = ccDetalleDesde || '';
+  hastaEl.value = ccDetalleHasta || '';
 }
 
 /** Comparador para ordenar filas de detalle CC por columna (fecha, nroOrden, nroTrans, concepto, usd, ars, eur, estado, nombre). */
@@ -2935,11 +3055,14 @@ function exportarCcResumenExcel() {
         filtrados = filtrados.filter((m) => m.intermediario_id === ccDetalleFiltroEntidadId);
       }
     }
-    if (ccDetalleDesde || ccDetalleHasta) {
+    if (!ccMovimientosMostrarTodoHistorial) {
+      const hoyStr = fechaHoyYYYYMMDDArgentina();
+      const desde = ccDetalleDesde || hoyStr;
+      const hasta = ccDetalleHasta || hoyStr;
       filtrados = filtrados.filter((m) => {
         const f = (m.fecha || '').toString().slice(0, 10);
-        if (ccDetalleDesde && f < ccDetalleDesde) return false;
-        if (ccDetalleHasta && f > ccDetalleHasta) return false;
+        if (desde && f < desde) return false;
+        if (hasta && f > hasta) return false;
         return true;
       });
     }
@@ -3549,10 +3672,38 @@ function setupCuentaCorriente() {
   function aplicarRangoDetalle() {
     ccDetalleDesde = (ccDetalleDesdeEl && ccDetalleDesdeEl.value) || '';
     ccDetalleHasta = (ccDetalleHastaEl && ccDetalleHastaEl.value) || '';
+    if (ccDetalleDesde === '' && ccDetalleHasta === '') {
+      ccMovimientosMostrarTodoHistorial = true;
+    } else {
+      ccMovimientosMostrarTodoHistorial = false;
+    }
     aplicarFiltroCcResumen();
   }
   if (ccDetalleDesdeEl) ccDetalleDesdeEl.addEventListener('change', aplicarRangoDetalle);
   if (ccDetalleHastaEl) ccDetalleHastaEl.addEventListener('change', aplicarRangoDetalle);
+  const ccBtnDetalleHoy = document.getElementById('cc-detalle-btn-hoy');
+  const ccBtnDetalleTodo = document.getElementById('cc-detalle-btn-todo-historial');
+  if (ccBtnDetalleHoy) {
+    ccBtnDetalleHoy.addEventListener('click', () => {
+      ccMovimientosMostrarTodoHistorial = false;
+      const h = fechaHoyYYYYMMDDArgentina();
+      ccDetalleDesde = h;
+      ccDetalleHasta = h;
+      if (ccDetalleDesdeEl) ccDetalleDesdeEl.value = h;
+      if (ccDetalleHastaEl) ccDetalleHastaEl.value = h;
+      aplicarFiltroCcResumen();
+    });
+  }
+  if (ccBtnDetalleTodo) {
+    ccBtnDetalleTodo.addEventListener('click', () => {
+      ccMovimientosMostrarTodoHistorial = true;
+      ccDetalleDesde = '';
+      ccDetalleHasta = '';
+      if (ccDetalleDesdeEl) ccDetalleDesdeEl.value = '';
+      if (ccDetalleHastaEl) ccDetalleHastaEl.value = '';
+      aplicarFiltroCcResumen();
+    });
+  }
 
   document.querySelectorAll('.link-inicio').forEach((a) => {
     a.addEventListener('click', (e) => {
@@ -3677,6 +3828,95 @@ function setupCajasToggle() {
       loadCajas();
     });
   });
+}
+
+/** Muestra el panel Movimientos o Tipos según cajasVistaSolapa (alineado a solapas CC). */
+function syncCajasPaneles() {
+  const panelMov = document.getElementById('cajas-panel-movimientos');
+  const panelTipos = document.getElementById('cajas-panel-tipos');
+  const tablist = document.getElementById('cajas-vista-tabs');
+  if (!panelMov || !panelTipos || !tablist) return;
+  const esMov = cajasVistaSolapa === 'movimientos';
+  panelMov.style.display = esMov ? '' : 'none';
+  panelTipos.style.display = esMov ? 'none' : '';
+  tablist.querySelectorAll('button[data-cajas-vista]').forEach((b) => {
+    const v = b.getAttribute('data-cajas-vista');
+    const on = (v === 'movimientos' && esMov) || (v === 'tipos' && !esMov);
+    b.classList.toggle('activo', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+}
+
+function setupCajasMovFiltrosYTabs() {
+  if (cajasMovFiltrosListenersAttached) return;
+  const dEl = document.getElementById('cajas-mov-desde');
+  const hEl = document.getElementById('cajas-mov-hasta');
+  function aplicarRangoCajasMov() {
+    cajasMovFechaDesde = (dEl && dEl.value) || '';
+    cajasMovFechaHasta = (hEl && hEl.value) || '';
+    if (cajasMovFechaDesde === '' && cajasMovFechaHasta === '') {
+      cajasMovMostrarTodoHistorial = true;
+    } else {
+      cajasMovMostrarTodoHistorial = false;
+    }
+    loadCajas();
+  }
+  if (dEl) dEl.addEventListener('change', aplicarRangoCajasMov);
+  if (hEl) hEl.addEventListener('change', aplicarRangoCajasMov);
+  const btnHoy = document.getElementById('cajas-mov-btn-hoy');
+  const btnTodo = document.getElementById('cajas-mov-btn-todo');
+  if (btnHoy) {
+    btnHoy.addEventListener('click', () => {
+      cajasMovMostrarTodoHistorial = false;
+      const h = fechaHoyYYYYMMDDArgentina();
+      cajasMovFechaDesde = h;
+      cajasMovFechaHasta = h;
+      syncCajasMovFechaInputs();
+      loadCajas();
+    });
+  }
+  if (btnTodo) {
+    btnTodo.addEventListener('click', () => {
+      cajasMovMostrarTodoHistorial = true;
+      cajasMovFechaDesde = '';
+      cajasMovFechaHasta = '';
+      syncCajasMovFechaInputs();
+      loadCajas();
+    });
+  }
+  document.querySelectorAll('[data-caja-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const v = (btn.getAttribute('data-caja-tab') || 'todo').toLowerCase();
+      cajasMovCajaTipoTab = v === 'efectivo' || v === 'banco' || v === 'cheque' ? v : 'todo';
+      document.querySelectorAll('[data-caja-tab]').forEach((b) => {
+        b.classList.remove('activo');
+        b.setAttribute('aria-pressed', 'false');
+      });
+      btn.classList.add('activo');
+      btn.setAttribute('aria-pressed', 'true');
+      loadCajas();
+    });
+  });
+  const cajasVistaTabsEl = document.getElementById('cajas-vista-tabs');
+  if (cajasVistaTabsEl) {
+    cajasVistaTabsEl.querySelectorAll('button[data-cajas-vista]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const v = btn.getAttribute('data-cajas-vista');
+        if (!v || v === cajasVistaSolapa) return;
+        cajasVistaSolapa = v;
+        syncCajasPaneles();
+        if (v === 'tipos') loadTiposMovimientoCajaTable();
+      });
+    });
+  }
+  syncCajasPaneles();
+  const btnExp = document.getElementById('cajas-btn-exportar-excel');
+  if (btnExp) {
+    btnExp.addEventListener('click', () => {
+      exportarMovimientosCajaExcel();
+    });
+  }
+  cajasMovFiltrosListenersAttached = true;
 }
 
 function loadTiposMovimientoCaja() {
@@ -4576,11 +4816,14 @@ function aplicarFiltrosOrdenesVista() {
   const selEstado = document.getElementById('ordenes-filtro-estado');
   const clienteId = selCliente && selCliente.value ? selCliente.value.trim() : '';
   const intermediarioId = selIntermediario && selIntermediario.value ? selIntermediario.value.trim() : '';
-  const estado = selEstado && selEstado.value ? selEstado.value.trim() : '';
+  const estadoRaw = selEstado && selEstado.value != null ? String(selEstado.value).trim() : '__activas__';
   const filtered = ordenesVistaList.filter((o) => {
     if (clienteId && o.cliente_id !== clienteId) return false;
     if (intermediarioId && o.intermediario_id !== intermediarioId) return false;
-    if (estado && (o.estado || '') !== estado) return false;
+    if (estadoRaw === '__activas__') {
+      const es = (o.estado || '').toString();
+      if (es === 'orden_ejecutada' || es === 'anulada') return false;
+    } else if (estadoRaw !== '' && (o.estado || '') !== estadoRaw) return false;
     return true;
   });
   renderOrdenesTabla(filtered);
@@ -11605,6 +11848,7 @@ function onSessionReady(session) {
       setupModalMovimientoCaja();
       setupModalTipoMovimientoCaja();
       setupCajasToggle();
+      setupCajasMovFiltrosYTabs();
       setupCuentaCorriente();
       setupModalMovimientoCc();
       setupModalesDraggable();
