@@ -830,10 +830,73 @@ function syncCajasMovFechaInputs() {
   hEl.value = cajasMovFechaHasta || '';
 }
 
+/** Permisos de ver saldos/filtros por tipo de caja (alineado a cards de Cajas e Inicio). */
+function getPermisosVerCajaTipoMovimientos() {
+  const verEfectivo = userPermissions.includes('ver_cajas_efectivo');
+  const verBanco = userPermissions.includes('ver_cajas_banco');
+  const verCheque = userPermissions.includes('ver_cajas_cheque');
+  const tieneAlgunoSubPerm = verEfectivo || verBanco || verCheque;
+  return { verEfectivo, verBanco, verCheque, tieneAlgunoSubPerm };
+}
+
+/** Ajusta pestaña activa si el usuario ya no puede ver ese tipo o si solo puede una caja (no tiene sentido "Todas"). */
+function normalizarCajasMovCajaTipoTabSegunPermisos() {
+  const { verEfectivo, verBanco, verCheque, tieneAlgunoSubPerm } = getPermisosVerCajaTipoMovimientos();
+  if (!tieneAlgunoSubPerm) return;
+  const permitidos = [];
+  if (verEfectivo) permitidos.push('efectivo');
+  if (verBanco) permitidos.push('banco');
+  if (verCheque) permitidos.push('cheque');
+  const n = permitidos.length;
+  if (n === 0) return;
+  if (cajasMovCajaTipoTab === 'todo') {
+    if (n === 1) cajasMovCajaTipoTab = permitidos[0];
+    return;
+  }
+  if (!permitidos.includes(cajasMovCajaTipoTab)) {
+    cajasMovCajaTipoTab = n === 1 ? permitidos[0] : 'todo';
+  }
+}
+
+/** Muestra/oculta botones [data-caja-tab] según ver_cajas_efectivo/banco/cheque (misma lógica que las cards). */
+function aplicarVisibilidadBotonesFiltroCajaMovimientos() {
+  const { verEfectivo, verBanco, verCheque, tieneAlgunoSubPerm } = getPermisosVerCajaTipoMovimientos();
+  document.querySelectorAll('[data-caja-tab]').forEach((b) => {
+    const v = (b.getAttribute('data-caja-tab') || 'todo').toLowerCase();
+    if (v === 'todo') {
+      if (!tieneAlgunoSubPerm) b.style.display = '';
+      else {
+        const cuantos = [verEfectivo, verBanco, verCheque].filter(Boolean).length;
+        b.style.display = cuantos >= 2 ? '' : 'none';
+      }
+      return;
+    }
+    if (!tieneAlgunoSubPerm) {
+      b.style.display = '';
+      return;
+    }
+    const show =
+      (v === 'efectivo' && verEfectivo) ||
+      (v === 'banco' && verBanco) ||
+      (v === 'cheque' && verCheque);
+    b.style.display = show ? '' : 'none';
+  });
+}
+
 /** Filtra la lista completa para la tabla (moneda, tipo caja, rango fechas). Los saldos usan `list` sin este filtro. */
 function filtrarMovimientosCajaVista(list) {
+  const { verEfectivo, verBanco, verCheque, tieneAlgunoSubPerm } = getPermisosVerCajaTipoMovimientos();
   let filtrados = (cajasMonedaActual === 'TODO' ? list : list.filter((m) => m.moneda === cajasMonedaActual))
     .filter((m) => ['efectivo', 'banco', 'cheque'].includes((m.caja_tipo || 'efectivo').toLowerCase()));
+  if (tieneAlgunoSubPerm) {
+    filtrados = filtrados.filter((m) => {
+      const t = (m.caja_tipo || 'efectivo').toLowerCase();
+      const tipo = t === 'cheque' ? 'cheque' : t === 'banco' ? 'banco' : 'efectivo';
+      if (tipo === 'efectivo') return verEfectivo;
+      if (tipo === 'banco') return verBanco;
+      return verCheque;
+    });
+  }
   if (cajasMovCajaTipoTab !== 'todo') {
     const tab = cajasMovCajaTipoTab;
     filtrados = filtrados.filter((m) => (m.caja_tipo || 'efectivo').toLowerCase() === tab);
@@ -920,6 +983,9 @@ function loadCajas() {
   if (cardEfectivo) cardEfectivo.style.display = verEfectivo ? '' : 'none';
   if (cardBanco) cardBanco.style.display = verBanco ? '' : 'none';
   if (cardCheque) cardCheque.style.display = verCheque ? '' : 'none';
+
+  normalizarCajasMovCajaTipoTabSegunPermisos();
+  aplicarVisibilidadBotonesFiltroCajaMovimientos();
 
   loadingEl.style.display = 'block';
   const loadingShownAtCajas = Date.now();
