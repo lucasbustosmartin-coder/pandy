@@ -198,6 +198,7 @@
     /* Confirmación y ayuda por encima de cualquier otro modal (orden + transacción) */
     #modal-help-backdrop.activo,
     #modal-confirm-backdrop.activo { z-index: 1200; }
+    #modal-login-broma-backdrop.activo { z-index: 1210; }
     .chat-orden-log .chat-msg { margin-bottom: 0.5rem; }
     .chat-orden-log .chat-msg.user { text-align: right; color: #1a1a1a; }
     .chat-orden-log .chat-msg.bot { color: #555; font-size: 0.9rem; }
@@ -1127,7 +1128,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.59</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.60</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2647,6 +2648,25 @@
         <div class="form-actions" style="margin-top:1rem; margin-bottom:0;">
           <button type="button" class="btn-primary" id="modal-confirm-aceptar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Confirmar</button>
           <button type="button" class="btn-secondary" id="modal-confirm-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Broma una sola vez al iniciar sesión (emails específicos; flag en localStorage) -->
+  <div id="modal-login-broma-backdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal modal-confirm" role="dialog" aria-labelledby="modal-login-broma-titulo" aria-modal="true">
+      <div class="modal-header">
+        <div class="modal-header-titulo-wrap">
+          <span class="modal-header-icono" aria-hidden="true">😂</span>
+          <h2 id="modal-login-broma-titulo">¡Mirá vos!</h2>
+        </div>
+        <button type="button" class="modal-close" id="modal-login-broma-cerrar" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="modal-login-broma-texto" class="modal-confirm-texto"></p>
+        <div class="form-actions" style="margin-top:1rem; margin-bottom:0;">
+          <button type="button" class="btn-primary" id="modal-login-broma-btn-ok"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Jajaja, listo</button>
         </div>
       </div>
     </div>

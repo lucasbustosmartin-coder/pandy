@@ -11897,6 +11897,61 @@ function startSessionTimeoutCheck() {
   }, 60000);
 }
 
+/** Emails que ven una broma al entrar (una sola vez por navegador, localStorage). */
+const LOGIN_BROMA_EMAILS = new Set(['patriciocarbajal@gmail.com', 'lucas.bustos@hotmail.com']);
+const LOGIN_BROMA_TEXTO = 'Por fin vas a probar la app hijo de una gran puta 😂😂😂';
+
+function loginBromaStorageKey() {
+  const norm = (currentUserEmail || '').trim().toLowerCase();
+  return 'pandi_login_broma_ok_' + norm.replace(/[^a-z0-9@._-]/g, '_');
+}
+
+function closeLoginBromaModal() {
+  const backdrop = document.getElementById('modal-login-broma-backdrop');
+  try {
+    localStorage.setItem(loginBromaStorageKey(), '1');
+  } catch (err) {
+    /* ignore quota / private mode */
+  }
+  if (backdrop) {
+    backdrop.classList.remove('activo');
+    backdrop.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function maybeShowLoginBromaModal() {
+  const norm = (currentUserEmail || '').trim().toLowerCase();
+  if (!LOGIN_BROMA_EMAILS.has(norm)) return;
+  try {
+    if (localStorage.getItem(loginBromaStorageKey()) === '1') return;
+  } catch (err) {
+    return;
+  }
+  const backdrop = document.getElementById('modal-login-broma-backdrop');
+  const textoEl = document.getElementById('modal-login-broma-texto');
+  if (!backdrop || !textoEl) return;
+  textoEl.textContent = LOGIN_BROMA_TEXTO;
+  backdrop.classList.add('activo');
+  backdrop.setAttribute('aria-hidden', 'false');
+}
+
+function setupLoginBromaModal() {
+  const backdrop = document.getElementById('modal-login-broma-backdrop');
+  const btnCerrar = document.getElementById('modal-login-broma-cerrar');
+  const btnOk = document.getElementById('modal-login-broma-btn-ok');
+  if (!backdrop || backdrop.dataset.bromaBound === '1') return;
+  backdrop.dataset.bromaBound = '1';
+  const onClose = () => closeLoginBromaModal();
+  if (btnCerrar) btnCerrar.addEventListener('click', onClose);
+  if (btnOk) btnOk.addEventListener('click', onClose);
+  setupBackdropCloseOnlyOnRealClick(backdrop, onClose);
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!backdrop.classList.contains('activo')) return;
+    onClose();
+  });
+}
+
 function onSessionReady(session) {
   currentUserEmail = session.user.email || '';
   currentUserId = session.user.id;
@@ -12013,6 +12068,7 @@ function onSessionReady(session) {
       showView(defaultVistaId, defaultTitle);
       if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
       refreshDataIntervalId = setInterval(refreshCurrentViewData, REFRESH_DATA_INTERVAL_MS);
+      setTimeout(() => maybeShowLoginBromaModal(), 200);
     })
     .catch(() => {});
 }
@@ -12056,6 +12112,8 @@ function setupHelpPopovers() {
     closeHelpModal();
   });
 }
+
+setupLoginBromaModal();
 
 // Inicio: getSession puede resolver *después* de un login rápido (autocompletar + Enter); sin guarda, el callback tardío llamaba showLogin() otra vez y duplicaba listeners.
 client.auth.getSession().then(({ data: { session } }) => {
