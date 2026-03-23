@@ -1140,12 +1140,13 @@ test.describe('Orden USD-USD con intermediario, comisión repartida y CC', () =>
       const celdaIntUsd = filaInt.first().locator('td:nth-child(2)');
       const saldoIntTxt = await leerSaldoConSigno(celdaIntUsd);
       const saldoIntNum = normalizarMontoSaldo(saldoIntTxt);
+      const deudaIntEsperada = meNum + comisionInterEsperada;
       expect(
-        Math.abs(Math.abs(saldoIntNum) - comisionInterEsperada) <= 2,
-        `CC intermediario USD debe reflejar la parte de comisión (~${comisionInterEsperada}); capturado: ${saldoIntTxt} (${saldoIntNum})`
+        Math.abs(Math.abs(saldoIntNum) - deudaIntEsperada) <= 2,
+        `CC intermediario USD debe reflejar me + comisión intermediario (~${deudaIntEsperada}); capturado: ${saldoIntTxt} (${saldoIntNum})`
       ).toBe(true);
 
-      logStep('OK', 'USD-USD+int', 'CC cliente 0; CC int ≈ comisión 40%', 'resumen', 'OK');
+      logStep('OK', 'USD-USD+int', 'CC cliente 0; CC int ≈ me + comisión int', 'resumen', 'OK');
     } catch (err) {
       logStep('Error', 'Test falló', '-', '-', 'Fallo', (err && (err.message || err.toString())) || 'Error desconocido');
       throw err;

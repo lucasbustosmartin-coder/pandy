@@ -1,6 +1,8 @@
-# Snapshot `reglas_de_negocio_rows.sql`
+# Snapshot `reglas_de_negocio_rows.sql` / `reglas_de_negocio_rows (2).sql`
 
 Archivo **volcado puntual** de `public.reglas_de_negocio` (INSERT generado desde la base). **No** es la fuente canónica de verdad del repo: esa sigue siendo `sql/reglas_de_negocio_tabla.sql` y las migraciones en `sql/`.
+
+**En Supabase:** no ejecutes el `.sql` del dump tal cual (IDs fijos y riesgo de duplicados). **Solo** ejecutá, de punta a punta, **`sql/ejecutar_supabase_cc_int_cp_ic_comision_y_regenerar_eur.sql`**: incluye parche cp_ic, comisión USD-USD+int, ci_pc (paso 2b) y regeneración **EUR-USD, USD-EUR, EUR-ARS, ARS-EUR** con `usa_intermediario = true` desde USD-ARS+int y ARS-USD+int de la misma base.
 
 ## Revisión integral (última pasada)
 

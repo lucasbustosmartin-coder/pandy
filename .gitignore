@@ -46,3 +46,4 @@ playwright/.cache
 
 # Respaldos SQL locales (no versionar)
 backup_supabase_*.sql
+supabase/.temp/

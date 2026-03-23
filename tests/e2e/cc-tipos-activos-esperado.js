@@ -123,14 +123,111 @@ const COMBINACIONES_USD_USD = [
 ];
 
 /**
- * USD-USD con intermediario: mismas expectativas **cliente** / caja / detalle que sin int (`reglas_de_negocio` cliente + mr_menos_me).
- * CC intermediario: comisión explícita (`comision_intermediario`) solo con par cliente cerrado (**E,E**); 50% / 50% sobre comisión total (mr−me).
+ * USD-USD con intermediario: mismas expectativas **cliente** / detalle que sin int (`reglas_de_negocio` cliente + mr_menos_me).
+ * **Caja:** con patrón cp_ic (Tx2 = Intermediario→Cliente), el egreso del intermediario **no** mueve la caja de Pandy; solo cuenta el ingreso Cliente→Pandy cuando está ejecutado (E,E → +mr; P,E → 0; E,P → +mr).
+ * CC intermediario (**cp_ic**): con par cerrado (**E,E**) saldo USD = −(me + parte comisión int. en comisiones_orden); el intermediario pagó me al cliente y Pandy debe me + comisión. 50% / 50% sobre comisión total (mr−me) para la fila es_comision.
  */
 const COMISION_USD_USD_INT_INTERMEDIARIO = Math.round(USD_USD_FIJOS.comision / 2);
-const COMBINACIONES_USD_USD_INT = COMBINACIONES_USD_USD.map((c) => ({
-  ...c,
-  saldoIntermediarioUSD: c.id === 'E,E' ? COMISION_USD_USD_INT_INTERMEDIARIO : 0,
-}));
+/** Negativo en resumen = Pandy debe al intermediario (suma movimientos CC int). */
+const SALDO_INT_USD_USD_EE = -(USD_USD_FIJOS.me + COMISION_USD_USD_INT_INTERMEDIARIO);
+const COMBINACIONES_USD_USD_INT = COMBINACIONES_USD_USD.map((c) => {
+  const base = {
+    ...c,
+    saldoIntermediarioUSD: c.id === 'E,E' ? SALDO_INT_USD_USD_EE : 0,
+  };
+  if (c.id === 'E,E') return { ...base, cajaUSD: USD_USD_FIJOS.mr };
+  if (c.id === 'P,E') return { ...base, cajaUSD: 0 };
+  return base;
+});
+
+/** EUR-USD: mismo esquema numérico que ARS-USD (TC 1000; 5.000.000 / 5.000); reglas espejo ARS→EUR. */
+const EUR_USD_FIJOS = {
+  cotizacion: '1000',
+  montoRecibidoEur: '5000000',
+  montoEntregadoUsd: 5000,
+  mr: 5000000,
+  me: 5000,
+};
+
+/** USD-EUR: espejo USD-ARS. */
+const USD_EUR_FIJOS = {
+  cotizacion: '1000',
+  montoRecibidoUsd: '5000',
+  montoEntregadoEur: 5000000,
+  mr: 5000,
+  me: 5000000,
+};
+
+/** EUR-ARS: espejo USD-ARS (rec EUR, ent ARS). */
+const EUR_ARS_FIJOS = {
+  cotizacion: '1000',
+  montoRecibidoEur: '5000',
+  montoEntregadoArs: 5000000,
+  mr: 5000,
+  me: 5000000,
+};
+
+/** ARS-EUR: espejo ARS-USD. */
+const ARS_EUR_FIJOS = {
+  cotizacion: '1000',
+  montoRecibidoArs: '5000000',
+  montoEntregadoEur: 5000,
+  mr: 5000000,
+  me: 5000,
+};
+
+/** @param {typeof COMBINACIONES_ARS_USD[0]} c */
+function comboEurUsdDesdeArsUsd(c) {
+  return {
+    ...c,
+    saldoEUR: c.saldoARS,
+    saldoARS: 0,
+    cajaEUR: c.cajaARS,
+    cajaARS: 0,
+    detalleCliente: [...(c.detalleCliente || [])],
+  };
+}
+
+/** @param {typeof COMBINACIONES_USD_ARS[0]} c */
+function comboUsdEurDesdeUsdArs(c) {
+  return {
+    ...c,
+    saldoEUR: c.saldoARS,
+    saldoARS: 0,
+    cajaEUR: c.cajaARS,
+    cajaARS: 0,
+    detalleCliente: [...(c.detalleCliente || [])],
+  };
+}
+
+/** @param {typeof COMBINACIONES_USD_ARS[0]} c */
+function comboEurArsDesdeUsdArs(c) {
+  return {
+    ...c,
+    saldoEUR: c.saldoUSD,
+    saldoUSD: 0,
+    cajaEUR: c.cajaUSD,
+    cajaUSD: 0,
+    detalleCliente: [...(c.detalleCliente || [])],
+  };
+}
+
+/** @param {typeof COMBINACIONES_ARS_USD[0]} c */
+function comboArsEurDesdeArsUsd(c) {
+  return {
+    ...c,
+    saldoEUR: c.saldoUSD,
+    saldoUSD: 0,
+    cajaEUR: c.cajaUSD,
+    cajaUSD: 0,
+    detalleCliente: [...(c.detalleCliente || [])],
+  };
+}
+
+const COMBINACIONES_EUR_USD = COMBINACIONES_ARS_USD.map(comboEurUsdDesdeArsUsd);
+const COMBINACIONES_USD_EUR = COMBINACIONES_USD_ARS.map(comboUsdEurDesdeUsdArs);
+const COMBINACIONES_EUR_ARS = COMBINACIONES_USD_ARS.map(comboEurArsDesdeUsdArs);
+const COMBINACIONES_ARS_EUR = COMBINACIONES_ARS_USD.map(comboArsEurDesdeArsUsd);
 
 /** Catálogo activo (sync con tipos_operacion activo en Supabase). Puede haber dos filas mismo codigo (usa_intermediario distinto). */
 const TIPOS_ACTIVOS_CATALOGO = [
@@ -140,16 +237,29 @@ const TIPOS_ACTIVOS_CATALOGO = [
   { codigo: 'USD-USD', activo: true, nTx: 2, intermediario: true },
   { codigo: 'USD-ARS', activo: true, nTx: 2, intermediario: false },
   { codigo: 'USD-ARS', activo: true, nTx: 4, intermediario: true },
+  { codigo: 'EUR-USD', activo: true, nTx: 2, intermediario: false },
+  { codigo: 'USD-EUR', activo: true, nTx: 2, intermediario: false },
+  { codigo: 'EUR-ARS', activo: true, nTx: 2, intermediario: false },
+  { codigo: 'ARS-EUR', activo: true, nTx: 2, intermediario: false },
 ];
 
 module.exports = {
   ARS_USD_FIJOS,
   USD_ARS_FIJOS,
   USD_USD_FIJOS,
+  EUR_USD_FIJOS,
+  USD_EUR_FIJOS,
+  EUR_ARS_FIJOS,
+  ARS_EUR_FIJOS,
   COMBINACIONES_ARS_USD,
   COMBINACIONES_USD_ARS,
   COMBINACIONES_USD_USD,
   COMISION_USD_USD_INT_INTERMEDIARIO,
+  SALDO_INT_USD_USD_EE,
   COMBINACIONES_USD_USD_INT,
+  COMBINACIONES_EUR_USD,
+  COMBINACIONES_USD_EUR,
+  COMBINACIONES_EUR_ARS,
+  COMBINACIONES_ARS_EUR,
   TIPOS_ACTIVOS_CATALOGO,
 };

@@ -127,7 +127,7 @@ Requisitos en Supabase: **`reglas_de_negocio`** para los tipos que cubre el spec
 
 ### 1.9 Tabla Excel / LibreOffice: comando por tipo y por combinación
 
-Archivo **`docs/e2e-comandos-por-tipo-y-combinacion.tsv`** (columnas separadas por tabulador): abrilo en Excel o LibreOffice para tener **tipo de operación → spec → combinación → comando** (`npm run …` o `TIPO_CODIGO=… COMBINACION_ID="…" npx playwright test …`). Incluye CHEQUE-ARS (12), tipos 2 tx del **02**, inversa **03** y paquetes **npm run test:e2e-cc-***.
+Archivo **`docs/e2e-comandos-por-tipo-y-combinacion.tsv`** (columnas separadas por tabulador): abrilo en Excel o LibreOffice para tener **tipo de operación → spec → combinación → comando** (`npm run …` o `TIPO_CODIGO=… COMBINACION_ID="…" npx playwright test …`). Incluye CHEQUE-ARS (12), tipos 2 tx del **02** (ARS/USD y **EUR-USD, USD-EUR, EUR-ARS, ARS-EUR** sin int.), inversa **03** (USD-ARS/ARS-USD y los cuatro cruces análogos con EUR+int) y paquetes **npm run test:e2e-cc-***.
 
 ---
 

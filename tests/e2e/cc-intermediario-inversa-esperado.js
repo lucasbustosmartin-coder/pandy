@@ -36,10 +36,96 @@ const COMBINACIONES_ARS_USD_INT_INVERSA = [
   { id: 'E,E', tx1: 'E', tx2: 'E', saldoCliUSD: 0, saldoCliARS: 0, saldoIntUSD: 0, saldoIntARS: 5000000, detalleCli: [-5000000, -5000, 5000, 5000000], detalleInt: [5000000], cajaUSD: -5000, cajaARS: 0 },
 ];
 
+/** USD-EUR+int inversa: ARS→EUR en saldos/caja cliente e intermediario. */
+function mapUsdEurIntDesdeUsdArs(rows) {
+  return rows.map((r) => ({
+    ...r,
+    saldoCliEUR: r.saldoCliARS,
+    saldoCliARS: 0,
+    saldoIntEUR: r.saldoIntARS,
+    saldoIntARS: 0,
+    cajaEUR: r.cajaARS,
+    cajaARS: 0,
+    detalleCli: [...(r.detalleCli || [])],
+    detalleInt: [...(r.detalleInt || [])],
+  }));
+}
+
+/** EUR-USD+int inversa. */
+function mapEurUsdIntDesdeArsUsd(rows) {
+  return rows.map((r) => ({
+    ...r,
+    saldoCliEUR: r.saldoCliARS,
+    saldoCliARS: 0,
+    saldoIntEUR: r.saldoIntARS,
+    saldoIntARS: 0,
+    cajaEUR: r.cajaARS,
+    cajaARS: 0,
+    detalleCli: [...(r.detalleCli || [])],
+    detalleInt: [...(r.detalleInt || [])],
+  }));
+}
+
+/** EUR-ARS+int inversa (espejo USD-ARS+int: USD→EUR). */
+function mapEurArsIntDesdeUsdArs(rows) {
+  return rows.map((r) => ({
+    ...r,
+    saldoCliEUR: r.saldoCliUSD,
+    saldoCliUSD: 0,
+    saldoIntEUR: r.saldoIntUSD,
+    saldoIntUSD: 0,
+    cajaEUR: r.cajaUSD,
+    cajaUSD: 0,
+    detalleCli: [...(r.detalleCli || [])],
+    detalleInt: [...(r.detalleInt || [])],
+  }));
+}
+
+/** ARS-EUR+int inversa (espejo ARS-USD+int: USD→EUR). */
+function mapArsEurIntDesdeArsUsd(rows) {
+  return rows.map((r) => ({
+    ...r,
+    saldoCliEUR: r.saldoCliUSD,
+    saldoCliUSD: 0,
+    saldoIntEUR: r.saldoIntUSD,
+    saldoIntUSD: 0,
+    cajaEUR: r.cajaUSD,
+    cajaUSD: 0,
+    detalleCli: [...(r.detalleCli || [])],
+    detalleInt: [...(r.detalleInt || [])],
+  }));
+}
+
+const USD_EUR_INT_FIJOS = { ...USD_ARS_INT_FIJOS };
+const EUR_USD_INT_FIJOS = { ...ARS_USD_INT_FIJOS };
+const EUR_ARS_INT_FIJOS = {
+  cotizacion: '1000',
+  mrEur: 5000,
+  meArs: 5000000,
+};
+const ARS_EUR_INT_FIJOS = {
+  cotizacion: '1000',
+  mrArs: 5000000,
+  meEur: 5000,
+};
+
+const COMBINACIONES_USD_EUR_INT_INVERSA = mapUsdEurIntDesdeUsdArs(COMBINACIONES_USD_ARS_INT_INVERSA);
+const COMBINACIONES_EUR_USD_INT_INVERSA = mapEurUsdIntDesdeArsUsd(COMBINACIONES_ARS_USD_INT_INVERSA);
+const COMBINACIONES_EUR_ARS_INT_INVERSA = mapEurArsIntDesdeUsdArs(COMBINACIONES_USD_ARS_INT_INVERSA);
+const COMBINACIONES_ARS_EUR_INT_INVERSA = mapArsEurIntDesdeArsUsd(COMBINACIONES_ARS_USD_INT_INVERSA);
+
 module.exports = {
   USD_ARS_INT_FIJOS,
   ARS_USD_INT_FIJOS,
+  USD_EUR_INT_FIJOS,
+  EUR_USD_INT_FIJOS,
+  EUR_ARS_INT_FIJOS,
+  ARS_EUR_INT_FIJOS,
   COMBINACIONES_USD_ARS_INT_INVERSA,
   COMBINACIONES_ARS_USD_INT_INVERSA,
+  COMBINACIONES_USD_EUR_INT_INVERSA,
+  COMBINACIONES_EUR_USD_INT_INVERSA,
+  COMBINACIONES_EUR_ARS_INT_INVERSA,
+  COMBINACIONES_ARS_EUR_INT_INVERSA,
 };
 

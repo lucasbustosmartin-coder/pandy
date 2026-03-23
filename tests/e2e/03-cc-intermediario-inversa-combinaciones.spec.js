@@ -1,15 +1,15 @@
 // @ts-check
 /**
- * E2E: USD-ARS y ARS-USD con intermediario (flujo inverso). Orden global: corre **después** de
+ * E2E: USD-ARS, ARS-USD, USD-EUR, EUR-USD, EUR-ARS y ARS-EUR con intermediario (flujo inverso ci_pc). Corre **después** de
  * `01-cc-combinaciones` (CHEQUE-ARS) y `02-cc-tipos-activos` (tipos 2 tx sin int.).
  * Log: hoja **CC Inversa** en `test-results/cc-combinaciones-log.xlsx` (importes numéricos).
  *
  * Instrumentación: en Detalles se elige radio **ci_pc** (Cliente→Intermediario + Pandy→Cliente) para alinear el
  * autocompletado de 2 transacciones con los escenarios; ya no se cargan Tx1/Tx2 a mano.
  *
- * **USD-ARS** o **ARS-USD** con intermediario (motor `reglas_de_negocio`):
- *   `npm run test:e2e-cc-usd-ars-int-inversa` | `npm run test:e2e-cc-ars-usd-int-inversa`
- *   o `TIPO_CODIGO=USD-ARS` / `TIPO_CODIGO=ARS-USD` con el mismo spec.
+ * Con intermediario (motor `reglas_de_negocio`), p. ej.:
+ *   `npm run test:e2e-cc-usd-ars-int-inversa` | `npm run test:e2e-cc-usd-eur-int-inversa` | `npm run test:e2e-cc-eur-ars-int-inversa` …
+ *   o `TIPO_CODIGO=…` con este spec (ver `docs/e2e-comandos-por-tipo-y-combinacion.tsv`).
  *
  * Filtros opcionales: `TIPO_CODIGO` (`USD-ARS` | `ARS-USD`), `COMBINACION_ID` (`P,P` | `E,P` | `P,E` | `E,E`).
  */
@@ -20,8 +20,16 @@ const { reloadYEsperarAppLista } = require('./e2e-reload-app');
 const {
   USD_ARS_INT_FIJOS,
   ARS_USD_INT_FIJOS,
+  USD_EUR_INT_FIJOS,
+  EUR_USD_INT_FIJOS,
+  EUR_ARS_INT_FIJOS,
+  ARS_EUR_INT_FIJOS,
   COMBINACIONES_USD_ARS_INT_INVERSA,
   COMBINACIONES_ARS_USD_INT_INVERSA,
+  COMBINACIONES_USD_EUR_INT_INVERSA,
+  COMBINACIONES_EUR_USD_INT_INVERSA,
+  COMBINACIONES_EUR_ARS_INT_INVERSA,
+  COMBINACIONES_ARS_EUR_INT_INVERSA,
 } = require('./cc-intermediario-inversa-esperado');
 
 const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL || '';
@@ -37,12 +45,18 @@ const LOG_HEADERS_INV = [
   'Exp Cli USD',
   'Real Cli USD',
   'Rdo Cli USD',
+  'Exp Cli EUR',
+  'Real Cli EUR',
+  'Rdo Cli EUR',
   'Exp Cli ARS',
   'Real Cli ARS',
   'Rdo Cli ARS',
   'Exp Int USD',
   'Real Int USD',
   'Rdo Int USD',
+  'Exp Int EUR',
+  'Real Int EUR',
+  'Rdo Int EUR',
   'Exp Int ARS',
   'Real Int ARS',
   'Rdo Int ARS',
@@ -55,6 +69,9 @@ const LOG_HEADERS_INV = [
   'Exp Caja USD',
   'Real Caja USD',
   'Rdo Caja USD',
+  'Exp Caja EUR',
+  'Real Caja EUR',
+  'Rdo Caja EUR',
   'Exp Caja ARS',
   'Real Caja ARS',
   'Rdo Caja ARS',
@@ -148,7 +165,14 @@ async function crearOrdenConIntermediario(page, cfg, nombreCliente, nombreInterm
 
   // La app autocompleta 2 transacciones al entrar a instrumentación (USD-ARS/ARS-USD+int).
   // Por defecto es cp_ic (C→Pandy + Int→Cliente); este E2E modela el flujo inverso ci_pc (C→Intermediario + Pandy→Cliente).
-  if (cfg.codigo === 'USD-ARS' || cfg.codigo === 'ARS-USD') {
+  if (
+    cfg.codigo === 'USD-ARS' ||
+    cfg.codigo === 'ARS-USD' ||
+    cfg.codigo === 'USD-EUR' ||
+    cfg.codigo === 'EUR-USD' ||
+    cfg.codigo === 'EUR-ARS' ||
+    cfg.codigo === 'ARS-EUR'
+  ) {
     const rCi = page.locator('input[name="orden-int-patron-radio"][value="ci_pc"]');
     await expect(rCi).toBeVisible({ timeout: 8000 });
     await rCi.check();
@@ -194,10 +218,10 @@ async function leerMontosModalDetalle(page) {
   const filas = page.locator('#cc-detalle-tbody tr');
   const n = await filas.count();
   const montos = [];
-  // Solo USD y ARS (cols 6–7). EUR (8) puede mostrar 0 y duplicar el conteo de montos en asserts.
   for (let f = 0; f < n; f++) {
-    for (const col of [6, 7]) {
-      const texto = await leerSaldoConSigno(filas.nth(f).locator(`td:nth-child(${col})`));
+    const row = filas.nth(f);
+    for (const mon of ['USD', 'ARS', 'EUR']) {
+      const texto = await leerSaldoConSigno(row.locator(`td[data-cc-moneda-col="${mon}"]`));
       if (texto !== '–' && /\d/.test(texto)) montos.push(saldoLeidoANumero(texto));
     }
   }
@@ -246,22 +270,26 @@ async function leerMontosDesdeVistaMovimientos(page, tipo, nombreEntidad) {
   }
 }
 
-async function leerCajasUsdArs(page) {
+async function leerCajasUsdEurArs(page) {
   await page.locator('#menu-cajas').click();
   await expect(page.locator('#vista-cajas')).toBeVisible({ timeout: 5000 });
   await expect(page.locator('#cajas-loading')).toBeHidden({ timeout: 20000 });
   const elU = page.locator('#cajas-saldo-efectivo-usd');
+  const elE = page.locator('#cajas-saldo-efectivo-eur');
   const elA = page.locator('#cajas-saldo-efectivo-ars');
   const tu = (await elU.textContent())?.trim() || '–';
+  const te = (await elE.isVisible().catch(() => false)) ? ((await elE.textContent())?.trim() || '–') : '–';
   const ta = (await elA.textContent())?.trim() || '–';
   const negU = await elU.evaluate((n) => n.classList.contains('negativo')).catch(() => false);
+  const negE = await elE.evaluate((n) => n.classList.contains('negativo')).catch(() => false);
   const negA = await elA.evaluate((n) => n.classList.contains('negativo')).catch(() => false);
   const usdAbs = normalizarMontoSaldo(tu);
+  const eurAbs = normalizarMontoSaldo(te);
   const arsAbs = normalizarMontoSaldo(ta);
-  return { usd: negU ? -usdAbs : usdAbs, ars: negA ? -arsAbs : arsAbs };
+  return { usd: negU ? -usdAbs : usdAbs, eur: negE ? -eurAbs : eurAbs, ars: negA ? -arsAbs : arsAbs };
 }
 
-/** Autocompletado ci_pc: USD-ARS = ingreso USD C→I + egreso ARS P→C; ARS-USD = ingreso ARS C→I + egreso USD P→C. */
+/** Autocompletado ci_pc: mismo patrón 2 tx para cruces fiat+USD o EUR↔ARS con intermediario. */
 const TIPOS = [
   {
     codigo: 'USD-ARS',
@@ -283,9 +311,49 @@ const TIPOS = [
       await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/, { timeout: 15000 });
     },
   },
+  {
+    codigo: 'USD-EUR',
+    combinaciones: COMBINACIONES_USD_EUR_INT_INVERSA,
+    fillDetalles: async (page) => {
+      await page.locator('#orden-cotizacion').fill(USD_EUR_INT_FIJOS.cotizacion);
+      await page.locator('#orden-monto-recibido').fill(String(USD_EUR_INT_FIJOS.mrUsd));
+      await page.waitForTimeout(500);
+      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/, { timeout: 15000 });
+    },
+  },
+  {
+    codigo: 'EUR-USD',
+    combinaciones: COMBINACIONES_EUR_USD_INT_INVERSA,
+    fillDetalles: async (page) => {
+      await page.locator('#orden-cotizacion').fill(EUR_USD_INT_FIJOS.cotizacion);
+      await page.locator('#orden-monto-recibido').fill(String(EUR_USD_INT_FIJOS.mrArs));
+      await page.waitForTimeout(500);
+      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/, { timeout: 15000 });
+    },
+  },
+  {
+    codigo: 'EUR-ARS',
+    combinaciones: COMBINACIONES_EUR_ARS_INT_INVERSA,
+    fillDetalles: async (page) => {
+      await page.locator('#orden-cotizacion').fill(EUR_ARS_INT_FIJOS.cotizacion);
+      await page.locator('#orden-monto-recibido').fill(String(EUR_ARS_INT_FIJOS.mrEur));
+      await page.waitForTimeout(500);
+      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/, { timeout: 15000 });
+    },
+  },
+  {
+    codigo: 'ARS-EUR',
+    combinaciones: COMBINACIONES_ARS_EUR_INT_INVERSA,
+    fillDetalles: async (page) => {
+      await page.locator('#orden-cotizacion').fill(ARS_EUR_INT_FIJOS.cotizacion);
+      await page.locator('#orden-monto-recibido').fill(String(ARS_EUR_INT_FIJOS.mrArs));
+      await page.waitForTimeout(500);
+      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/, { timeout: 15000 });
+    },
+  },
 ];
 
-test.describe('CC intermediario inversa: USD-ARS y ARS-USD', () => {
+test.describe('CC intermediario inversa: USD/EUR cruces con int', () => {
   test('valida combinaciones P/E con montos fijos', async ({ page }) => {
     test.setTimeout(900000);
     if (!TEST_USER_EMAIL || !TEST_USER_PASSWORD) test.skip(true, 'Faltan TEST_USER_EMAIL o TEST_USER_PASSWORD');
@@ -347,31 +415,45 @@ test.describe('CC intermediario inversa: USD-ARS y ARS-USD', () => {
 
           const filaCli = await leerFilaResumen(page, 'cliente', CLIENTE_NOMBRE);
           let cliUSD = 0;
+          let cliEUR = 0;
           let cliARS = 0;
           let detalleCli = [];
           if (filaCli) {
-            cliUSD = saldoLeidoANumero(await leerSaldoConSigno(filaCli.locator('td:nth-child(2)')));
-            cliARS = saldoLeidoANumero(await leerSaldoConSigno(filaCli.locator('td:nth-child(4)')));
+            cliUSD = saldoLeidoANumero(await leerSaldoConSigno(filaCli.locator('td[data-cc-moneda-col="USD"]')));
+            cliEUR = saldoLeidoANumero(await leerSaldoConSigno(filaCli.locator('td[data-cc-moneda-col="EUR"]')));
+            cliARS = saldoLeidoANumero(await leerSaldoConSigno(filaCli.locator('td[data-cc-moneda-col="ARS"]')));
             await filaCli.locator('.btn-ver-detalle').click();
             detalleCli = await leerMontosModalDetalle(page);
-          } else if (Math.abs(esperado.saldoCliUSD) <= 1 && Math.abs(esperado.saldoCliARS) <= 1 && (esperado.detalleCli || []).length > 0) {
+          } else if (
+            Math.abs(esperado.saldoCliUSD) <= 1 &&
+            Math.abs(Number(esperado.saldoCliEUR) || 0) <= 1 &&
+            Math.abs(esperado.saldoCliARS) <= 1 &&
+            (esperado.detalleCli || []).length > 0
+          ) {
             detalleCli = await leerMontosDesdeVistaMovimientos(page, 'cliente', CLIENTE_NOMBRE);
           }
 
           const filaInt = await leerFilaResumen(page, 'intermediario', nombreIntermediario);
           let intUSD = 0;
+          let intEUR = 0;
           let intARS = 0;
           let detalleInt = [];
           if (filaInt) {
-            intUSD = saldoLeidoANumero(await leerSaldoConSigno(filaInt.locator('td:nth-child(2)')));
-            intARS = saldoLeidoANumero(await leerSaldoConSigno(filaInt.locator('td:nth-child(4)')));
+            intUSD = saldoLeidoANumero(await leerSaldoConSigno(filaInt.locator('td[data-cc-moneda-col="USD"]')));
+            intEUR = saldoLeidoANumero(await leerSaldoConSigno(filaInt.locator('td[data-cc-moneda-col="EUR"]')));
+            intARS = saldoLeidoANumero(await leerSaldoConSigno(filaInt.locator('td[data-cc-moneda-col="ARS"]')));
             await filaInt.locator('.btn-ver-detalle').click();
             detalleInt = await leerMontosModalDetalle(page);
-          } else if (Math.abs(esperado.saldoIntUSD) <= 1 && Math.abs(esperado.saldoIntARS) <= 1 && (esperado.detalleInt || []).length > 0) {
+          } else if (
+            Math.abs(esperado.saldoIntUSD) <= 1 &&
+            Math.abs(Number(esperado.saldoIntEUR) || 0) <= 1 &&
+            Math.abs(esperado.saldoIntARS) <= 1 &&
+            (esperado.detalleInt || []).length > 0
+          ) {
             detalleInt = await leerMontosDesdeVistaMovimientos(page, 'intermediario', nombreIntermediario);
           }
 
-          const cajas = await leerCajasUsdArs(page);
+          const cajas = await leerCajasUsdEurArs(page);
 
           const expCli = [...(esperado.detalleCli || [])].sort((a, b) => a - b);
           const expInt = [...(esperado.detalleInt || [])].sort((a, b) => a - b);
@@ -395,10 +477,13 @@ test.describe('CC intermediario inversa: USD-ARS y ARS-USD', () => {
             resDetInt = 'PASS';
 
           const expCliU = Number(esperado.saldoCliUSD) || 0;
+          const expCliE = Number(esperado.saldoCliEUR) || 0;
           const expCliA = Number(esperado.saldoCliARS) || 0;
           const expIntU = Number(esperado.saldoIntUSD) || 0;
+          const expIntE = Number(esperado.saldoIntEUR) || 0;
           const expIntA = Number(esperado.saldoIntARS) || 0;
           const expCajaU = Number(esperado.cajaUSD) || 0;
+          const expCajaE = Number(esperado.cajaEUR) || 0;
           const expCajaA = Number(esperado.cajaARS) || 0;
 
           logRows.push([
@@ -407,12 +492,18 @@ test.describe('CC intermediario inversa: USD-ARS y ARS-USD', () => {
             expCliU,
             cliUSD,
             Math.abs(cliUSD - expCliU) <= 1 ? 'PASS' : 'ERR',
+            expCliE,
+            cliEUR,
+            Math.abs(cliEUR - expCliE) <= 1 ? 'PASS' : 'ERR',
             expCliA,
             cliARS,
             Math.abs(cliARS - expCliA) <= 1 ? 'PASS' : 'ERR',
             expIntU,
             intUSD,
             Math.abs(intUSD - expIntU) <= 1 ? 'PASS' : 'ERR',
+            expIntE,
+            intEUR,
+            Math.abs(intEUR - expIntE) <= 1 ? 'PASS' : 'ERR',
             expIntA,
             intARS,
             Math.abs(intARS - expIntA) <= 1 ? 'PASS' : 'ERR',
@@ -425,16 +516,22 @@ test.describe('CC intermediario inversa: USD-ARS y ARS-USD', () => {
             expCajaU,
             cajas.usd,
             Math.abs(cajas.usd - expCajaU) <= 1 ? 'PASS' : 'ERR',
+            expCajaE,
+            cajas.eur,
+            Math.abs(cajas.eur - expCajaE) <= 1 ? 'PASS' : 'ERR',
             expCajaA,
             cajas.ars,
             Math.abs(cajas.ars - expCajaA) <= 1 ? 'PASS' : 'ERR',
           ]);
 
           expect(Math.abs(cliUSD - esperado.saldoCliUSD), `${tipo.codigo} ${esperado.id} saldo cliente USD`).toBeLessThanOrEqual(1);
+          expect(Math.abs(cliEUR - expCliE), `${tipo.codigo} ${esperado.id} saldo cliente EUR`).toBeLessThanOrEqual(1);
           expect(Math.abs(cliARS - esperado.saldoCliARS), `${tipo.codigo} ${esperado.id} saldo cliente ARS`).toBeLessThanOrEqual(1);
           expect(Math.abs(intUSD - esperado.saldoIntUSD), `${tipo.codigo} ${esperado.id} saldo inter USD`).toBeLessThanOrEqual(1);
+          expect(Math.abs(intEUR - expIntE), `${tipo.codigo} ${esperado.id} saldo inter EUR`).toBeLessThanOrEqual(1);
           expect(Math.abs(intARS - esperado.saldoIntARS), `${tipo.codigo} ${esperado.id} saldo inter ARS`).toBeLessThanOrEqual(1);
           expect(Math.abs(cajas.usd - esperado.cajaUSD), `${tipo.codigo} ${esperado.id} caja USD`).toBeLessThanOrEqual(1);
+          expect(Math.abs(cajas.eur - expCajaE), `${tipo.codigo} ${esperado.id} caja EUR`).toBeLessThanOrEqual(1);
           expect(Math.abs(cajas.ars - esperado.cajaARS), `${tipo.codigo} ${esperado.id} caja ARS`).toBeLessThanOrEqual(1);
           expect(detSortedCli.length, `${tipo.codigo} ${esperado.id} detalle cliente cantidad`).toBe(expCli.length);
           expect(detSortedInt.length, `${tipo.codigo} ${esperado.id} detalle int cantidad`).toBe(expInt.length);

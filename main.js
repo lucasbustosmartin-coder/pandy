@@ -760,10 +760,10 @@ const MONEDAS_CC_MOVIMIENTOS_COLS = ['USD', 'ARS', 'EUR'];
 let ccUiMonedasVisibles = { USD: true, EUR: true, ARS: true };
 
 /**
- * Cruce con tipo de cambio anclado en USD (misma convención que ARS-USD / USD-ARS).
- * - compra_usd: el cliente compra USD (moneda entregada USD); la otra moneda (ARS, EUR, …) se calcula con tc = unidades de esa moneda por 1 USD.
- * - vende_usd: el cliente vende USD (moneda recibida USD); la otra se calcula como en USD-ARS.
- * No aplica a cruces sin USD (ej. EUR-ARS) ni a USD-USD.
+ * Cruce con tipo de cambio (misma convención que ARS-USD / USD-ARS, anclado en USD o en EUR).
+ * - compra_usd / compra_eur: el cliente compra la moneda entregada (USD o EUR); la otra fiat se calcula con tc = unidades de la moneda recibida por 1 unidad entregada.
+ * - vende_usd / vende_eur: el cliente vende la moneda recibida (USD o EUR); la otra se calcula con tc.
+ * No aplica a USD-USD ni CHEQUE-ARS.
  */
 function patronTipoCambioOrden(recNorm, entNorm) {
   const r = (recNorm || '').toUpperCase();
@@ -773,7 +773,18 @@ function patronTipoCambioOrden(recNorm, entNorm) {
   if (!fiat.includes(r) || !fiat.includes(e)) return '';
   if (e === 'USD' && r !== 'USD') return 'compra_usd';
   if (r === 'USD' && e !== 'USD') return 'vende_usd';
+  if (e === 'EUR' && r !== 'EUR') return 'compra_eur';
+  if (r === 'EUR' && e !== 'EUR') return 'vende_eur';
   return '';
+}
+
+/** compra_usd o compra_eur: TC × monto entregado → monto recibido. */
+function esPatronCompraFiatConTc(p) {
+  return p === 'compra_usd' || p === 'compra_eur';
+}
+/** vende_usd o vende_eur: monto recibido × TC → monto entregado. */
+function esPatronVendeFiatConTc(p) {
+  return p === 'vende_usd' || p === 'vende_eur';
 }
 
 function reaplicarVisibilidadMonedasCuentaCorrienteDom() {
@@ -1975,6 +1986,26 @@ function egresoEntregaAClienteEjecutado(transacciones) {
   );
 }
 
+/**
+ * Patrón de instrumentación con intermediario (2 tx típicas):
+ * - **ci_pc**: ingreso Cliente→Intermediario + egreso Pandy→Cliente (cobro al int., entrega desde caja Pandy).
+ * - **cp_ic**: ingreso Cliente→Pandy + egreso Intermediario→Cliente.
+ * Se infiere por las filas de instrumentación (no solo por estado ejecutada), para P/E y comisiones.
+ */
+function patronInstrumentacionIntDesdeTransacciones(transacciones) {
+  const txs = transacciones || [];
+  const hayIngClienteInter = txs.some((t) =>
+    (t.tipo || '').toLowerCase() === 'ingreso' &&
+    String(t.pagador || '').toLowerCase() === 'cliente' &&
+    String(t.cobrador || '').toLowerCase() === 'intermediario');
+  const hayIngClientePandy = txs.some((t) =>
+    (t.tipo || '').toLowerCase() === 'ingreso' &&
+    String(t.pagador || '').toLowerCase() === 'cliente' &&
+    String(t.cobrador || '').toLowerCase() === 'pandy');
+  if (hayIngClienteInter && !hayIngClientePandy) return 'ci_pc';
+  return 'cp_ic';
+}
+
 /** Ingreso ejecutado del cliente hacia Pandy o hacia intermediario (patrones USD-USD+int). */
 function ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) {
   return (transacciones || []).some((t) =>
@@ -2273,7 +2304,10 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         mr, me, montoT: 0,
         comisionIntMonto: Number(comisionIntMonto) || 0,
       });
-      const montoCcInt = Number(reglaComIntUsd.signo) * baseInt;
+      const rawComInt = Number(reglaComIntUsd.signo) * baseInt;
+      // cp_ic: comisión en CC int. negativa (Pandy debe al intermediario). ci_pc: signo inverso (+ comisión a favor del int.).
+      const patronIntUsd = patronInstrumentacionIntDesdeTransacciones(transacciones);
+      const montoCcInt = patronIntUsd === 'ci_pc' ? -rawComInt : rawComInt;
       if (Math.abs(montoCcInt) >= 1e-12) {
         const monedaInt = String(comisionIntMon || reglaComIntUsd.moneda || 'USD').toUpperCase();
         const cerradoInt = estadoComInt === 'ejecutada';
@@ -5291,7 +5325,7 @@ function openModalOrden(registro) {
       const miN = (opt?.getAttribute('data-moneda-in') || '').trim().toUpperCase();
       const moN = (opt?.getAttribute('data-moneda-out') || '').trim().toUpperCase();
       const patronNext = patronTipoCambioOrden(miN, moN);
-      if (patronNext === 'compra_usd') {
+      if (esPatronCompraFiatConTc(patronNext)) {
         setTimeout(() => {
           const el = document.getElementById('orden-monto-entregado');
           if (el) {
@@ -5300,7 +5334,7 @@ function openModalOrden(registro) {
             el.dispatchEvent(new Event('input', { bubbles: true }));
           }
         }, 150);
-      } else if (patronNext === 'vende_usd') {
+      } else if (esPatronVendeFiatConTc(patronNext)) {
         setTimeout(() => {
           const el = document.getElementById('orden-monto-recibido');
           if (el) {
@@ -5496,8 +5530,8 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
   const isUsdUsd = codigo === 'USD-USD';
   const isArsArs = esTipoOperacionChequeArs(codigo, tipo?.moneda_in, tipo?.moneda_out);
   const patronTcForm = patronTipoCambioOrden(recNorm, entNorm);
-  const isTcCompraUsd = patronTcForm === 'compra_usd';
-  const isTcVendeUsd = patronTcForm === 'vende_usd';
+  const isTcCompraUsd = esPatronCompraFiatConTc(patronTcForm);
+  const isTcVendeUsd = esPatronVendeFiatConTc(patronTcForm);
   const isTipoConTc = !!patronTcForm;
   const isTipoDosMonedas = !!(recNorm && entNorm && recNorm !== entNorm);
   const monedaRecibida = document.getElementById('orden-moneda-recibida');
@@ -6061,7 +6095,7 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
   const esChequeArsOrden = esChequeArsDesdeSelectOption(selTipoOpt);
   const patronTcGuardar = patronTipoCambioOrden(monedaRecibida, monedaEntregada);
   if (patronTcGuardar && (!cotizacion || !(cotizacion > 0))) {
-    showToast('En operaciones con cruce contra USD (ARS, EUR, etc.) el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
+    showToast('En operaciones con cruce con tipo de cambio (USD o EUR contra otra moneda) el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
     return Promise.resolve(null);
   }
   if (tipoCodigo === 'USD-USD' && montoRecibido <= montoEntregado) {
@@ -6082,8 +6116,8 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
   }
   const comisionUsd = tipoCodigo === 'USD-USD' ? montoRecibido - montoEntregado
     : (esChequeArsOrden ? montoRecibido - montoEntregado
-      : (patronTcGuardar === 'compra_usd' && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado
-        : (patronTcGuardar === 'vende_usd' && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
+      : (esPatronCompraFiatConTc(patronTcGuardar) && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado
+        : (esPatronVendeFiatConTc(patronTcGuardar) && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
   const pctPandy = parseImporteInput(document.getElementById('orden-comision-pandy-pct')?.value || '100');
   const pctInt = parseImporteInput(document.getElementById('orden-comision-intermediario-pct')?.value || '0');
   const tieneSplitVisible = ordenWrapComisionSplitEsVisible();
@@ -6464,7 +6498,7 @@ function saveOrden(aceptaComisionCero = false) {
       return;
     }
   }
-  const comisionUsd = tipoCodigo === 'USD-USD' ? montoRecibido - montoEntregado : (esChequeArsSave ? montoRecibido - montoEntregado : (patronTcSaveOrd === 'compra_usd' && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado : (patronTcSaveOrd === 'vende_usd' && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
+  const comisionUsd = tipoCodigo === 'USD-USD' ? montoRecibido - montoEntregado : (esChequeArsSave ? montoRecibido - montoEntregado : (esPatronCompraFiatConTc(patronTcSaveOrd) && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado : (esPatronVendeFiatConTc(patronTcSaveOrd) && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
 
   const pctPandy = parseImporteInput(document.getElementById('orden-comision-pandy-pct')?.value || '100');
   const pctInt = parseImporteInput(document.getElementById('orden-comision-intermediario-pct')?.value || '0');
@@ -6801,8 +6835,8 @@ function interpretarTextoOrden(texto, clientes, tipos) {
   // Si tenemos recibo + entrego (moneda) pero sin monto entregado, intentar con TC
   if (montoRecibido != null && montoRecibido > 0 && monedaRecibida && monedaEntregada && (montoEntregado == null || montoEntregado <= 0) && cotizacion != null && cotizacion > 0) {
     const pChat = patronTipoCambioOrden(monedaRecibida, monedaEntregada);
-    if (pChat === 'vende_usd') montoEntregado = montoRecibido * cotizacion;
-    else if (pChat === 'compra_usd') montoEntregado = montoRecibido / cotizacion;
+    if (esPatronVendeFiatConTc(pChat)) montoEntregado = montoRecibido * cotizacion;
+    else if (esPatronCompraFiatConTc(pChat)) montoEntregado = montoRecibido / cotizacion;
   }
 
   // Fallback: dos números en el texto (primero = recibido, segundo = entregado)
@@ -7405,9 +7439,9 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
   }
   if (cob === 'intermediario' && pag === 'cliente' && intermediarioId) {
     inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
-      intermediario_id: intermediarioId, moneda: mon, monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
-      concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
-      ...montosCcPorMoneda(mon, monto),
+      intermediario_id: intermediarioId, moneda: mon, monto: -monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
+      concepto: conceptoCcLeyenda('pago_realizado', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+      ...montosCcPorMoneda(mon, -monto),
     }));
   }
   if (inserts.length === 0) return Promise.resolve();
@@ -7510,31 +7544,9 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 usuario_id: currentUserId,
               });
             }
-            // Par con intermediario (USD-USD o cruce fiat+USD según tipo): la entrega al cliente como egreso Intermediario→Cliente
-            // materializa el mismo −me en caja de Pandy que un egreso Pandy→Cliente (compromiso de entrega del acuerdo).
-            if (
-              (codNorm === 'USD-USD' || patronCajaCruceUsd) &&
-              intermediarioId &&
-              (t.tipo || '').toLowerCase() === 'egreso' &&
-              pag === 'intermediario' &&
-              cob === 'cliente'
-            ) {
-              const codigoModo = modosMap[t.modo_pago_id] || 'efectivo';
-              const cajaTipo = codigoCajaTipoDesdeCodigo(codigoModo);
-              const conceptoCaja = esGananciaTrx ? conceptoCajaTransaccionEspecial(t.concepto, mon, monto, orden.numero, t.numero) : conceptoCajaTransaccion(false, mon, monto, orden.numero, t.numero);
-              rowsCaja.push({
-                moneda: mon,
-                monto: -monto,
-                caja_tipo: cajaTipo,
-                transaccion_id: transaccionId,
-                orden_id: ordenId,
-                orden_numero: orden.numero != null ? orden.numero : null,
-                transaccion_numero: t.numero != null ? t.numero : null,
-                concepto: conceptoCaja,
-                fecha,
-                usuario_id: currentUserId,
-              });
-            }
+            // Egreso Intermediario→Cliente (cp_ic y cruces con int.): **no** movimiento de caja de Pandy.
+            // El efectivo lo entrega el intermediario; la caja de la casa solo refleja transacciones donde participa Pandy
+            // (ingreso Cliente→Pandy, egreso Pandy→Cliente, etc.). Ver docs/CORAZON_SISTEMA_CC_Y_CAJA.md y USD_USD_CON_INTERMEDIARIO.md.
             // Ingreso Cliente→Intermediario (ejecutado): no genera movimiento de caja de Pandy — el efectivo lo cobra el intermediario, no la caja de la casa.
 
             // CC: con motor `reglas_de_negocio` se arma después; si no hay filas, lógica legacy por transacción.
@@ -7639,13 +7651,13 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   transaccion_id: transaccionId,
                   transaccion_numero: t.numero != null ? t.numero : null,
                   moneda: mon,
-                  monto,
-                  concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero),
+                  monto: -monto,
+                  concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
                   fecha,
                   usuario_id: currentUserId,
                   estado: 'cerrado',
                   estado_fecha: ahora,
-                  ...montosCcPorMoneda(mon, monto),
+                  ...montosCcPorMoneda(mon, -monto),
                 });
               }
             }
@@ -8216,10 +8228,10 @@ function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId
       } else if (esArsArs) {
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: 'ARS', monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: 'ARS', monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
-      } else if (patronTc === 'compra_usd') {
+      } else if (esPatronCompraFiatConTc(patronTc)) {
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: cotizacion, updated_at: ahora });
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
-      } else if (patronTc === 'vende_usd') {
+      } else if (esPatronVendeFiatConTc(patronTc)) {
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora });
         rows.push({ instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: cotizacion, updated_at: ahora });
       }
@@ -8263,8 +8275,8 @@ function autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instrumenta
     if (patronTc && !(cotizacion > 0)) return Promise.resolve();
     let tcIngreso = null;
     let tcEgreso = null;
-    if (patronTc === 'compra_usd') tcIngreso = cotizacion;
-    else if (patronTc === 'vende_usd') tcEgreso = cotizacion;
+    if (esPatronCompraFiatConTc(patronTc)) tcIngreso = cotizacion;
+    else if (esPatronVendeFiatConTc(patronTc)) tcEgreso = cotizacion;
     return client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle().then((rModo) => {
       const modoPagoEfectivoId = (rModo.data && rModo.data.id) || null;
       if (!modoPagoEfectivoId) return Promise.resolve();
@@ -9407,10 +9419,10 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                         }
                         if (cob === 'intermediario' && pag === 'cliente' && intermediarioId) {
                           insertsCc.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
-                            intermediario_id: intermediarioId, moneda: item.moneda, monto: montoItem, orden_id: ordenId, transaccion_id: item.id,
+                            intermediario_id: intermediarioId, moneda: item.moneda, monto: -montoItem, orden_id: ordenId, transaccion_id: item.id,
                             transaccion_numero: item.numero != null ? item.numero : null,
-                            concepto: conceptoCc, fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
-                            ...montosCcPorMoneda(item.moneda || 'USD', montoItem),
+                            concepto: conceptoCcLeyenda('pago_realizado', orden && orden.numero != null ? orden.numero : null, item.numero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+                            ...montosCcPorMoneda(item.moneda || 'USD', -montoItem),
                           }));
                         }
                       });
