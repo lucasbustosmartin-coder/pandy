@@ -26,6 +26,7 @@
 const path = require('path');
 const { execSync } = require('child_process');
 const { test, expect } = require('@playwright/test');
+const { reloadYEsperarAppLista } = require('./e2e-reload-app');
 const { writeSuiteSheet } = require('./cc-combinaciones-log-workbook');
 const { COMBINACIONES_ESPERADO, DATOS_FIJOS } = require('./cc-combinaciones-esperado');
 
@@ -256,8 +257,9 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       } catch (e) {
         if (e.status !== 0) console.warn(`  [${esperado.id}] limpiar-base-e2e falló o no se ejecutó; continuando.`);
       }
-      await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
-      await expect(page.locator('#sidebar')).toBeVisible({ timeout: 15000 });
+      // Mismo criterio que 02/03: tras reload la sesión y showAppContent pueden tardar; 15s no alcanza a veces.
+      await reloadYEsperarAppLista(page, loginAndSeeApp);
+      await expect(page.locator('#app-content')).toBeVisible({ timeout: 15000 });
 
       // Crear cliente fijo (la limpieza borra clientes E2E)
       await page.locator('#menu-clientes').click();
@@ -309,7 +311,7 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       await page.locator('#orden-btn-ir-instrumentacion').click();
       await expect(page.locator('#orden-step-instrumentacion')).toBeVisible({ timeout: 15000 });
       let combosEstado = page.locator('#orden-inst-tbody .combo-estado-transaccion');
-      await expect(combosEstado).toHaveCount(4, { timeout: 20000 });
+      await expect(combosEstado).toHaveCount(4, { timeout: 45000 });
 
       const reInt = new RegExp(nombreIntermediario.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 

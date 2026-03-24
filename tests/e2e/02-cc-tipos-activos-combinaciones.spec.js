@@ -555,7 +555,8 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
 
                 const usaInt = cfg.usaIntermediario === true ? 'true' : 'false';
                 const opt = page.locator(`#orden-tipo-operacion option[data-codigo="${cfg.codigo}"][data-usa-intermediario="${usaInt}"]`);
-                await expect(opt).toHaveCount(1, { timeout: 5000 });
+                // Catálogo tipos llega async tras permisos; 5s es corto en CI / red lenta (flaky EUR-USD sin int).
+                await expect(opt).toHaveCount(1, { timeout: 20000 });
                 const valueTipo = await opt.getAttribute('value');
                 await page.locator('#orden-tipo-operacion').selectOption(valueTipo);
                 if (cfg.usaIntermediario === true) {

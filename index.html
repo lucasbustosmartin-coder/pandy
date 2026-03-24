@@ -427,20 +427,32 @@
     .tipo-op-iconos { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; line-height: 1; }
     .tipo-op-iconos--inline { min-height: 2.25rem; }
     .orden-tipo-operacion-fila { display: flex; align-items: stretch; gap: 0.65rem; flex-wrap: wrap; width: 100%; }
-    .orden-tipo-operacion-combo-wrap { position: relative; flex: 1; min-width: min(100%, 220px); max-width: 100%; }
-    .orden-tipo-operacion-sr {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
-      pointer-events: none;
+    .orden-tipo-operacion-combo-wrap {
+      position: relative;
+      flex: 1;
+      min-width: min(100%, 220px);
+      max-width: 100%;
+      isolation: isolate;
     }
-    .orden-tipo-operacion-combo-ui { position: relative; width: 100%; }
+    /* El <select> es solo ancla de valor/E2E; debe quedar irusable visualmente y no recibir foco/clic (el combo custom lleva iconos y orden). */
+    .orden-tipo-operacion-sr {
+      position: absolute !important;
+      left: 0;
+      top: 0;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      clip-path: inset(50%) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      z-index: 0 !important;
+    }
+    .orden-tipo-operacion-combo-ui { position: relative; z-index: 2; width: 100%; }
     .orden-tipo-operacion-combo-btn {
       box-sizing: border-box;
       display: inline-flex;
@@ -457,6 +469,7 @@
       color: #1a1a1a;
       text-align: left;
       cursor: pointer;
+      touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
     }
     .orden-tipo-operacion-combo-btn:hover { border-color: #999; }
@@ -507,6 +520,8 @@
     @media (max-width: 480px) {
       .orden-tipo-operacion-listbox { max-height: min(45vh, 240px); }
     }
+    /* Sufijo variante con intermediario (combo nueva orden) */
+    .tipo-op-sufijo-int { color: #0066ff; font-weight: 700; }
     .tipo-op-iconos-par { display: inline-flex; align-items: center; gap: 0.15rem; }
     .tipo-op-iconos-sep { display: inline-block; font-size: 0.72rem; color: #9ca3af; font-weight: 600; margin: 0 0.05rem; line-height: 1; align-self: center; }
     /* Halo circular suave (no el disco gris sólido anterior): contiene iconos moneda/cheque */
@@ -1128,7 +1143,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.60</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.61</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2164,9 +2179,9 @@
             <label id="orden-tipo-operacion-label">Tipo de operación *</label>
             <div class="orden-tipo-operacion-fila">
               <div class="orden-tipo-operacion-combo-wrap">
-                <select id="orden-tipo-operacion" class="orden-tipo-operacion-sr" required aria-hidden="true" tabindex="-1"><option value="">Elegir…</option></select>
+                <select id="orden-tipo-operacion" class="orden-tipo-operacion-sr" aria-hidden="true" tabindex="-1"><option value="">Elegir…</option></select>
                 <div class="orden-tipo-operacion-combo-ui">
-                  <button type="button" class="orden-tipo-operacion-combo-btn" id="orden-tipo-operacion-combo-btn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="orden-tipo-operacion-label orden-tipo-operacion-combo-display" aria-controls="orden-tipo-operacion-listbox">
+                  <button type="button" class="orden-tipo-operacion-combo-btn" id="orden-tipo-operacion-combo-btn" aria-haspopup="listbox" aria-expanded="false" aria-required="true" aria-labelledby="orden-tipo-operacion-label orden-tipo-operacion-combo-display" aria-controls="orden-tipo-operacion-listbox">
                     <span id="orden-tipo-operacion-combo-display" class="orden-tipo-operacion-combo-display"><span class="orden-tipo-operacion-placeholder">Elegir…</span></span>
                     <span class="orden-tipo-operacion-combo-chevron" aria-hidden="true">▼</span>
                   </button>

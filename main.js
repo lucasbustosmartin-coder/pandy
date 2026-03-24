@@ -4837,7 +4837,8 @@ function rebuildOrdenTipoOperacionListbox() {
     .map((opt) => {
       const v = opt.value != null ? String(opt.value) : '';
       const codigo = (opt.getAttribute('data-codigo') || '').trim();
-      const nombre = (opt.textContent || '').trim();
+      const nombrePlano = (opt.textContent || '').trim();
+      const nombreBase = (opt.getAttribute('data-nombre-base') || '').trim() || nombrePlano.replace(/\s+-\s*Int\.\s*$/i, '').trim();
       const modoRaw = (opt.getAttribute('data-icono-modo')) || 'auto';
       const modo = modoRaw === 'cheque' || modoRaw === 'custom' ? modoRaw : 'auto';
       const url = (opt.getAttribute('data-icono-url')) || '';
@@ -4848,9 +4849,10 @@ function rebuildOrdenTipoOperacionListbox() {
         return `<li role="presentation"><button type="button" class="orden-tipo-operacion-option" role="option" data-value="" aria-selected="${selected}"><span class="orden-tipo-operacion-placeholder">Elegir…</span></button></li>`;
       }
       const iconsHtml = codigo
-        ? htmlTipoOperacionIconos(codigo, nombre, { iconoModo: modo, iconoUrlPublica: url, usaIntermediario: usaInt })
-        : `<span class="tipo-op-iconos">${escapeHtml(nombre)}</span>`;
-      return `<li role="presentation"><button type="button" class="orden-tipo-operacion-option" role="option" data-value="${escV}" aria-selected="${selected}">${iconsHtml}<span class="orden-tipo-operacion-option-label">${escapeHtml(nombre)}</span></button></li>`;
+        ? htmlTipoOperacionIconos(codigo, nombreBase || nombrePlano, { iconoModo: modo, iconoUrlPublica: url, usaIntermediario: usaInt })
+        : `<span class="tipo-op-iconos">${escapeHtml(nombreBase || nombrePlano)}</span>`;
+      const labelHtml = htmlOrdenTipoOperacionEtiquetaVisible(nombreBase, usaInt);
+      return `<li role="presentation"><button type="button" class="orden-tipo-operacion-option" role="option" data-value="${escV}" aria-selected="${selected}">${iconsHtml}<span class="orden-tipo-operacion-option-label">${labelHtml}</span></button></li>`;
     })
     .join('');
 }
@@ -4865,13 +4867,18 @@ function syncOrdenTipoOperacionIconosPreview() {
   }
   const opt = sel.selectedOptions && sel.selectedOptions[0];
   const codigo = opt ? (opt.getAttribute('data-codigo') || '').trim() : '';
-  const nombre = opt && opt.textContent ? opt.textContent.trim() : '';
+  const nombrePlano = opt && opt.textContent ? opt.textContent.trim() : '';
+  const nombreBaseAttr = opt ? (opt.getAttribute('data-nombre-base') || '').trim() : '';
+  const usaIntSel = opt && opt.getAttribute('data-usa-intermediario') === 'true';
+  let base = nombreBaseAttr;
+  if (!base) base = usaIntSel ? nombrePlano.replace(/\s+-\s*Int\.\s*$/i, '').trim() : nombrePlano;
   const modoRaw = (opt && opt.getAttribute('data-icono-modo')) || 'auto';
   const modo = modoRaw === 'cheque' || modoRaw === 'custom' ? modoRaw : 'auto';
   const url = (opt && opt.getAttribute('data-icono-url')) || '';
-  const usaInt = opt && opt.getAttribute('data-usa-intermediario') === 'true';
-  const ic = codigo ? htmlTipoOperacionIconos(codigo, nombre, { iconoModo: modo, iconoUrlPublica: url, usaIntermediario: usaInt }) : '';
-  display.innerHTML = `<span class="orden-tipo-operacion-combo-display-inner">${ic}<span class="orden-tipo-operacion-combo-nombre">${escapeHtml(nombre)}</span></span>`;
+  const usaInt = !!usaIntSel;
+  const ic = codigo ? htmlTipoOperacionIconos(codigo, base || nombrePlano, { iconoModo: modo, iconoUrlPublica: url, usaIntermediario: usaInt }) : '';
+  const nombreHtml = htmlOrdenTipoOperacionEtiquetaVisible(base, usaInt);
+  display.innerHTML = `<span class="orden-tipo-operacion-combo-display-inner">${ic}<span class="orden-tipo-operacion-combo-nombre">${nombreHtml}</span></span>`;
 }
 
 function renderOrdenesTabla(list) {
@@ -5212,7 +5219,7 @@ function openModalOrden(registro) {
   Promise.all([promDatos, promRegistro])
     .then(([[rClientes, rTipos, rInt], registroActual]) => {
       const clientes = (rClientes.data || []);
-      const tipos = (rTipos.data || []);
+      const tipos = ordenarTiposOperacionListaParaOrden(rTipos.data || []);
       const intermediarios = (rInt.data || []);
       if (rTipos.error) {
         showToast('Error al cargar tipos de operación: ' + (rTipos.error.message || ''), 'error');
@@ -5224,10 +5231,13 @@ function openModalOrden(registro) {
     if (selCliente) selCliente.innerHTML = '<option value="">Sin asignar</option>' + clientes.map((c) => `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('');
     if (selTipo) {
       const escUrl = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const escAttr = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
       const im = (m) => (m === 'cheque' || m === 'custom' ? m : 'auto');
       selTipo.innerHTML = '<option value="">Elegir…</option>' + tipos.map((t) => {
         const modo = im((t.icono_modo || 'auto').toString().trim().toLowerCase());
-        return `<option value="${t.id}" data-codigo="${escapeHtml(t.codigo || '')}" data-icono-modo="${escapeHtml(modo)}" data-icono-url="${escUrl(t.icono_url_publica || '')}" data-moneda-in="${escapeHtml((t.moneda_in || '').toUpperCase())}" data-moneda-out="${escapeHtml((t.moneda_out || '').toUpperCase())}" data-usa-intermediario="${t.usa_intermediario === true ? 'true' : 'false'}">${escapeHtml(t.nombre)}</option>`;
+        const baseNombre = t.nombre != null ? String(t.nombre).trim() : '';
+        const etiqueta = nombreTipoOperacionOrdenUi(t);
+        return `<option value="${t.id}" data-nombre-base="${escAttr(baseNombre)}" data-codigo="${escapeHtml(t.codigo || '')}" data-icono-modo="${escapeHtml(modo)}" data-icono-url="${escUrl(t.icono_url_publica || '')}" data-moneda-in="${escapeHtml((t.moneda_in || '').toUpperCase())}" data-moneda-out="${escapeHtml((t.moneda_out || '').toUpperCase())}" data-usa-intermediario="${t.usa_intermediario === true ? 'true' : 'false'}">${escapeHtml(etiqueta)}</option>`;
       }).join('');
     }
     syncOrdenTipoOperacionIconosPreview();
@@ -10850,6 +10860,51 @@ function supabaseErrorFaltaColumnaOrdenVisualTiposOperacion(err) {
   if (String(err.code) === '42703') return true;
   const msg = String(err.message || err.details || '');
   return /orden_visual/i.test(msg) && (/does not exist|no existe|undefined column/i.test(msg));
+}
+
+/** Texto plano en <option> SR: variante con intermediario lleva sufijo ` - Int.`. */
+function nombreTipoOperacionOrdenUi(t) {
+  const n = t && t.nombre != null ? String(t.nombre).trim() : '';
+  if (t && t.usa_intermediario === true) return n ? `${n} - Int.` : '- Int.';
+  return n || '—';
+}
+
+/** Etiqueta en combo custom (HTML): nombre base + ` - Int.` en azul negrita si aplica. */
+function htmlOrdenTipoOperacionEtiquetaVisible(nombreBase, usaInt) {
+  const b = (nombreBase || '').trim();
+  if (usaInt) {
+    if (b) return `${escapeHtml(b)}<span class="tipo-op-sufijo-int"> - Int.</span>`;
+    return '<span class="tipo-op-sufijo-int">- Int.</span>';
+  }
+  return escapeHtml(b || '—');
+}
+
+/**
+ * Orden estable igual que en Supabase: orden_visual (null al final), codigo, usa_intermediario, id.
+ * Refuerzo en cliente por si la respuesta llegara desordenada.
+ */
+function ordenarTiposOperacionListaParaOrden(arr) {
+  const list = (arr || []).slice();
+  const tieneOv = list.some(
+    (t) => t && t.orden_visual != null && String(t.orden_visual).trim() !== '' && Number.isFinite(Number(t.orden_visual)),
+  );
+  function claveOv(t) {
+    const n = Number(t && t.orden_visual);
+    if (Number.isFinite(n)) return n;
+    return tieneOv ? 1e9 : 0;
+  }
+  list.sort((a, b) => {
+    const da = claveOv(a);
+    const db = claveOv(b);
+    if (da !== db) return da - db;
+    const sc = String((a && a.codigo) || '').localeCompare(String((b && b.codigo) || ''));
+    if (sc !== 0) return sc;
+    const ia = a && a.usa_intermediario === true ? 1 : 0;
+    const ib = b && b.usa_intermediario === true ? 1 : 0;
+    if (ia !== ib) return ia - ib;
+    return String((a && a.id) || '').localeCompare(String((b && b.id) || ''));
+  });
+  return list;
 }
 
 /**
