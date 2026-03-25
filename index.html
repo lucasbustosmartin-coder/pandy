@@ -164,6 +164,43 @@
     #tabla-tipos-operacion th:nth-child(2) { text-align: left; padding-left: 0.5rem; }
     #tabla-tipos-operacion .td-tipo-op-iconos { text-align: left; padding-left: 0.5rem; vertical-align: middle; }
     #tabla-tipos-operacion .td-tipo-op-iconos .tipo-op-iconos { justify-content: flex-start; }
+    /* Órdenes: columna Tipo op. — iconos alineados a la izquierda (misma convención que Tipos de operación) */
+    #tabla-ordenes th:nth-child(3) { text-align: left; padding-left: 0.5rem; }
+    #tabla-ordenes .td-tipo-op-iconos { text-align: left; padding-left: 0.5rem; vertical-align: middle; }
+    #tabla-ordenes .td-tipo-op-iconos .tipo-op-iconos { justify-content: flex-start; }
+    /* Órdenes (y modal pendientes): importe a la derecha; moneda en columna angosta y discreta */
+    .th-orden-importe { text-align: right; }
+    .th-orden-moneda-col {
+      width: 2.35rem;
+      max-width: 2.6rem;
+      padding-left: 0.1rem;
+      padding-right: 0.2rem;
+      vertical-align: bottom;
+    }
+    .td-orden-importe {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .td-orden-moneda {
+      text-align: center;
+      padding: 0.25rem 0.1rem;
+      white-space: nowrap;
+      vertical-align: middle;
+      width: 2.35rem;
+      max-width: 2.6rem;
+    }
+    .td-orden-moneda .td-orden-moneda-icono {
+      display: block;
+      margin: 0 auto;
+      object-fit: contain;
+    }
+    .td-orden-moneda-vacio {
+      color: #9ca3af;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
     #tabla-tipos-operacion .tipo-op-toggle-cell .toggle-switch { flex-shrink: 0; display: inline-block; width: 48px; height: 26px; }
     #tabla-tipos-operacion .tipo-op-toggle-cell .toggle-switch .slider { border: 1px solid #9ca3af; box-sizing: border-box; }
     #tabla-clientes th:nth-child(5), #tabla-clientes td:nth-child(5), #tabla-intermediarios th:nth-child(5), #tabla-intermediarios td:nth-child(5) { text-align: center; vertical-align: middle; }
@@ -1143,7 +1180,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.62</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.63</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -1332,7 +1369,7 @@
         <div id="ordenes-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-ordenes">
-            <thead><tr><th>Nº</th><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Recibido</th><th>Entregado</th><th></th></tr></thead>
+            <thead><tr><th>Nº</th><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
             <tbody id="ordenes-tbody"></tbody>
           </table>
         </div>
@@ -2512,7 +2549,7 @@
         <div id="ordenes-pendientes-tabla-wrap" style="display:none;">
           <div class="tabla-clientes-wrap tabla-wrap-con-scroll">
             <table class="tabla-clientes">
-              <thead><tr><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Recibido</th><th>Entregado</th><th></th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
               <tbody id="ordenes-pendientes-tbody"></tbody>
             </table>
           </div>

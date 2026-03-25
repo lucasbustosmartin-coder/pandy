@@ -80,6 +80,17 @@ function delayMinLoading(shownAt, minMs) {
   return wait > 0 ? new Promise((r) => setTimeout(r, wait)) : Promise.resolve();
 }
 
+/** True mientras corre el refresco automático por intervalo: no vaciar tablas ni mostrar spinners; los datos previos quedan hasta reemplazarlos. */
+let pandiBackgroundRefreshActive = false;
+function isPandiBackgroundRefresh() {
+  return pandiBackgroundRefreshActive;
+}
+/** Espera mínima de “cargando” solo al abrir la vista por menú; en refresco en background no se fuerza demora ni parpadeo. */
+function delayMinLoadingSiNoEsBackground(shownAt) {
+  if (isPandiBackgroundRefresh()) return Promise.resolve();
+  return delayMinLoading(shownAt);
+}
+
 // Tiempo de inactividad: tras X minutos sin usar la app se cierra la sesión (configurable por Admin en Seguridad)
 let lastActivityTime = 0;
 let sessionTimeoutMinutes = 60;
@@ -224,7 +235,10 @@ function showView(vistaId, pageTitle) {
 
   if (vistaId === 'vista-seguridad') loadSeguridad();
   if (vistaId === 'vista-clientes') loadClientes();
-  if (vistaId === 'vista-cajas') loadCajas();
+  if (vistaId === 'vista-cajas') {
+    invalidateCajasMovimientosFullCache();
+    loadCajas();
+  }
   if (vistaId === 'vista-ordenes') loadOrdenes();
   if (vistaId === 'vista-inicio') loadInicio();
   if (vistaId === 'vista-cuenta-corriente') {
@@ -299,13 +313,16 @@ function loadSeguridad() {
     return;
   }
 
-  loadingEl.style.display = 'block';
-  wrapEl.style.display = 'none';
-  tbody.innerHTML = '';
-  if (permisosWrap) permisosWrap.style.display = 'none';
-  if (permisosGrid) permisosGrid.innerHTML = '';
+  const silentSeg = isPandiBackgroundRefresh();
+  if (!silentSeg) {
+    loadingEl.style.display = 'block';
+    wrapEl.style.display = 'none';
+    tbody.innerHTML = '';
+    if (permisosWrap) permisosWrap.style.display = 'none';
+    if (permisosGrid) permisosGrid.innerHTML = '';
+  }
 
-  Promise.all([
+  return Promise.all([
     client.rpc('get_users_for_admin'),
     client.rpc('get_my_role'),
     client.from('app_role').select('role, label').order('role'),
@@ -529,6 +546,9 @@ function loadSeguridad() {
       });
       if (permisosWrap) permisosWrap.style.display = 'block';
     }
+  }).catch(() => {
+    loadingEl.style.display = 'none';
+    if (!silentSeg) wrapEl.style.display = 'block';
   });
 }
 
@@ -558,6 +578,11 @@ let cajasMovFiltrosListenersAttached = false;
 /** Solapa principal vista Cajas: 'movimientos' | 'tipos' (mismo patrón que CC). */
 let cajasVistaSolapa = 'movimientos';
 let tiposMovimientoCaja = [];
+/** Última carga completa (sync + fetch). Cambiar solo moneda/fecha/tipo caja en UI repinta desde acá sin tocar Supabase ni sync masivo — mismo criterio que filtros en memoria en PortfolioDetail (Sistema-Contable). */
+let cajasMovimientosFullCache = null;
+function invalidateCajasMovimientosFullCache() {
+  cajasMovimientosFullCache = null;
+}
 
 /** Concepto para movimientos de cuenta corriente: "Cobro por USD 5.000,00" (Pandy cobró), "Deuda por ARS 4.170.000,00" (Pandy debe), "Pago por comisión USD 60,00". */
 function conceptoCcMovimiento(moneda, monto, tipo) {
@@ -759,6 +784,9 @@ const MONEDAS_CC_UI = ['USD', 'EUR', 'ARS'];
 const MONEDAS_CC_MOVIMIENTOS_COLS = ['USD', 'ARS', 'EUR'];
 let ccUiMonedasVisibles = { USD: true, EUR: true, ARS: true };
 
+/** Iconos moneda fiat en UI (Panel, CC, listado órdenes). */
+const URL_ICONO_MONEDA_ASSETS = { USD: '/assets/Icono_Dolar.avif', EUR: '/assets/Icono_Euro.avif', ARS: '/assets/Icono_ARS.webp' };
+
 /**
  * Cruce con tipo de cambio (misma convención que ARS-USD / USD-ARS, anclado en USD o en EUR).
  * - compra_usd / compra_eur: el cliente compra la moneda entregada (USD o EUR); la otra fiat se calcula con tc = unidades de la moneda recibida por 1 unidad entregada.
@@ -823,13 +851,13 @@ function ccColspanModalDetalleMovimientos() {
 
 function htmlCcModalSaldosCards(saldos) {
   const sal = saldos || { USD: 0, EUR: 0, ARS: 0 };
-  const iconUrls = { USD: '/assets/Icono_Dolar.avif', EUR: '/assets/Icono_Euro.avif', ARS: '/assets/Icono_ARS.webp' };
   return MONEDAS_CC_UI.map((mon) => {
     const s = Number(sal[mon]) || 0;
     const label = s >= 0 ? 'Positivo' : 'Negativo';
     const val = formatMonto(s >= 0 ? s : -s, mon);
     const cls = 'valor ' + (s >= 0 ? 'positivo' : 'negativo');
-    return `<div class="card" data-cc-moneda-col="${mon}" style="min-width:120px;"><span class="card-titulo"><img src="${iconUrls[mon]}" alt="" class="cc-icono-moneda" width="20" height="20"/> ${mon}</span><span class="cc-saldo-label" aria-hidden="true">${label}</span><span class="${cls}">${val}</span></div>`;
+    const src = URL_ICONO_MONEDA_ASSETS[mon] || '';
+    return `<div class="card" data-cc-moneda-col="${mon}" style="min-width:120px;"><span class="card-titulo"><img src="${src}" alt="" class="cc-icono-moneda" width="20" height="20"/> ${mon}</span><span class="cc-saldo-label" aria-hidden="true">${label}</span><span class="${cls}">${val}</span></div>`;
   }).join('');
 }
 
@@ -1021,46 +1049,14 @@ function exportarMovimientosCajaExcel() {
   });
 }
 
-function loadCajas() {
-  syncCajasPaneles();
-  const loadingEl = document.getElementById('cajas-loading');
-  const wrapEl = document.getElementById('cajas-tabla-wrap');
-  const tbody = document.getElementById('movimientos-caja-tbody');
-  const btnNuevo = document.getElementById('btn-nuevo-movimiento-caja');
-  const toggleMoneda = document.getElementById('cajas-toggle-moneda');
-  if (!loadingEl || !wrapEl || !tbody) return;
-
-  const canAbm = userPermissions.includes('abm_movimientos_caja');
-  if (btnNuevo) btnNuevo.style.display = canAbm ? '' : 'none';
-
-  const verEfectivo = userPermissions.includes('ver_cajas_efectivo');
-  const verBanco = userPermissions.includes('ver_cajas_banco');
-  const verCheque = userPermissions.includes('ver_cajas_cheque');
-  const cardEfectivo = document.getElementById('cajas-card-efectivo');
-  const cardBanco = document.getElementById('cajas-card-banco');
-  const cardCheque = document.getElementById('cajas-card-cheque');
-  if (cardEfectivo) cardEfectivo.style.display = verEfectivo ? '' : 'none';
-  if (cardBanco) cardBanco.style.display = verBanco ? '' : 'none';
-  if (cardCheque) cardCheque.style.display = verCheque ? '' : 'none';
-
-  normalizarCajasMovCajaTipoTabSegunPermisos();
-  aplicarVisibilidadBotonesFiltroCajaMovimientos();
-
-  loadingEl.style.display = 'block';
-  const loadingShownAtCajas = Date.now();
-  wrapEl.style.display = 'none';
-  const cajasSaldoIds = ['cajas-saldo-efectivo-usd', 'cajas-saldo-efectivo-eur', 'cajas-saldo-efectivo-ars', 'cajas-saldo-banco-usd', 'cajas-saldo-banco-ars', 'cajas-saldo-cheque-ars'];
-  cajasSaldoIds.forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = '–'; });
-
-  Promise.all([
-    getListaMovimientosCajaParaSaldos(),
-    client.from('tipos_movimiento_caja').select('id, nombre'),
-    hayTipoOperacionActivoConMoneda('USD'),
-    hayTipoOperacionActivoConMoneda('ARS'),
-    hayTipoOperacionActivoConMoneda('EUR'),
-  ])
-    .then(([list, resTipos, monUsd, monArs, monEur]) => {
-    return delayMinLoading(loadingShownAtCajas).then(() => {
+/**
+ * Pinta cards + tabla de movimientos desde lista en memoria (sin sync ni fetch).
+ * @param {object} ctx — omitirDelayYLoading: true al solo cambiar filtros (sin spinner ni espera).
+ */
+function pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, ctx) {
+  const { loadingEl, wrapEl, tbody, loadingShownAtCajas, omitirDelayYLoading } = ctx;
+  const waitIntro = omitirDelayYLoading ? Promise.resolve() : delayMinLoadingSiNoEsBackground(loadingShownAtCajas);
+  return waitIntro.then(() => {
     loadingEl.style.display = 'none';
     const efRaw = { USD: !!monUsd, ARS: !!monArs, EUR: !!monEur };
     const baRaw = { USD: !!monUsd, ARS: !!monArs };
@@ -1128,23 +1124,100 @@ function loadCajas() {
             </tr>`
       )
       .join('');
-      if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="10">' + (cajasMonedaActual === 'TODO' ? 'No hay movimientos.' : 'No hay movimientos en esta moneda.') + '</td></tr>';
-      else {
-        tbody.querySelectorAll('.btn-editar-mov-caja').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-id');
-            const mov = list.find((x) => String(x.id) === String(id));
-            if (mov) openModalMovimientoCaja(mov);
-          });
+    if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="10">' + (cajasMonedaActual === 'TODO' ? 'No hay movimientos.' : 'No hay movimientos en esta moneda.') + '</td></tr>';
+    else {
+      tbody.querySelectorAll('.btn-editar-mov-caja').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const mov = list.find((x) => String(x.id) === String(id));
+          if (mov) openModalMovimientoCaja(mov);
         });
-      }
-      wrapEl.style.display = 'block';
-    });
+      });
+    }
+    wrapEl.style.display = 'block';
+  });
+}
+
+/**
+ * @param {{ soloFiltros?: boolean }} opts — soloFiltros: moneda/fecha/tabs; repinta desde caché sin sync masivo ni SELECT (como filtros en memoria en PortfolioDetail).
+ */
+function loadCajas(opts) {
+  opts = opts || {};
+  const soloFiltros = opts.soloFiltros === true;
+  syncCajasPaneles();
+  const loadingEl = document.getElementById('cajas-loading');
+  const wrapEl = document.getElementById('cajas-tabla-wrap');
+  const tbody = document.getElementById('movimientos-caja-tbody');
+  const btnNuevo = document.getElementById('btn-nuevo-movimiento-caja');
+  const toggleMoneda = document.getElementById('cajas-toggle-moneda');
+  if (!loadingEl || !wrapEl || !tbody) return Promise.resolve();
+
+  const canAbm = userPermissions.includes('abm_movimientos_caja');
+  if (btnNuevo) btnNuevo.style.display = canAbm ? '' : 'none';
+
+  const verEfectivo = userPermissions.includes('ver_cajas_efectivo');
+  const verBanco = userPermissions.includes('ver_cajas_banco');
+  const verCheque = userPermissions.includes('ver_cajas_cheque');
+  const cardEfectivo = document.getElementById('cajas-card-efectivo');
+  const cardBanco = document.getElementById('cajas-card-banco');
+  const cardCheque = document.getElementById('cajas-card-cheque');
+  if (cardEfectivo) cardEfectivo.style.display = verEfectivo ? '' : 'none';
+  if (cardBanco) cardBanco.style.display = verBanco ? '' : 'none';
+  if (cardCheque) cardCheque.style.display = verCheque ? '' : 'none';
+
+  normalizarCajasMovCajaTipoTabSegunPermisos();
+  aplicarVisibilidadBotonesFiltroCajaMovimientos();
+
+  if (soloFiltros && cajasMovimientosFullCache) {
+    const c = cajasMovimientosFullCache;
+    if (cajasVistaSolapa === 'tipos') {
+      loadTiposMovimientoCajaTable();
+    }
+    return pintarCajasMovimientosUi(c.list, c.resTipos, c.monUsd, c.monArs, c.monEur, {
+      loadingEl,
+      wrapEl,
+      tbody,
+      loadingShownAtCajas: 0,
+      omitirDelayYLoading: true,
+    }).catch(() => {});
+  }
+
+  const silentCajas = isPandiBackgroundRefresh();
+  const loadingShownAtCajas = silentCajas ? 0 : Date.now();
+  if (!silentCajas) {
+    loadingEl.style.display = 'block';
+    wrapEl.style.display = 'none';
+    const cajasSaldoIds = ['cajas-saldo-efectivo-usd', 'cajas-saldo-efectivo-eur', 'cajas-saldo-efectivo-ars', 'cajas-saldo-banco-usd', 'cajas-saldo-banco-ars', 'cajas-saldo-cheque-ars'];
+    cajasSaldoIds.forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = '–'; });
+  }
+
+  const promCajas = Promise.all([
+    getListaMovimientosCajaParaSaldos(),
+    client.from('tipos_movimiento_caja').select('id, nombre'),
+    hayTipoOperacionActivoConMoneda('USD'),
+    hayTipoOperacionActivoConMoneda('ARS'),
+    hayTipoOperacionActivoConMoneda('EUR'),
+  ])
+    .then(([list, resTipos, monUsd, monArs, monEur]) => {
+      cajasMovimientosFullCache = { list, resTipos, monUsd, monArs, monEur };
+      return pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, {
+        loadingEl,
+        wrapEl,
+        tbody,
+        loadingShownAtCajas,
+        omitirDelayYLoading: false,
+      });
+    })
+    .catch(() => {
+      cajasMovimientosFullCache = null;
+      loadingEl.style.display = 'none';
+      if (!silentCajas) wrapEl.style.display = 'block';
     });
 
   if (cajasVistaSolapa === 'tipos') {
     loadTiposMovimientoCajaTable();
   }
+  return promCajas;
 }
 
 function loadInicio() {
@@ -1183,7 +1256,7 @@ function loadInicio() {
   const ayerStr = ayer.getFullYear() + '-' + String(ayer.getMonth() + 1).padStart(2, '0') + '-' + String(ayer.getDate()).padStart(2, '0');
 
   // Usar la misma lista y el mismo cálculo que la vista Cajas: Saldo Actual = saldos de las cards de Cajas.
-  Promise.all([
+  return Promise.all([
     getListaMovimientosCajaParaSaldos(),
     hayTipoOperacionActivoConMoneda('USD'),
     hayTipoOperacionActivoConMoneda('ARS'),
@@ -1241,7 +1314,8 @@ function loadInicio() {
       MONEDAS_PANEL_CAJA_BANCO.filter((mon) => baVis[mon]).forEach((mon) => setFila('banco', mon));
       setFila('cheque', 'ARS');
       loadInicioPendientes();
-    });
+    })
+    .catch(() => {});
 }
 
 function loadInicioPendientes() {
@@ -1327,11 +1401,13 @@ function renderOrdenesPendientesTabla() {
       <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
       <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
       <td>${estadoHtml}</td>
-      <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
-      <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
+      <td class="td-orden-importe">${formatMonto(o.monto_recibido)}</td>
+      <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(o.moneda_recibida)}</td>
+      <td class="td-orden-importe">${formatMonto(o.monto_entregado)}</td>
+      <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(o.moneda_entregada)}</td>
       <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden-pendiente" data-id="${o.id}" title="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones-pendiente" data-id="${o.id}" title="Transacciones"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>` : ''}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="8">No hay órdenes que coincidan con los filtros.</td></tr>';
+  }).join('') : '<tr><td colspan="10">No hay órdenes que coincidan con los filtros.</td></tr>';
   tbody.querySelectorAll('.btn-editar-orden-pendiente').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.getAttribute('data-id');
@@ -1370,14 +1446,14 @@ function openModalOrdenesPendientes(estadoFilter) {
   client.from('ordenes').select(selectOrdPend).neq('estado', 'orden_ejecutada').neq('estado', 'anulada').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((res) => {
       if (res.error) {
         loadingEl.style.display = 'none';
-        tbody.innerHTML = '<tr><td colspan="8">Error: ' + (res.error.message || '') + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10">Error: ' + (res.error.message || '') + '</td></tr>';
         wrapEl.style.display = 'block';
         return;
       }
       const list = res.data || [];
       if (list.length === 0) {
         loadingEl.style.display = 'none';
-        tbody.innerHTML = '<tr><td colspan="8">No hay órdenes pendientes.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10">No hay órdenes pendientes.</td></tr>';
         wrapEl.style.display = 'block';
         return;
       }
@@ -2486,14 +2562,17 @@ function loadCuentaCorriente() {
   const panelMov = document.getElementById('cc-panel-movimientos');
   if (!contenido || !tbody) return;
 
-  if (loadingEl) loadingEl.style.display = 'block';
-  const loadingShownAtCc = Date.now();
-  contenido.style.display = 'none';
-  if (panelSaldos) panelSaldos.style.display = 'none';
-  if (panelMov) panelMov.style.display = 'none';
+  const silentCc = isPandiBackgroundRefresh();
+  const loadingShownAtCc = silentCc ? 0 : Date.now();
+  if (!silentCc) {
+    if (loadingEl) loadingEl.style.display = 'block';
+    contenido.style.display = 'none';
+    if (panelSaldos) panelSaldos.style.display = 'none';
+    if (panelMov) panelMov.style.display = 'none';
+  }
 
   // Corazón de la app: la única fuente de verdad es orden + transacciones. Siempre sincronizar CC (y caja) antes de cargar, así el detalle muestra exactamente lo que indica el modelo (ej. 3 movimientos cliente para ARS-ARS+int). Si sync falla, se cargan igual los movimientos ya guardados.
-  const promDatos = sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
+  return sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
     .then(() => {})
     .catch(() => {})
     .then(() => Promise.all([
@@ -2501,8 +2580,8 @@ function loadCuentaCorriente() {
       client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
       client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle'),
       client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle'),
-    ]));
-  promDatos.then(([rClientes, rInt, rMovCli, rMovInt]) => {
+    ]))
+    .then(([rClientes, rInt, rMovCli, rMovInt]) => {
     const clientes = rClientes.data || [];
     const intermediarios = rInt.data || [];
     const movCliRaw = rMovCli.data || [];
@@ -2708,14 +2787,16 @@ function loadCuentaCorriente() {
           ['USD', 'EUR', 'ARS'].forEach((mon) => { saldoIntByIdPrecomp[orden.intermediario_id][mon] += contribInt[mon] || 0; });
         }
       });
-      return delayMinLoading(loadingShownAtCc).then(() => {
+      return delayMinLoadingSiNoEsBackground(loadingShownAtCc).then(() => {
         buildCcResumenRows(clientes, intermediarios, movCli, movIntEnriched, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById || {}, ordenById || {}, pendientePandyDebeIntByInt || {}, pendienteClienteAjusteByCli || {}, saldoClienteByCliPrecomp, saldoIntByIdPrecomp);
       });
     });
   }).catch((err) => {
     if (loadingEl) loadingEl.style.display = 'none';
-    contenido.style.display = 'block';
-    syncCcPestañasYPaneles();
+    if (!silentCc) {
+      contenido.style.display = 'block';
+      syncCcPestañasYPaneles();
+    }
   });
 }
 
@@ -3981,7 +4062,7 @@ function setupCajasToggle() {
       cajasMonedaActual = btn.getAttribute('data-moneda');
       toggleMoneda.querySelectorAll('button').forEach((b) => b.classList.remove('activo'));
       btn.classList.add('activo');
-      loadCajas();
+      loadCajas({ soloFiltros: true });
     });
   });
 }
@@ -4015,7 +4096,7 @@ function setupCajasMovFiltrosYTabs() {
     } else {
       cajasMovMostrarTodoHistorial = false;
     }
-    loadCajas();
+    loadCajas({ soloFiltros: true });
   }
   if (dEl) dEl.addEventListener('change', aplicarRangoCajasMov);
   if (hEl) hEl.addEventListener('change', aplicarRangoCajasMov);
@@ -4028,7 +4109,7 @@ function setupCajasMovFiltrosYTabs() {
       cajasMovFechaDesde = h;
       cajasMovFechaHasta = h;
       syncCajasMovFechaInputs();
-      loadCajas();
+      loadCajas({ soloFiltros: true });
     });
   }
   if (btnTodo) {
@@ -4037,7 +4118,7 @@ function setupCajasMovFiltrosYTabs() {
       cajasMovFechaDesde = '';
       cajasMovFechaHasta = '';
       syncCajasMovFechaInputs();
-      loadCajas();
+      loadCajas({ soloFiltros: true });
     });
   }
   document.querySelectorAll('[data-caja-tab]').forEach((btn) => {
@@ -4050,7 +4131,7 @@ function setupCajasMovFiltrosYTabs() {
       });
       btn.classList.add('activo');
       btn.setAttribute('aria-pressed', 'true');
-      loadCajas();
+      loadCajas({ soloFiltros: true });
     });
   });
   const cajasVistaTabsEl = document.getElementById('cajas-vista-tabs');
@@ -4230,6 +4311,14 @@ function saveMovimientoCaja() {
 function escapeHtml(s) {
   if (s == null) return '';
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Icono de moneda en columnas angostas del listado de órdenes y modal pendientes. */
+function htmlIconoMonedaCeldaOrden(moneda) {
+  const mon = String(moneda || '').toUpperCase().trim();
+  const src = URL_ICONO_MONEDA_ASSETS[mon];
+  if (!src) return '<span class="td-orden-moneda-vacio" aria-hidden="true">–</span>';
+  return `<img src="${src}" alt="${escapeHtml(mon)}" class="cc-icono-moneda td-orden-moneda-icono" width="20" height="20" decoding="async"/>`;
 }
 
 /** Devuelve HTML con clase por participante: Pandy azul negrita, Cliente negro, Intermediario violeta. */
@@ -4905,7 +4994,7 @@ function renderOrdenesTabla(list) {
   const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada', cotizacion: 'Cotización', concertada: 'Concertada' }[e] || (e ? String(e) : '–'));
   const estadoBadgeClass = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada', 'cotizacion', 'concertada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
   if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9">No hay órdenes con los filtros aplicados.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11">No hay órdenes con los filtros aplicados.</td></tr>';
     wrapEl.style.display = 'block';
     return;
   }
@@ -4922,12 +5011,14 @@ function renderOrdenesTabla(list) {
           <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
           <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
           <td>${estadoHtml}</td>
-          <td>${o.moneda_recibida} ${formatMonto(o.monto_recibido)}</td>
-          <td>${o.moneda_entregada} ${formatMonto(o.monto_entregado)}</td>
+          <td class="td-orden-importe">${formatMonto(o.monto_recibido)}</td>
+          <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(o.moneda_recibida)}</td>
+          <td class="td-orden-importe">${formatMonto(o.monto_entregado)}</td>
+          <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(o.moneda_entregada)}</td>
           <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${canAnularOrden && o.estado !== 'anulada' && o.estado !== 'orden_ejecutada' ? ` <button type="button" class="btn-secondary btn-anular-orden-tabla btn-icon-only" data-id="${o.id}" title="Anular orden" aria-label="Anular orden" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>` : ''}` : ''}</td>
         </tr>
         <tr class="orden-detalle-tr" id="orden-detalle-${o.id}" data-orden-id="${o.id}" style="display:none;">
-          <td colspan="9" class="orden-detalle-cell">
+          <td colspan="11" class="orden-detalle-cell">
             <div class="orden-detalle-panel" id="panel-orden-${o.id}" data-orden-id="${o.id}">
               <div class="orden-detalle-encabezado"></div>
               <div class="orden-detalle-loading" style="display:none;">Cargando transacciones…</div>
@@ -5008,11 +5099,14 @@ function loadOrdenes() {
   const btnOrdenPorChat = document.getElementById('btn-orden-por-chat');
   if (btnOrdenPorChat) btnOrdenPorChat.style.display = canIngresarOrden ? '' : 'none';
 
-  loadingEl.style.display = 'block';
-  const loadingShownAtOrdenes = Date.now();
-  if (filtrosWrap) filtrosWrap.style.display = 'none';
-  wrapEl.style.display = 'none';
-  tbody.innerHTML = '';
+  const silentOrd = isPandiBackgroundRefresh();
+  const loadingShownAtOrdenes = silentOrd ? 0 : Date.now();
+  if (!silentOrd) {
+    loadingEl.style.display = 'block';
+    if (filtrosWrap) filtrosWrap.style.display = 'none';
+    wrapEl.style.display = 'none';
+    tbody.innerHTML = '';
+  }
 
   const selectBase = 'id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, observaciones';
   const selectConNumero = 'id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, observaciones';
@@ -5030,9 +5124,13 @@ function loadOrdenes() {
             ordenesTieneNumeroColumn = false;
             return runLoadOrdenes(selectBase);
           }
-          return delayMinLoading(loadingShownAtOrdenes).then(() => {
+          return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(() => {
             loadingEl.style.display = 'none';
-            tbody.innerHTML = '<tr><td colspan="9">Error: ' + (msg || '') + '</td></tr>';
+            if (silentOrd) {
+              showToast('Error al actualizar órdenes: ' + (msg || ''), 'error');
+              return;
+            }
+            tbody.innerHTML = '<tr><td colspan="11">Error: ' + (msg || '') + '</td></tr>';
             wrapEl.style.display = 'block';
           });
         }
@@ -5075,7 +5173,7 @@ function loadOrdenes() {
             selIntermediario.innerHTML = '<option value="">Todos</option>' + (crInt.data || []).map((i) => `<option value="${i.id}">${escapeHtml(i.nombre || '')}</option>`).join('');
           }
           if (filtrosWrap) filtrosWrap.style.display = 'flex';
-          return delayMinLoading(loadingShownAtOrdenes).then(() => {
+          return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(() => {
             loadingEl.style.display = 'none';
             if (!ordenesFiltrosListenersAttached) {
               const selC = document.getElementById('ordenes-filtro-cliente');
@@ -5092,8 +5190,11 @@ function loadOrdenes() {
       });
   }
 
-  // Recalcular CC y caja desde orden + transacciones; luego cargar órdenes.
-  return sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().then(() => runLoadOrdenes(selectConNumero));
+  // Sincronizar CC/caja sin bloquear el listado: la grilla solo necesita `ordenes` + catálogos (rápido con pocas filas).
+  // Antes se encadenaba sync → runLoadOrdenes; el sync recorre cada orden con instrumentación en serie (`sincronizarCcYCajaDesdeOrden`)
+  // y domina el tiempo aunque haya 7 órdenes — no es un tema de índices en `ordenes`. CC y Cajas siguen llamando al mismo sync al entrar.
+  sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().catch(() => {});
+  return runLoadOrdenes(selectConNumero);
 }
 
 /** Crea una orden borrador (mínima) para "Nueva orden". Si el usuario cierra sin guardar, se elimina en closeModalOrden. */
@@ -10558,19 +10659,25 @@ function loadClientes() {
   const canAbm = userPermissions.includes('abm_clientes');
   if (btnNuevo) btnNuevo.style.display = canAbm ? '' : 'none';
 
-  loadingEl.style.display = 'block';
-  wrapEl.style.display = 'none';
-  tbody.innerHTML = '';
+  const silentCli = isPandiBackgroundRefresh();
+  if (!silentCli) {
+    loadingEl.style.display = 'block';
+    wrapEl.style.display = 'none';
+    tbody.innerHTML = '';
+  }
 
-  client
+  return client
     .from('clientes')
     .select('id, nombre, documento, email, telefono, direccion, activo')
     .order('nombre', { ascending: true })
     .then((res) => {
       loadingEl.style.display = 'none';
       if (res.error) {
-        tbody.innerHTML = '<tr><td colspan="6">Error: ' + (res.error.message || '') + '</td></tr>';
-        wrapEl.style.display = 'block';
+        if (silentCli) showToast('Error al actualizar clientes: ' + (res.error.message || ''), 'error');
+        else {
+          tbody.innerHTML = '<tr><td colspan="6">Error: ' + (res.error.message || '') + '</td></tr>';
+          wrapEl.style.display = 'block';
+        }
         return;
       }
       const list = res.data || [];
@@ -10609,6 +10716,10 @@ function loadClientes() {
         });
       });
       wrapEl.style.display = 'block';
+    })
+    .catch(() => {
+      loadingEl.style.display = 'none';
+      if (!silentCli) wrapEl.style.display = 'block';
     });
 }
 
@@ -10703,19 +10814,25 @@ function loadIntermediarios() {
   const canAbm = userPermissions.includes('abm_intermediarios');
   if (btnNuevo) btnNuevo.style.display = canAbm ? '' : 'none';
 
-  loadingEl.style.display = 'block';
-  wrapEl.style.display = 'none';
-  tbody.innerHTML = '';
+  const silentInt = isPandiBackgroundRefresh();
+  if (!silentInt) {
+    loadingEl.style.display = 'block';
+    wrapEl.style.display = 'none';
+    tbody.innerHTML = '';
+  }
 
-  client
+  return client
     .from('intermediarios')
     .select('id, nombre, documento, email, telefono, direccion, activo')
     .order('nombre', { ascending: true })
     .then((res) => {
       loadingEl.style.display = 'none';
       if (res.error) {
-        tbody.innerHTML = '<tr><td colspan="6">Error: ' + (res.error.message || '') + '</td></tr>';
-        wrapEl.style.display = 'block';
+        if (silentInt) showToast('Error al actualizar intermediarios: ' + (res.error.message || ''), 'error');
+        else {
+          tbody.innerHTML = '<tr><td colspan="6">Error: ' + (res.error.message || '') + '</td></tr>';
+          wrapEl.style.display = 'block';
+        }
         return;
       }
       const list = res.data || [];
@@ -10754,6 +10871,10 @@ function loadIntermediarios() {
         });
       });
       wrapEl.style.display = 'block';
+    })
+    .catch(() => {
+      loadingEl.style.display = 'none';
+      if (!silentInt) wrapEl.style.display = 'block';
     });
 }
 
@@ -10978,12 +11099,15 @@ function loadTiposOperacion() {
   const canAbm = userPermissions.includes('abm_tipos_operacion');
   if (btnNuevo) btnNuevo.style.display = canAbm ? '' : 'none';
 
-  loadingEl.style.display = 'block';
-  wrapEl.style.display = 'none';
-  tbody.innerHTML = '';
+  const silentTipos = isPandiBackgroundRefresh();
+  if (!silentTipos) {
+    loadingEl.style.display = 'block';
+    wrapEl.style.display = 'none';
+    tbody.innerHTML = '';
+  }
 
   const colsBase = 'id, codigo, nombre, moneda_in, moneda_out, usa_intermediario, activo, icono_modo, icono_url_publica';
-  tiposOperacionFetchConFallbackOrdenVisual(
+  return tiposOperacionFetchConFallbackOrdenVisual(
     () => client.from('tipos_operacion').select(colsBase + ', orden_visual').order('orden_visual', { ascending: true }).order('codigo').order('usa_intermediario').order('id'),
     () => client.from('tipos_operacion').select(colsBase).order('codigo').order('usa_intermediario').order('id'),
   ).then((res) => {
@@ -10991,8 +11115,10 @@ function loadTiposOperacion() {
     if (res.error) {
       const msg = res.error.message || 'No se pudieron cargar los tipos.';
       showToast('Error: ' + msg, 'error');
-      tbody.innerHTML = '<tr><td colspan="9">Error: ' + escapeHtml(msg) + '</td></tr>';
-      wrapEl.style.display = 'block';
+      if (!silentTipos) {
+        tbody.innerHTML = '<tr><td colspan="9">Error: ' + escapeHtml(msg) + '</td></tr>';
+        wrapEl.style.display = 'block';
+      }
       return;
     }
     const list = res.data || [];
@@ -11074,6 +11200,9 @@ function loadTiposOperacion() {
       });
     });
     wrapEl.style.display = 'block';
+  }).catch(() => {
+    loadingEl.style.display = 'none';
+    if (!silentTipos) wrapEl.style.display = 'block';
   });
 }
 
@@ -11786,20 +11915,25 @@ function loadReglasNegocioVista() {
     tbody.innerHTML = '<tr><td colspan="17">No tenés permiso <code>abm_reglas_negocio</code>. Un administrador puede otorgarlo en Seguridad → permisos por rol.</td></tr>';
     return;
   }
-  loadingEl.style.display = 'block';
-  wrapEl.style.display = 'none';
-  tbody.innerHTML = '';
-  client.from('reglas_de_negocio').select('*').order('tipo_operacion_codigo').order('usa_intermediario').then((rR) => {
+  const silentReglas = isPandiBackgroundRefresh();
+  if (!silentReglas) {
+    loadingEl.style.display = 'block';
+    wrapEl.style.display = 'none';
+    tbody.innerHTML = '';
+  }
+  return client.from('reglas_de_negocio').select('*').order('tipo_operacion_codigo').order('usa_intermediario').then((rR) => {
     if (rR.error) {
       loadingEl.style.display = 'none';
-      wrapEl.style.display = 'block';
       const msg = rR.error.message || '';
       showToast('Error: ' + msg, 'error');
-      tbody.innerHTML = '<tr><td colspan="17">Error: ' + escapeHtml(msg) + '</td></tr>';
-      return;
+      if (!silentReglas) {
+        wrapEl.style.display = 'block';
+        tbody.innerHTML = '<tr><td colspan="17">Error: ' + escapeHtml(msg) + '</td></tr>';
+      }
+      return Promise.resolve();
     }
     reglasNegocioCacheList = rR.data || [];
-    tiposOperacionFetchConFallbackOrdenVisual(
+    return tiposOperacionFetchConFallbackOrdenVisual(
       () => client.from('tipos_operacion').select('codigo, usa_intermediario, moneda_in, moneda_out, orden_visual').order('orden_visual', { ascending: true }).order('codigo').order('usa_intermediario').order('id'),
       () => client.from('tipos_operacion').select('codigo, usa_intermediario, moneda_in, moneda_out').order('codigo').order('usa_intermediario').order('id'),
     ).then((rT) => {
@@ -11808,13 +11942,16 @@ function loadReglasNegocioVista() {
       if (rT.error) {
         const msg = rT.error.message || '';
         showToast('Error: ' + msg, 'error');
-        tbody.innerHTML = '<tr><td colspan="17">Error: ' + escapeHtml(msg) + '</td></tr>';
+        if (!silentReglas) tbody.innerHTML = '<tr><td colspan="17">Error: ' + escapeHtml(msg) + '</td></tr>';
         return;
       }
       tiposOperacionReglasCache = rT.data || [];
       reglasNegocioRellenarFiltroCodigos();
       renderReglasNegocioTabla();
     });
+  }).catch(() => {
+    loadingEl.style.display = 'none';
+    if (!silentReglas) wrapEl.style.display = 'block';
   });
 }
 
@@ -11928,7 +12065,7 @@ function hasExpandedSectionInCurrentView() {
   return false;
 }
 
-/** Refresco suave de la vista actual cada REFRESH_DATA_INTERVAL_MS. No recarga la página; solo vuelve a pedir los datos de la vista. No se ejecuta si hay un modal abierto ni si hay una sección expandida (para no colapsar). */
+/** Refresco suave de la vista actual cada REFRESH_DATA_INTERVAL_MS. No recarga la página; solo vuelve a pedir los datos de la vista. No se ejecuta si hay un modal abierto ni si hay una sección expandida (para no colapsar). Durante este ciclo `isPandiBackgroundRefresh()` es true: sin spinners ni tablas vacías. */
 function refreshCurrentViewData() {
   if (document.querySelector('.modal-backdrop.activo')) return;
   if (hasExpandedSectionInCurrentView()) return;
@@ -11944,7 +12081,18 @@ function refreshCurrentViewData() {
     'vista-seguridad': loadSeguridad,
   };
   const fn = loaders[currentVistaId];
-  if (typeof fn === 'function') fn();
+  if (typeof fn !== 'function') return;
+  pandiBackgroundRefreshActive = true;
+  try {
+    const ret = fn();
+    Promise.resolve(ret)
+      .catch(() => {})
+      .finally(() => {
+        pandiBackgroundRefreshActive = false;
+      });
+  } catch (e) {
+    pandiBackgroundRefreshActive = false;
+  }
 }
 
 function startSessionTimeoutCheck() {
