@@ -1680,6 +1680,14 @@ const CONCEPTOS_CC_CONVERSION_TODOS = ['Conversión por tipo de cambio', 'Conver
 const CONCEPTOS_CC_COMISION_TODOS = ['Comisión', 'Comisión del acuerdo'];
 const CONCEPTOS_CC_AUTOGENERADOS = [...CONCEPTOS_CC_CONVERSION_TODOS, ...CONCEPTOS_CC_COMISION_TODOS];
 
+/** Pagador/cobrador efectivos en sync CC/caja (misma convención que el `forEach` de `sincronizarCcYCajaDesdeOrden`: null + tipo → defaults). */
+function pagCobEfectivosTransaccionSync(t) {
+  const tipoL = (t.tipo || '').toString().toLowerCase();
+  const cob = String(t.cobrador != null ? t.cobrador : (tipoL === 'ingreso' ? 'pandy' : 'cliente')).toLowerCase();
+  const pag = String(t.pagador != null ? t.pagador : (tipoL === 'egreso' ? 'pandy' : 'cliente')).toLowerCase();
+  return { pag, cob };
+}
+
 /**
  * Regla unificada CC: a partir de una transacción y su orden devuelve la contribución al saldo (pendientes) para cliente e intermediario.
  * Sirve para resumen y para cualquier flujo que deba reflejar la realidad según estado, pagador, cobrador, moneda.
@@ -7722,16 +7730,26 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             }
           }
 
-          // Cierre sintético dos monedas: solo si no corre el motor `reglas_de_negocio` (evita duplicar cierre ya modelado en reglas).
-          if (clienteId && monR !== monE && !usarMotorReglasNegocio) {
-            const ingresosCli = transacciones.filter((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && t.estado === 'ejecutada');
-            const egresosCli = transacciones.filter((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.cobrador || '').toLowerCase() === 'cliente' && String(t.pagador || '').toLowerCase() === 'pandy' && t.estado === 'ejecutada');
+          // Cierre sintético dos monedas (CC cliente): +montoRecibido en monR y −montoEntregado en monE cuando el “par cliente” está ejecutado.
+          // Ingreso: Cliente→Pandy o Cliente→Intermediario (misma semántica que ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado).
+          // Egreso entrega al cliente: Pandy→Cliente **o** Intermediario→Cliente (cp_ic: cobro a Pandy + entrega vía int.; antes solo se miraba Pandy→Cliente y montoEntregado quedaba 0).
+          // Legacy: monR≠monE sin motor. Con motor + usaIntermediario: ver REGLA_CC_SIMPLE_INFALIBLE §3.
+          if (clienteId && monR !== monE && (!usarMotorReglasNegocio || usaIntermediario)) {
+            const trxEjecutadaCierre = (t) => (t.estado || '').toString().toLowerCase() === 'ejecutada';
+            const ingresosCli = transacciones.filter((t) => {
+              const { pag, cob } = pagCobEfectivosTransaccionSync(t);
+              return (t.tipo || '').toString().toLowerCase() === 'ingreso' && pag === 'cliente' && (cob === 'pandy' || cob === 'intermediario') && trxEjecutadaCierre(t);
+            });
+            const egresosCli = transacciones.filter((t) => {
+              const { pag, cob } = pagCobEfectivosTransaccionSync(t);
+              return (t.tipo || '').toString().toLowerCase() === 'egreso' && cob === 'cliente' && (pag === 'pandy' || pag === 'intermediario') && trxEjecutadaCierre(t);
+            });
             const montoRecibido = ingresosCli.reduce((s, t) => s + (Number(t.monto) || 0), 0);
             const montoEntregado = egresosCli.reduce((s, t) => s + (Number(t.monto) || 0), 0);
             const egresoRef = egresosCli.slice().sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0)).pop() || null;
             if (montoRecibido >= 1e-6 && montoEntregado >= 1e-6) {
               const conceptoCierre = 'Cierre orden ' + (orden.numero != null ? orden.numero : ordenId);
-              // Saldo real = -montoRecibido + montoEntregado. Cierre: +montoRecibido y -montoEntregado para total 0.
+              // Saldo por moneda: −montoRecibido (cobro) + montoEntregado (compromiso) + cierre +montoRecibido en monR −montoEntregado en monE → 0 en ambas.
               // Varios ingresos/egresos parciales (ej. 5k efectivo + 5k transferencia): se suman todos; ref. de nro. trans. = último egreso.
               rowsCcCliente.push({
                 cliente_id: clienteId,
