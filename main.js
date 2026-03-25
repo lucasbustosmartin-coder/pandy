@@ -716,20 +716,16 @@ function montosCancelacionDesdeOrden(item, orden) {
 }
 
 /**
- * Única fuente de verdad para movimientos de caja (cerrados): sync + fetch + dedupe por id.
- * Lo usan loadCajas (cards + tabla) y loadInicio (Panel) para que los saldos coincidan siempre.
+ * SELECT movimientos_caja cerrados + dedupe por id (sin sync). Para pintar rápido; el sync global corre en paralelo y luego se refresca si sigue en vista.
  * @returns {Promise<Array<{id, moneda, monto, concepto, fecha, caja_tipo, ...}>>}
  */
-function getListaMovimientosCajaParaSaldos() {
-  return sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
-    .then(() =>
-      client
-        .from('movimientos_caja')
-        .select('id, moneda, monto, concepto, fecha, tipo_movimiento_id, orden_id, transaccion_id, orden_numero, transaccion_numero, estado, estado_fecha, caja_tipo')
-        .eq('estado', 'cerrado')
-        .order('fecha', { ascending: false })
-        .order('created_at', { ascending: false })
-    )
+function fetchMovimientosCajaCerradosSinSync() {
+  return client
+    .from('movimientos_caja')
+    .select('id, moneda, monto, concepto, fecha, tipo_movimiento_id, orden_id, transaccion_id, orden_numero, transaccion_numero, estado, estado_fecha, caja_tipo')
+    .eq('estado', 'cerrado')
+    .order('fecha', { ascending: false })
+    .order('created_at', { ascending: false })
     .then((res) => {
       if (res.error) return [];
       const raw = res.data || [];
@@ -740,6 +736,14 @@ function getListaMovimientosCajaParaSaldos() {
         return true;
       });
     });
+}
+
+/**
+ * Sync global y luego lista (export Excel y rutas que requieren datos ya alineados antes de leer).
+ * @returns {Promise<Array>}
+ */
+function getListaMovimientosCajaParaSaldos() {
+  return sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().then(() => fetchMovimientosCajaCerradosSinSync());
 }
 
 /**
@@ -1022,7 +1026,7 @@ function exportarMovimientosCajaExcel() {
       if (t === 'cheque') return 'Cheque';
       return 'Efectivo';
     };
-    const header = ['Fecha', 'Origen', 'Nro orden', 'Nro transacción', 'Tipo', 'Moneda', 'Monto', 'Caja', 'Concepto'];
+    const header = ['Fecha', 'Origen', 'Nro orden', 'Nro Trx', 'Tipo', 'Moneda', 'Monto', 'Caja', 'Concepto'];
     const rows = filtrados.map((m) => {
       const nroOrden = m.orden_numero != null ? Number(m.orden_numero) : null;
       const nroTrans = m.transaccion_numero != null ? Number(m.transaccion_numero) : null;
@@ -1111,14 +1115,14 @@ function pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, ctx) {
       .map(
         (m) =>
           `<tr>
-              <td>${(m.fecha || '').toString().slice(0, 10)}</td>
-              <td>${escapeHtml(origenLabel(m))}</td>
-              <td>${m.orden_numero != null ? escapeHtml(String(m.orden_numero)) : '–'}</td>
-              <td>${m.transaccion_numero != null ? escapeHtml(String(m.transaccion_numero)) : '–'}</td>
-              <td>${tipoIngresoEgreso(m)}</td>
-              <td>${escapeHtml(m.moneda || '–')}</td>
-              <td class="${Number(m.monto) >= 0 ? 'monto-positivo' : 'monto-negativo'}">${formatMonto(m.monto)}</td>
-              <td>${cajaTipoLabel(m)}</td>
+              <td class="td-caja-fecha">${(m.fecha || '').toString().slice(0, 10)}</td>
+              <td class="td-caja-origen">${escapeHtml(origenLabel(m))}</td>
+              <td class="td-caja-nro">${m.orden_numero != null ? escapeHtml(String(m.orden_numero)) : '–'}</td>
+              <td class="td-caja-nro">${m.transaccion_numero != null ? escapeHtml(String(m.transaccion_numero)) : '–'}</td>
+              <td class="td-caja-tipo-mov">${tipoIngresoEgreso(m)}</td>
+              <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(m.moneda)}</td>
+              <td class="td-caja-monto ${Number(m.monto) >= 0 ? 'monto-positivo' : 'monto-negativo'}">${formatMonto(m.monto)}</td>
+              <td class="td-caja-caja-tipo">${cajaTipoLabel(m)}</td>
               <td class="concepto-mov-caja">${escapeHtml((m.concepto || '–').slice(0, 80))}${(m.concepto && m.concepto.length > 80) ? '…' : ''}</td>
               <td>${canAbmCaja ? `<button type="button" class="btn-editar btn-editar-mov-caja" data-id="${m.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : ''}</td>
             </tr>`
@@ -1136,6 +1140,37 @@ function pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, ctx) {
     }
     wrapEl.style.display = 'block';
   });
+}
+
+/** Tras terminar sync global CC/caja: si el usuario sigue en Cajas, una sola refetch + pintada (sin volver a encadenar sync). */
+function refrescarVistaCajasTrasSyncGlobal() {
+  if (currentVistaId !== 'vista-cajas') return;
+  if (document.getElementById('modal-orden-backdrop')?.classList?.contains('activo')) return;
+  const loadingEl = document.getElementById('cajas-loading');
+  const wrapEl = document.getElementById('cajas-tabla-wrap');
+  const tbody = document.getElementById('movimientos-caja-tbody');
+  if (!loadingEl || !wrapEl || !tbody) return;
+  const prevBg = pandiBackgroundRefreshActive;
+  pandiBackgroundRefreshActive = true;
+  Promise.all([
+    fetchMovimientosCajaCerradosSinSync(),
+    client.from('tipos_movimiento_caja').select('id, nombre'),
+    hayTipoOperacionActivoConMoneda('USD'),
+    hayTipoOperacionActivoConMoneda('ARS'),
+    hayTipoOperacionActivoConMoneda('EUR'),
+  ])
+    .then(([list, resTipos, monUsd, monArs, monEur]) => {
+      cajasMovimientosFullCache = { list, resTipos, monUsd, monArs, monEur };
+      return pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, {
+        loadingEl,
+        wrapEl,
+        tbody,
+        loadingShownAtCajas: 0,
+        omitirDelayYLoading: true,
+      });
+    })
+    .catch(() => {})
+    .finally(() => { pandiBackgroundRefreshActive = prevBg; });
 }
 
 /**
@@ -1191,8 +1226,12 @@ function loadCajas(opts) {
     cajasSaldoIds.forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = '–'; });
   }
 
+  sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
+    .catch(() => {})
+    .then(() => refrescarVistaCajasTrasSyncGlobal());
+
   const promCajas = Promise.all([
-    getListaMovimientosCajaParaSaldos(),
+    fetchMovimientosCajaCerradosSinSync(),
     client.from('tipos_movimiento_caja').select('id, nombre'),
     hayTipoOperacionActivoConMoneda('USD'),
     hayTipoOperacionActivoConMoneda('ARS'),
@@ -1218,6 +1257,75 @@ function loadCajas(opts) {
     loadTiposMovimientoCajaTable();
   }
   return promCajas;
+}
+
+/** Solo tarjetas de caja del panel Inicio (sin pendientes). Misma lista/cálculo que vista Cajas. */
+function aplicarInicioTarjetasCajaDesdeLista(list, monUsd, monArs, monEur) {
+  const hoy = new Date();
+  const ayer = new Date(hoy);
+  ayer.setDate(ayer.getDate() - 1);
+  const ayerStr = ayer.getFullYear() + '-' + String(ayer.getMonth() + 1).padStart(2, '0') + '-' + String(ayer.getDate()).padStart(2, '0');
+  const efRaw = { USD: !!monUsd, ARS: !!monArs, EUR: !!monEur };
+  const baRaw = { USD: !!monUsd, ARS: !!monArs };
+  setVisibilidadColumnasMonedasPanelCajas(efRaw, baRaw);
+  const efVis = normalizarFlagsCajaMonedas(efRaw, MONEDAS_PANEL_CAJA_EFECTIVO);
+  const baVis = normalizarFlagsCajaMonedas(baRaw, MONEDAS_PANEL_CAJA_BANCO);
+  const saldoActual = saldosCajaDesdeLista(list);
+  const saldoT1 = { efectivo: { USD: 0, EUR: 0, ARS: 0 }, banco: { USD: 0, EUR: 0, ARS: 0 }, cheque: { USD: 0, EUR: 0, ARS: 0 } };
+  (list || []).forEach((m) => {
+    const tipoRaw = (m.caja_tipo || 'efectivo').toLowerCase();
+    const t = tipoRaw === 'cheque' ? 'cheque' : tipoRaw === 'efectivo' || tipoRaw === 'banco' ? tipoRaw : 'efectivo';
+    const moneda = (m.moneda || '').toUpperCase();
+    if (!saldoT1[t] || saldoT1[t][moneda] == null) return;
+    const fecha = (m.fecha || '').toString().slice(0, 10);
+    if (fecha && fecha <= ayerStr) saldoT1[t][moneda] += Number(m.monto);
+  });
+  const svgSube = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>';
+  const svgBaja = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  const svgIgual = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+  const formatInicio = (n) => (n == null || isNaN(n)) ? '–' : Math.round(Number(n)).toLocaleString('es-AR', { maximumFractionDigits: 0, minimumFractionDigits: 0 });
+  const setFila = (caja, moneda) => {
+    const s1 = saldoT1[caja][moneda] ?? 0;
+    const sT = saldoActual[caja][moneda] ?? 0;
+    const variacion = sT - s1;
+    const pct = s1 !== 0 ? (variacion / Math.abs(s1)) * 100 : (variacion !== 0 ? 100 : 0);
+    const elInicial = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-inicial`);
+    const elActual = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-actual`);
+    const elVar = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-var`);
+    const elTend = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-tendencia`);
+    if (elInicial) {
+      elInicial.textContent = formatInicio(s1);
+      elInicial.className = 'inicio-caja-valor ' + (s1 >= 0 ? 'positivo' : 'negativo');
+    }
+    if (elActual) {
+      elActual.textContent = formatInicio(sT);
+      elActual.className = 'inicio-caja-valor ' + (sT >= 0 ? 'positivo' : 'negativo');
+    }
+    if (elVar) {
+      const signo = variacion > 0 ? '+' : '';
+      elVar.textContent = `${signo}${formatInicio(variacion)} (${variacion >= 0 ? '+' : ''}${Math.round(pct)}%)`;
+      elVar.className = 'inicio-caja-var-valor ' + (variacion > 0 ? 'sube' : variacion < 0 ? 'baja' : 'igual');
+    }
+    if (elTend) {
+      elTend.className = 'inicio-caja-tendencia ' + (variacion > 0 ? 'tendencia-sube' : variacion < 0 ? 'tendencia-baja' : 'tendencia-igual');
+      elTend.innerHTML = variacion > 0 ? svgSube : variacion < 0 ? svgBaja : svgIgual;
+    }
+  };
+  MONEDAS_PANEL_CAJA_EFECTIVO.filter((mon) => efVis[mon]).forEach((mon) => setFila('efectivo', mon));
+  MONEDAS_PANEL_CAJA_BANCO.filter((mon) => baVis[mon]).forEach((mon) => setFila('banco', mon));
+  setFila('cheque', 'ARS');
+}
+
+function refrescarPanelInicioCajasTrasSyncGlobal() {
+  if (currentVistaId !== 'vista-inicio') return;
+  Promise.all([
+    fetchMovimientosCajaCerradosSinSync(),
+    hayTipoOperacionActivoConMoneda('USD'),
+    hayTipoOperacionActivoConMoneda('ARS'),
+    hayTipoOperacionActivoConMoneda('EUR'),
+  ])
+    .then(([list, monUsd, monArs, monEur]) => { aplicarInicioTarjetasCajaDesdeLista(list, monUsd, monArs, monEur); })
+    .catch(() => {});
 }
 
 function loadInicio() {
@@ -1249,70 +1357,18 @@ function loadInicio() {
     if (elPendientes) elPendientes.style.display = '';
   }
 
-  const hoy = new Date();
-  const hoyStr = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
-  const ayer = new Date(hoy);
-  ayer.setDate(ayer.getDate() - 1);
-  const ayerStr = ayer.getFullYear() + '-' + String(ayer.getMonth() + 1).padStart(2, '0') + '-' + String(ayer.getDate()).padStart(2, '0');
+  sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
+    .catch(() => {})
+    .then(() => refrescarPanelInicioCajasTrasSyncGlobal());
 
-  // Usar la misma lista y el mismo cálculo que la vista Cajas: Saldo Actual = saldos de las cards de Cajas.
   return Promise.all([
-    getListaMovimientosCajaParaSaldos(),
+    fetchMovimientosCajaCerradosSinSync(),
     hayTipoOperacionActivoConMoneda('USD'),
     hayTipoOperacionActivoConMoneda('ARS'),
     hayTipoOperacionActivoConMoneda('EUR'),
   ])
     .then(([list, monUsd, monArs, monEur]) => {
-      const efRaw = { USD: !!monUsd, ARS: !!monArs, EUR: !!monEur };
-      const baRaw = { USD: !!monUsd, ARS: !!monArs };
-      setVisibilidadColumnasMonedasPanelCajas(efRaw, baRaw);
-      const efVis = normalizarFlagsCajaMonedas(efRaw, MONEDAS_PANEL_CAJA_EFECTIVO);
-      const baVis = normalizarFlagsCajaMonedas(baRaw, MONEDAS_PANEL_CAJA_BANCO);
-      const saldoActual = saldosCajaDesdeLista(list);
-      const saldoT1 = { efectivo: { USD: 0, EUR: 0, ARS: 0 }, banco: { USD: 0, EUR: 0, ARS: 0 }, cheque: { USD: 0, EUR: 0, ARS: 0 } };
-      (list || []).forEach((m) => {
-        const tipoRaw = (m.caja_tipo || 'efectivo').toLowerCase();
-        const t = tipoRaw === 'cheque' ? 'cheque' : tipoRaw === 'efectivo' || tipoRaw === 'banco' ? tipoRaw : 'efectivo';
-        const moneda = (m.moneda || '').toUpperCase();
-        if (!saldoT1[t] || saldoT1[t][moneda] == null) return;
-        const fecha = (m.fecha || '').toString().slice(0, 10);
-        if (fecha && fecha <= ayerStr) saldoT1[t][moneda] += Number(m.monto);
-      });
-      const svgSube = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>';
-      const svgBaja = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
-      const svgIgual = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>';
-      const formatInicio = (n) => (n == null || isNaN(n)) ? '–' : Math.round(Number(n)).toLocaleString('es-AR', { maximumFractionDigits: 0, minimumFractionDigits: 0 });
-
-      const setFila = (caja, moneda) => {
-        const s1 = saldoT1[caja][moneda] ?? 0;
-        const sT = saldoActual[caja][moneda] ?? 0;
-        const variacion = sT - s1;
-        const pct = s1 !== 0 ? (variacion / Math.abs(s1)) * 100 : (variacion !== 0 ? 100 : 0);
-        const elInicial = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-inicial`);
-        const elActual = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-actual`);
-        const elVar = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-var`);
-        const elTend = document.getElementById(`inicio-${caja}-${moneda.toLowerCase()}-tendencia`);
-        if (elInicial) {
-          elInicial.textContent = formatInicio(s1);
-          elInicial.className = 'inicio-caja-valor ' + (s1 >= 0 ? 'positivo' : 'negativo');
-        }
-        if (elActual) {
-          elActual.textContent = formatInicio(sT);
-          elActual.className = 'inicio-caja-valor ' + (sT >= 0 ? 'positivo' : 'negativo');
-        }
-        if (elVar) {
-          const signo = variacion > 0 ? '+' : '';
-          elVar.textContent = `${signo}${formatInicio(variacion)} (${variacion >= 0 ? '+' : ''}${Math.round(pct)}%)`;
-          elVar.className = 'inicio-caja-var-valor ' + (variacion > 0 ? 'sube' : variacion < 0 ? 'baja' : 'igual');
-        }
-        if (elTend) {
-          elTend.className = 'inicio-caja-tendencia ' + (variacion > 0 ? 'tendencia-sube' : variacion < 0 ? 'tendencia-baja' : 'tendencia-igual');
-          elTend.innerHTML = variacion > 0 ? svgSube : variacion < 0 ? svgBaja : svgIgual;
-        }
-      };
-      MONEDAS_PANEL_CAJA_EFECTIVO.filter((mon) => efVis[mon]).forEach((mon) => setFila('efectivo', mon));
-      MONEDAS_PANEL_CAJA_BANCO.filter((mon) => baVis[mon]).forEach((mon) => setFila('banco', mon));
-      setFila('cheque', 'ARS');
+      aplicarInicioTarjetasCajaDesdeLista(list, monUsd, monArs, monEur);
       loadInicioPendientes();
     })
     .catch(() => {});
@@ -1695,6 +1751,8 @@ let ccDetalleDesde = '';
 let ccDetalleHasta = '';
 /** Si true, no se filtra por fecha en la tabla detalle (todo el historial). Los saldos del resumen siguen siendo históricos completos. */
 let ccMovimientosMostrarTodoHistorial = false;
+/** Evita que una carga de CC antigua pise una más nueva (fetch paralelo + recarga post-sync). */
+let ccCargaSerial = 0;
 /** Filtro opcional por cliente_id o intermediario_id en solapa Movimientos (vacío = todos). */
 let ccDetalleFiltroEntidadId = '';
 /** Filas actuales de la vista Detalle (para ordenar sin volver a filtrar). */
@@ -2554,7 +2612,9 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion() {
   });
 }
 
-function loadCuentaCorriente() {
+function loadCuentaCorriente(opts) {
+  opts = opts || {};
+  const esRecargaPostSync = opts.esRecargaPostSync === true;
   const loadingEl = document.getElementById('cc-loading');
   const contenido = document.getElementById('cc-contenido');
   const tbody = document.getElementById('cc-resumen-tbody');
@@ -2562,6 +2622,7 @@ function loadCuentaCorriente() {
   const panelMov = document.getElementById('cc-panel-movimientos');
   if (!contenido || !tbody) return;
 
+  const miTicket = ++ccCargaSerial;
   const silentCc = isPandiBackgroundRefresh();
   const loadingShownAtCc = silentCc ? 0 : Date.now();
   if (!silentCc) {
@@ -2571,16 +2632,26 @@ function loadCuentaCorriente() {
     if (panelMov) panelMov.style.display = 'none';
   }
 
-  // Corazón de la app: la única fuente de verdad es orden + transacciones. Siempre sincronizar CC (y caja) antes de cargar, así el detalle muestra exactamente lo que indica el modelo (ej. 3 movimientos cliente para ARS-ARS+int). Si sync falla, se cargan igual los movimientos ya guardados.
-  return sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
-    .then(() => {})
-    .catch(() => {})
-    .then(() => Promise.all([
+  if (!esRecargaPostSync) {
+    sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
+      .catch(() => {})
+      .then(() => {
+        if (currentVistaId !== 'vista-cuenta-corriente') return;
+        const ordenModal = document.getElementById('modal-orden-backdrop');
+        if (ordenModal && ordenModal.classList.contains('activo')) return;
+        const prevBg = pandiBackgroundRefreshActive;
+        pandiBackgroundRefreshActive = true;
+        loadCuentaCorriente({ esRecargaPostSync: true }).finally(() => { pandiBackgroundRefreshActive = prevBg; });
+      });
+  }
+
+  // Primera pintada: fetch en paralelo al sync global; al terminar el sync, una recarga silenciosa (esRecargaPostSync) alinea movimientos con el modelo sin bloquear el primer render.
+  return Promise.all([
       client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
       client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
       client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle'),
       client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle'),
-    ]))
+    ])
     .then(([rClientes, rInt, rMovCli, rMovInt]) => {
     const clientes = rClientes.data || [];
     const intermediarios = rInt.data || [];
@@ -2788,10 +2859,12 @@ function loadCuentaCorriente() {
         }
       });
       return delayMinLoadingSiNoEsBackground(loadingShownAtCc).then(() => {
+        if (miTicket !== ccCargaSerial) return;
         buildCcResumenRows(clientes, intermediarios, movCli, movIntEnriched, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById || {}, ordenById || {}, pendientePandyDebeIntByInt || {}, pendienteClienteAjusteByCli || {}, saldoClienteByCliPrecomp, saldoIntByIdPrecomp);
       });
     });
   }).catch((err) => {
+    if (miTicket !== ccCargaSerial) return;
     if (loadingEl) loadingEl.style.display = 'none';
     if (!silentCc) {
       contenido.style.display = 'block';
