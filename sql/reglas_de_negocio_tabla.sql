@@ -11,6 +11,7 @@
 -- 2) Si venías de `cc_reglas_usd_ars`, ejecutá antes/alternativa: `sql/migracion_cc_reglas_usd_ars_a_reglas_de_negocio.sql`.
 -- 3) Si la tabla ya existía sin `monto_origen = mr_menos_me` en el CHECK, ejecutá antes `sql/migracion_reglas_usd_usd_sin_int.sql` (o el ALTER del mismo) para ampliar la restricción; luego los INSERT de USD-USD.
 -- 4) Desplegar front.
+-- E,P USD-ARS / ARS-USD sin int. (cobro recibido ejecutado + entrega pendiente): ver `sql/migracion_usd_ars_ars_usd_ep_contra_moneda_recibida.sql` si ya tenías la matriz anterior.
 
 CREATE TABLE IF NOT EXISTS public.reglas_de_negocio (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -67,13 +68,14 @@ ALTER TABLE public.reglas_de_negocio
   ));
 
 -- USD-ARS sin intermediario (mr USD, me ARS). Prorrateos alineados a tests COMBINACIONES_USD_ARS.
+-- E,P (ingreso ejecutado, egreso pendiente): en moneda **recibida** (USD) el cobro en Trx1 va en par cerrado (−monto_transacción + contra en la misma Trx1) → saldo neto USD 0; el compromiso de entrega queda solo en **ARS** en Trx2 pendiente (no fila USD pendiente en egreso).
 INSERT INTO public.reglas_de_negocio (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada, linea,
   moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
 ) VALUES
-  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'ARS', -1, 'me_prorrateado', true, 'cobro_realizado'),
-  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 1, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'contra_cobro_entrega_pendiente'),
   ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'ARS', -1, 'me_prorrateado', true, 'cobro_realizado'),
   -- E,E: con par ejecutado, ingreso usa contrapartida true → hace falta también la pata USD (igual que rama false) para netear con el +USD del egreso ejecutado true.
   ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 1, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
@@ -84,7 +86,7 @@ INSERT INTO public.reglas_de_negocio (
   -- E,E (Tx1 y Tx2 ejecutadas, contrapartida true): **dos líneas por transacción** (ingreso: ARS+USD; egreso: ARS+USD) → 4 movimientos que se anulan por moneda (saldo 0 USD y 0 ARS). Ver docs/MODELO_CC_USD_ARS_TEORICO.md.
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'USD', 1, 'mr_prorrateado', true, 'compromiso_pago'),
-  ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', 1, 'mr_prorrateado', true, 'compromiso_pago')
+  ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada, linea
@@ -154,14 +156,14 @@ ON CONFLICT (
   incluir_en_detalle = EXCLUDED.incluir_en_detalle,
   concepto_leyenda = EXCLUDED.concepto_leyenda;
 
--- ARS-USD sin intermediario (mr ARS, me USD). Espejo lógico de USD-ARS: prorrateos y P,E / E,E alineados a tests COMBINACIONES_ARS_USD.
+-- ARS-USD sin intermediario (mr ARS, me USD). Espejo de USD-ARS: E,P → par ARS cerrado en Trx1 + compromiso USD pendiente en Trx2.
 INSERT INTO public.reglas_de_negocio (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada, linea,
   moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
 ) VALUES
-  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'me_prorrateado', true, 'cobro_realizado'),
-  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 1, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 1, 'ARS', 1, 'monto_transaccion', true, 'contra_cobro_entrega_pendiente'),
   ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'USD', -1, 'me_prorrateado', true, 'cobro_realizado'),
   ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 1, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_cobrar'),
@@ -170,7 +172,7 @@ INSERT INTO public.reglas_de_negocio (
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'ARS', 1, 'mr_prorrateado', true, 'compromiso_pago'),
-  ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', 1, 'mr_prorrateado', true, 'compromiso_pago')
+  ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada, linea

@@ -1,4 +1,15 @@
-# Snapshot `reglas_de_negocio_rows.sql` / `reglas_de_negocio_rows (2).sql`
+# Snapshot `reglas_de_negocio_rows.sql` / `reglas_de_negocio_rows (2).sql` / CSV
+
+## CSV (`docs/reglas_de_negocio_rows (1).csv`)
+
+- **Ubicación en el repo:** `docs/reglas_de_negocio_rows (1).csv` (export tabular; columnas lógicas de la tabla, sin `id` ni timestamps).
+- **Dos usos habituales:**
+  1. **Volcado desde Supabase** (Table Editor → Export CSV): guardalo con ese nombre en `docs/` para comparar con el canónico o adjuntarlo en revisiones.
+  2. **Regenerado desde el SQL del repo:** `node scripts/reglas-negocio-tabla-a-csv.js` vuelve a armar el CSV a partir de `sql/reglas_de_negocio_tabla.sql` (útil tras cambios en la matriz del repo).
+
+Si el archivo en `docs/` es el generado por el script, tendrá el mismo contenido que los `INSERT` del canónico; si lo reemplazás por un export real de producción, el diff frente al script o frente a `reglas_de_negocio_rows (2).sql` muestra el desvío operativo.
+
+---
 
 Archivo **volcado puntual** de `public.reglas_de_negocio` (INSERT generado desde la base). **No** es la fuente canónica de verdad del repo: esa sigue siendo `sql/reglas_de_negocio_tabla.sql` y las migraciones en `sql/`.
 

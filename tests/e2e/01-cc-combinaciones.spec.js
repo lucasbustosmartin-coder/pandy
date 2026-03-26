@@ -27,6 +27,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { test, expect } = require('@playwright/test');
 const { reloadYEsperarAppLista } = require('./e2e-reload-app');
+const { ccResumenDisplayDiffAlgebraico } = require('./cc-resumen-optica-match');
 const { writeSuiteSheet } = require('./cc-combinaciones-log-workbook');
 const { COMBINACIONES_ESPERADO, DATOS_FIJOS } = require('./cc-combinaciones-esperado');
 
@@ -100,19 +101,11 @@ function saldoLeidoANumero(saldoStr) {
 }
 
 /**
- * En el resumen CC, para intermediario la app invierte el signo para color:
- * DB negativo (int debe) → se muestra en verde (valor-positivo). Al leer debemos invertir.
+ * Resumen CC Saldos: la app muestra montos en óptica Pandy (positivo = a cobrar / a favor).
+ * Los fixtures siguen en convención algebraica de suma de movimientos en DB → al validar: leído + esperado ≈ 0.
  */
-function saldoResumenANumero(saldoStr, esIntermediario) {
-  const n = saldoLeidoANumero(saldoStr);
-  if (!esIntermediario) return n;
-  const s = String(saldoStr || '').trim();
-  // Históricamente, en intermediario algunas vistas mostraban el signo invertido por color:
-  // si viene explícitamente "+" interpretamos deuda (negativo real); si viene "-" respetamos tal cual.
-  if (/^\+/.test(s)) return -Math.abs(n);
-  if (/^[-−]/.test(s)) return n;
-  // Fallback legacy cuando no hay signo explícito.
-  return -n;
+function saldoResumenANumero(saldoStr) {
+  return saldoLeidoANumero(saldoStr);
 }
 
 /** Va a Cajas, lee saldo efectivo ARS (#cajas-saldo-efectivo-ars). La app muestra valor absoluto; el signo viene de la clase negativo. Si sale "–", espera 2s y relee una vez (sync puede tardar). */
@@ -173,6 +166,15 @@ async function leerMontosDesdeVistaDetalle(page, tipo, nombreEntity) {
     await page.locator('#cc-detalle-wrap').waitFor({ state: 'visible', timeout: 5000 });
     await page.locator('#cc-detalle-btn-todo-historial').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
+    const selEnt = page.locator('#cc-detalle-entidad-select');
+    if ((await selEnt.count()) > 0) {
+      const optMatch = selEnt.locator('option').filter({ hasText: nombre });
+      if ((await optMatch.count()) > 0) {
+        const val = await optMatch.first().getAttribute('value');
+        if (val) await selEnt.selectOption(val);
+        await page.waitForTimeout(400);
+      }
+    }
     const tbody = page.locator('#cc-vista-detalle-tbody');
     await tbody.waitFor({ state: 'visible', timeout: 3000 });
     const allRows = tbody.locator('tr');
@@ -180,10 +182,6 @@ async function leerMontosDesdeVistaDetalle(page, tipo, nombreEntity) {
     const montos = [];
     for (let i = 0; i < count; i++) {
       const row = allRows.nth(i);
-      const tdEntity = row.locator('td:nth-child(10)');
-      if ((await tdEntity.count()) === 0) continue;
-      const entityText = (await tdEntity.textContent())?.trim() || '';
-      if (!entityText.includes(nombre)) continue;
       for (const col of [7, 6, 8]) {
         const celda = row.locator('td:nth-child(' + col + ')');
         const texto = await leerSaldoConSigno(celda);
@@ -348,9 +346,9 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       if (countCli > 0) {
         const celdaArs = filaCliente.first().locator('td:nth-child(4)');
         const texto = await leerSaldoConSigno(celdaArs);
-        saldoClienteARS = saldoResumenANumero(texto, false);
+        saldoClienteARS = saldoResumenANumero(texto);
       }
-      const diffCli = Math.abs(saldoClienteARS - esperado.saldoClienteARS);
+      const diffCli = ccResumenDisplayDiffAlgebraico(saldoClienteARS, esperado.saldoClienteARS);
 
       // Validar detalle Cliente: solo desde el modal "Ver detalle" (#cc-detalle-tbody), no desde la vista "Detalle de movimientos".
       if (countCli > 0 && esperado.detalleCliente && esperado.detalleCliente.length >= 0) {
@@ -383,9 +381,9 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       if (countInt > 0) {
         const celdaArs = filasInt.first().locator('td:nth-child(4)');
         const texto = await leerSaldoConSigno(celdaArs);
-        saldoIntARS = saldoResumenANumero(texto, true);
+        saldoIntARS = saldoResumenANumero(texto);
       }
-      const diffInt = Math.abs(saldoIntARS - esperado.saldoIntARS);
+      const diffInt = ccResumenDisplayDiffAlgebraico(saldoIntARS, esperado.saldoIntARS);
 
       // Validar detalle Intermediario: solo desde el modal "Ver detalle" (#cc-detalle-tbody).
       if (countInt > 0 && esperado.detalleInt && esperado.detalleInt.length >= 0) {

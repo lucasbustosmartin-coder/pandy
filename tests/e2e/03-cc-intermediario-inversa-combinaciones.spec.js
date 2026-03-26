@@ -17,6 +17,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { test, expect } = require('@playwright/test');
 const { reloadYEsperarAppLista } = require('./e2e-reload-app');
+const { ccResumenDisplayMatchAlgebraico, ccResumenDisplayDiffAlgebraico } = require('./cc-resumen-optica-match');
 const {
   USD_ARS_INT_FIJOS,
   ARS_USD_INT_FIJOS,
@@ -491,22 +492,22 @@ test.describe('CC intermediario inversa: USD/EUR cruces con int', () => {
             esperado.id,
             expCliU,
             cliUSD,
-            Math.abs(cliUSD - expCliU) <= 1 ? 'PASS' : 'ERR',
+            ccResumenDisplayMatchAlgebraico(cliUSD, expCliU) ? 'PASS' : 'ERR',
             expCliE,
             cliEUR,
-            Math.abs(cliEUR - expCliE) <= 1 ? 'PASS' : 'ERR',
+            ccResumenDisplayMatchAlgebraico(cliEUR, expCliE) ? 'PASS' : 'ERR',
             expCliA,
             cliARS,
-            Math.abs(cliARS - expCliA) <= 1 ? 'PASS' : 'ERR',
+            ccResumenDisplayMatchAlgebraico(cliARS, expCliA) ? 'PASS' : 'ERR',
             expIntU,
             intUSD,
-            Math.abs(intUSD - expIntU) <= 1 ? 'PASS' : 'ERR',
+            ccResumenDisplayMatchAlgebraico(intUSD, expIntU) ? 'PASS' : 'ERR',
             expIntE,
             intEUR,
-            Math.abs(intEUR - expIntE) <= 1 ? 'PASS' : 'ERR',
+            ccResumenDisplayMatchAlgebraico(intEUR, expIntE) ? 'PASS' : 'ERR',
             expIntA,
             intARS,
-            Math.abs(intARS - expIntA) <= 1 ? 'PASS' : 'ERR',
+            ccResumenDisplayMatchAlgebraico(intARS, expIntA) ? 'PASS' : 'ERR',
             JSON.stringify(expCli),
             JSON.stringify(detSortedCli),
             resDetCli,
@@ -524,12 +525,13 @@ test.describe('CC intermediario inversa: USD/EUR cruces con int', () => {
             Math.abs(cajas.ars - expCajaA) <= 1 ? 'PASS' : 'ERR',
           ]);
 
-          expect(Math.abs(cliUSD - esperado.saldoCliUSD), `${tipo.codigo} ${esperado.id} saldo cliente USD`).toBeLessThanOrEqual(1);
-          expect(Math.abs(cliEUR - expCliE), `${tipo.codigo} ${esperado.id} saldo cliente EUR`).toBeLessThanOrEqual(1);
-          expect(Math.abs(cliARS - esperado.saldoCliARS), `${tipo.codigo} ${esperado.id} saldo cliente ARS`).toBeLessThanOrEqual(1);
-          expect(Math.abs(intUSD - esperado.saldoIntUSD), `${tipo.codigo} ${esperado.id} saldo inter USD`).toBeLessThanOrEqual(1);
-          expect(Math.abs(intEUR - expIntE), `${tipo.codigo} ${esperado.id} saldo inter EUR`).toBeLessThanOrEqual(1);
-          expect(Math.abs(intARS - esperado.saldoIntARS), `${tipo.codigo} ${esperado.id} saldo inter ARS`).toBeLessThanOrEqual(1);
+          // Resumen CC: fixtures = algebraico; pantalla = −a (cobro) o a (pago Pandy) → min(|L+E|,|L−E|) ≤ 1
+          expect(ccResumenDisplayDiffAlgebraico(cliUSD, esperado.saldoCliUSD), `${tipo.codigo} ${esperado.id} saldo cliente USD`).toBeLessThanOrEqual(1);
+          expect(ccResumenDisplayDiffAlgebraico(cliEUR, expCliE), `${tipo.codigo} ${esperado.id} saldo cliente EUR`).toBeLessThanOrEqual(1);
+          expect(ccResumenDisplayDiffAlgebraico(cliARS, esperado.saldoCliARS), `${tipo.codigo} ${esperado.id} saldo cliente ARS`).toBeLessThanOrEqual(1);
+          expect(ccResumenDisplayDiffAlgebraico(intUSD, esperado.saldoIntUSD), `${tipo.codigo} ${esperado.id} saldo inter USD`).toBeLessThanOrEqual(1);
+          expect(ccResumenDisplayDiffAlgebraico(intEUR, expIntE), `${tipo.codigo} ${esperado.id} saldo inter EUR`).toBeLessThanOrEqual(1);
+          expect(ccResumenDisplayDiffAlgebraico(intARS, esperado.saldoIntARS), `${tipo.codigo} ${esperado.id} saldo inter ARS`).toBeLessThanOrEqual(1);
           expect(Math.abs(cajas.usd - esperado.cajaUSD), `${tipo.codigo} ${esperado.id} caja USD`).toBeLessThanOrEqual(1);
           expect(Math.abs(cajas.eur - expCajaE), `${tipo.codigo} ${esperado.id} caja EUR`).toBeLessThanOrEqual(1);
           expect(Math.abs(cajas.ars - esperado.cajaARS), `${tipo.codigo} ${esperado.id} caja ARS`).toBeLessThanOrEqual(1);

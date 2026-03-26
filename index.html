@@ -695,6 +695,9 @@
     .tabla-cc-resumen th.th-sub { font-weight: 500; font-size: 0.9em; }
     .tabla-cc-resumen .valor-positivo { color: #059669; }
     .tabla-cc-resumen .valor-negativo { color: #dc2626; }
+    .cc-saldo-celda-wrap { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; line-height: 1.2; vertical-align: middle; }
+    .cc-saldo-leyenda { display: block; font-size: 0.68rem; font-weight: 500; color: #6b7280; line-height: 1.15; max-width: 7.5rem; text-wrap: balance; }
+    #modal-cc-detalle-saldos .cc-saldo-leyenda { max-width: 10rem; }
     .tabla-cc-resumen .cc-detalle-concepto-th,
     .tabla-cc-movimientos .cc-detalle-concepto-th { text-align: left; padding-left: 0.75rem; }
     .tabla-cc-resumen td.td-concepto,
@@ -1206,7 +1209,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.64</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.65</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -1580,7 +1583,7 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
           Cuenta corriente
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de Pandy</strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado). Los importes y cruces (ARS, USD, EUR, etc.) siguen el <strong>tipo de operación</strong> del catálogo.<br/><br/>En <strong>Saldos</strong> el resumen por moneda usa el <strong>historial completo</strong> de movimientos que suman al saldo (ejecutados según reglas). En <strong>Movimientos</strong> el listado, por defecto, muestra solo el <strong>día de hoy</strong> (Argentina); podés cambiar fechas o usar «Todo el historial». Cobro por = Pandy cobró (positivo); Deuda por = Pandy debe entregar (negativo). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de Pandy</strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado). Los importes y cruces (ARS, USD, EUR, etc.) siguen el <strong>tipo de operación</strong> del catálogo.<br/><br/>En <strong>Saldos</strong> los importes se muestran en <strong>óptica Pandy</strong>: número positivo (verde) = a favor de Pandy; negativo (rojo) = Pandy debe pagar. Si en esa moneda hay movimientos <strong>pendientes</strong>, debajo aparece «Pendiente de cobro» o «Pendiente de pago». El detalle de movimientos y el Excel de líneas siguen la contabilización interna; el export del <strong>resumen</strong> usa la misma óptica que la tabla.<br/><br/>En <strong>Movimientos</strong> el listado, por defecto, muestra solo el <strong>día de hoy</strong> (Argentina); podés cambiar fechas o usar «Todo el historial». Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
         </h3>
         <div class="vista-toolbar cc-toolbar-compartido">
           <label style="display:flex; align-items:center; gap:0.5rem;">
@@ -1675,8 +1678,8 @@
                   <th class="th-moneda th-sortable" data-sort="ars" data-cc-moneda-col="ARS" scope="col">ARS</th>
                   <th class="th-moneda th-sortable" data-sort="eur" data-cc-moneda-col="EUR" scope="col">EUR</th>
                   <th class="th-sub th-sortable" data-sort="estado" scope="col">Estado</th>
-                  <th class="th-nombre th-sortable" id="cc-detalle-th-entity" data-sort="nombre" scope="col">Cliente</th>
-                  <th class="th-nombre th-sortable" id="cc-detalle-th-originante" data-sort="originante" scope="col">Originante</th>
+                  <th class="th-nombre th-sortable" id="cc-detalle-th-entity" data-sort="ccPagador" scope="col">Pagador</th>
+                  <th class="th-nombre th-sortable" id="cc-detalle-th-originante" data-sort="ccCobrador" scope="col">Cobrador</th>
                 </tr>
               </thead>
               <tbody id="cc-vista-detalle-tbody"></tbody>
@@ -2649,6 +2652,8 @@
                 <th class="th-sortable" data-sort="ars" data-cc-moneda-col="ARS">ARS</th>
                 <th class="th-sortable" data-sort="eur" data-cc-moneda-col="EUR">EUR</th>
                 <th class="th-sortable" data-sort="estado">Estado</th>
+                <th class="th-sortable" data-sort="ccPagador">Pagador</th>
+                <th class="th-sortable" data-sort="ccCobrador">Cobrador</th>
               </tr>
             </thead>
             <tbody id="cc-detalle-tbody"></tbody>

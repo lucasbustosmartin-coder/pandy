@@ -1,11 +1,13 @@
 -- Pandi – **Un solo script**: reglas `reglas_de_negocio` para **cruces de dos monedas distintas**
 -- con **usa_intermediario = false**.
 --
--- Definición de producto (canónico alineado a `sql/reglas_de_negocio_tabla.sql`):
+-- Definición de producto (canónico = `sql/reglas_de_negocio_tabla.sql`):
 -- - **10 filas** por cada tipo: USD-ARS, ARS-USD, EUR-USD, USD-EUR, EUR-ARS, ARS-EUR.
--- - Donde la transacción está **ejecutada** y el modelo usa **par ±** en una moneda (p. ej. P,E egreso
---   con contrapartida false), van **dos registros** que se anulan en CC en esa moneda; lo **pendiente**
---   queda en **una** línea según la tabla.
+-- - **E,P (ingreso ejecutado + egreso pendiente), cruces dos monedas:** el cobro en **moneda recibida**
+--   del acuerdo se netea en la Trx de ingreso ejecutada (cobro_realizado + contra_cobro_entrega_pendiente
+--   en esa moneda); el compromiso abierto queda **solo** en **moneda entregada** en la Trx de egreso pendiente.
+-- - Donde el modelo usa **par ±** en una moneda en trx ejecutada (p. ej. P,E egreso contrapartida false),
+--   van **dos** registros que se anulan en CC en esa moneda; lo **pendiente**, una línea.
 --
 -- **No incluye:** USD-USD sin int (acuerdo en una sola moneda, modelo mr−me / comisión distinto),
 -- ni CHEQUE-ARS, ni ningún tipo con **usa_intermediario = true** (usar `reglas_*_inversa*.sql`,
@@ -66,8 +68,8 @@ INSERT INTO public.reglas_de_negocio (
   incluir_en_detalle,
   concepto_leyenda
 ) VALUES
-  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'ARS', -1, 'me_prorrateado', true, 'cobro_realizado'),
-  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 1, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'contra_cobro_entrega_pendiente'),
   ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'ARS', -1, 'me_prorrateado', true, 'cobro_realizado'),
   ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 1, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_cobrar'),
@@ -75,7 +77,7 @@ INSERT INTO public.reglas_de_negocio (
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'USD', 1, 'mr_prorrateado', true, 'compromiso_pago'),
-  ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', 1, 'mr_prorrateado', true, 'compromiso_pago');
+  ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago');
 
 -- =============================================================================
 -- 3) ARS-USD sin int — 10 filas (fuente para EUR-USD y ARS-EUR)
@@ -98,8 +100,8 @@ INSERT INTO public.reglas_de_negocio (
   incluir_en_detalle,
   concepto_leyenda
 ) VALUES
-  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'me_prorrateado', true, 'cobro_realizado'),
-  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 1, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 1, 'ARS', 1, 'monto_transaccion', true, 'contra_cobro_entrega_pendiente'),
   ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'USD', -1, 'me_prorrateado', true, 'cobro_realizado'),
   ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 1, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_cobrar'),
@@ -107,7 +109,7 @@ INSERT INTO public.reglas_de_negocio (
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'ARS', 1, 'mr_prorrateado', true, 'compromiso_pago'),
-  ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', 1, 'mr_prorrateado', true, 'compromiso_pago');
+  ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago');
 
 -- =============================================================================
 -- 4) Cruces EUR sin int — 10 filas cada uno (derivados siempre desde USD-ARS / ARS-USD)

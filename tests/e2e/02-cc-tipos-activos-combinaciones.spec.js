@@ -23,6 +23,7 @@
  *   npm run test:e2e-cc-usd-usd-sin-int
  */
 const path = require('path');
+const { ccResumenDisplayMatchAlgebraico, ccResumenDisplayDiffAlgebraico } = require('./cc-resumen-optica-match');
 const { execSync } = require('child_process');
 const { test, expect } = require('@playwright/test');
 const { reloadYEsperarAppLista } = require('./e2e-reload-app');
@@ -184,7 +185,11 @@ async function esperarSaldosResumenCliente(page, tbodyCc, nombreCliente, expU, e
       lastUsd = saldoLeidoANumero(tUsd);
       lastEur = saldoLeidoANumero(tEur);
       lastArs = saldoLeidoANumero(tArs);
-      if (Math.abs(lastUsd - expU) <= 1 && Math.abs(lastEur - expE) <= 1 && Math.abs(lastArs - expA) <= 1) {
+      if (
+        ccResumenDisplayMatchAlgebraico(lastUsd, expU) &&
+        ccResumenDisplayMatchAlgebraico(lastEur, expE) &&
+        ccResumenDisplayMatchAlgebraico(lastArs, expA)
+      ) {
         return { saldoUSD: lastUsd, saldoEUR: lastEur, saldoARS: lastArs, countCli };
       }
     }
@@ -319,6 +324,15 @@ async function leerMontosDesdeVistaDetalle(page, nombreCliente) {
     await page.locator('#cc-detalle-wrap').waitFor({ state: 'visible', timeout: 5000 });
     await page.locator('#cc-detalle-btn-todo-historial').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
+    const selEnt = page.locator('#cc-detalle-entidad-select');
+    if ((await selEnt.count()) > 0) {
+      const optMatch = selEnt.locator('option').filter({ hasText: nombre });
+      if ((await optMatch.count()) > 0) {
+        const val = await optMatch.first().getAttribute('value');
+        if (val) await selEnt.selectOption(val);
+        await page.waitForTimeout(400);
+      }
+    }
     const tbody = page.locator('#cc-vista-detalle-tbody');
     await tbody.waitFor({ state: 'visible', timeout: 3000 });
     const allRows = tbody.locator('tr');
@@ -326,10 +340,6 @@ async function leerMontosDesdeVistaDetalle(page, nombreCliente) {
     const montos = [];
     for (let i = 0; i < count; i++) {
       const row = allRows.nth(i);
-      const tdEntity = row.locator('td:nth-child(10)');
-      if ((await tdEntity.count()) === 0) continue;
-      const entityText = (await tdEntity.textContent())?.trim() || '';
-      if (!entityText.includes(nombre)) continue;
       for (const mon of ['USD', 'ARS', 'EUR']) {
         const texto = await leerSaldoConSigno(row.locator(`td[data-cc-moneda-col="${mon}"]`));
         if (texto !== '–' && /\d/.test(texto)) montos.push(saldoLeidoANumero(texto));
@@ -615,11 +625,11 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
                 );
                 const filaCliente = await obtenerFilaClientePorNombre(tbodyCc, page, nombreCliente);
                 const diffU =
-                  countCli === 0 && Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 0 : Math.abs(saldoUSD - expU);
+                  countCli === 0 && Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 0 : ccResumenDisplayDiffAlgebraico(saldoUSD, expU);
                 const diffE =
-                  countCli === 0 && Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 0 : Math.abs(saldoEUR - expE);
+                  countCli === 0 && Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 0 : ccResumenDisplayDiffAlgebraico(saldoEUR, expE);
                 const diffA =
-                  countCli === 0 && Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 0 : Math.abs(saldoARS - expA);
+                  countCli === 0 && Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 0 : ccResumenDisplayDiffAlgebraico(saldoARS, expA);
                 if (countCli === 0 && (Math.abs(expU) > 1 || Math.abs(expE) > 1 || Math.abs(expA) > 1)) {
                   throw new Error(
                     `${cfg.codigo} ${esperado.id}: sin fila cliente pero se esperaba saldo USD=${expU} EUR=${expE} ARS=${expA}`
@@ -666,11 +676,11 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
                   const countInt = await filaInt.count();
                   let saldoInt = 0;
                   if (countInt > 0) {
-                    const tUsdInt = await leerSaldoConSigno(filaInt.first().locator('td:nth-child(2)'));
+                    const tUsdInt = await leerSaldoConSigno(filaInt.first().locator('td[data-cc-moneda-col="USD"]'));
                     saldoInt = saldoLeidoANumero(tUsdInt);
                   }
                   saldoIntCell = saldoInt;
-                  const diffInt = countInt === 0 && Math.abs(expI) <= 1 ? 0 : Math.abs(saldoInt - expI);
+                  const diffInt = countInt === 0 && Math.abs(expI) <= 1 ? 0 : ccResumenDisplayDiffAlgebraico(saldoInt, expI);
                   rdoInt = diffInt <= 1 ? 'PASS' : 'ERR';
                   if (countInt === 0 && Math.abs(expI) > 1) {
                     throw new Error(`${cfg.codigo}+int ${esperado.id}: sin fila intermediario pero se esperaba saldo USD=${expI}`);
