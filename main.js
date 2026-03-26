@@ -929,8 +929,111 @@ function ccPendienteClasePorMonedaDesdeMovs(movs, trTipoById, trPagadorById, trC
 }
 
 /**
+ * CHEQUE-ARS + intermediario: ingreso Cliente→Pandy en instrumentación pendiente (cheques aún no entregados).
+ * El CC puede no tener movimiento pendiente con transaccion_id para esa trx; igual el ARS del resumen debe clasificarse como cobro a favor de Pandy.
+ */
+function ccMapClienteChequeIngresoPrincipalPendiente(ordenById, transaccionesByOrdenId) {
+  const out = {};
+  Object.keys(ordenById || {}).forEach((ordenId) => {
+    const orden = ordenById[ordenId];
+    if (!orden || !orden.cliente_id || !orden.intermediario_id) return;
+    const meta = tiposOperacionNestedMeta(orden.tipos_operacion);
+    const codigo = meta.codigo !== '–' ? meta.codigo : null;
+    const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+    if (!esTipoOperacionChequeArs(codigo, toJoin?.moneda_in, toJoin?.moneda_out)) return;
+    const trans = (transaccionesByOrdenId && transaccionesByOrdenId[ordenId]) || [];
+    const tiene = trans.some((t) => {
+      if (String(t.estado || '').toLowerCase() !== 'pendiente') return false;
+      if (String(t.tipo || '').toLowerCase() !== 'ingreso') return false;
+      if (String(t.pagador || '').toLowerCase() !== 'cliente') return false;
+      if (String(t.cobrador || '').toLowerCase() !== 'pandy') return false;
+      return true;
+    });
+    if (tiene) out[orden.cliente_id] = true;
+  });
+  return out;
+}
+
+/**
+ * CHEQUE-ARS + intermediario: egreso Pandy→Cliente en instrumentación pendiente (p. ej. efectivo a entregar al cliente).
+ * El CC puede no tener movimiento pendiente con transaccion_id; el resumen ARS debe clasificarse como pago (Pandy debe).
+ */
+function ccMapClienteChequeEgresoPandyClientePendiente(ordenById, transaccionesByOrdenId) {
+  const out = {};
+  Object.keys(ordenById || {}).forEach((ordenId) => {
+    const orden = ordenById[ordenId];
+    if (!orden || !orden.cliente_id || !orden.intermediario_id) return;
+    const meta = tiposOperacionNestedMeta(orden.tipos_operacion);
+    const codigo = meta.codigo !== '–' ? meta.codigo : null;
+    const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+    if (!esTipoOperacionChequeArs(codigo, toJoin?.moneda_in, toJoin?.moneda_out)) return;
+    const trans = (transaccionesByOrdenId && transaccionesByOrdenId[ordenId]) || [];
+    const tiene = trans.some((t) => {
+      if (String(t.estado || '').toLowerCase() !== 'pendiente') return false;
+      if (String(t.tipo || '').toLowerCase() !== 'egreso') return false;
+      if (String(t.pagador || '').toLowerCase() !== 'pandy') return false;
+      if (String(t.cobrador || '').toLowerCase() !== 'cliente') return false;
+      return true;
+    });
+    if (tiene) out[orden.cliente_id] = true;
+  });
+  return out;
+}
+
+/**
+ * CHEQUE-ARS + intermediario: ingreso Intermediario→Pandy en instrumentación pendiente (p. ej. efectivo que el int. aún debe entregar).
+ * CC intermediario puede no clasificar por transaccion_id → resumen ARS como cobro a favor de Pandy.
+ */
+function ccMapIntermediarioChequeIngresoIntPandyPendiente(ordenById, transaccionesByOrdenId) {
+  const out = {};
+  Object.keys(ordenById || {}).forEach((ordenId) => {
+    const orden = ordenById[ordenId];
+    if (!orden || !orden.intermediario_id) return;
+    const meta = tiposOperacionNestedMeta(orden.tipos_operacion);
+    const codigo = meta.codigo !== '–' ? meta.codigo : null;
+    const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+    if (!esTipoOperacionChequeArs(codigo, toJoin?.moneda_in, toJoin?.moneda_out)) return;
+    const trans = (transaccionesByOrdenId && transaccionesByOrdenId[ordenId]) || [];
+    const tiene = trans.some((t) => {
+      if (String(t.estado || '').toLowerCase() !== 'pendiente') return false;
+      if (String(t.tipo || '').toLowerCase() !== 'ingreso') return false;
+      if (String(t.pagador || '').toLowerCase() !== 'intermediario') return false;
+      if (String(t.cobrador || '').toLowerCase() !== 'pandy') return false;
+      return true;
+    });
+    if (tiene) out[orden.intermediario_id] = true;
+  });
+  return out;
+}
+
+/**
+ * CHEQUE-ARS + intermediario: egreso Pandy→Intermediario en instrumentación pendiente (p. ej. cheque a entregar al int.).
+ */
+function ccMapIntermediarioChequeEgresoPandyIntPendiente(ordenById, transaccionesByOrdenId) {
+  const out = {};
+  Object.keys(ordenById || {}).forEach((ordenId) => {
+    const orden = ordenById[ordenId];
+    if (!orden || !orden.intermediario_id) return;
+    const meta = tiposOperacionNestedMeta(orden.tipos_operacion);
+    const codigo = meta.codigo !== '–' ? meta.codigo : null;
+    const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+    if (!esTipoOperacionChequeArs(codigo, toJoin?.moneda_in, toJoin?.moneda_out)) return;
+    const trans = (transaccionesByOrdenId && transaccionesByOrdenId[ordenId]) || [];
+    const tiene = trans.some((t) => {
+      if (String(t.estado || '').toLowerCase() !== 'pendiente') return false;
+      if (String(t.tipo || '').toLowerCase() !== 'egreso') return false;
+      if (String(t.pagador || '').toLowerCase() !== 'pandy') return false;
+      if (String(t.cobrador || '').toLowerCase() !== 'intermediario') return false;
+      return true;
+    });
+    if (tiene) out[orden.intermediario_id] = true;
+  });
+  return out;
+}
+
+/**
  * Importe en resumen CC / Excel resumen / modal cards.
- * - cobro (cliente/int debe a Pandy en lo pendiente): signo invertido respecto del algebraico (−a), suele verse en verde.
+ * - cobro (pendiente a cobrar por Pandy): magnitud positiva en pantalla (verde favorable).
  * - pago (Pandy debe pagar): siempre importe negativo en pantalla (rojo) con magnitud |a| (deuda de Pandy).
  * - mixto / ninguno: fallback histórico −a.
  */
@@ -938,17 +1041,18 @@ function ccSaldoDisplayOpticaResumen(sAlg, clase) {
   const a = Number(sAlg) || 0;
   if (Math.abs(a) < 1e-9) return 0;
   if (clase === 'pago') return -Math.abs(a);
-  if (clase === 'cobro') return -a;
+  if (clase === 'cobro') return Math.abs(a);
   return ccSaldoResumenOpticaPandy(a);
 }
 
-/** Leyenda bajo saldo resumen/modal cuando hay pendiente en esa moneda. */
+/** Leyenda bajo saldo resumen/modal: clase cobro/pago explícita (p. ej. CHEQUE sin mov CC pendiente con trx) o pendiente detectado en movimientos. */
 function ccLeyendaSaldoResumenHtml(mon, pendMon, clase, sDisp) {
   const EPS = 1e-6;
   const pend = pendMon || {};
-  if (!pend[mon] || Math.abs(Number(sDisp) || 0) < EPS) return '';
+  if (Math.abs(Number(sDisp) || 0) < EPS) return '';
   if (clase === 'pago') return '<span class="cc-saldo-leyenda">Pendiente de pago</span>';
   if (clase === 'cobro') return '<span class="cc-saldo-leyenda">Pendiente de cobro</span>';
+  if (!pend[mon]) return '';
   return (Number(sDisp) || 0) > 0
     ? '<span class="cc-saldo-leyenda">Pendiente de cobro</span>'
     : '<span class="cc-saldo-leyenda">Pendiente de pago</span>';
@@ -3018,9 +3122,13 @@ function loadCuentaCorriente(opts) {
           ['USD', 'EUR', 'ARS'].forEach((mon) => { saldoIntByIdPrecomp[orden.intermediario_id][mon] += contribInt[mon] || 0; });
         }
       });
+      const chequeCliIngChequePendienteByCli = ccMapClienteChequeIngresoPrincipalPendiente(ordenById || {}, transaccionesByOrdenId);
+      const chequeCliEgresoPandyClientePendienteByCli = ccMapClienteChequeEgresoPandyClientePendiente(ordenById || {}, transaccionesByOrdenId);
+      const chequeIntIngresoIntPandyPendienteByInt = ccMapIntermediarioChequeIngresoIntPandyPendiente(ordenById || {}, transaccionesByOrdenId);
+      const chequeIntEgresoPandyIntPendienteByInt = ccMapIntermediarioChequeEgresoPandyIntPendiente(ordenById || {}, transaccionesByOrdenId);
       return delayMinLoadingSiNoEsBackground(loadingShownAtCc).then(() => {
         if (miTicket !== ccCargaSerial) return;
-        buildCcResumenRows(clientes, intermediarios, movCli, movIntEnriched, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById || {}, trTipoById || {}, trCobradorById || {}, ordenById || {}, pendientePandyDebeIntByInt || {}, pendienteClienteAjusteByCli || {}, saldoClienteByCliPrecomp, saldoIntByIdPrecomp);
+        buildCcResumenRows(clientes, intermediarios, movCli, movIntEnriched, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById || {}, trTipoById || {}, trCobradorById || {}, ordenById || {}, pendientePandyDebeIntByInt || {}, pendienteClienteAjusteByCli || {}, saldoClienteByCliPrecomp, saldoIntByIdPrecomp, chequeCliIngChequePendienteByCli, chequeCliEgresoPandyClientePendienteByCli, chequeIntIngresoIntPandyPendienteByInt, chequeIntEgresoPandyIntPendienteByInt);
       });
     });
   }).catch((err) => {
@@ -3033,7 +3141,7 @@ function loadCuentaCorriente(opts) {
   });
 }
 
-function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById, trTipoById, trCobradorById, ordenById, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, saldoClienteByCliPrecomp, saldoIntByIdPrecomp) {
+function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById, trTipoById, trCobradorById, ordenById, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, saldoClienteByCliPrecomp, saldoIntByIdPrecomp, chequeCliIngChequePendienteByCli, chequeCliEgresoPandyClientePendienteByCli, chequeIntIngresoIntPandyPendienteByInt, chequeIntEgresoPandyIntPendienteByInt) {
   if (loadingEl) loadingEl.style.display = 'none';
   ordenNumeroById = ordenNumeroById || {};
   trPagadorById = trPagadorById || {};
@@ -3044,6 +3152,10 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
   pendienteClienteAjusteByCli = pendienteClienteAjusteByCli || {};
   saldoClienteByCliPrecomp = saldoClienteByCliPrecomp || null;
   saldoIntByIdPrecomp = saldoIntByIdPrecomp || null;
+  chequeCliIngChequePendienteByCli = chequeCliIngChequePendienteByCli || {};
+  chequeCliEgresoPandyClientePendienteByCli = chequeCliEgresoPandyClientePendienteByCli || {};
+  chequeIntIngresoIntPandyPendienteByInt = chequeIntIngresoIntPandyPendienteByInt || {};
+  chequeIntEgresoPandyIntPendienteByInt = chequeIntEgresoPandyIntPendienteByInt || {};
   const ordenTipoOpMetaById = {};
   Object.keys(ordenById).forEach((oid) => {
     ordenTipoOpMetaById[oid] = tiposOperacionNestedMeta(ordenById[oid]?.tipos_operacion);
@@ -3122,11 +3234,50 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
   }
   // Saldo = suma de movimientos no anulados (coherente con listado).
   const saldosCliente = (id) => saldosDesdeMovimientosPorOrden(movsCliById[id] || []);
+  function mergePendienteClaseChequeArsCliente(clienteId, saldos, pendienteEnMoneda, pendienteClasePorMoneda) {
+    const ing = chequeCliIngChequePendienteByCli[clienteId];
+    const pagoInst = chequeCliEgresoPandyClientePendienteByCli[clienteId];
+    if (!ing && !pagoInst) return pendienteClasePorMoneda;
+    const pendA = pendienteEnMoneda.ARS;
+    const absS = Math.abs(Number(saldos.ARS) || 0);
+    if (!pendA && absS < 1e-6) return pendienteClasePorMoneda;
+    const cur = pendienteClasePorMoneda.ARS;
+    if (ing && pagoInst) return { ...pendienteClasePorMoneda, ARS: 'mixto' };
+    if (ing) {
+      if (cur === 'pago' || cur === 'mixto') return { ...pendienteClasePorMoneda, ARS: 'mixto' };
+      return { ...pendienteClasePorMoneda, ARS: 'cobro' };
+    }
+    if (pagoInst) {
+      if (cur === 'cobro' || cur === 'mixto') return { ...pendienteClasePorMoneda, ARS: 'mixto' };
+      return { ...pendienteClasePorMoneda, ARS: 'pago' };
+    }
+    return pendienteClasePorMoneda;
+  }
+  function mergePendienteClaseChequeArsIntermediario(intId, saldos, pendienteEnMoneda, pendienteClasePorMoneda) {
+    const ingInt = chequeIntIngresoIntPandyPendienteByInt[intId];
+    const egresoPandyInt = chequeIntEgresoPandyIntPendienteByInt[intId];
+    if (!ingInt && !egresoPandyInt) return pendienteClasePorMoneda;
+    const pendA = pendienteEnMoneda.ARS;
+    const absS = Math.abs(Number(saldos.ARS) || 0);
+    if (!pendA && absS < 1e-6) return pendienteClasePorMoneda;
+    const cur = pendienteClasePorMoneda.ARS;
+    if (ingInt && egresoPandyInt) return { ...pendienteClasePorMoneda, ARS: 'mixto' };
+    if (ingInt) {
+      if (cur === 'pago' || cur === 'mixto') return { ...pendienteClasePorMoneda, ARS: 'mixto' };
+      return { ...pendienteClasePorMoneda, ARS: 'cobro' };
+    }
+    if (egresoPandyInt) {
+      if (cur === 'cobro' || cur === 'mixto') return { ...pendienteClasePorMoneda, ARS: 'mixto' };
+      return { ...pendienteClasePorMoneda, ARS: 'pago' };
+    }
+    return pendienteClasePorMoneda;
+  }
   clientes.forEach((c) => {
     const saldos = saldosCliente(c.id);
     const movsC = movsCliById[c.id] || [];
     const pendienteEnMoneda = ccPendientePorMonedaDesdeMovs(movsC);
-    const pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsC, trTipoById, trPagadorById, trCobradorById);
+    let pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsC, trTipoById, trPagadorById, trCobradorById);
+    pendienteClasePorMoneda = mergePendienteClaseChequeArsCliente(c.id, saldos, pendienteEnMoneda, pendienteClasePorMoneda);
     rows.push({ tipo: 'cliente', id: c.id, nombre: c.nombre, saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendienteClienteAjuste: pendienteClienteAjusteForCli(c.id) });
     addedCli.add(c.id);
   });
@@ -3136,7 +3287,8 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     const saldos = saldosCliente(id);
     const movsC = movsCliById[id] || [];
     const pendienteEnMoneda = ccPendientePorMonedaDesdeMovs(movsC);
-    const pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsC, trTipoById, trPagadorById, trCobradorById);
+    let pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsC, trTipoById, trPagadorById, trCobradorById);
+    pendienteClasePorMoneda = mergePendienteClaseChequeArsCliente(id, saldos, pendienteEnMoneda, pendienteClasePorMoneda);
     rows.push({ tipo: 'cliente', id, nombre: (c && c.nombre) || '–', saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendienteClienteAjuste: pendienteClienteAjusteForCli(id) });
     addedCli.add(id);
   });
@@ -3146,9 +3298,11 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     const pendienteClienteAjuste = pendienteClienteAjusteForCli(id);
     if (!pendienteClienteAjuste) return;
     const movsC = movsCliById[id] || [];
+    const saldos = { USD: 0, EUR: 0, ARS: 0 };
     const pendienteEnMoneda = ccPendientePorMonedaDesdeMovs(movsC);
-    const pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsC, trTipoById, trPagadorById, trCobradorById);
-    rows.push({ tipo: 'cliente', id, nombre: (c && c.nombre) || '–', saldos: { USD: 0, EUR: 0, ARS: 0 }, pendienteEnMoneda, pendienteClasePorMoneda, pendienteClienteAjuste });
+    let pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsC, trTipoById, trPagadorById, trCobradorById);
+    pendienteClasePorMoneda = mergePendienteClaseChequeArsCliente(id, saldos, pendienteEnMoneda, pendienteClasePorMoneda);
+    rows.push({ tipo: 'cliente', id, nombre: (c && c.nombre) || '–', saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendienteClienteAjuste });
     addedCli.add(id);
   });
   function pendientePandyDebeForInt(intId) {
@@ -3162,7 +3316,8 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     const saldos = saldosInt(i.id);
     const movsI = movsIntById[i.id] || [];
     const pendienteEnMoneda = ccPendientePorMonedaDesdeMovs(movsI);
-    const pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsI, trTipoById, trPagadorById, trCobradorById);
+    let pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsI, trTipoById, trPagadorById, trCobradorById);
+    pendienteClasePorMoneda = mergePendienteClaseChequeArsIntermediario(i.id, saldos, pendienteEnMoneda, pendienteClasePorMoneda);
     rows.push({ tipo: 'intermediario', id: i.id, nombre: i.nombre, saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendientePandyDebe: pendientePandyDebeForInt(i.id) });
     addedInt.add(i.id);
   });
@@ -3172,7 +3327,8 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     const saldos = saldosInt(id);
     const movsI = movsIntById[id] || [];
     const pendienteEnMoneda = ccPendientePorMonedaDesdeMovs(movsI);
-    const pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsI, trTipoById, trPagadorById, trCobradorById);
+    let pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsI, trTipoById, trPagadorById, trCobradorById);
+    pendienteClasePorMoneda = mergePendienteClaseChequeArsIntermediario(id, saldos, pendienteEnMoneda, pendienteClasePorMoneda);
     rows.push({ tipo: 'intermediario', id, nombre: (i && i.nombre) || '–', saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendientePandyDebe: pendientePandyDebeForInt(id) });
     addedInt.add(id);
   });
@@ -3182,9 +3338,11 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     const pendientePandyDebe = pendientePandyDebeForInt(id);
     if (!pendientePandyDebe) return;
     const movsI = movsIntById[id] || [];
+    const saldos = { USD: 0, EUR: 0, ARS: 0 };
     const pendienteEnMoneda = ccPendientePorMonedaDesdeMovs(movsI);
-    const pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsI, trTipoById, trPagadorById, trCobradorById);
-    rows.push({ tipo: 'intermediario', id, nombre: (i && i.nombre) || '–', saldos: { USD: 0, EUR: 0, ARS: 0 }, pendienteEnMoneda, pendienteClasePorMoneda, pendientePandyDebe });
+    let pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsI, trTipoById, trPagadorById, trCobradorById);
+    pendienteClasePorMoneda = mergePendienteClaseChequeArsIntermediario(id, saldos, pendienteEnMoneda, pendienteClasePorMoneda);
+    rows.push({ tipo: 'intermediario', id, nombre: (i && i.nombre) || '–', saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendientePandyDebe });
     addedInt.add(id);
   });
   ccResumenRowsTodos = [...rows].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
@@ -3665,17 +3823,21 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
       (rInst.data || []).forEach((i) => { instByOrden[i.orden_id] = i.id; });
       const instIds = (rInst.data || []).map((i) => i.id).filter(Boolean);
       const promTrInst = instIds.length > 0
-        ? client.from('transacciones').select('id, instrumentacion_id, estado').in('instrumentacion_id', instIds)
+        ? client.from('transacciones').select('id, instrumentacion_id, estado, tipo, pagador, cobrador, monto').in('instrumentacion_id', instIds)
         : Promise.resolve({ data: [] });
       return promTrInst.then((rTrInst) => ({ rTrInst, trById, instByOrden, trTipoById, trPagadorById, trCobradorById }));
     }).then(({ rTrInst, trById, instByOrden, trTipoById, trPagadorById, trCobradorById }) => {
       const orderHasEjecutada = {};
+      const transaccionesByOrdenId = {};
       (rTrInst.data || []).forEach((t) => {
         const ordenId = Object.keys(instByOrden || {}).find((oid) => instByOrden[oid] === t.instrumentacion_id);
-        if (ordenId && t.estado === 'ejecutada') orderHasEjecutada[ordenId] = true;
+        if (!ordenId) return;
+        if (!transaccionesByOrdenId[ordenId]) transaccionesByOrdenId[ordenId] = [];
+        transaccionesByOrdenId[ordenId].push(t);
+        if (t.estado === 'ejecutada') orderHasEjecutada[ordenId] = true;
       });
-      return { trById, orderHasEjecutada, trTipoById, trPagadorById, trCobradorById };
-    }).then(({ trById, orderHasEjecutada, trTipoById, trPagadorById, trCobradorById }) => {
+      return { trById, orderHasEjecutada, trTipoById, trPagadorById, trCobradorById, transaccionesByOrdenId };
+    }).then(({ trById, orderHasEjecutada, trTipoById, trPagadorById, trCobradorById, transaccionesByOrdenId }) => {
       // Saldo modal detalle: suma de todos los movimientos no anulados (misma lógica que resumen CC).
       function incluirEnSaldo(m) {
         if ((m.estado || '').toString().toLowerCase() === 'anulado') return false;
@@ -3693,11 +3855,56 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
         }
       });
       const saldos = { USD: sumAll.USD, EUR: sumAll.EUR, ARS: sumAll.ARS };
+      const ordenByIdFetch = Object.fromEntries(ordenes.map((o) => [o.id, o]));
       const pendMonFull = ccPendientePorMonedaDesdeMovs(movimientos);
-      const pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movimientos, trTipoById, trPagadorById, trCobradorById);
+      let pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movimientos, trTipoById, trPagadorById, trCobradorById);
+      if (tipo === 'cliente') {
+        const chequeIng = ccMapClienteChequeIngresoPrincipalPendiente(ordenByIdFetch, transaccionesByOrdenId);
+        const chequePago = ccMapClienteChequeEgresoPandyClientePendiente(ordenByIdFetch, transaccionesByOrdenId);
+        const pendA = pendMonFull.ARS;
+        const absS = Math.abs(Number(saldos.ARS) || 0);
+        const relevant = pendA || absS >= 1e-6;
+        const curArs = pendienteClasePorMoneda.ARS;
+        if (relevant && chequeIng[entityId] && chequePago[entityId]) {
+          pendienteClasePorMoneda = { ...pendienteClasePorMoneda, ARS: 'mixto' };
+        } else if (relevant && chequeIng[entityId]) {
+          if (curArs === 'pago' || curArs === 'mixto') {
+            pendienteClasePorMoneda = { ...pendienteClasePorMoneda, ARS: 'mixto' };
+          } else {
+            pendienteClasePorMoneda = { ...pendienteClasePorMoneda, ARS: 'cobro' };
+          }
+        } else if (relevant && chequePago[entityId]) {
+          if (curArs === 'cobro' || curArs === 'mixto') {
+            pendienteClasePorMoneda = { ...pendienteClasePorMoneda, ARS: 'mixto' };
+          } else {
+            pendienteClasePorMoneda = { ...pendienteClasePorMoneda, ARS: 'pago' };
+          }
+        }
+      } else if (tipo === 'intermediario') {
+        const ingInt = ccMapIntermediarioChequeIngresoIntPandyPendiente(ordenByIdFetch, transaccionesByOrdenId);
+        const egresoPandyInt = ccMapIntermediarioChequeEgresoPandyIntPendiente(ordenByIdFetch, transaccionesByOrdenId);
+        const pendA = pendMonFull.ARS;
+        const absS = Math.abs(Number(saldos.ARS) || 0);
+        const relevant = pendA || absS >= 1e-6;
+        const curArs = pendienteClasePorMoneda.ARS;
+        if (relevant && ingInt[entityId] && egresoPandyInt[entityId]) {
+          pendienteClasePorMoneda = { ...pendienteClasePorMoneda, ARS: 'mixto' };
+        } else if (relevant && ingInt[entityId]) {
+          if (curArs === 'pago' || curArs === 'mixto') {
+            pendienteClasePorMoneda = { ...pendienteClasePorMoneda, ARS: 'mixto' };
+          } else {
+            pendienteClasePorMoneda = { ...pendienteClasePorMoneda, ARS: 'cobro' };
+          }
+        } else if (relevant && egresoPandyInt[entityId]) {
+          if (curArs === 'cobro' || curArs === 'mixto') {
+            pendienteClasePorMoneda = { ...pendienteClasePorMoneda, ARS: 'mixto' };
+          } else {
+            pendienteClasePorMoneda = { ...pendienteClasePorMoneda, ARS: 'pago' };
+          }
+        }
+      }
       // Detalle = solo movimientos que deben mostrarse en el listado (incluir_en_detalle). Si la columna no existe, mostrar todos.
       const movimientosParaDetalle = movimientos.filter((m) => m.incluir_en_detalle !== false);
-      const ordenByIdFetch = Object.fromEntries(ordenes.map((o) => [o.id, o]));
       const clienteIdsFetch = [...new Set(ordenes.map((o) => o.cliente_id).filter(Boolean))];
       const intIdsFetch = [...new Set(ordenes.map((o) => o.intermediario_id).filter(Boolean))];
       return Promise.all([
