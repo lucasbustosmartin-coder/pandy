@@ -125,7 +125,7 @@ const COMBINACIONES_USD_USD = [
 /**
  * USD-USD con intermediario: mismas expectativas **cliente** / detalle que sin int (`reglas_de_negocio` cliente + mr_menos_me).
  * **Caja:** con patrón cp_ic (Tx2 = Intermediario→Cliente), el egreso del intermediario **no** mueve la caja de Pandy; solo cuenta el ingreso Cliente→Pandy cuando está ejecutado (E,E → +mr; P,E → 0; E,P → +mr).
- * CC intermediario (**cp_ic**): con par cerrado (**E,E**) saldo USD = −(me + parte comisión int. en comisiones_orden); el intermediario pagó me al cliente y Pandy debe me + comisión. 50% / 50% sobre comisión total (mr−me) para la fila es_comision.
+ * CC intermediario (**cp_ic**): con par cerrado (**E,E**) saldo USD = −(me + parte comisión int. en comisiones_orden). En E2E se cargan **tasa cliente + tasa intermediario** sobre el importe (p. ej. 1,5% + 1,5% = 3% total como sin int.); la parte del intermediario en comisiones_orden coincide numéricamente con la mitad de (mr−me) si las tasas son simétricas.
  */
 const COMISION_USD_USD_INT_INTERMEDIARIO = Math.round(USD_USD_FIJOS.comision / 2);
 /** Negativo en resumen = Pandy debe al intermediario (suma movimientos CC int). */

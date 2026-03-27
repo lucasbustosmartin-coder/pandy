@@ -7,7 +7,11 @@
 -- Borrar toda la transaccionalidad para volver a probar de cero.
 -- Se borran: movimientos CC (cliente e intermediario), movimientos_caja, orden_comisiones_generadas (si existe),
 --   transacciones, comisiones_orden, instrumentacion, ordenes.
--- No se tocan: clientes, intermediarios, modos_pago, tipos_operacion, tipos_movimiento_caja, app_config, usuarios/seguridad.
+-- Incluye movimientos CC manuales (sin orden): mismas tablas; orden_id / transaccion_id pueden ser NULL (migración CC manual).
+-- No se tocan: clientes, intermediarios, modos_pago, tipos_operacion, tipos_movimiento_caja, reglas_de_negocio,
+--   app_empresa, app_config, usuarios/seguridad.
+-- Staging contingencia: si existe, las filas con FK a ordenes/transacciones se truncan en cascada al truncar esas tablas;
+--   el bloque OPCIONAL más abajo vacía también los lotes staging (batch + filas) por si querés 0 filas ahí.
 -- Orden: de hijas a madres (quien referencia primero). Tras truncar se resetean ordenes_numero_seq y transacciones_numero_seq (próxima orden nº 1, próxima transacción nº 1).
 --
 -- E2E: si además querés borrar clientes/intermediarios creado por los tests, NO alcanza con este archivo:
@@ -44,6 +48,20 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname = 'public' AND sequencename = 'transacciones_numero_seq') THEN
     PERFORM setval('public.transacciones_numero_seq', 1, false);
+  END IF;
+END $$;
+
+-- =============================================================================
+-- OPCIONAL — Staging importación contingencia (sql/migracion_contingencia_import_staging.sql)
+-- TRUNCATE del batch en cascada vacía acuerdos/transacciones/comisiones en staging. Ejecutar si la tabla existe.
+-- =============================================================================
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'contingencia_import_batch'
+  ) THEN
+    EXECUTE 'TRUNCATE TABLE public.contingencia_import_batch CASCADE';
   END IF;
 END $$;
 

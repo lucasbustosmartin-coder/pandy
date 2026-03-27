@@ -34,7 +34,7 @@ Copiá `config.example.js` a `config.js` y pegá la **anon key** y la **URL** de
 
 ### 5. Scripts SQL
 
-Los archivos en `sql/` se ejecutan en el **SQL Editor** de Supabase. Cuando definas tablas para la app, creá los DDL en `sql/` (ej. `supabase_*.sql`) y ejecutalos en ese orden.
+Los archivos en `sql/` se ejecutan en el **SQL Editor** de Supabase. Cuando definas tablas para la app, creá los DDL en `sql/` (ej. `supabase_*.sql`) y ejecutalos en ese orden. Para **marca / nombre visible en pantalla** (white-label): `sql/migracion_app_empresa.sql` y `docs/APP_EMPRESA.md`. Para **movimientos de CC sin orden** (manual + permiso + pagador/cobrador + tipos caja fijos + `orden_id` nullable): `sql/migracion_cc_movimiento_manual.sql`, `sql/migracion_cc_manual_pagador_cobrador.sql`, `sql/migracion_tipos_caja_cc_manual.sql`, si aplica `sql/migracion_cc_movimientos_orden_id_nullable.sql`, y `docs/CC_MOVIMIENTO_MANUAL.md`. Para **instrumentación manual multicontraparte** (ARS-USD / USD-ARS sin intermediario): `sql/migracion_instrumentacion_multicontraparte.sql`, `sql/migracion_transaccion_chk_pagador_cobrador_multicontraparte.sql` (CHECK pagador/cobrador con dos clientes distintos) y `docs/INSTRUMENTACION_MANUAL_MULTICONTRAPARTE.md`.
 
 ---
 

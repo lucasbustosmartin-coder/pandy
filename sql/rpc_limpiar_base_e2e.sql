@@ -5,6 +5,7 @@
 --    clientes: nombre LIKE 'E2E %'
 --    intermediarios: nombre LIKE 'E2E Int %' (p. ej. E2E Int 1739…) o nombre fijo del spec 02 (E2E CC TiposActivos Int).
 -- 2) Trunca transaccionalidad en el mismo orden que truncar_ordenes_transacciones.sql
+--    (incluye CC/caja manuales vinculados a las mismas tablas), staging contingencia si existe,
 --    y resetea secuencias ordenes_numero_seq y transacciones_numero_seq.
 -- El test (o scripts/limpiar-base-e2e.js) puede invocar esta RPC antes de correr E2E.
 -- =============================================================================
@@ -44,6 +45,13 @@ BEGIN
 
   IF EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname = 'public' AND sequencename = 'transacciones_numero_seq') THEN
     PERFORM setval('public.transacciones_numero_seq', 1, false);
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'contingencia_import_batch'
+  ) THEN
+    EXECUTE 'TRUNCATE TABLE public.contingencia_import_batch CASCADE';
   END IF;
 END;
 $$;

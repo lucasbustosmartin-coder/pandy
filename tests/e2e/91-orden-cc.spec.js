@@ -1027,7 +1027,7 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
   });
 });
 
-test.describe('Orden USD-USD con intermediario, comisión repartida y CC', () => {
+test.describe('Orden USD-USD con intermediario, tasas duales y CC', () => {
   test.beforeEach(async ({ page }) => {
     if (!TEST_USER_EMAIL || !TEST_USER_PASSWORD) {
       // eslint-disable-next-line no-console
@@ -1085,22 +1085,22 @@ test.describe('Orden USD-USD con intermediario, comisión repartida y CC', () =>
 
       await page.locator('#orden-btn-next').click();
       await expect(page.locator('#orden-step-detalles')).toBeVisible({ timeout: 5000 });
-      await expect(page.locator('#orden-wrap-comision-split')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('#orden-wrap-int-patron-instrumentacion')).toBeVisible({ timeout: 5000 });
+      await page.locator('input[name="orden-int-patron-radio"][value="cp_ic"]').check();
+      await expect(page.locator('#orden-wrap-detalles-tras-patron')).toBeVisible({ timeout: 5000 });
 
-      // Montos fijos legibles: recibir 5000, entregar 4700 (tasa cliente 6%), comisión total 300; 50% Pandy / 50% intermediario → 150 USD a int.
+      // Montos: recibir 5000, entregar 4700 (tasa cliente 3% + tasa intermediario 3%); comisión 300; 150 Pandy / 150 int (sobre importe).
       await page.locator('#orden-importe-cheque').fill('5000');
-      await page.locator('#orden-tasa-descuento-cliente').fill('6');
+      await page.locator('#orden-tasa-descuento-cliente').fill('3');
+      await page.locator('#orden-tasa-descuento-intermediario').fill('3');
       await page.waitForTimeout(400);
       const montoRecibidoStr = (await page.locator('#orden-monto-recibido').inputValue()) || '';
       const montoEntregadoStr = (await page.locator('#orden-monto-entregado').inputValue()) || '';
       const mrNum = parseFloat(String(montoRecibidoStr).replace(/\./g, '').replace(',', '.')) || 0;
       const meNum = parseFloat(String(montoEntregadoStr).replace(/\./g, '').replace(',', '.')) || 0;
       expect(Math.abs(mrNum - 5000) < 1 && Math.abs(meNum - 4700) < 1, `Esperado mr≈5000 me≈4700; obtenido mr=${mrNum} me=${meNum}`).toBe(true);
-      await page.locator('#orden-comision-pandy-pct').fill('50');
-      await page.locator('#orden-comision-intermediario-pct').fill('50');
-      await page.waitForTimeout(300);
 
-      const comisionInterEsperada = Math.round((mrNum - meNum) * 0.5);
+      const comisionInterEsperada = Math.round(mrNum * 0.03);
 
       await page.locator('#orden-btn-ir-instrumentacion').click();
       await expect(page.locator('#orden-step-instrumentacion')).toBeVisible({ timeout: 15000 });

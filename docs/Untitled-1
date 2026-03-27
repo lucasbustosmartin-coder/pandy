@@ -1,0 +1,27 @@
+npx playwright test tests/e2e/01-cc-combinaciones.spec.js --headed
+npm run test:e2e-cc-tipos-2tx -- --headed --OTRAS TIP OP
+npm run test:e2e-cc-activos-completo
+npx playwright test "/Users/lucasb/LyP/Pandi/tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js" --headed
+npx playwright test "/Users/lucasb/LyP/Pandi/tests/e2e" --reporter=line --workers=1 --headed
+npx playwright test tests/e2e --reporter=list --workers=1 --headed
+npm run test:e2e
+
+npx playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1
+
+# Con navegador visible
+npx playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1 --headed
+
+npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --reporter=line --workers=1 --headed
+npm run test:e2e-cc-usd-ars-int-inversa
+npm run test:e2e-cc-usd-usd-sin-int
+npm run test:e2e-cc-usd-usd-int
+
+armame un cuadro para llevarmelo a excel que tenga los comando por tipo de operacion y por dentro de tipo de operacion por combinacion.
+
+npx Tip Op , npx Comb
+
+---
+→ Tabla lista para Excel: **`docs/e2e-comandos-por-tipo-y-combinacion.tsv`**
+   - Abrila con Excel / LibreOffice (separador TAB) o copiá/pega en una hoja.
+   - Columnas: Tipo operación | Spec | Combinación | Comando
+   - Detalle: `docs/TESTING_E2E_GUIA.md` (§1.5–1.8 y scripts en `package.json`).

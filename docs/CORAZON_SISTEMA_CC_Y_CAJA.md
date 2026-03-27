@@ -12,6 +12,8 @@ Este documento define los principios que **siempre** deben cumplirse. El sistema
 - Lo que muestra la CC (resumen y detalle) debe coincidir con quién le debe a quién en la realidad: signos, pendientes, ejecutadas, comisiones implícitas, misma convención de colores (verde = nos deben, rojo = Pandy debe). Referencia de regla: `docs/REGLA_CC_SIMPLE_INFALIBLE.md`.
 - **USD-ARS sin intermediario** (dos monedas, dos transacciones): modelo teórico de **dos movimientos CC por transacción** cuando ambas patas aplican; con todo ejecutado (**E,E**) **cuatro** movimientos que netean por moneda. Ver `docs/MODELO_CC_USD_ARS_TEORICO.md` y `docs/REGLAS_DE_NEGOCIO.md`.
 - **Varias transacciones por el mismo acuerdo** (parciales, distintos modos de pago): válido si los totales cierran; CC/caja se derivan **por transacción ejecutada**; cierre legacy dos monedas suma todos los montos Cliente↔Pandy. Ver `docs/INSTRUMENTACION_MULTITRANSACCION_Y_CC.md`.
+- **Futuro (sin implementar):** instrumentación **manual libre** ARS-USD / USD-ARS sin int. (N pagos, contrapartes Cliente N o Intermediario N, mismos signos CC acuerdo que hoy en parciales). Definiciones: `docs/INSTRUMENTACION_MANUAL_MULTICONTRAPARTE.md`.
+- **Futuro (sin implementar):** acuerdo explícito **contra cliente o contra intermediario** (ej. USD-ARS comprando USD al intermediario; CC del acuerdo en libro intermediario). Diseño y preguntas abiertas: `docs/CC_ACUERDO_CONTRAPARTE_CLIENTE_O_INTERMEDIARIO.md`.
 
 ---
 

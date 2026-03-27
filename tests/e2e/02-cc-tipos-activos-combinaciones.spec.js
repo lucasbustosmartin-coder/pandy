@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * E2E: combinaciones Tx1/Tx2 (P/E) para tipos de operación con **2 transacciones**:
- * ARS-USD, USD-ARS, EUR-USD, USD-EUR, EUR-ARS, ARS-EUR, USD-USD (sin intermediario), USD-USD (con intermediario y reparto comisión).
+ * ARS-USD, USD-ARS, EUR-USD, USD-EUR, EUR-ARS, ARS-EUR, USD-USD (sin intermediario), USD-USD (con intermediario: patrón + tasas cliente/intermediario sobre importe).
  *
  * CHEQUE-ARS (4 tx + intermediario) no está aquí: usar `tests/e2e/01-cc-combinaciones.spec.js`.
  * Todos los tipos activos sin duplicar: `npm run test:e2e-cc-activos-completo` (01 CHEQUE + este 02 + 03 inversa int.; no incluye 91).
@@ -400,16 +400,16 @@ const TIPOS_SUITE = [
     usaIntermediario: true,
     combinaciones: COMBINACIONES_USD_USD_INT,
     fillDetalles: async (page) => {
+      await expect(page.locator('#orden-wrap-int-patron-instrumentacion')).toBeVisible({ timeout: 5000 });
+      await page.locator('input[name="orden-int-patron-radio"][value="cp_ic"]').check();
       await expect(page.locator('#orden-wrap-primeros-datos')).toBeVisible({ timeout: 5000 });
-      await expect(page.locator('#orden-wrap-comision-split')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('#orden-wrap-tasa-descuento-intermediario')).toBeVisible({ timeout: 5000 });
       await page.locator('#orden-importe-cheque').fill(USD_USD_FIJOS.importe);
-      await page.locator('#orden-tasa-descuento-cliente').fill(USD_USD_FIJOS.tasaCliente);
+      await page.locator('#orden-tasa-descuento-cliente').fill('1,5');
+      await page.locator('#orden-tasa-descuento-intermediario').fill('1,5');
       await page.waitForTimeout(500);
       await expect(page.locator('#orden-monto-recibido')).toHaveValue(/.+/);
       await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/);
-      await page.locator('#orden-comision-pandy-pct').fill('50');
-      await page.locator('#orden-comision-intermediario-pct').fill('50');
-      await page.waitForTimeout(300);
     },
   },
   {
