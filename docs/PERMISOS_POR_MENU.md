@@ -23,8 +23,8 @@ Ejemplo conceptual:
 | Órdenes        | ver_ordenes | ingresar_orden, editar_orden, anular_orden, editar_estado_orden               |
 | Cajas          | ver_cajas  | abm_movimientos_caja, abm_tipos_movimiento_caja                               |
 | Clientes       | ver_clientes | abm_clientes                                                                 |
-| Cuenta corriente | ver_cuenta_corriente | (editar movimientos según permisos de órdenes/transacciones)              |
-| Seguridad      | ver_seguridad | assign_roles                                                                |
+| Cuenta corriente | ver_cuenta_corriente | registrar_movimiento_cc_manual, editar_movimiento_cc_manual, eliminar_movimiento_cc_manual |
+| Seguridad      | ver_seguridad, ver_auditoria | assign_roles                                                                |
 
 Ventajas:
 

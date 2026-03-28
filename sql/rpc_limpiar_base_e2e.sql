@@ -24,6 +24,10 @@ BEGIN
      OR nombre = 'E2E CC TiposActivos Int';
 
   -- 2) Truncar transaccionalidad (mismo orden que truncar_ordenes_transacciones.sql)
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'auditoria_app') THEN
+    TRUNCATE TABLE public.auditoria_app CASCADE;
+  END IF;
+
   TRUNCATE TABLE public.movimientos_cuenta_corriente CASCADE;
   TRUNCATE TABLE public.movimientos_cuenta_corriente_intermediario CASCADE;
   TRUNCATE TABLE public.movimientos_caja CASCADE;

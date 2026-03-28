@@ -70,6 +70,723 @@ function fetchAppEmpresaIntoState() {
     });
 }
 
+/**
+ * Estado del control Supabase: `none` = OK; el resto muestra banner con texto acorde.
+ * - unreachable: red, CORS, timeout, 5xx, PGRST301 (JWT/capa auth), excepciones fetch.
+ * - schema: tabla/caché (p. ej. falta app_empresa o migración).
+ * - rls: permisos / políticas que bloquean la lectura de control.
+ * - config: el API respondió con otro error (referencia app_empresa).
+ */
+let pandiSupabaseConnectivityIssue = 'none';
+let pandiSupabaseHealthIntervalId = null;
+
+/** Modo reducido: tras ~10 min seguidos sin llegar a Supabase (solo `unreachable`). */
+let pandiUnreachableSinceMs = null;
+let pandiModoReducidoOffline = false;
+const PANDI_OFFLINE_QUEUE_KEY = 'pandi_offline_ordenes_queue_v1';
+const PANDI_OFFLINE_CACHE_KEY = 'pandi_offline_catalogos_cache_v1';
+const PANDI_CACHED_PERMISSIONS_KEY = 'pandi_cached_permissions_v1';
+const PANDI_OFFLINE_MS_PARA_MODO_REDUCIDO = 10 * 60 * 500;
+
+/** Evita registrar dos veces listeners de sesión (sidebar, modales, etc.). Se resetea en showLoginScreenDom. */
+let pandiSessionUiBootstrapped = false;
+
+function pandiCachePermissionsLocal(perms) {
+  try {
+    if (Array.isArray(perms)) localStorage.setItem(PANDI_CACHED_PERMISSIONS_KEY, JSON.stringify(perms));
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function pandiLoadCachedPermissionsLocal() {
+  try {
+    const s = localStorage.getItem(PANDI_CACHED_PERMISSIONS_KEY);
+    if (!s) return [];
+    const a = JSON.parse(s);
+    return Array.isArray(a) ? a : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** Sesión válida pero sin RPC (red caída): mostrar shell de la app con permisos cacheados. */
+function pandiEsFalloConectividadBootstrap(err) {
+  if (pandiSupabaseConnectivityIssue === 'unreachable') return true;
+  const code = err && (err.code || (err.error && err.error.code) || '');
+  if (code === '42501' || code === 'PGRST204') return false;
+  const msg = String((err && err.message) || (err && err.error && err.error.message) || err || '').toLowerCase();
+  if (msg.includes('failed to fetch') || msg.includes('network error') || msg.includes('fetch')) return true;
+  if (err && err.code === 'PGRST301') return true;
+  return false;
+}
+
+/** Clasifica error del ping a app_empresa (PostgREST / red). */
+function classifySupabasePingError(error) {
+  const msg = (error.message || '').toLowerCase();
+  const code = String(error.code || '');
+  const details = (error.details || '').toLowerCase();
+  const hint = (error.hint || '').toLowerCase();
+  const blob = `${msg} ${details} ${hint}`;
+
+  if (
+    msg.includes('fetch') ||
+    msg.includes('network') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('timeout') ||
+    msg.includes('cors') ||
+    (code.length && code.startsWith('5')) ||
+    code === 'PGRST301'
+  ) {
+    return 'unreachable';
+  }
+
+  if (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    blob.includes('does not exist') ||
+    blob.includes('no existe la relación') ||
+    blob.includes('could not find the table') ||
+    (blob.includes('relation') && blob.includes('not exist')) ||
+    (msg.includes('schema cache') && (msg.includes('could not find') || msg.includes('not find')))
+  ) {
+    return 'schema';
+  }
+
+  if (
+    code === '42501' ||
+    blob.includes('permission denied') ||
+    blob.includes('row-level security') ||
+    (blob.includes('rls') && blob.includes('polic'))
+  ) {
+    return 'rls';
+  }
+
+  return 'config';
+}
+
+/**
+ * Ping mínimo a Supabase. Distingue servicio caído vs proyecto vivo con esquema/RLS mal configurados.
+ * @returns {Promise<{ issue: 'none' | 'unreachable' | 'schema' | 'rls' | 'config' }>}
+ */
+async function checkSupabaseConnectivity() {
+  try {
+    const { error } = await client
+      .from('app_empresa')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+    if (!error) return { issue: 'none' };
+    return { issue: classifySupabasePingError(error) };
+  } catch (e) {
+    console.warn('[Pandi] Conectividad Supabase:', e && e.message ? e.message : e);
+    return { issue: 'unreachable' };
+  }
+}
+
+const PANDI_SUPABASE_BANNER_COPY = {
+  unreachable: {
+    title: 'Problemas de conectividad',
+    text: 'No pudimos conectar con el servicio. Puede ser temporal (red, tiempo de espera o mantenimiento). Probá de nuevo en unos minutos.',
+    warn: false,
+  },
+  schema: {
+    title: 'Falta tabla o migración en Supabase',
+    text: 'El proyecto respondió, pero no se pudo leer la tabla de referencia app_empresa. Ejecutá en el SQL Editor: sql/migracion_app_empresa.sql (y revisá que exista la fila id = 1).',
+    warn: true,
+  },
+  rls: {
+    title: 'Bloqueo de permisos (RLS)',
+    text: 'El proyecto respondió, pero la lectura de app_empresa fue rechazada. Revisá políticas RLS para roles anon y authenticated en Supabase.',
+    warn: true,
+  },
+  config: {
+    title: 'Error al comprobar el proyecto',
+    text: 'El servicio respondió con un error inesperado al verificar datos de referencia. Revisá el SQL Editor, logs del proyecto y la tabla app_empresa.',
+    warn: true,
+  },
+};
+
+function updateSupabaseConnectivityBanner() {
+  const wrap = document.getElementById('pandi-supabase-connectivity-banner');
+  if (!wrap) return;
+  const titleEl = document.getElementById('pandi-supabase-connectivity-title');
+  const textEl = document.getElementById('pandi-supabase-connectivity-text');
+  const issue = pandiSupabaseConnectivityIssue;
+  if (issue === 'none') {
+    wrap.classList.remove('is-visible', 'pandi-connectivity-banner--warn');
+    return;
+  }
+  const copy = PANDI_SUPABASE_BANNER_COPY[issue] || PANDI_SUPABASE_BANNER_COPY.config;
+  if (titleEl) titleEl.textContent = copy.title;
+  if (textEl) textEl.textContent = copy.text;
+  wrap.classList.toggle('pandi-connectivity-banner--warn', !!copy.warn);
+  wrap.classList.add('is-visible');
+}
+
+async function runSupabaseHealthCheck() {
+  const prevIssue = pandiSupabaseConnectivityIssue;
+  const { issue } = await checkSupabaseConnectivity();
+  pandiSupabaseConnectivityIssue = issue;
+  updateSupabaseConnectivityBanner();
+
+  if (issue === 'unreachable') {
+    if (pandiUnreachableSinceMs == null) pandiUnreachableSinceMs = Date.now();
+    if (!pandiModoReducidoOffline && Date.now() - pandiUnreachableSinceMs >= PANDI_OFFLINE_MS_PARA_MODO_REDUCIDO) {
+      pandiModoReducidoOffline = true;
+      pandiApplyOfflineReducedModeUi();
+      showToast('Modo reducido: Supabase no responde. Solo podés cargar órdenes en cola local (este navegador).', 'info');
+    }
+  } else {
+    pandiUnreachableSinceMs = null;
+    if (pandiModoReducidoOffline) {
+      pandiModoReducidoOffline = false;
+      pandiApplyOfflineReducedModeUi();
+    }
+    if (issue === 'none' && prevIssue !== 'none') {
+      pandiMaybePromptImportOfflineQueue();
+      pandiRefreshOfflineCatalogosCache();
+    }
+  }
+  pandiUpdateOfflineToolbarButtons();
+}
+
+function setupSupabaseConnectivityMonitoring() {
+  const retry = document.getElementById('pandi-supabase-connectivity-retry');
+  if (retry && retry.dataset.bound !== '1') {
+    retry.dataset.bound = '1';
+    retry.addEventListener('click', () => {
+      runSupabaseHealthCheck().then(() => {
+        if (pandiSupabaseConnectivityIssue === 'none') {
+          showToast('Comprobación correcta: el servicio responde.', 'success');
+        }
+      });
+    });
+  }
+  if (!window.__pandiSupabaseUnhandledRejectionBound) {
+    window.__pandiSupabaseUnhandledRejectionBound = true;
+    window.addEventListener('unhandledrejection', (event) => {
+      const msg = event && event.reason && event.reason.message != null
+        ? String(event.reason.message)
+        : String(event && event.reason != null ? event.reason : '');
+      if (
+        typeof msg === 'string' &&
+        (msg.includes('Failed to fetch') ||
+          msg.includes('AuthRetryableFetchError') ||
+          msg.includes('FetchError') ||
+          msg.includes('NetworkError'))
+      ) {
+        pandiSupabaseConnectivityIssue = 'unreachable';
+        if (pandiUnreachableSinceMs == null) pandiUnreachableSinceMs = Date.now();
+        updateSupabaseConnectivityBanner();
+        pandiUpdateOfflineToolbarButtons();
+      }
+    });
+  }
+  if (pandiSupabaseHealthIntervalId != null) {
+    clearInterval(pandiSupabaseHealthIntervalId);
+    pandiSupabaseHealthIntervalId = null;
+  }
+  pandiSupabaseHealthIntervalId = setInterval(runSupabaseHealthCheck, 60000);
+  runSupabaseHealthCheck();
+  const stripGo = document.getElementById('pandi-offline-strip-goto-ordenes');
+  if (stripGo && stripGo.dataset.bound !== '1') {
+    stripGo.dataset.bound = '1';
+    stripGo.addEventListener('click', () => {
+      try {
+        showView('vista-ordenes', 'Órdenes');
+      } catch (e) {
+        /* ignore */
+      }
+    });
+  }
+}
+
+function pandiRandomLocalId() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  } catch (e) { /* ignore */ }
+  return 'l' + Date.now() + '-' + Math.random().toString(36).slice(2, 11);
+}
+
+function pandiOfflineQueueRead() {
+  try {
+    const s = localStorage.getItem(PANDI_OFFLINE_QUEUE_KEY);
+    const arr = s ? JSON.parse(s) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function pandiOfflineQueueWrite(arr) {
+  try {
+    localStorage.setItem(PANDI_OFFLINE_QUEUE_KEY, JSON.stringify(arr || []));
+  } catch (e) {
+    showToast('No se pudo guardar en el navegador (espacio o permisos).', 'error');
+  }
+}
+
+function pandiOfflineCatalogosRead() {
+  try {
+    const s = localStorage.getItem(PANDI_OFFLINE_CACHE_KEY);
+    return s ? JSON.parse(s) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function pandiOfflineCacheWritePayload(clientesRows, intRows, tiposRows) {
+  try {
+    localStorage.setItem(
+      PANDI_OFFLINE_CACHE_KEY,
+      JSON.stringify({
+        savedAt: new Date().toISOString(),
+        clientes: clientesRows || [],
+        intermediarios: intRows || [],
+        tipos_operacion: tiposRows || [],
+      })
+    );
+  } catch (e) { /* ignore */ }
+}
+
+/** Catálogo completo en localStorage para contingencia (clientes, intermediarios, tipos con iconos). Sin sesión no hace nada. */
+function pandiRefreshOfflineCatalogosCache() {
+  if (!currentUserId) return Promise.resolve();
+  const tiposCols = 'id, nombre, codigo, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica';
+  return Promise.all([
+    client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
+    client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
+    tiposOperacionFetchConFallbackOrdenVisual(
+      () =>
+        client
+          .from('tipos_operacion')
+          .select(`${tiposCols}, orden_visual`)
+          .eq('activo', true)
+          .order('orden_visual', { ascending: true })
+          .order('codigo')
+          .order('usa_intermediario')
+          .order('id'),
+      () =>
+        client
+          .from('tipos_operacion')
+          .select(tiposCols)
+          .eq('activo', true)
+          .order('codigo')
+          .order('usa_intermediario')
+          .order('id'),
+    ),
+  ])
+    .then(([cr, ir, rTipos]) => {
+      if (cr.error || ir.error || rTipos.error) return;
+      pandiOfflineCacheWritePayload(cr.data || [], ir.data || [], rTipos.data || []);
+    })
+    .catch(() => {});
+}
+
+/** @deprecated Usar pandiRefreshOfflineCatalogosCache; se mantiene la firma por compatibilidad con loadOrdenes. */
+function pandiTrySaveOfflineCatalogosCache(_clientesRows, _intRows) {
+  return pandiRefreshOfflineCatalogosCache();
+}
+
+function pandiUpdateOfflineReducedStripText() {
+  const stripText = document.getElementById('pandi-offline-reduced-strip-text');
+  if (!stripText) return;
+  const n = pandiOfflineQueueRead().length;
+  stripText.textContent =
+    'Sin respuesta de Supabase hace más de 10 minutos. Solo la vista Órdenes está habilitada. ' +
+    (n
+      ? `Cola local: ${n} orden(es) para enviar cuando vuelva el servicio.`
+      : 'Usá «Orden en cola local» para registrar acuerdos en este navegador.');
+}
+
+function pandiApplyOfflineReducedModeUi() {
+  document.body.classList.toggle('pandi-modulo-reducido-offline', !!pandiModoReducidoOffline);
+  const strip = document.getElementById('pandi-offline-reduced-strip');
+  if (strip) {
+    strip.style.display = pandiModoReducidoOffline ? 'flex' : 'none';
+    strip.setAttribute('aria-hidden', pandiModoReducidoOffline ? 'false' : 'true');
+  }
+  if (pandiModoReducidoOffline) {
+    pandiUpdateOfflineReducedStripText();
+    if (pandiSessionUiBootstrapped && currentUserId) {
+      try {
+        showView('vista-ordenes', 'Órdenes');
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }
+  pandiUpdateOfflineToolbarButtons();
+}
+
+function pandiUpdateOfflineToolbarButtons() {
+  const btnNorm = document.getElementById('btn-nueva-orden');
+  const btnChat = document.getElementById('btn-orden-por-chat');
+  const btnLocal = document.getElementById('btn-orden-offline-local');
+  const btnSync = document.getElementById('btn-orden-offline-sync');
+  const lbl = document.getElementById('btn-orden-offline-sync-label');
+  const canIns = userPermissions && userPermissions.includes('ingresar_orden');
+  const n = pandiOfflineQueueRead().length;
+  if (btnNorm) {
+    btnNorm.style.display = canIns && !pandiModoReducidoOffline ? '' : 'none';
+  }
+  if (btnChat) {
+    btnChat.style.display = canIns && !pandiModoReducidoOffline ? '' : 'none';
+  }
+  if (btnLocal) {
+    btnLocal.style.display = pandiModoReducidoOffline && canIns ? '' : 'none';
+  }
+  if (btnSync) {
+    const showSync = !pandiModoReducidoOffline && n > 0 && pandiSupabaseConnectivityIssue === 'none' && canIns;
+    btnSync.style.display = showSync ? '' : 'none';
+    if (lbl) lbl.textContent = n ? `Enviar cola local (${n})` : 'Enviar cola local';
+  }
+}
+
+function pandiMaybePromptImportOfflineQueue() {
+  const q = pandiOfflineQueueRead();
+  if (q.length === 0 || !currentUserId) return;
+  showConfirm(
+    'Hay ' + q.length + ' orden(es) en cola local (guardadas sin conexión). ¿Importarlas ahora a Supabase? Luego revisá instrumentación y comisiones en cada orden.',
+    'Importar ahora',
+    () => { pandiImportOfflineQueueSequential(); },
+    () => {},
+    'Más tarde',
+    'Cola local'
+  );
+}
+
+async function pandiImportOfflineQueueSequential() {
+  const q = pandiOfflineQueueRead();
+  if (!q.length) return;
+  if (!currentUserId) {
+    showToast('Iniciá sesión para importar la cola.', 'error');
+    return;
+  }
+  const failed = [];
+  let okCount = 0;
+  for (let i = 0; i < q.length; i++) {
+    const item = q[i];
+    const base = item && item.payload ? item.payload : null;
+    if (!base) continue;
+    const payload = {
+      ...base,
+      usuario_id: currentUserId,
+      updated_at: new Date().toISOString(),
+    };
+    const res = await insertOrdenConProximoNumero(payload);
+    if (res.error) {
+      failed.push(item);
+      showToast('No se importó una orden local: ' + (res.error.message || 'error'), 'error');
+    } else {
+      okCount += 1;
+    }
+  }
+  pandiOfflineQueueWrite(failed);
+  pandiUpdateOfflineReducedStripText();
+  pandiUpdateOfflineToolbarButtons();
+  if (okCount) showToast('Se importaron ' + okCount + ' orden(es). Revisá la lista e instrumentación.', 'success');
+  loadOrdenes();
+}
+
+function pandiExportOfflineQueueJsonFile() {
+  const q = pandiOfflineQueueRead();
+  const blob = new Blob([JSON.stringify(q, null, 2)], { type: 'application/json;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pandi-cola-ordenes-offline-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('Archivo JSON descargado (respaldo de la cola).', 'info');
+}
+
+function pandiOrdenOfflineCloseModal() {
+  closeOrdenOfflineTipoOperacionListbox();
+  const back = document.getElementById('modal-orden-offline-backdrop');
+  if (back) {
+    back.classList.remove('activo');
+    back.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function pandiOrdenOfflineSyncTipoAMonedas() {
+  const sel = document.getElementById('orden-offline-tipo');
+  const opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+  const mr = document.getElementById('orden-offline-moneda-r');
+  const me = document.getElementById('orden-offline-moneda-e');
+  if (opt && mr && me) {
+    const mi = (opt.getAttribute('data-moneda-in') || 'USD').toUpperCase();
+    const mo = (opt.getAttribute('data-moneda-out') || 'USD').toUpperCase();
+    mr.value = mi;
+    me.value = mo;
+    const codigo = (opt.getAttribute('data-codigo') || '').toUpperCase();
+    const wrapTasa = document.getElementById('orden-offline-wrap-tasa-cheque');
+    if (wrapTasa) {
+      const esCh = esTipoOperacionChequeArs(codigo, mi, mo);
+      wrapTasa.style.display = esCh ? '' : 'none';
+    }
+  }
+  syncOrdenOfflineTipoOperacionIconosPreview();
+}
+
+function pandiOrdenOfflineOpenModal() {
+  if (!currentUserId) {
+    showToast('Iniciá sesión para usar la cola local.', 'error');
+    return;
+  }
+  if (!userPermissions.includes('ingresar_orden')) {
+    showToast('No tenés permiso para crear órdenes.', 'error');
+    return;
+  }
+  const cache = pandiOfflineCatalogosRead();
+  const backdrop = document.getElementById('modal-orden-offline-backdrop');
+  if (!backdrop) return;
+  const selC = document.getElementById('orden-offline-cliente');
+  const selI = document.getElementById('orden-offline-intermediario');
+  const selT = document.getElementById('orden-offline-tipo');
+  const aviso = document.getElementById('orden-offline-sin-cache');
+  if (!cache || !((cache.clientes && cache.clientes.length) || (cache.intermediarios && cache.intermediarios.length)) || !(cache.tipos_operacion && cache.tipos_operacion.length)) {
+    if (aviso) aviso.style.display = 'block';
+    if (selC) selC.innerHTML = '';
+    if (selI) selI.innerHTML = '';
+    if (selT) selT.innerHTML = '<option value="">Elegir…</option>';
+  } else {
+    if (aviso) aviso.style.display = 'none';
+    if (selC) {
+      selC.innerHTML = '<option value="">—</option>' + (cache.clientes || []).map((c) => `<option value="${escapeHtml(String(c.id))}">${escapeHtml(c.nombre || '')}</option>`).join('');
+    }
+    if (selI) {
+      selI.innerHTML = '<option value="">—</option>' + (cache.intermediarios || []).map((i) => `<option value="${escapeHtml(String(i.id))}">${escapeHtml(i.nombre || '')}</option>`).join('');
+    }
+    if (selT) {
+      const escUrl = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const escAttr = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const im = (m) => (m === 'cheque' || m === 'custom' ? m : 'auto');
+      const tipos = ordenarTiposOperacionListaParaOrden(cache.tipos_operacion || []);
+      selT.innerHTML =
+        '<option value="">Elegir…</option>' +
+        tipos
+          .map((t) => {
+            const modo = im((t.icono_modo || 'auto').toString().trim().toLowerCase());
+            const baseNombre = t.nombre != null ? String(t.nombre).trim() : '';
+            const etiqueta = nombreTipoOperacionOrdenUi(t);
+            return `<option value="${escapeHtml(String(t.id))}" data-nombre-base="${escAttr(baseNombre)}" data-codigo="${escapeHtml(t.codigo || '')}" data-icono-modo="${escapeHtml(modo)}" data-icono-url="${escUrl(t.icono_url_publica || '')}" data-moneda-in="${escapeHtml((t.moneda_in || 'USD').toString().trim().toUpperCase())}" data-moneda-out="${escapeHtml((t.moneda_out || 'USD').toString().trim().toUpperCase())}" data-usa-intermediario="${t.usa_intermediario === true ? 'true' : 'false'}">${escapeHtml(etiqueta)}</option>`;
+          })
+          .join('');
+    }
+  }
+  closeOrdenOfflineTipoOperacionListbox();
+  syncOrdenOfflineTipoOperacionIconosPreview();
+  rebuildOrdenOfflineTipoOperacionListbox();
+  const fhoy = typeof fechaHoyYYYYMMDDArgentina === 'function' ? fechaHoyYYYYMMDDArgentina() : new Date().toISOString().slice(0, 10);
+  const fe = document.getElementById('orden-offline-fecha');
+  if (fe) fe.value = fhoy;
+  ['orden-offline-monto-r', 'orden-offline-monto-e', 'orden-offline-cotizacion', 'orden-offline-tasa-cheque-pct', 'orden-offline-observaciones'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  pandiOrdenOfflineSyncTipoAMonedas();
+  const listEl = document.getElementById('orden-offline-queue-resumen');
+  if (listEl) {
+    const qq = pandiOfflineQueueRead();
+    listEl.innerHTML = qq.length
+      ? '<strong>En cola (' + qq.length + '):</strong> ' + qq.map((x) => escapeHtml((x.createdAt || '').slice(0, 19)) + ' · ' + escapeHtml((x.payload && x.payload.monto_recibido) != null ? String(x.payload.monto_recibido) : '?')).join(' · ')
+      : '<em>Sin borradores en cola.</em>';
+  }
+  backdrop.classList.add('activo');
+  backdrop.setAttribute('aria-hidden', 'false');
+}
+
+function pandiOrdenOfflineGuardarEnCola() {
+  const cache = pandiOfflineCatalogosRead();
+  if (!cache || !(cache.tipos_operacion && cache.tipos_operacion.length)) {
+    showToast('No hay catálogo en caché. Conectá la app: el respaldo local se actualiza al iniciar sesión y cuando el servicio responde.', 'error');
+    return;
+  }
+  const fecha = (document.getElementById('orden-offline-fecha') || {}).value;
+  const clienteId = (document.getElementById('orden-offline-cliente') || {}).value.trim() || null;
+  let intermediarioId = (document.getElementById('orden-offline-intermediario') || {}).value.trim() || null;
+  const tipoOperacionId = (document.getElementById('orden-offline-tipo') || {}).value.trim() || null;
+  const selTipo = document.getElementById('orden-offline-tipo')?.selectedOptions?.[0];
+  const usaInt = selTipo ? selTipo.getAttribute('data-usa-intermediario') === 'true' : false;
+  if (usaInt && !intermediarioId) {
+    showToast('Este tipo exige intermediario.', 'error');
+    return;
+  }
+  if (!clienteId && !intermediarioId) {
+    showToast('Elegí al menos cliente o intermediario.', 'error');
+    return;
+  }
+  if (!tipoOperacionId || !fecha) {
+    showToast('Completá fecha y tipo de operación.', 'error');
+    return;
+  }
+  const monedaRecibida = (document.getElementById('orden-offline-moneda-r') || {}).value || 'USD';
+  const monedaEntregada = (document.getElementById('orden-offline-moneda-e') || {}).value || 'USD';
+  const montoRecibido = parseImporteInput((document.getElementById('orden-offline-monto-r') || {}).value || '');
+  const montoEntregado = parseImporteInput((document.getElementById('orden-offline-monto-e') || {}).value || '');
+  const cotizacionRaw = (document.getElementById('orden-offline-cotizacion') || {}).value.trim();
+  const cotizacion = cotizacionRaw ? parseImporteInput(cotizacionRaw) : null;
+  const observaciones = (document.getElementById('orden-offline-observaciones') || {}).value.trim() || null;
+  if (isNaN(montoRecibido) || montoRecibido <= 0 || isNaN(montoEntregado) || montoEntregado <= 0) {
+    showToast('Montos recibido y entregado deben ser números positivos.', 'error');
+    return;
+  }
+  const codigo = selTipo ? (selTipo.getAttribute('data-codigo') || '') : '';
+  const patronTc = patronTipoCambioOrden(monedaRecibida, monedaEntregada);
+  if (patronTc && (!cotizacion || !(cotizacion > 0))) {
+    showToast('En cruces con tipo de cambio, el tipo de cambio del acuerdo es obligatorio (> 0).', 'error');
+    return;
+  }
+  if (codigo === 'USD-USD' && montoRecibido <= montoEntregado) {
+    showToast('En USD-USD el monto recibido debe ser mayor al entregado.', 'error');
+    return;
+  }
+  let tasaDescuentoIntermediarioSave = null;
+  const esCh = esTipoOperacionChequeArs(codigo, monedaRecibida, monedaEntregada);
+  if (esCh) {
+    if (montoRecibido <= montoEntregado) {
+      showToast('En CHEQUE-ARS el monto recibido debe ser mayor al entregado.', 'error');
+      return;
+    }
+    const tasaPctRaw = (document.getElementById('orden-offline-tasa-cheque-pct') || {}).value.trim();
+    const tasaPct = tasaPctRaw ? parseImporteInput(tasaPctRaw) : null;
+    if (typeof tasaPct !== 'number' || isNaN(tasaPct) || tasaPct <= 0 || tasaPct >= 100) {
+      showToast('Indicá la tasa de descuento del intermediario (%, ej. 1 para 1%).', 'error');
+      return;
+    }
+    tasaDescuentoIntermediarioSave = tasaPct / 100;
+  }
+  if (!usaInt) intermediarioId = null;
+  const operacionDirecta = !intermediarioId;
+  const payload = {
+    cliente_id: clienteId,
+    fecha,
+    estado: 'pendiente_instrumentar',
+    tipo_operacion_id: tipoOperacionId,
+    operacion_directa: operacionDirecta,
+    intermediario_id: intermediarioId,
+    moneda_recibida: monedaRecibida,
+    moneda_entregada: monedaEntregada,
+    monto_recibido: montoRecibido,
+    monto_entregado: montoEntregado,
+    cotizacion: cotizacion,
+    tasa_descuento_intermediario: tasaDescuentoIntermediarioSave,
+    observaciones: observaciones
+      ? observaciones + ' · [Cola offline ' + new Date().toISOString().slice(0, 16) + ']'
+      : '[Cola offline ' + new Date().toISOString().slice(0, 16) + ']',
+  };
+  const item = {
+    v: 1,
+    localId: pandiRandomLocalId(),
+    createdAt: new Date().toISOString(),
+    createdByUserId: currentUserId,
+    payload,
+  };
+  const q = pandiOfflineQueueRead();
+  q.push(item);
+  pandiOfflineQueueWrite(q);
+  showToast('Orden guardada en cola local (' + q.length + ' en total).', 'success');
+  pandiUpdateOfflineReducedStripText();
+  pandiUpdateOfflineToolbarButtons();
+  pandiOrdenOfflineOpenModal();
+}
+
+function setupModalOrdenOffline() {
+  const backdrop = document.getElementById('modal-orden-offline-backdrop');
+  if (!backdrop || backdrop.dataset.offlineBound === '1') return;
+  backdrop.dataset.offlineBound = '1';
+  const c = document.getElementById('modal-orden-offline-close');
+  const x = document.getElementById('modal-orden-offline-cancelar');
+  const form = document.getElementById('form-orden-offline');
+  const selTipo = document.getElementById('orden-offline-tipo');
+  if (c) c.addEventListener('click', pandiOrdenOfflineCloseModal);
+  if (x) x.addEventListener('click', pandiOrdenOfflineCloseModal);
+  setupBackdropCloseOnlyOnRealClick(backdrop, pandiOrdenOfflineCloseModal);
+  if (form) form.addEventListener('submit', (e) => { e.preventDefault(); pandiOrdenOfflineGuardarEnCola(); });
+  if (selTipo) selTipo.addEventListener('change', pandiOrdenOfflineSyncTipoAMonedas);
+  const comboUi = backdrop.querySelector('.orden-tipo-operacion-combo-ui');
+  const comboBtn = document.getElementById('orden-offline-tipo-combo-btn');
+  const comboList = document.getElementById('orden-offline-tipo-listbox');
+  const comboWrap = backdrop.querySelector('.orden-tipo-operacion-combo-wrap');
+  if (comboUi && comboBtn && comboList && comboWrap && comboUi.dataset.offlineComboBound !== '1') {
+    comboUi.dataset.offlineComboBound = '1';
+    function reposicionarOfflineListboxSiAbierto() {
+      if (!comboList || comboList.hidden) return;
+      positionOrdenOfflineTipoOperacionListbox();
+    }
+    window.addEventListener('scroll', reposicionarOfflineListboxSiAbierto, true);
+    window.addEventListener('resize', reposicionarOfflineListboxSiAbierto);
+    comboBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (!comboList.hidden) {
+        closeOrdenOfflineTipoOperacionListbox();
+        return;
+      }
+      rebuildOrdenOfflineTipoOperacionListbox();
+      comboList.hidden = false;
+      comboBtn.setAttribute('aria-expanded', 'true');
+      requestAnimationFrame(() => {
+        positionOrdenOfflineTipoOperacionListbox();
+      });
+    });
+    comboList.addEventListener('click', (ev) => {
+      const optBtn = ev.target && ev.target.closest ? ev.target.closest('.orden-tipo-operacion-option') : null;
+      if (!optBtn) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const val = optBtn.getAttribute('data-value');
+      const sel = document.getElementById('orden-offline-tipo');
+      closeOrdenOfflineTipoOperacionListbox();
+      if (sel && val != null) {
+        sel.value = val;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      comboBtn.focus();
+    });
+    document.addEventListener(
+      'mousedown',
+      (ev) => {
+        if (!comboList || comboList.hidden) return;
+        if (comboWrap.contains(ev.target)) return;
+        closeOrdenOfflineTipoOperacionListbox();
+      },
+      true
+    );
+  }
+  if (!backdrop.dataset.offlineKeydownBound) {
+    backdrop.dataset.offlineKeydownBound = '1';
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key !== 'Escape') return;
+        const back = document.getElementById('modal-orden-offline-backdrop');
+        if (!back || !back.classList.contains('activo')) return;
+        const lb = document.getElementById('orden-offline-tipo-listbox');
+        if (lb && !lb.hidden) {
+          e.preventDefault();
+          closeOrdenOfflineTipoOperacionListbox();
+        }
+      },
+      true
+    );
+  }
+  const btnLoc = document.getElementById('btn-orden-offline-local');
+  if (btnLoc) btnLoc.addEventListener('click', () => pandiOrdenOfflineOpenModal());
+  const btnSync = document.getElementById('btn-orden-offline-sync');
+  if (btnSync) btnSync.addEventListener('click', () => {
+    showConfirm(
+      'Se enviarán las órdenes de la cola local a Supabase en orden. ¿Continuar?',
+      'Enviar',
+      () => { pandiImportOfflineQueueSequential(); }
+    );
+  });
+  const btnJson = document.getElementById('orden-offline-btn-json');
+  if (btnJson) btnJson.addEventListener('click', () => pandiExportOfflineQueueJsonFile());
+}
+
 function aplicarMarcaEnTodaLaUI() {
   const nombre = nombreMarcaSistema();
   document.title = nombre;
@@ -185,6 +902,7 @@ let lastActivityUpdate = 0;
 let authBootstrapFromGetSessionDone = false;
 
 function showLoginScreenDom() {
+  pandiSessionUiBootstrapped = false;
   document.body.classList.remove('pandi-shell-logged-in');
   document.getElementById('sidebar').style.display = 'none';
   document.getElementById('login-screen').style.display = 'block';
@@ -294,6 +1012,7 @@ function refreshPermisosYVista() {
     .then((res) => {
       if (res.error) return;
       userPermissions = res.data || [];
+      pandiCachePermissionsLocal(userPermissions);
       applyVistasMenuVisibility();
       updateCcBotonesMovimientoManual();
       const currentVistaId = VIEWS_CONFIG.find((r) => {
@@ -304,6 +1023,7 @@ function refreshPermisosYVista() {
         const [firstId, firstTitle] = getFirstAllowedView();
         showView(firstId, firstTitle);
       }
+      pandiRefreshOfflineCatalogosCache();
       return fetchAppEmpresaIntoState();
     })
     .catch(() => {})
@@ -315,6 +1035,11 @@ function showView(vistaId, pageTitle) {
     const [firstId, firstTitle] = getFirstAllowedView();
     showView(firstId, firstTitle);
     return;
+  }
+  if (typeof pandiModoReducidoOffline !== 'undefined' && pandiModoReducidoOffline && vistaId !== 'vista-ordenes') {
+    showToast('Modo reducido (sin Supabase): solo está disponible la vista Órdenes y la cola local.', 'info');
+    vistaId = 'vista-ordenes';
+    pageTitle = 'Órdenes';
   }
   currentVistaId = vistaId;
   ['vista-inicio', 'vista-ordenes', 'vista-cajas', 'vista-clientes', 'vista-intermediarios', 'vista-tipos-operacion', 'vista-cuenta-corriente', 'vista-reglas-negocio', 'vista-configuracion-empresa', 'vista-seguridad'].forEach((id) => {
@@ -365,6 +1090,9 @@ const MENSAJE_AL_DESACTIVAR_PERMISO = {
   abm_reglas_negocio: 'Sin este permiso no podrán abrir el menú crítico de reglas de cuenta corriente (riesgo de romper el modelo CC).',
   abm_configuracion_empresa: 'Sin este permiso no podrán abrir Empresa / marca ni editar nombre legal, nombre visible ni URL del logo.',
   registrar_movimiento_cc_manual: 'Sin este permiso no podrán registrar movimientos de cuenta corriente sin orden desde la vista CC (sigue aplicando editar transacciones si el rol lo tiene).',
+  editar_movimiento_cc_manual: 'Sin este permiso no podrán editar movimientos de CC marcados como manual (sin orden) desde la lista de Movimientos.',
+  eliminar_movimiento_cc_manual: 'Sin este permiso no podrán anular movimientos de CC manuales desde la lista de Movimientos.',
+  ver_auditoria: 'Sin este permiso no podrán consultar la tabla de auditoría (registro de acciones sensibles) en Supabase o futuras pantallas de log.',
 };
 
 /** Devuelve el permiso "padre" (acceso a la vista) y los "hijos" del menú que contiene este permiso. Si permission es el padre, hijos = resto Ver + Operar. */
@@ -389,9 +1117,9 @@ const PERMISOS_POR_MENU = [
   { id: 'clientes', titulo: 'Clientes', ver: ['ver_clientes'], operar: ['abm_clientes'] },
   { id: 'intermediarios', titulo: 'Intermediarios', ver: ['ver_intermediarios'], operar: ['abm_intermediarios'] },
   { id: 'tipos-operacion', titulo: 'Tipos de operación', ver: [], operar: ['abm_tipos_operacion'] },
-  { id: 'cuenta-corriente', titulo: 'Cuenta corriente', ver: ['ver_cuenta_corriente'], operar: ['registrar_movimiento_cc_manual'] },
+  { id: 'cuenta-corriente', titulo: 'Cuenta corriente', ver: ['ver_cuenta_corriente'], operar: ['registrar_movimiento_cc_manual', 'editar_movimiento_cc_manual', 'eliminar_movimiento_cc_manual'] },
   { id: 'configuracion-empresa', titulo: 'Empresa / marca', ver: [], operar: ['abm_configuracion_empresa'] },
-  { id: 'seguridad', titulo: 'Seguridad', ver: ['ver_seguridad'], operar: ['assign_roles'] },
+  { id: 'seguridad', titulo: 'Seguridad', ver: ['ver_seguridad', 'ver_auditoria'], operar: ['assign_roles'] },
   { id: 'reglas-negocio', titulo: 'Reglas de negocio (CC)', ver: [], operar: ['abm_reglas_negocio'] },
 ];
 
@@ -867,6 +1595,487 @@ function puedeRegistrarMovCcManual() {
   return userPermissions.includes('registrar_movimiento_cc_manual') || userPermissions.includes('editar_transacciones');
 }
 
+function puedeEditarMovimientoCcManual() {
+  return userPermissions.includes('editar_movimiento_cc_manual');
+}
+
+function puedeEliminarMovimientoCcManual() {
+  return userPermissions.includes('eliminar_movimiento_cc_manual');
+}
+
+/** Registro de auditoría (tabla auditoria_app tras migración). Falla silenciosa si la tabla no existe aún. */
+function registrarAuditoriaApp(categoria, accion, detalle, metadata) {
+  if (!currentUserId) return Promise.resolve();
+  return client.from('auditoria_app').insert({
+    usuario_id: currentUserId,
+    categoria: categoria || 'app',
+    accion: accion || '',
+    detalle: (detalle || '').slice(0, 8000),
+    metadata: metadata || null,
+  }).then((r) => {
+    if (r.error) console.warn('auditoria_app:', r.error.message || r.error);
+  });
+}
+
+/** Instrumentación 1:1 con orden: transacciones e id de instrumentación para anulación. */
+function fetchTransaccionesParaAnulacionOrden(ordenId) {
+  return client
+    .from('instrumentacion')
+    .select('id')
+    .eq('orden_id', ordenId)
+    .maybeSingle()
+    .then((rInst) => {
+      const instId = rInst.data && rInst.data.id;
+      if (!instId) return { transacciones: [], instrumentacionId: null };
+      return client
+        .from('transacciones')
+        .select('id, estado')
+        .eq('instrumentacion_id', instId)
+        .then((rTr) => ({ transacciones: rTr.data || [], instrumentacionId: instId }));
+    });
+}
+
+/** Marca todas las transacciones de la instrumentación como anuladas (coherente con orden anulada). */
+function anularTodasTransaccionesInstrumentacion(instrumentacionId, ahora) {
+  if (!instrumentacionId) return Promise.resolve();
+  return client
+    .from('transacciones')
+    .update({ estado: 'anulada', fecha_ejecucion: null, updated_at: ahora })
+    .eq('instrumentacion_id', instrumentacionId)
+    .neq('estado', 'anulada')
+    .then((r) => {
+      if (r.error) showToast('Error al anular transacciones: ' + (r.error.message || ''), 'error');
+      return r;
+    });
+}
+
+function transaccionesTodasPendientesParaAnulacion(list) {
+  const txs = list || [];
+  if (txs.length === 0) return true;
+  return txs.every((t) => String(t.estado || '').toLowerCase() === 'pendiente');
+}
+
+/** Anula movimientos CC (cliente e intermediario, no manual) y caja por orden_id. Único lugar que aplica estos UPDATE. */
+function anularMovimientosCcYCajaNoManualPorOrden(ordenId, ahora) {
+  return client
+    .from('movimientos_cuenta_corriente')
+    .update({ estado: 'anulado', estado_fecha: ahora })
+    .eq('orden_id', ordenId)
+    .neq('estado', 'anulado')
+    .or('es_movimiento_manual.is.null,es_movimiento_manual.eq.false')
+    .then((rCc) => {
+      if (rCc.error) showToast('Error al anular CC cliente: ' + (rCc.error.message || ''), 'error');
+      return client
+        .from('movimientos_cuenta_corriente_intermediario')
+        .update({ estado: 'anulado', estado_fecha: ahora })
+        .eq('orden_id', ordenId)
+        .neq('estado', 'anulado')
+        .or('es_movimiento_manual.is.null,es_movimiento_manual.eq.false');
+    })
+    .then((rCi) => {
+      if (rCi.error) showToast('Error al anular CC intermediario: ' + (rCi.error.message || ''), 'error');
+      return client
+        .from('movimientos_caja')
+        .update({ estado: 'anulado', estado_fecha: ahora })
+        .eq('orden_id', ordenId)
+        .neq('estado', 'anulado');
+    })
+    .then((rCaja) => {
+      if (rCaja.error) showToast('Error al anular caja: ' + (rCaja.error.message || ''), 'error');
+      return { ok: true };
+    });
+}
+
+/**
+ * Persiste anulación: orden → anulada. Si todas las transacciones están pendientes (o no hay), no toca CC/caja; si no, anula movimientos vía anularMovimientosCcYCajaNoManualPorOrden.
+ * Incluye órdenes en estado orden_ejecutada (acción grave; confirmación en UI).
+ */
+function ejecutarAnulacionOrdenCompleta(ordenId) {
+  const ahora = new Date().toISOString();
+  return client
+    .from('ordenes')
+    .select('id, estado, numero')
+    .eq('id', ordenId)
+    .single()
+    .then((rOrd) => {
+      const ord = rOrd.data;
+      if (rOrd.error || !ord) return Promise.reject(new Error((rOrd.error && rOrd.error.message) || 'Orden no encontrada'));
+      if (ord.estado === 'anulada') {
+        showToast('La orden ya está anulada.', 'info');
+        return { yaAnulada: true };
+      }
+      const eraEjecutada = ord.estado === 'orden_ejecutada';
+      return fetchTransaccionesParaAnulacionOrden(ordenId).then(({ transacciones, instrumentacionId }) => {
+        const todasPendientes = transaccionesTodasPendientesParaAnulacion(transacciones);
+        return client
+          .from('ordenes')
+          .update({ estado: 'anulada', updated_at: ahora })
+          .eq('id', ordenId)
+          .then((rUp) => {
+            if (rUp.error) return Promise.reject(new Error(rUp.error.message || 'No se pudo anular la orden'));
+            const detalle =
+              'Orden anulada' +
+              (ord.numero != null ? ' #' + ord.numero : '') +
+              (eraEjecutada ? ' (estaba Orden ejecutada).' : '. ') +
+              ' Transacciones de instrumentación marcadas anulada.' +
+              (todasPendientes
+                ? ' Sin cambios en CC/caja (todas las transacciones estaban pendientes o no había transacciones).'
+                : ' Movimientos CC cliente e intermediario (no manual) y caja vinculados a la orden marcados como anulados.');
+            function finAuditoria() {
+              registrarAuditoriaApp('orden', 'anular', detalle, {
+                orden_id: ordenId,
+                instrumentacion_id: instrumentacionId,
+                todas_transacciones_pendientes: todasPendientes,
+                afecto_cc_caja: !todasPendientes,
+                orden_estaba_ejecutada: eraEjecutada,
+              });
+            }
+            return anularTodasTransaccionesInstrumentacion(instrumentacionId, ahora).then(() => {
+              if (todasPendientes) {
+                finAuditoria();
+                return { ok: true, todasPendientes: true };
+              }
+              return anularMovimientosCcYCajaNoManualPorOrden(ordenId, ahora).then(() => {
+                finAuditoria();
+                return { ok: true, todasPendientes: false };
+              });
+            });
+          });
+      });
+    });
+}
+
+function refrescarVistasTrasAnularOrden(cerrarModalOrden) {
+  if (cerrarModalOrden) ejecutarCierreModalOrden();
+  loadOrdenes();
+  loadCajas();
+  const vistaCc = document.getElementById('vista-cuenta-corriente');
+  if (vistaCc && vistaCc.style.display !== 'none') loadCuentaCorriente();
+}
+
+function solicitarConfirmacionYAnularOrden(ordenId, callbacks) {
+  client
+    .from('ordenes')
+    .select('estado')
+    .eq('id', ordenId)
+    .single()
+    .then((rSt) => {
+      const st = (rSt.data && rSt.data.estado) || '';
+      const esEjecutada = st === 'orden_ejecutada';
+      const base =
+        'La orden pasará a estado Anulada.\n\n' +
+        'Si todas las transacciones de la instrumentación están pendientes (o no hay ninguna), no se modifican movimientos de cuenta corriente ni de caja.\n\n' +
+        'Si hay alguna transacción en otro estado (por ejemplo ejecutada), se marcarán como anulados los movimientos de cuenta corriente del cliente y del intermediario vinculados a la orden (excepto movimientos cargados como manuales), y los movimientos de caja de esa orden. Es una operación sensible.\n\n' +
+        '¿Confirmás la anulación?';
+      const msg = esEjecutada
+        ? 'La orden está en estado Orden ejecutada: suele implicar transacciones ya cerradas y movimientos contables reales. Al anular se marcará la orden como Anulada y, salvo el caso excepcional de transacciones todas pendientes, se anularán los movimientos de CC y caja vinculados a esta orden.\n\n' + base
+        : base;
+      showConfirm(
+        msg,
+        'Anular orden',
+        () => {
+          ejecutarAnulacionOrdenCompleta(ordenId)
+            .then((res) => {
+              if (res && res.yaAnulada) return;
+              if (!res || !res.ok) return;
+              showToast('Orden anulada.', 'success');
+              if (callbacks && callbacks.onExito) callbacks.onExito();
+              else refrescarVistasTrasAnularOrden(false);
+            })
+            .catch((err) => {
+              showToast('Error al anular: ' + (err && err.message ? err.message : String(err)), 'error');
+            });
+        },
+        null,
+        'Cancelar',
+        esEjecutada ? 'Anular orden ejecutada' : 'Anular orden'
+      );
+    })
+    .catch(() => {
+      showToast('No se pudo cargar el estado de la orden. Intentá de nuevo.', 'error');
+    });
+}
+
+function ccTablaMovCcPorTipoEntidad(tipo) {
+  return tipo === 'cliente' ? 'movimientos_cuenta_corriente' : 'movimientos_cuenta_corriente_intermediario';
+}
+
+/**
+ * Carga filas CC a editar/anular: una fila o todo el manual_grupo_id (dos patas cliente↔cliente, etc.).
+ */
+function ccManualFetchContextOperacion(m) {
+  const gid = m.manual_grupo_id;
+  if (gid) {
+    return Promise.all([
+      client.from('movimientos_cuenta_corriente').select('id, concepto, fecha, movimiento_caja_id, manual_grupo_id').eq('manual_grupo_id', gid),
+      client.from('movimientos_cuenta_corriente_intermediario').select('id, concepto, fecha, movimiento_caja_id, manual_grupo_id').eq('manual_grupo_id', gid),
+    ]).then(([r1, r2]) => {
+      if (r1.error) return Promise.reject(r1.error);
+      if (r2.error) return Promise.reject(r2.error);
+      const filas = [];
+      (r1.data || []).forEach((row) => {
+        filas.push({ tabla: 'movimientos_cuenta_corriente', id: row.id, movimiento_caja_id: row.movimiento_caja_id || null, concepto: row.concepto, fecha: row.fecha });
+      });
+      (r2.data || []).forEach((row) => {
+        filas.push({ tabla: 'movimientos_cuenta_corriente_intermediario', id: row.id, movimiento_caja_id: row.movimiento_caja_id || null, concepto: row.concepto, fecha: row.fecha });
+      });
+      if (filas.length === 0) return Promise.reject(new Error('No se encontraron líneas del grupo manual.'));
+      const cajaId = filas.map((f) => f.movimiento_caja_id).find(Boolean) || null;
+      const concepto0 = filas[0].concepto || '';
+      const fecha0 = (filas[0].fecha || '').toString().slice(0, 10);
+      return {
+        filas: filas.map((f) => ({ tabla: f.tabla, id: f.id, movimiento_caja_id: f.movimiento_caja_id })),
+        concepto: concepto0,
+        fecha: fecha0,
+        tocaCaja: !!cajaId,
+        cajaId,
+        grupoId: gid,
+      };
+    });
+  }
+  const tabla = ccTablaMovCcPorTipoEntidad(m.tipo);
+  return client.from(tabla).select('id, concepto, fecha, movimiento_caja_id').eq('id', m.id).single().then((r) => {
+    if (r.error || !r.data) return Promise.reject(r.error || new Error('Movimiento no encontrado'));
+    const row = r.data;
+    return {
+      filas: [{ tabla, id: row.id, movimiento_caja_id: row.movimiento_caja_id || null }],
+      concepto: row.concepto || '',
+      fecha: (row.fecha || '').toString().slice(0, 10),
+      tocaCaja: !!row.movimiento_caja_id,
+      cajaId: row.movimiento_caja_id || null,
+      grupoId: null,
+    };
+  });
+}
+
+let ccManualEditContext = null;
+
+function closeModalCcManualEditar() {
+  const backdrop = document.getElementById('modal-cc-manual-editar-backdrop');
+  if (backdrop) backdrop.classList.remove('activo');
+  ccManualEditContext = null;
+}
+
+function openModalCcManualEditarDesdeFila(m) {
+  if (!m || !m.es_movimiento_manual || !puedeEditarMovimientoCcManual()) return;
+  ccManualFetchContextOperacion(m).then((ctx) => {
+    ccManualEditContext = ctx;
+    const backdrop = document.getElementById('modal-cc-manual-editar-backdrop');
+    const conceptoEl = document.getElementById('cc-manual-edit-concepto');
+    const fechaEl = document.getElementById('cc-manual-edit-fecha');
+    const avisoCaja = document.getElementById('cc-manual-editar-aviso-caja');
+    const resGrupo = document.getElementById('cc-manual-editar-resumen-grupo');
+    if (!backdrop || !conceptoEl || !fechaEl) return;
+    conceptoEl.value = ctx.concepto || '';
+    fechaEl.value = ctx.fecha || '';
+    if (avisoCaja) avisoCaja.style.display = ctx.tocaCaja ? 'block' : 'none';
+    if (resGrupo) {
+      if (ctx.filas.length > 1) {
+        resGrupo.style.display = 'block';
+        resGrupo.textContent = 'Operación con ' + String(ctx.filas.length) + ' líneas en cuenta corriente (mismo grupo). Los cambios se aplican a todas.';
+      } else {
+        resGrupo.style.display = 'none';
+        resGrupo.textContent = '';
+      }
+    }
+    backdrop.classList.add('activo');
+  }).catch((err) => {
+    showToast('No se pudo cargar el movimiento: ' + (err && err.message ? err.message : 'error'), 'error');
+  });
+}
+
+function htmlCcAccionesMovimientoManualRow(m) {
+  const puedeEd = puedeEditarMovimientoCcManual();
+  const puedeEl = puedeEliminarMovimientoCcManual();
+  if (!m.es_movimiento_manual || (!puedeEd && !puedeEl)) return '–';
+  const safeTipo = m.tipo === 'intermediario' ? 'intermediario' : 'cliente';
+  const safeId = escapeHtml(String(m.id || ''));
+  let html = '<div class="cc-acciones-manual-wrap" style="display:flex;flex-wrap:wrap;gap:0.25rem;align-items:center;">';
+  if (puedeEd) {
+    html += '<button type="button" class="btn-secondary btn-icon-only btn-cc-manual-editar" data-cc-manual-tipo="' + safeTipo + '" data-cc-manual-id="' + safeId + '" title="Editar movimiento manual" aria-label="Editar movimiento manual"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button>';
+  }
+  if (puedeEl) {
+    html += '<button type="button" class="btn-secondary btn-icon-only btn-cc-manual-eliminar" data-cc-manual-tipo="' + safeTipo + '" data-cc-manual-id="' + safeId + '" title="Anular movimiento manual" aria-label="Anular movimiento manual"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span></button>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function ccBuscarMovimientoDetallePorIdTipo(id, tipo) {
+  const list = ccMovimientosDetalleList || [];
+  const m = list.find((x) => String(x.id) === String(id) && x.tipo === tipo);
+  if (m) return m;
+  const alt = (ccMovimientosList || []).find((x) => String(x.id) === String(id));
+  if (!alt || !alt.es_movimiento_manual) return null;
+  const inferred = alt.intermediario_id ? 'intermediario' : 'cliente';
+  if (inferred !== tipo) return null;
+  return { ...alt, tipo: inferred };
+}
+
+function setupDelegacionAccionesCcManual() {
+  if (document.body.dataset.ccManualAccionesBound === '1') return;
+  document.body.dataset.ccManualAccionesBound = '1';
+  document.body.addEventListener('click', (e) => {
+    const ed = e.target.closest('.btn-cc-manual-editar');
+    const el = e.target.closest('.btn-cc-manual-eliminar');
+    if (!ed && !el) return;
+    const btn = ed || el;
+    const tipo = btn.getAttribute('data-cc-manual-tipo');
+    const id = btn.getAttribute('data-cc-manual-id');
+    if (!tipo || !id) return;
+    const m = ccBuscarMovimientoDetallePorIdTipo(id, tipo);
+    if (!m || !m.es_movimiento_manual) {
+      showToast('Movimiento no encontrado o no es manual. Refrescá la vista.', 'info');
+      return;
+    }
+    if (ed) {
+      e.preventDefault();
+      openModalCcManualEditarDesdeFila(m);
+    } else {
+      e.preventDefault();
+      confirmarYAnularCcManualDesdeFila(m);
+    }
+  });
+}
+
+function confirmarYAnularCcManualDesdeFila(m) {
+  if (!m || !m.es_movimiento_manual || !puedeEliminarMovimientoCcManual()) return;
+  ccManualFetchContextOperacion(m).then((ctx) => {
+    const baseMsg = '¿Anular este movimiento manual? Las líneas quedarán como anuladas y no sumarán al saldo.';
+    const msgCaja = ' Este registro vinculó caja (efectivo): también se anulará el movimiento de caja asociado. La acción quedará registrada en el log de auditoría.';
+    const mensaje = ctx.tocaCaja ? baseMsg + msgCaja : baseMsg;
+    showConfirm(mensaje, 'Anular', () => {
+      ejecutarAnularCcManualContexto(ctx);
+    }, null, 'Cancelar', 'Confirmar anulación');
+  }).catch((err) => {
+    showToast('No se pudo cargar el movimiento: ' + (err && err.message ? err.message : 'error'), 'error');
+  });
+}
+
+function ejecutarAnularCcManualContexto(ctx) {
+  const ahora = new Date().toISOString();
+  const promesas = (ctx.filas || []).map((f) => client.from(f.tabla).update({ estado: 'anulado', estado_fecha: ahora }).eq('id', f.id));
+  const fin = (opts) => {
+    const detalle = 'CC manual anulado. Líneas: ' + (ctx.filas || []).map((f) => f.tabla + ':' + f.id).join(', ')
+      + (ctx.cajaId ? '. Caja: ' + ctx.cajaId : '');
+    registrarAuditoriaApp('cc_manual', 'anular', detalle, { grupo_id: ctx.grupoId, caja_id: ctx.cajaId, filas: ctx.filas });
+    if (!opts || !opts.skipOkToast) showToast('Movimiento manual anulado.', 'success');
+    loadCuentaCorriente();
+    if (typeof loadCajas === 'function') loadCajas();
+    if (ccDetalleTipo && ccDetalleId) {
+      fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos, saldos, ordenes, pendienteEnMoneda, pendienteClasePorMoneda }) => {
+        ccDetalleMovimientosList = ccDetalleRowsConTipoOpDesdeOrdenes(movimientos, ordenes);
+        ccDetalleOrdenesList = ordenes || [];
+        renderCcDetalleTable();
+        const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
+        if (saldosWrap && saldos) {
+          const pendMonModal = pendienteEnMoneda || ccPendientePorMonedaDesdeMovs(movimientos);
+          saldosWrap.innerHTML = htmlCcModalSaldosCards(saldos, pendMonModal, pendienteClasePorMoneda);
+          reaplicarVisibilidadMonedasCuentaCorrienteDom();
+        }
+        renderCcDetalleOperaciones();
+      }).catch(() => {});
+    }
+  };
+  Promise.all(promesas).then((results) => {
+    const err = results.find((r) => r && r.error);
+    if (err && err.error) {
+      showToast('Error al anular CC: ' + (err.error.message || ''), 'error');
+      return;
+    }
+    if (ctx.cajaId) {
+      client.from('movimientos_caja').update({ estado: 'anulado', estado_fecha: ahora }).eq('id', ctx.cajaId).then((rC) => {
+        if (rC.error) showToast('Líneas CC anuladas; no se pudo anular caja: ' + (rC.error.message || 'revisá permisos.'), 'error');
+        fin({ skipOkToast: !!rC.error });
+      });
+    } else {
+      fin();
+    }
+  }).catch((err) => {
+    showToast('Error: ' + (err && err.message ? err.message : ''), 'error');
+  });
+}
+
+function ejecutarGuardarCcManualEditar(concepto, fecha) {
+  const ctx = ccManualEditContext;
+  if (!ctx || !ctx.filas || ctx.filas.length === 0) return;
+  const ahora = new Date().toISOString();
+  const promesas = ctx.filas.map((f) => client.from(f.tabla).update({ concepto, fecha }).eq('id', f.id));
+  const fin = (opts) => {
+    const detalle = 'CC manual editado (concepto/fecha). Líneas: ' + ctx.filas.map((f) => f.tabla + ':' + f.id).join(', ')
+      + (ctx.cajaId ? '. Caja: ' + ctx.cajaId : '');
+    registrarAuditoriaApp('cc_manual', 'editar', detalle, { grupo_id: ctx.grupoId, caja_id: ctx.cajaId, concepto, fecha });
+    closeModalCcManualEditar();
+    if (!opts || !opts.skipOkToast) showToast('Cambios guardados.', 'success');
+    loadCuentaCorriente();
+    if (typeof loadCajas === 'function') loadCajas();
+    if (ccDetalleTipo && ccDetalleId) {
+      fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos, saldos, ordenes, pendienteEnMoneda, pendienteClasePorMoneda }) => {
+        ccDetalleMovimientosList = ccDetalleRowsConTipoOpDesdeOrdenes(movimientos, ordenes);
+        ccDetalleOrdenesList = ordenes || [];
+        renderCcDetalleTable();
+        const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
+        if (saldosWrap && saldos) {
+          const pendMonModal = pendienteEnMoneda || ccPendientePorMonedaDesdeMovs(movimientos);
+          saldosWrap.innerHTML = htmlCcModalSaldosCards(saldos, pendMonModal, pendienteClasePorMoneda);
+          reaplicarVisibilidadMonedasCuentaCorrienteDom();
+        }
+        renderCcDetalleOperaciones();
+      }).catch(() => {});
+    }
+  };
+  Promise.all(promesas).then((results) => {
+    const err = results.find((r) => r && r.error);
+    if (err && err.error) {
+      showToast('Error al guardar CC: ' + (err.error.message || ''), 'error');
+      return;
+    }
+    if (ctx.cajaId) {
+      const conceptoCaja = concepto && concepto.indexOf('CC manual') >= 0 ? concepto : ('CC manual efectivo · ' + (concepto || ''));
+      client.from('movimientos_caja').update({ concepto: conceptoCaja, fecha }).eq('id', ctx.cajaId).then((rC) => {
+        if (rC.error) showToast('CC actualizada; no se pudo actualizar caja: ' + (rC.error.message || 'revisá permisos.'), 'error');
+        fin({ skipOkToast: !!rC.error });
+      });
+    } else {
+      fin();
+    }
+  }).catch((e) => {
+    showToast('Error: ' + (e && e.message ? e.message : ''), 'error');
+  });
+}
+
+function submitGuardarCcManualEditar() {
+  const ctx = ccManualEditContext;
+  if (!ctx) return;
+  const concepto = (document.getElementById('cc-manual-edit-concepto') || {}).value.trim() || null;
+  const fecha = (document.getElementById('cc-manual-edit-fecha') || {}).value;
+  if (!fecha) {
+    showToast('Indicá la fecha.', 'error');
+    return;
+  }
+  if (ctx.tocaCaja) {
+    const msg = 'Este movimiento vinculó caja (efectivo). Al guardar también se actualizarán la fecha y el concepto del movimiento de caja. La acción quedará registrada en el log de auditoría. ¿Continuar?';
+    showConfirm(msg, 'Guardar', () => {
+      ejecutarGuardarCcManualEditar(concepto, fecha);
+    }, null, 'Cancelar', 'Confirmar edición');
+    return;
+  }
+  ejecutarGuardarCcManualEditar(concepto, fecha);
+}
+
+function setupModalCcManualEditar() {
+  const backdrop = document.getElementById('modal-cc-manual-editar-backdrop');
+  if (!backdrop || backdrop.dataset.ccManualEditBound === '1') return;
+  backdrop.dataset.ccManualEditBound = '1';
+  const btnClose = document.getElementById('modal-cc-manual-editar-close');
+  const btnCancel = document.getElementById('modal-cc-manual-editar-cancelar');
+  const form = document.getElementById('form-cc-manual-editar');
+  if (btnClose) btnClose.addEventListener('click', closeModalCcManualEditar);
+  if (btnCancel) btnCancel.addEventListener('click', closeModalCcManualEditar);
+  setupBackdropCloseOnlyOnRealClick(backdrop, closeModalCcManualEditar);
+  if (form) form.addEventListener('submit', (e) => { e.preventDefault(); submitGuardarCcManualEditar(); });
+}
+
 function updateCcBotonesMovimientoManual() {
   const can = puedeRegistrarMovCcManual();
   ['cc-btn-movimiento-manual', 'cc-btn-movimiento-manual-mov'].forEach((id) => {
@@ -1182,6 +2391,25 @@ function ccClasificarPendienteMoneda(movs, mon, trTipoById, trPagadorById, trCob
     if (cCobro && !cPago) return 'cobro';
     if (cPago && cCobro) return 'mixto';
   }
+  /**
+   * Manuales cerrados sin transaccion_id: la suma algebraica coincide con Movimientos (mismo signo en grilla).
+   * Saldos/resumen muestran ese algebraico tal cual; esta clasificación sigue sirviendo para pendienteEnMoneda y merges CHEQUE / USD-USD+int.
+   * cobro_entidad_pandy / pago_pandy_entidad alimentan manPago/manCobro (varios manuales → mixto sin invertir el neto en pantalla).
+   */
+  let manCobro = false;
+  let manPago = false;
+  (movs || []).forEach((m) => {
+    if (String(m.estado || '').toLowerCase() !== 'cerrado') return;
+    if (!m.es_movimiento_manual) return;
+    const mm = getMontosMovimientoCcResumen(m);
+    if (Math.abs(mm[mon] || 0) < 1e-9) return;
+    const tip = String(m.manual_tip_movimiento || '');
+    if (tip === 'cobro_entidad_pandy') manPago = true;
+    else if (tip === 'pago_pandy_entidad') manCobro = true;
+  });
+  if (manPago && !manCobro) return 'pago';
+  if (manCobro && !manPago) return 'cobro';
+  if (manPago && manCobro) return 'mixto';
   return 'ninguno';
 }
 
@@ -1439,16 +2667,15 @@ function mergePendienteClaseChequeArsIntermediarioCerradoPago(intId, saldos, pen
 
 /**
  * Importe en resumen CC / Excel resumen / modal cards.
- * - cobro (pendiente a cobrar por Pandy): magnitud positiva en pantalla (verde favorable).
- * - pago (Pandy debe pagar): siempre importe negativo en pantalla (rojo) con magnitud |a| (deuda de Pandy).
- * - mixto / ninguno: fallback histórico −a.
+ * Misma convención que la grilla Movimientos: saldo = suma algebraica de movimientos no anulados.
+ * Positivo → verde y «Pendiente de cobro»; negativo → rojo y «Pendiente de pago» (ver ccLeyendaSaldoResumenHtml).
+ * El parámetro clase se mantiene por compatibilidad con callers y merges CHEQUE / USD-USD+int (ya no invierte el signo).
  */
 function ccSaldoDisplayOpticaResumen(sAlg, clase) {
+  void clase;
   const a = Number(sAlg) || 0;
   if (Math.abs(a) < 1e-9) return 0;
-  if (clase === 'pago') return -Math.abs(a);
-  if (clase === 'cobro') return Math.abs(a);
-  return ccSaldoResumenOpticaPandy(a);
+  return a;
 }
 
 /** Leyenda bajo saldo resumen/modal: misma convención que el color (verde/positivo → cobro, rojo/negativo → pago). Los parámetros mon/pendMon/clase se ignoran (compat. llamadas). */
@@ -1462,12 +2689,12 @@ function ccLeyendaSaldoResumenHtml(_mon, _pendMon, _clase, sDisp) {
 
 function ccColspanVistaDetalleMovimientos() {
   const n = MONEDAS_CC_MOVIMIENTOS_COLS.filter((m) => ccUiMonedasVisibles[m]).length;
-  return 5 + n + 3;
+  return 5 + n + 3 + 1;
 }
 
 function ccColspanModalDetalleMovimientos() {
   const n = MONEDAS_CC_MOVIMIENTOS_COLS.filter((m) => ccUiMonedasVisibles[m]).length;
-  return 5 + n + 3;
+  return 5 + n + 3 + 1;
 }
 
 function htmlCcModalSaldosCards(saldos, pendMon, pendClase) {
@@ -2287,10 +3514,16 @@ function renderTransaccionesPendientesTabla() {
   const clientesMap = transaccionesPendientesClientesMap;
   const intermediariosMap = transaccionesPendientesIntermediariosMap;
   const estadoTrxCombo = (t) => {
+    if (String(t.estado || '').toLowerCase() === 'anulada') {
+      return '<span class="badge badge-estado-anulada">Anulada</span>';
+    }
     const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente';
     return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" data-instrumentacion-id="${t.instrumentacion_id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`;
   };
-  const estadoTexto = (t) => (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente');
+  const estadoTexto = (t) => {
+    if (String(t.estado || '').toLowerCase() === 'anulada') return 'Anulada';
+    return t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente';
+  };
   const listSorted = sortTransaccionesIngresosPrimero(list);
   tbody.innerHTML = listSorted.map((t) => {
     const orden = ordenesMap[t.orden_id];
@@ -2387,7 +3620,7 @@ let ccCargaSerial = 0;
 /** Filtro opcional por cliente_id o intermediario_id en solapa Movimientos (vacío = todos). */
 let ccDetalleFiltroEntidadId = '';
 /** Columnas extra movimientos CC manuales (pagador/cobrador) en SELECT Supabase. */
-const CC_MOV_MANUAL_PAG_COB_COLS = ', manual_grupo_id, manual_pagador_rol, manual_cobrador_rol, manual_pagador_cliente_id, manual_pagador_intermediario_id, manual_cobrador_cliente_id, manual_cobrador_intermediario_id';
+const CC_MOV_MANUAL_PAG_COB_COLS = ', manual_grupo_id, manual_pagador_rol, manual_cobrador_rol, manual_pagador_cliente_id, manual_pagador_intermediario_id, manual_cobrador_cliente_id, manual_cobrador_intermediario_id, movimiento_caja_id';
 /** Nombres exactos en tipos_movimiento_caja (ver sql/migracion_tipos_caja_cc_manual.sql). */
 const CC_MANUAL_TIPO_CAJA_NOMBRE_INGRESO = 'Ingreso de Dinero (Mov Manual en CC)';
 const CC_MANUAL_TIPO_CAJA_NOMBRE_EGRESO = 'Egreso de Dinero (Mov Manual en CC)';
@@ -4541,6 +5774,7 @@ function renderCcVistaDetalle(filtrados) {
           <td>${escapeHtml(estadoLabel)}</td>
           <td>${escapeHtml(m.ccPagador || '–')}</td>
           <td>${escapeHtml(m.ccCobrador || '–')}</td>
+          <td class="cc-col-acciones-manual">${htmlCcAccionesMovimientoManualRow(m)}</td>
         </tr>`;
     })
     .join('');
@@ -4551,6 +5785,7 @@ function renderCcVistaDetalle(filtrados) {
     setupCcDetalleVistaSortHeaders();
   }
   reaplicarVisibilidadMonedasCuentaCorrienteDom();
+  setupDelegacionAccionesCcManual();
 }
 
 function setupCcDetalleVistaSortHeaders() {
@@ -4970,6 +6205,7 @@ function renderCcDetalleTable() {
           <td>${escapeHtml(estadoLabel)}</td>
           <td>${escapeHtml(m.ccPagador || '–')}</td>
           <td>${escapeHtml(m.ccCobrador || '–')}</td>
+          <td class="cc-col-acciones-manual">${htmlCcAccionesMovimientoManualRow(m)}</td>
         </tr>`;
     })
     .join('');
@@ -4978,6 +6214,7 @@ function renderCcDetalleTable() {
   if (filtrados.length === 0) tbody.innerHTML = '<tr><td colspan="' + ccColspanModalDetalleMovimientos() + '">No hay movimientos.</td></tr>';
   else setupCcDetalleModalSortHeaders();
   reaplicarVisibilidadMonedasCuentaCorrienteDom();
+  setupDelegacionAccionesCcManual();
 }
 
 function setupCcDetalleModalSortHeaders() {
@@ -5054,7 +6291,10 @@ function renderCcTable() {
   const tfoot = document.getElementById('cc-tfoot');
   const moneda = ccMonedaActual === 'TODAS' ? null : ccMonedaActual;
   const filtrados = moneda ? ccMovimientosList.filter((m) => m.moneda === moneda) : ccMovimientosList;
-  const canAbmCc = userPermissions.includes('editar_transacciones') && !ccEsIntermediario;
+  const canAbmCc = !ccEsIntermediario && (
+    userPermissions.includes('editar_transacciones')
+    || userPermissions.includes('editar_movimiento_cc_manual')
+  );
   if (!tbody) return;
 
   const totals = { USD: { debe: 0, haber: 0 }, EUR: { debe: 0, haber: 0 }, ARS: { debe: 0, haber: 0 } };
@@ -5083,7 +6323,7 @@ function renderCcTable() {
           <td>${debeUsd}</td><td>${haberUsd}</td>
           <td>${debeEur}</td><td>${haberEur}</td>
           <td>${debeArs}</td><td>${haberArs}</td>
-          <td>${canAbmCc ? `<button type="button" class="btn-editar btn-editar-cc" data-id="${m.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : ''}</td>
+          <td>${canAbmCc && !m.es_movimiento_manual && userPermissions.includes('editar_transacciones') ? `<button type="button" class="btn-editar btn-editar-cc" data-id="${m.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : ''}</td>
         </tr>`;
     })
     .join('');
@@ -5113,6 +6353,10 @@ function renderCcTable() {
 }
 
 function openModalMovimientoCc(mov) {
+  if (mov && mov.es_movimiento_manual) {
+    showToast('Los movimientos manuales se editan desde la solapa Movimientos (botón lápiz en la fila).', 'info');
+    return;
+  }
   const backdrop = document.getElementById('modal-movimiento-cc-backdrop');
   const idEl = document.getElementById('mov-cc-id');
   const conceptoEl = document.getElementById('mov-cc-concepto');
@@ -5132,6 +6376,11 @@ function closeModalMovimientoCc() {
 function saveMovimientoCc() {
   const idEl = document.getElementById('mov-cc-id');
   const id = idEl && idEl.value ? idEl.value.trim() : '';
+  const movLegacy = (ccMovimientosList || []).find((x) => String(x.id) === String(id));
+  if (movLegacy && movLegacy.es_movimiento_manual) {
+    showToast('Los movimientos manuales se editan desde la solapa Movimientos.', 'info');
+    return;
+  }
   const concepto = document.getElementById('mov-cc-concepto').value.trim() || null;
   const fecha = document.getElementById('mov-cc-fecha').value;
   if (!id || !fecha) {
@@ -5561,16 +6810,40 @@ function saveCcMovimientoManual() {
           usuario_id: currentUserId,
           estado: 'cerrado',
           estado_fecha: ahora,
-        }).then((rCaja) => {
+        }).select('id').single().then((rCaja) => {
         if (rCaja.error) {
           return ccManualRollbackCcIds(idsCli, idsInt).then(() => {
             showToast('No se pudo registrar caja; se revirtieron los movimientos de CC. ' + (rCaja.error.message || ''), 'error');
           });
         }
-        closeModalCcMovimientoManual();
-        showToast('Movimientos registrados en CC y en caja (efectivo).', 'success');
-        loadCuentaCorriente();
-        if (typeof loadCajas === 'function') loadCajas();
+        const cajaNuevoId = rCaja.data && rCaja.data.id;
+        const enlazarCaja = () => {
+          if (!cajaNuevoId) {
+            closeModalCcMovimientoManual();
+            showToast('Movimientos registrados en CC y en caja (efectivo).', 'success');
+            loadCuentaCorriente();
+            if (typeof loadCajas === 'function') loadCajas();
+            return;
+          }
+          const ps = [];
+          idsCli.forEach((cid) => {
+            ps.push(client.from('movimientos_cuenta_corriente').update({ movimiento_caja_id: cajaNuevoId }).eq('id', cid));
+          });
+          idsInt.forEach((iid) => {
+            ps.push(client.from('movimientos_cuenta_corriente_intermediario').update({ movimiento_caja_id: cajaNuevoId }).eq('id', iid));
+          });
+          return Promise.all(ps).then((updRes) => {
+            const bad = (updRes || []).find((r) => r && r.error);
+            if (bad && bad.error) {
+              showToast('Caja registrada; no se pudo enlazar el id en CC: ' + (bad.error.message || 'ejecutá la migración movimiento_caja_id.'), 'error');
+            }
+            closeModalCcMovimientoManual();
+            showToast('Movimientos registrados en CC y en caja (efectivo).', 'success');
+            loadCuentaCorriente();
+            if (typeof loadCajas === 'function') loadCajas();
+          });
+        };
+        return enlazarCaja();
       });
     }
     const leg = legs[idx];
@@ -6947,6 +8220,109 @@ function syncOrdenTipoOperacionIconosPreview() {
   display.innerHTML = `<span class="orden-tipo-operacion-combo-display-inner">${ic}<span class="orden-tipo-operacion-combo-nombre">${nombreHtml}</span></span>`;
 }
 
+function clearOrdenOfflineTipoOperacionListboxFixedStyles(list) {
+  if (!list) return;
+  list.style.position = '';
+  list.style.left = '';
+  list.style.top = '';
+  list.style.right = '';
+  list.style.width = '';
+  list.style.maxHeight = '';
+  list.style.zIndex = '';
+}
+
+function positionOrdenOfflineTipoOperacionListbox() {
+  const btn = document.getElementById('orden-offline-tipo-combo-btn');
+  const list = document.getElementById('orden-offline-tipo-listbox');
+  if (!btn || !list || list.hidden) return;
+  const r = btn.getBoundingClientRect();
+  const gap = 4;
+  const margin = 8;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let left = r.left;
+  let width = r.width;
+  if (left + width > vw - margin) {
+    width = Math.max(200, vw - margin * 2);
+    left = Math.min(left, vw - margin - width);
+  }
+  left = Math.max(margin, left);
+  const spaceBelow = vh - r.bottom - gap - margin;
+  const maxH = Math.min(280, Math.max(100, spaceBelow));
+  list.style.position = 'fixed';
+  list.style.left = `${left}px`;
+  list.style.top = `${r.bottom + gap}px`;
+  list.style.width = `${width}px`;
+  list.style.maxHeight = `${maxH}px`;
+  list.style.right = 'auto';
+  list.style.zIndex = '10050';
+}
+
+function closeOrdenOfflineTipoOperacionListbox() {
+  const list = document.getElementById('orden-offline-tipo-listbox');
+  const btn = document.getElementById('orden-offline-tipo-combo-btn');
+  if (list) {
+    list.hidden = true;
+    list.classList.remove('is-open');
+    clearOrdenOfflineTipoOperacionListboxFixedStyles(list);
+  }
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function rebuildOrdenOfflineTipoOperacionListbox() {
+  const sel = document.getElementById('orden-offline-tipo');
+  const list = document.getElementById('orden-offline-tipo-listbox');
+  if (!sel || !list) return;
+  const current = sel.value || '';
+  const opts = Array.from(sel.querySelectorAll('option'));
+  list.innerHTML = opts
+    .map((opt) => {
+      const v = opt.value != null ? String(opt.value) : '';
+      const codigo = (opt.getAttribute('data-codigo') || '').trim();
+      const nombrePlano = (opt.textContent || '').trim();
+      const nombreBase = (opt.getAttribute('data-nombre-base') || '').trim() || nombrePlano.replace(/\s+-\s*Int\.\s*$/i, '').trim();
+      const modoRaw = (opt.getAttribute('data-icono-modo')) || 'auto';
+      const modo = modoRaw === 'cheque' || modoRaw === 'custom' ? modoRaw : 'auto';
+      const url = (opt.getAttribute('data-icono-url')) || '';
+      const usaInt = opt.getAttribute('data-usa-intermediario') === 'true';
+      const escV = escapeHtml(v).replace(/"/g, '&quot;');
+      const selected = v === current ? 'true' : 'false';
+      if (!v) {
+        return `<li role="presentation"><button type="button" class="orden-tipo-operacion-option" role="option" data-value="" aria-selected="${selected}"><span class="orden-tipo-operacion-placeholder">Elegir…</span></button></li>`;
+      }
+      const iconsHtml = codigo
+        ? htmlTipoOperacionIconos(codigo, nombreBase || nombrePlano, { iconoModo: modo, iconoUrlPublica: url, usaIntermediario: usaInt })
+        : `<span class="tipo-op-iconos">${escapeHtml(nombreBase || nombrePlano)}</span>`;
+      const labelHtml = htmlOrdenTipoOperacionEtiquetaVisible(nombreBase, usaInt);
+      return `<li role="presentation"><button type="button" class="orden-tipo-operacion-option" role="option" data-value="${escV}" aria-selected="${selected}">${iconsHtml}<span class="orden-tipo-operacion-option-label">${labelHtml}</span></button></li>`;
+    })
+    .join('');
+}
+
+function syncOrdenOfflineTipoOperacionIconosPreview() {
+  const sel = document.getElementById('orden-offline-tipo');
+  const display = document.getElementById('orden-offline-tipo-combo-display');
+  if (!display) return;
+  if (!sel || !sel.value) {
+    display.innerHTML = '<span class="orden-tipo-operacion-placeholder">Elegir…</span>';
+    return;
+  }
+  const opt = sel.selectedOptions && sel.selectedOptions[0];
+  const codigo = opt ? (opt.getAttribute('data-codigo') || '').trim() : '';
+  const nombrePlano = opt && opt.textContent ? opt.textContent.trim() : '';
+  const nombreBaseAttr = opt ? (opt.getAttribute('data-nombre-base') || '').trim() : '';
+  const usaIntSel = opt && opt.getAttribute('data-usa-intermediario') === 'true';
+  let base = nombreBaseAttr;
+  if (!base) base = usaIntSel ? nombrePlano.replace(/\s+-\s*Int\.\s*$/i, '').trim() : nombrePlano;
+  const modoRaw = (opt && opt.getAttribute('data-icono-modo')) || 'auto';
+  const modo = modoRaw === 'cheque' || modoRaw === 'custom' ? modoRaw : 'auto';
+  const url = (opt && opt.getAttribute('data-icono-url')) || '';
+  const usaInt = !!usaIntSel;
+  const ic = codigo ? htmlTipoOperacionIconos(codigo, base || nombrePlano, { iconoModo: modo, iconoUrlPublica: url, usaIntermediario: usaInt }) : '';
+  const nombreHtml = htmlOrdenTipoOperacionEtiquetaVisible(base, usaInt);
+  display.innerHTML = `<span class="orden-tipo-operacion-combo-display-inner">${ic}<span class="orden-tipo-operacion-combo-nombre">${nombreHtml}</span></span>`;
+}
+
 function renderOrdenesTabla(list) {
   const tbody = document.getElementById('ordenes-tbody');
   const wrapEl = document.getElementById('ordenes-tabla-wrap');
@@ -6973,6 +8349,20 @@ function renderOrdenesTabla(list) {
         const estado = o.estado || '';
         const badgeClass = estadoBadgeClass(estado);
         const estadoHtml = badgeClass ? `<span class="${badgeClass}">${estadoLabel(estado)}</span>` : estadoLabel(estado);
+        const peligroAnular = estado === 'orden_ejecutada';
+        const clsAnularTabla = peligroAnular ? 'btn-anular-orden-tabla btn-anular-orden-tabla-peligro' : 'btn-secondary btn-anular-orden-tabla';
+        const titAnularTabla = peligroAnular ? 'Anular orden ejecutada (acción grave)' : 'Anular orden';
+        const btnAnularTabla =
+          canAnularOrden && estado !== 'anulada'
+            ? ` <button type="button" class="${clsAnularTabla} btn-icon-only" data-id="${o.id}" title="${titAnularTabla}" aria-label="${titAnularTabla}" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>`
+            : '';
+        const puedeEditarEstaOrden = canEditarOrden && estado !== 'anulada';
+        const toolbarTransaccionesPanel =
+          estado === 'anulada'
+            ? '<p class="orden-detalle-transacciones-solo-info" style="margin:0 0 0.75rem;font-size:0.9rem;color:#64748b;">Transacciones solo lectura: la orden está anulada y no puede modificarse.</p>'
+            : `<div class="vista-toolbar" style="margin-bottom:0.75rem;">
+                  <button type="button" class="btn-nuevo btn-nueva-transaccion-panel" data-orden-id="${o.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
+                </div>`;
         return `<tr data-id="${o.id}">
           <td>${o.numero != null ? o.numero : '–'}</td>
           <td>${(o.fecha || '').toString().slice(0, 10)}</td>
@@ -6984,7 +8374,7 @@ function renderOrdenesTabla(list) {
           <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(o.moneda_recibida)}</td>
           <td class="td-orden-importe">${formatMonto(o.monto_entregado)}</td>
           <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(o.moneda_entregada)}</td>
-          <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${canAnularOrden && o.estado !== 'anulada' && o.estado !== 'orden_ejecutada' ? ` <button type="button" class="btn-secondary btn-anular-orden-tabla btn-icon-only" data-id="${o.id}" title="Anular orden" aria-label="Anular orden" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>` : ''}` : ''}</td>
+          <td>${canVerAccionesOrden ? `${puedeEditarEstaOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${btnAnularTabla}` : ''}</td>
         </tr>
         <tr class="orden-detalle-tr" id="orden-detalle-${o.id}" data-orden-id="${o.id}" style="display:none;">
           <td colspan="11" class="orden-detalle-cell">
@@ -6993,9 +8383,7 @@ function renderOrdenesTabla(list) {
               <div class="orden-detalle-loading" style="display:none;">Cargando transacciones…</div>
               <div class="orden-detalle-content" style="display:none;">
                 <div class="orden-detalle-totales" style="margin-bottom:0.75rem; font-size:0.9rem; color:#555;"></div>
-                <div class="vista-toolbar" style="margin-bottom:0.75rem;">
-                  <button type="button" class="btn-nuevo btn-nueva-transaccion-panel" data-orden-id="${o.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
-                </div>
+                ${toolbarTransaccionesPanel}
                 <table class="tabla-transacciones-panel"><thead><tr><th>Nro</th><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead><tbody class="orden-detalle-tbody"></tbody></table>
               </div>
             </div>
@@ -7020,14 +8408,7 @@ function renderOrdenesTabla(list) {
   tbody.querySelectorAll('.btn-anular-orden-tabla').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.getAttribute('data-id');
-      if (id) {
-        showConfirm('¿Anular esta orden? El estado pasará a Anulada.', 'Anular', () => {
-          client.from('ordenes').update({ estado: 'anulada', updated_at: new Date().toISOString() }).eq('id', id).then((r) => {
-            if (r.error) showToast('Error: ' + (r.error?.message || ''), 'error');
-            else { showToast('Orden anulada.', 'success'); loadOrdenes(); }
-          });
-        });
-      }
+      if (id) solicitarConfirmacionYAnularOrden(id);
     });
   });
   wrapEl.style.display = 'block';
@@ -7052,21 +8433,43 @@ function aplicarFiltrosOrdenesVista() {
   renderOrdenesTabla(filtered);
 }
 
+/** Mensaje en la grilla cuando falla el SELECT de órdenes (sin mostrar TypeError crudo en pantalla). */
+function pandiHtmlTablaOrdenesMensajeError(msgRaw, silentOrd) {
+  if (silentOrd) return '<tr><td colspan="11"></td></tr>';
+  const msg = String(msgRaw || '');
+  const esRed =
+    /failed to fetch|networkerror|fetcherror|err_network|timeout|load failed|aborted|network request failed/i.test(
+      msg.toLowerCase(),
+    );
+  const nCola = pandiOfflineQueueRead().length;
+  if (esRed) {
+    let linea =
+      'No hay conexión con el servidor: acá solo se listan órdenes ya guardadas en Supabase.';
+    if (nCola > 0) {
+      linea +=
+        ' La cola local (' +
+        nCola +
+        ' orden(es)) no aparece en esta tabla hasta importarla: abrí «Orden en cola local» para ver el resumen o sumar borradores; cuando vuelva el servicio usá «Enviar cola local» o el aviso de importación.';
+    } else {
+      linea += ' Cuando vuelva la conexión, tocá Reintentar en el aviso superior o esperá el chequeo automático.';
+    }
+    return '<tr><td colspan="11" style="padding:1rem 0.75rem;line-height:1.5;">' + escapeHtml(linea) + '</td></tr>';
+  }
+  return '<tr><td colspan="11">Error: ' + escapeHtml(msg) + '</td></tr>';
+}
+
 function loadOrdenes() {
   // No recargar la lista mientras el modal de orden está abierto: evita que la vista atrás cargue y el modal pierda el foco.
   if (document.getElementById('modal-orden-backdrop')?.classList?.contains('activo')) return Promise.resolve();
   const loadingEl = document.getElementById('ordenes-loading');
   const wrapEl = document.getElementById('ordenes-tabla-wrap');
   const tbody = document.getElementById('ordenes-tbody');
-  const btnNuevo = document.getElementById('btn-nueva-orden');
   const filtrosWrap = document.getElementById('ordenes-filtros-wrap');
   if (!loadingEl || !wrapEl || !tbody) return Promise.resolve();
 
   const canIngresarOrden = userPermissions.includes('ingresar_orden');
   const canEditarOrden = userPermissions.includes('editar_orden');
-  if (btnNuevo) btnNuevo.style.display = canIngresarOrden ? '' : 'none';
-  const btnOrdenPorChat = document.getElementById('btn-orden-por-chat');
-  if (btnOrdenPorChat) btnOrdenPorChat.style.display = canIngresarOrden ? '' : 'none';
+  pandiUpdateOfflineToolbarButtons();
 
   const silentOrd = isPandiBackgroundRefresh();
   const loadingShownAtOrdenes = silentOrd ? 0 : Date.now();
@@ -7099,8 +8502,19 @@ function loadOrdenes() {
               showToast('Error al actualizar órdenes: ' + (msg || ''), 'error');
               return;
             }
-            tbody.innerHTML = '<tr><td colspan="11">Error: ' + (msg || '') + '</td></tr>';
+            const esRed =
+              /failed to fetch|networkerror|fetcherror|err_network|timeout|load failed|aborted|network request failed/i.test(
+                String(msg || '').toLowerCase(),
+              );
+            if (esRed) {
+              ordenesVistaList = [];
+              ordenesVistaClientesMap = {};
+              ordenesVistaTiposOpMap = {};
+              ordenesVistaIntermediariosMap = {};
+            }
+            tbody.innerHTML = pandiHtmlTablaOrdenesMensajeError(msg, silentOrd);
             wrapEl.style.display = 'block';
+            pandiUpdateOfflineToolbarButtons();
           });
         }
         const list = res.data || [];
@@ -7132,6 +8546,7 @@ function loadOrdenes() {
           ordenesVistaClientesMap = clientesMap;
           ordenesVistaTiposOpMap = tiposOpMap;
           ordenesVistaIntermediariosMap = intermediariosMap;
+          pandiTrySaveOfflineCatalogosCache(crClientes.data || [], crInt.data || []);
 
           const selCliente = document.getElementById('ordenes-filtro-cliente');
           const selIntermediario = document.getElementById('ordenes-filtro-intermediario');
@@ -7154,6 +8569,7 @@ function loadOrdenes() {
               ordenesFiltrosListenersAttached = true;
             }
             aplicarFiltrosOrdenesVista();
+            pandiUpdateOfflineToolbarButtons();
           });
         });
       });
@@ -7163,7 +8579,23 @@ function loadOrdenes() {
   // Antes se encadenaba sync → runLoadOrdenes; el sync recorre cada orden con instrumentación en serie (`sincronizarCcYCajaDesdeOrden`)
   // y domina el tiempo aunque haya 7 órdenes — no es un tema de índices en `ordenes`. CC y Cajas siguen llamando al mismo sync al entrar.
   sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().catch(() => {});
-  return runLoadOrdenes(selectConNumero);
+  return runLoadOrdenes(selectConNumero).catch((err) => {
+    const msg = err && err.message != null ? String(err.message) : String(err || '');
+    ordenesVistaList = [];
+    ordenesVistaClientesMap = {};
+    ordenesVistaTiposOpMap = {};
+    ordenesVistaIntermediariosMap = {};
+    return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(() => {
+      loadingEl.style.display = 'none';
+      if (silentOrd) {
+        showToast('Error al actualizar órdenes: ' + (msg || ''), 'error');
+      } else {
+        tbody.innerHTML = pandiHtmlTablaOrdenesMensajeError(msg, silentOrd);
+        wrapEl.style.display = 'block';
+      }
+      pandiUpdateOfflineToolbarButtons();
+    });
+  });
 }
 
 /** Crea una orden borrador (mínima) para "Nueva orden". Si el usuario cierra sin guardar, se elimina en closeModalOrden. */
@@ -7361,6 +8793,10 @@ function openModalOrden(registro) {
   const btnBackDetalles = document.getElementById('orden-btn-back-detalles');
   const btnNuevaTr = document.getElementById('orden-btn-nueva-transaccion');
   if (!backdrop || !titulo || !idEl || !form) return;
+  if (registro && String(registro.estado || '') === 'anulada') {
+    showToast('La orden está anulada; no se puede editar.', 'info');
+    return;
+  }
   ordenModalLoadSeq += 1;
   const modalLoadSeq = ordenModalLoadSeq;
   if (registro == null) {
@@ -7626,16 +9062,22 @@ function openModalOrden(registro) {
       const btnAnular = document.getElementById('orden-btn-anular');
       if (btnAnular) {
         const puedeAnular = userPermissions.includes('anular_orden');
-        if (registroActual.estado !== 'anulada' && registroActual.estado !== 'orden_ejecutada' && puedeAnular) {
+        const peligroModal = registroActual.estado === 'orden_ejecutada';
+        if (registroActual.estado !== 'anulada' && puedeAnular) {
           btnAnular.style.display = '';
+          btnAnular.classList.toggle('btn-anular-orden-peligro', peligroModal);
+          btnAnular.classList.toggle('btn-secondary', !peligroModal);
+          btnAnular.title = peligroModal ? 'Anular orden ejecutada (acción grave)' : 'Anular esta orden';
+          btnAnular.setAttribute('aria-label', btnAnular.title);
           btnAnular.onclick = () => {
-            showConfirm('¿Anular esta orden? El estado pasará a Anulada.', 'Anular', () => {
-              document.getElementById('orden-estado').value = 'anulada';
-              saveOrden();
+            solicitarConfirmacionYAnularOrden(registroActual.id, {
+              onExito: () => refrescarVistasTrasAnularOrden(true),
             });
           };
         } else {
           btnAnular.style.display = 'none';
+          btnAnular.classList.remove('btn-anular-orden-peligro');
+          btnAnular.classList.add('btn-secondary');
         }
       }
       promContinuar = client.from('comisiones_orden').select('beneficiario, monto').eq('orden_id', registroActual.id).then((rCom) => {
@@ -7683,7 +9125,11 @@ function openModalOrden(registro) {
       if (esNuevaOrden && wrapIntermediario) wrapIntermediario.style.display = 'none';
       ordenWizardOrdenIdActual = registroActual ? registroActual.id : null;
       const btnAnular = document.getElementById('orden-btn-anular');
-      if (btnAnular) btnAnular.style.display = 'none';
+      if (btnAnular) {
+        btnAnular.style.display = 'none';
+        btnAnular.classList.remove('btn-anular-orden-peligro');
+        btnAnular.classList.add('btn-secondary');
+      }
     }
     promContinuar.then(() => {
       if (modalLoadSeq !== ordenModalLoadSeq) return;
@@ -8617,6 +10063,11 @@ function renderOrdenWizardInstrumentacion(instId) {
       loadingEl.style.display = 'none';
       wrapEl.style.display = 'block';
       const orden = rOrd.data || null;
+      const ordenAnuladaWiz = orden && String(orden.estado || '') === 'anulada';
+      const btnNuevaTrWiz = document.getElementById('orden-btn-nueva-transaccion');
+      if (btnNuevaTrWiz) {
+        btnNuevaTrWiz.style.display = (userPermissions.includes('ingresar_transacciones') && !ordenAnuladaWiz) ? '' : 'none';
+      }
       const participantesEl = document.getElementById('orden-inst-participantes-texto');
       if (participantesEl) {
         if (orden) {
@@ -8658,17 +10109,20 @@ function renderOrdenWizardInstrumentacion(instId) {
         const eligMcInst = !!(orden && esTipoOpMulticontraparteElegibleDesdeOrden(orden, toJoinWizard));
         wrapMcInst.style.display = eligMcInst ? 'flex' : 'none';
         chkMcInst.checked = multicontraparteManualInst;
-        chkMcInst.onchange = () => {
-          const checked = chkMcInst.checked;
-          client.from('instrumentacion').update({ multicontraparte_manual: checked, updated_at: new Date().toISOString() }).eq('id', instId).then((rUp) => {
-            if (rUp.error) {
-              chkMcInst.checked = !checked;
-              showToast('No se pudo guardar la opción multicontraparte.', 'error');
-              return;
-            }
-            showToast(checked ? 'Multicontraparte manual activada. Podés cargar N transacciones y contrapartes explícitas.' : 'Multicontraparte manual desactivada.', 'info', 4500);
-          });
-        };
+        chkMcInst.disabled = !!ordenAnuladaWiz;
+        chkMcInst.onchange = ordenAnuladaWiz
+          ? null
+          : () => {
+            const checked = chkMcInst.checked;
+            client.from('instrumentacion').update({ multicontraparte_manual: checked, updated_at: new Date().toISOString() }).eq('id', instId).then((rUp) => {
+              if (rUp.error) {
+                chkMcInst.checked = !checked;
+                showToast('No se pudo guardar la opción multicontraparte.', 'error');
+                return;
+              }
+              showToast(checked ? 'Multicontraparte manual activada. Podés cargar N transacciones y contrapartes explícitas.' : 'Multicontraparte manual desactivada.', 'info', 4500);
+            });
+          };
       }
 
       function renderWizardList(lista) {
@@ -8697,9 +10151,13 @@ function renderOrdenWizardInstrumentacion(instId) {
         const modosMap = {};
         (rModos.data || []).forEach((m) => { modosMap[m.id] = m; });
         const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'));
-        const canEditarTr = userPermissions.includes('editar_transacciones');
-        const estadoTrxCombo = (t) => { const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente'; return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`; };
-        const estadoTexto = (t) => (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente');
+        const canEditarTr = userPermissions.includes('editar_transacciones') && !ordenAnuladaWiz;
+        const estadoTrxCombo = (t) => {
+          if (String(t.estado || '').toLowerCase() === 'anulada') return '<span class="badge badge-estado-anulada">Anulada</span>';
+          const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente';
+          return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}>Ejecutada</option></select>`;
+        };
+        const estadoTexto = (t) => (String(t.estado || '').toLowerCase() === 'anulada' ? 'Anulada' : (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente'));
         const listaSorted = sortTransaccionesPorNumero(lista);
         const selTrxWizardCols = 'id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id';
         function paintWizardTabla(maps) {
@@ -8781,7 +10239,7 @@ function renderOrdenWizardInstrumentacion(instId) {
         }
       }
 
-      if (list.length === 0 && orden && orden.tipo_operacion_id) {
+      if (list.length === 0 && orden && orden.tipo_operacion_id && !ordenAnuladaWiz) {
         client.from('tipos_operacion').select('codigo, moneda_in, moneda_out').eq('id', orden.tipo_operacion_id).single().then((rTipo) => {
           const row = rTipo.data || {};
           const codigo = row.codigo || '';
@@ -8822,8 +10280,9 @@ function saveOrden(aceptaComisionCero = false) {
   const canIngresarOrden = userPermissions.includes('ingresar_orden');
   const canEditarOrden = userPermissions.includes('editar_orden');
   const canEditarEstadoOrden = userPermissions.includes('editar_estado_orden');
+  const estado = document.getElementById('orden-estado')?.value || '';
   if (id) {
-    if (!canEditarOrden && !canEditarEstadoOrden) {
+    if (!canEditarOrden && !canEditarEstadoOrden && !(estado === 'anulada' && userPermissions.includes('anular_orden'))) {
       showToast('No tenés permiso para editar órdenes.', 'error');
       return;
     }
@@ -8832,6 +10291,14 @@ function saveOrden(aceptaComisionCero = false) {
       showToast('No tenés permiso para crear órdenes.', 'error');
       return;
     }
+  }
+  if (id && estado === 'anulada') {
+    if (!userPermissions.includes('anular_orden')) {
+      showToast('No tenés permiso para anular órdenes.', 'error');
+      return;
+    }
+    solicitarConfirmacionYAnularOrden(id, { onExito: () => refrescarVistasTrasAnularOrden(true) });
+    return;
   }
   const clienteId = document.getElementById('orden-cliente').value.trim() || null;
   const fecha = document.getElementById('orden-fecha').value;
@@ -8847,7 +10314,6 @@ function saveOrden(aceptaComisionCero = false) {
   const montoEntregado = parseImporteInput(document.getElementById('orden-monto-entregado').value);
   const cotizacionRaw = document.getElementById('orden-cotizacion').value.trim();
   const cotizacion = cotizacionRaw ? parseImporteInput(cotizacionRaw) : null;
-  const estado = document.getElementById('orden-estado').value;
   const observaciones = document.getElementById('orden-observaciones').value.trim() || null;
 
   if (!clienteId && !intermediarioId) {
@@ -8969,28 +10435,43 @@ function saveOrden(aceptaComisionCero = false) {
   }
 
   const prom = id
-    ? client.from('instrumentacion').select('id, multicontraparte_manual').eq('orden_id', id).maybeSingle().then((rInst) => {
-        const instId = rInst.data && rInst.data.id;
-        const mcFlag = !!(rInst.data && rInst.data.multicontraparte_manual);
-        const promTr = instId ? client.from('transacciones').select('id, estado, tipo, moneda, monto, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id').eq('instrumentacion_id', instId) : Promise.resolve({ data: [] });
-        const promTipo = tipoOperacionId ? client.from('tipos_operacion').select('codigo, usa_intermediario').eq('id', tipoOperacionId).single() : Promise.resolve({ data: null });
-        return Promise.all([promTr, promTipo]).then(([rTr, rTipo]) => {
-          const list = rTr.data || [];
-          const toJ = rTipo.data;
-          const ordenParaCalc = {
-            cliente_id: clienteId,
-            intermediario_id: intermediarioId,
-            moneda_recibida: monedaRecibida,
-            monto_recibido: montoRecibido,
-            moneda_entregada: monedaEntregada,
-            monto_entregado: montoEntregado,
-            cotizacion,
-          };
-          const totMc = mcFlag && esTipoOpMulticontraparteElegibleDesdeOrden(ordenParaCalc, toJ);
-          const { estado: estadoCalculado } = calcularEstadoOrden(list, ordenParaCalc, { totalesMulticontraparte: totMc });
-          return hacerUpdateOrden(estadoCalculado);
-        });
-      })
+    ? client
+        .from('ordenes')
+        .select('estado')
+        .eq('id', id)
+        .single()
+        .then((rOrdActual) => {
+          if (rOrdActual.data && rOrdActual.data.estado === 'anulada') {
+            return hacerUpdateOrden('anulada');
+          }
+          return client.from('instrumentacion').select('id, multicontraparte_manual').eq('orden_id', id).maybeSingle().then((rInst) => {
+            const instId = rInst.data && rInst.data.id;
+            const mcFlag = !!(rInst.data && rInst.data.multicontraparte_manual);
+            const promTr = instId
+              ? client
+                  .from('transacciones')
+                  .select('id, estado, tipo, moneda, monto, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id')
+                  .eq('instrumentacion_id', instId)
+              : Promise.resolve({ data: [] });
+            const promTipo = tipoOperacionId ? client.from('tipos_operacion').select('codigo, usa_intermediario').eq('id', tipoOperacionId).single() : Promise.resolve({ data: null });
+            return Promise.all([promTr, promTipo]).then(([rTr, rTipo]) => {
+              const list = rTr.data || [];
+              const toJ = rTipo.data;
+              const ordenParaCalc = {
+                cliente_id: clienteId,
+                intermediario_id: intermediarioId,
+                moneda_recibida: monedaRecibida,
+                monto_recibido: montoRecibido,
+                moneda_entregada: monedaEntregada,
+                monto_entregado: montoEntregado,
+                cotizacion,
+              };
+              const totMc = mcFlag && esTipoOpMulticontraparteElegibleDesdeOrden(ordenParaCalc, toJ);
+              const { estado: estadoCalculado } = calcularEstadoOrden(list, ordenParaCalc, { totalesMulticontraparte: totMc });
+              return hacerUpdateOrden(estadoCalculado);
+            });
+          });
+        })
     : insertOrdenConProximoNumero(payload);
 
   prom.then((res) => {
@@ -9068,59 +10549,20 @@ function saveOrden(aceptaComisionCero = false) {
       });
       return;
     }
-    // Al editar, también guardar comisión; si es CHEQUE con intermediario, actualizar monto 4.ª transacción por tasa; luego flujo legacy
+    // Al editar, también guardar comisión; si es CHEQUE con intermediario, actualizar monto 4.ª transacción por tasa; cierre y refresco (reversión CC/caja solo vía Anular orden).
     guardarComisionYContinuar(() => {
       const promTasa = (esChequeArsSave && intermediarioId && tasaDescuentoIntermediarioSave != null)
         ? actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, { monto_recibido: montoRecibido, tasa_descuento_intermediario: tasaDescuentoIntermediarioSave, intermediario_id: intermediarioId })
         : Promise.resolve();
       promTasa.then(() => {
-      if (estado !== 'concertada') {
-        client.from('movimientos_caja').select('id').eq('orden_id', ordenId).eq('estado', 'cerrado').limit(1).then((r) => {
-          const tieneMovimientosLegacy = r.data && r.data.length > 0;
-          if (!tieneMovimientosLegacy) {
-            ejecutarCierreModalOrden();
-            loadOrdenes();
-            return;
-          }
-          const ahora = new Date().toISOString();
-          client.from('movimientos_cuenta_corriente').update({ estado: 'anulado', estado_fecha: ahora }).eq('orden_id', ordenId).then((rCc) => {
-            if (rCc.error) showToast('Error al revertir cuenta corriente: ' + (rCc.error.message || ''), 'error');
-            client.from('movimientos_caja').update({ estado: 'anulado', estado_fecha: ahora }).eq('orden_id', ordenId).then((rCaja) => {
-              if (rCaja.error) showToast('Error al revertir caja: ' + (rCaja.error.message || ''), 'error');
-              ejecutarCierreModalOrden();
-              loadOrdenes();
-              loadCajas();
-              const vistaCc = document.getElementById('vista-cuenta-corriente');
-              if (vistaCc && vistaCc.style.display !== 'none') loadCuentaCorriente();
-            });
-          });
-        });
-        return;
-      }
-      client.from('movimientos_caja').select('id').eq('orden_id', ordenId).eq('estado', 'cerrado').limit(1).then((r) => {
-        if (r.data && r.data.length > 0) {
-          ejecutarCierreModalOrden();
-          loadOrdenes();
-          return;
-        }
-        const ahora = new Date().toISOString();
-        client.from('ordenes').select('numero').eq('id', ordenId).single().then((rOrd) => {
-          const ordenNumero = rOrd.data && rOrd.data.numero != null ? rOrd.data.numero : null;
-          const movCaja = [
-            { moneda: monedaRecibida, monto: montoRecibido, orden_id: ordenId, orden_numero: ordenNumero, concepto: 'Orden concertada', fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora },
-            { moneda: monedaEntregada, monto: -montoEntregado, orden_id: ordenId, orden_numero: ordenNumero, concepto: 'Orden concertada', fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora },
-          ];
-          client.from('movimientos_caja').insert(movCaja).then(() => {
-            // Cuenta corriente solo se actualiza al ejecutar transacciones, nunca en concertada.
-            ejecutarCierreModalOrden();
-            loadOrdenes();
-            loadCajas();
-          });
-        });
+        ejecutarCierreModalOrden();
+        loadOrdenes();
+        loadCajas();
+        const vistaCcPostSave = document.getElementById('vista-cuenta-corriente');
+        if (vistaCcPostSave && vistaCcPostSave.style.display !== 'none') loadCuentaCorriente();
       });
     });
   });
-});
 }
 
 function setupModalOrden() {
@@ -9788,7 +11230,7 @@ function solicitarCierreModalOrden(options) {
  * options.totalesMulticontraparte: ver `totalesInstrumentacion`. */
 function calcularEstadoOrden(transacciones, orden, options) {
   const requiereCliente = !!orden?.cliente_id;
-  const listAll = transacciones || [];
+  const listAll = (transacciones || []).filter((t) => String(t.estado || '').toLowerCase() !== 'anulada');
   const listCliente = requiereCliente ? listAll.filter((t) => t.cobrador === 'cliente' || t.pagador === 'cliente') : listAll;
   const totalTodas = listAll.length;
   const ejecutadasTodas = listAll.filter((t) => t.estado === 'ejecutada').length;
@@ -10857,9 +12299,10 @@ function expandOrdenTransacciones(ordenId, orden) {
   const contentEl = panel.querySelector('.orden-detalle-content');
   const tbody = panel.querySelector('.orden-detalle-tbody');
   if (!encabezado || !loadingEl || !contentEl || !tbody) return;
-  const canIngresarTr = userPermissions.includes('ingresar_transacciones');
-  const canEditarTr = userPermissions.includes('editar_transacciones');
-  const canEliminarTr = userPermissions.includes('eliminar_transacciones');
+  const ordenAnulada = orden && String(orden.estado || '') === 'anulada';
+  const canIngresarTr = userPermissions.includes('ingresar_transacciones') && !ordenAnulada;
+  const canEditarTr = userPermissions.includes('editar_transacciones') && !ordenAnulada;
+  const canEliminarTr = userPermissions.includes('eliminar_transacciones') && !ordenAnulada;
   const btnNuevaTr = panel.querySelector('.btn-nueva-transaccion-panel');
   if (btnNuevaTr) btnNuevaTr.style.display = canIngresarTr ? '' : 'none';
 
@@ -10881,6 +12324,9 @@ function expandOrdenTransacciones(ordenId, orden) {
       const rowEx = r.data;
       const instId = rowEx && rowEx.id;
       if (!instId) {
+        if (ordenAnulada) {
+          return Promise.resolve({ skipInstrumentacion: true });
+        }
         return client.from('instrumentacion').insert({ orden_id: ordenId }).select('id, multicontraparte_manual').single().then((ins) => ({
           instrumentacionId: ins.data ? ins.data.id : null,
           mcRow: ins.data || null,
@@ -10889,6 +12335,13 @@ function expandOrdenTransacciones(ordenId, orden) {
       return { instrumentacionId: instId, mcRow: rowEx };
     })
     .then((ctx) => {
+      if (ctx && ctx.skipInstrumentacion) {
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'block';
+        tbody.innerHTML = '<tr><td colspan="9">No hay instrumentación para esta orden anulada.</td></tr>';
+        if (btnNuevaTr) btnNuevaTr.style.display = 'none';
+        return;
+      }
       const instrumentacionId = ctx && ctx.instrumentacionId;
       const mcRow = ctx && ctx.mcRow;
       if (!instrumentacionId) {
@@ -10947,8 +12400,14 @@ function expandOrdenTransacciones(ordenId, orden) {
               const bloquearEjecutadaEgresoCheque = (t) => orden?.intermediario_id && (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && modosMap[t.modo_pago_id]?.codigo === 'cheque' && ingresoChequeCliPandy && (ingresoChequeCliPandy.estado || '').toLowerCase() !== 'ejecutada';
               const cobradorL = (t) => transaccionParticipanteCeldaHtml(t, ordenTotales, 'cobrador', maps);
               const pagadorL = (t) => transaccionParticipanteCeldaHtml(t, ordenTotales, 'pagador', maps);
-              const estadoTrxCombo = (t) => { const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente'; const bloquear = bloquearEjecutadaEgresoCheque(t); const title = bloquear ? 'No se puede marcar ejecutada hasta que el ingreso del cheque (Cliente→Pandy) esté ejecutado.' : ''; return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado" title="${esc(title)}"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}${bloquear ? ' disabled' : ''}>Ejecutada</option></select>`; };
-              const estadoTexto = (t) => (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente');
+              const estadoTrxCombo = (t) => {
+                if (String(t.estado || '').toLowerCase() === 'anulada') return '<span class="badge badge-estado-anulada">Anulada</span>';
+                const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente';
+                const bloquear = bloquearEjecutadaEgresoCheque(t);
+                const title = bloquear ? 'No se puede marcar ejecutada hasta que el ingreso del cheque (Cliente→Pandy) esté ejecutado.' : '';
+                return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado" title="${esc(title)}"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}${bloquear ? ' disabled' : ''}>Ejecutada</option></select>`;
+              };
+              const estadoTexto = (t) => (String(t.estado || '').toLowerCase() === 'anulada' ? 'Anulada' : (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente'));
               const montoCell = (t) => {
                 if (!canEditarTr) return `<td>${formatImporteDisplay(t.monto)}</td>`;
                 const val = formatImporteParaInput(t.monto);
@@ -11014,7 +12473,7 @@ function expandOrdenTransacciones(ordenId, orden) {
             });
           }
 
-          if (list.length === 0 && ordenTotales && ordenTotales.tipo_operacion_id) {
+          if (list.length === 0 && ordenTotales && ordenTotales.tipo_operacion_id && String(ordenTotales.estado || '') !== 'anulada') {
             return client.from('tipos_operacion').select('codigo, moneda_in, moneda_out').eq('id', ordenTotales.tipo_operacion_id).single().then((rTipo) => {
               const row = rTipo.data || {};
               const codigo = row.codigo || '';
@@ -11045,7 +12504,14 @@ function expandOrdenTransacciones(ordenId, orden) {
         })
         .then(() => {
           const btnNueva = panel.querySelector('.btn-nueva-transaccion-panel');
-          if (btnNueva) btnNueva.onclick = () => openModalTransaccion(null, instrumentacionId);
+          if (btnNueva) {
+            if (ordenAnulada) {
+              btnNueva.onclick = null;
+              btnNueva.style.display = 'none';
+            } else {
+              btnNueva.onclick = () => openModalTransaccion(null, instrumentacionId);
+            }
+          }
         });
     });
 }
@@ -11063,6 +12529,7 @@ function refreshTransaccionesPanel(ordenId) {
     client.from('instrumentacion').select('multicontraparte_manual').eq('id', instrumentacionId).maybeSingle(),
   ]).then(([resTr, resOrd, rInstMc]) => {
     const orden = resOrd?.data || null;
+    const ordenAnuladaRf = orden && String(orden.estado || '') === 'anulada';
     const toJR = orden?.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
     const totMcRf = !!(rInstMc.data && rInstMc.data.multicontraparte_manual) && esTipoOpMulticontraparteElegibleDesdeOrden(orden, toJR);
     const totalesOptsRf = totMcRf ? { totalesMulticontraparte: true } : undefined;
@@ -11086,8 +12553,10 @@ function refreshTransaccionesPanel(ordenId) {
         : `Instrumentación: A recibir ${formatImporteDisplay(mr)} ${monR} - A entregar ${formatImporteDisplay(me)} ${monE}.`;
       totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}`;
     }
-    const canEditarTr = userPermissions.includes('editar_transacciones');
-    const canEliminarTr = userPermissions.includes('eliminar_transacciones');
+    const btnNuevaRf = panel.querySelector('.btn-nueva-transaccion-panel');
+    if (btnNuevaRf) btnNuevaRf.style.display = (userPermissions.includes('ingresar_transacciones') && !ordenAnuladaRf) ? '' : 'none';
+    const canEditarTr = userPermissions.includes('editar_transacciones') && !ordenAnuladaRf;
+    const canEliminarTr = userPermissions.includes('eliminar_transacciones') && !ordenAnuladaRf;
     Promise.all([
       client.from('modos_pago').select('id, codigo, nombre'),
       fetchMapsNombresParticipantesTransacciones(orden, list),
@@ -11100,8 +12569,14 @@ function refreshTransaccionesPanel(ordenId) {
       const bloquearEjecutadaEgresoCheque = (t) => orden?.intermediario_id && (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && modosMap[t.modo_pago_id]?.codigo === 'cheque' && ingresoChequeCliPandy && (ingresoChequeCliPandy.estado || '').toLowerCase() !== 'ejecutada';
       const cobradorL = (t) => transaccionParticipanteCeldaHtml(t, orden, 'cobrador', maps);
       const pagadorL = (t) => transaccionParticipanteCeldaHtml(t, orden, 'pagador', maps);
-      const estadoTrxCombo = (t) => { const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente'; const bloquear = bloquearEjecutadaEgresoCheque(t); const title = bloquear ? 'No se puede marcar ejecutada hasta que el ingreso del cheque (Cliente→Pandy) esté ejecutado.' : ''; return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado" title="${esc(title)}"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}${bloquear ? ' disabled' : ''}>Ejecutada</option></select>`; };
-      const estadoTexto = (t) => (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente');
+      const estadoTrxCombo = (t) => {
+        if (String(t.estado || '').toLowerCase() === 'anulada') return '<span class="badge badge-estado-anulada">Anulada</span>';
+        const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente';
+        const bloquear = bloquearEjecutadaEgresoCheque(t);
+        const title = bloquear ? 'No se puede marcar ejecutada hasta que el ingreso del cheque (Cliente→Pandy) esté ejecutado.' : '';
+        return `<select class="combo-estado-transaccion combo-estado-${est}" data-id="${t.id}" aria-label="Estado" title="${esc(title)}"><option value="pendiente"${t.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option><option value="ejecutada"${t.estado === 'ejecutada' ? ' selected' : ''}${bloquear ? ' disabled' : ''}>Ejecutada</option></select>`;
+      };
+      const estadoTexto = (t) => (String(t.estado || '').toLowerCase() === 'anulada' ? 'Anulada' : (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente'));
       const montoCell = (t) => {
         if (!canEditarTr) return `<td>${formatImporteDisplay(t.monto)}</td>`;
         const val = formatImporteParaInput(t.monto);
@@ -11445,6 +12920,12 @@ function openModalTransaccion(registro, instrumentacionId) {
     if (seq !== openModalTransaccionSeq) return;
 
     function finishOpenModalTransaccion() {
+    const formTr = document.getElementById('form-transaccion');
+    if (formTr) {
+      formTr.querySelectorAll('input:not([type="hidden"]), select, textarea').forEach((el) => { el.disabled = false; });
+      const subEn = formTr.querySelector('button[type="submit"]');
+      if (subEn) subEn.disabled = false;
+    }
     const sel = document.getElementById('transaccion-modo-pago');
     if (sel) sel.innerHTML = '<option value="">Ninguno</option>' + (r.data || []).map((m) => `<option value="${m.id}" data-codigo="${escapeHtml(m.codigo)}">${escapeHtml(m.nombre)}</option>`).join('');
 
@@ -11478,7 +12959,11 @@ function openModalTransaccion(registro, instrumentacionId) {
       document.getElementById('transaccion-monto').value = formatImporteParaInput(registro.monto);
       document.getElementById('transaccion-cobrador').value = registro.cobrador || 'pandy';
       document.getElementById('transaccion-pagador').value = registro.pagador || 'pandy';
-      document.getElementById('transaccion-estado').value = registro.estado || 'pendiente';
+      const selEstTr = document.getElementById('transaccion-estado');
+      const estLo = String(registro.estado || '').toLowerCase();
+      if (selEstTr) {
+        selEstTr.value = estLo === 'anulada' ? 'anulada' : registro.estado === 'ejecutada' ? 'ejecutada' : 'pendiente';
+      }
       document.getElementById('transaccion-concepto').value = registro.concepto || '';
       if (!esCheque) {
         const tc = registro.tipo_cambio != null && Number(registro.tipo_cambio) > 0 ? Number(registro.tipo_cambio) : null;
@@ -11564,6 +13049,14 @@ function openModalTransaccion(registro, instrumentacionId) {
       cobMcBind.addEventListener('change', () => actualizarVisibilidadFilasContraparteMulticontraparte());
     }
 
+    const esTrxAnuladaModal = !!(registro && String(registro.estado || '').toLowerCase() === 'anulada');
+    if (backdrop) backdrop.dataset.transaccionAnulada = esTrxAnuladaModal ? '1' : '';
+    if (formTr && esTrxAnuladaModal) {
+      formTr.querySelectorAll('input:not([type="hidden"]), select, textarea').forEach((el) => { el.disabled = true; });
+      const subDis = formTr.querySelector('button[type="submit"]');
+      if (subDis) subDis.disabled = true;
+    }
+
     backdrop.classList.add('activo');
     setupInputImporte(montoFinal);
     actualizarMontoCalculado();
@@ -11588,7 +13081,10 @@ function openModalTransaccion(registro, instrumentacionId) {
 function closeModalTransaccion() {
   dismissAllToasts();
   const backdrop = document.getElementById('modal-transaccion-backdrop');
-  if (backdrop) backdrop.classList.remove('activo');
+  if (backdrop) {
+    backdrop.classList.remove('activo');
+    delete backdrop.dataset.transaccionAnulada;
+  }
 }
 
 function codigoCajaTipo(modoPagoId) {
@@ -11644,6 +13140,12 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
     const rTr = await client.from('transacciones').select('tipo, numero, modo_pago_id, moneda, monto, cobrador, pagador, owner, concepto, estado, revertida_una_vez').eq('id', transaccionId).single();
     const t = rTr.data;
     if (!t) return Promise.resolve();
+    if (String(t.estado || '').toLowerCase() === 'anulada') {
+      hideLoadingEstado();
+      if (selectEl) selectEl.disabled = true;
+      showToast('Esta transacción está anulada junto con la orden.', 'info');
+      return Promise.resolve();
+    }
 
     // Validación: no se puede marcar ejecutada el egreso de cheque (Pandy→Intermediario) si el ingreso de cheque (Cliente→Pandy) sigue pendiente. No podés entregar lo que no tenés.
     if (nuevoEstado === 'ejecutada') {
@@ -12264,6 +13766,11 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
 }
 
 function saveTransaccion() {
+  const backdropTr = document.getElementById('modal-transaccion-backdrop');
+  if (backdropTr && backdropTr.dataset.transaccionAnulada === '1') {
+    showToast('Esta transacción está anulada; no se puede guardar cambios.', 'info');
+    return;
+  }
   const idEl = document.getElementById('transaccion-id');
   const instIdEl = document.getElementById('transaccion-instrumentacion-id');
   const id = idEl?.value?.trim() || '';
@@ -12284,6 +13791,10 @@ function saveTransaccion() {
   const cobrador = document.getElementById('transaccion-cobrador').value;
   const pagador = document.getElementById('transaccion-pagador').value;
   const estado = document.getElementById('transaccion-estado').value;
+  if (estado === 'anulada') {
+    showToast('El estado Anulada no se asigna desde este formulario (solo al anular la orden).', 'info');
+    return;
+  }
   const conceptoRaw = document.getElementById('transaccion-concepto').value.trim();
   const concepto = conceptoRaw || null;
   const tipoCambioRaw = document.getElementById('transaccion-tipo-cambio').value.trim();
@@ -14801,6 +16312,7 @@ function hasExpandedSectionInCurrentView() {
 
 /** Refresco suave de la vista actual cada REFRESH_DATA_INTERVAL_MS. No recarga la página; solo vuelve a pedir los datos de la vista. No se ejecuta si hay un modal abierto ni si hay una sección expandida (para no colapsar). Durante este ciclo `isPandiBackgroundRefresh()` es true: sin spinners ni tablas vacías. */
 function refreshCurrentViewData() {
+  if (typeof pandiModoReducidoOffline !== 'undefined' && pandiModoReducidoOffline) return;
   if (document.querySelector('.modal-backdrop.activo')) return;
   if (hasExpandedSectionInCurrentView()) return;
   const loaders = {
@@ -14908,20 +16420,130 @@ function setupLoginBromaModal() {
   });
 }
 
+function finalizeSessionUiSetup() {
+  if (pandiSessionUiBootstrapped) return;
+  pandiSessionUiBootstrapped = true;
+  startSessionTimeoutCheck();
+  showAppContent();
+  // Recalcular CC y caja desde orden + transacciones (modelo autónomo); en segundo plano para no bloquear la UI.
+  sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().catch(() => {});
+  const userEmailEl = document.getElementById('user-email');
+  if (userEmailEl) userEmailEl.textContent = currentUserEmail;
+
+  document.getElementById('btn-cerrar-sesion').addEventListener('click', () => {
+    if (sessionCheckIntervalId) clearInterval(sessionCheckIntervalId);
+    sessionCheckIntervalId = null;
+    if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
+    refreshDataIntervalId = null;
+    ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach((ev) => document.removeEventListener(ev, updateSessionActivity));
+    client.auth.signOut().then(() => showLogin());
+  });
+
+  const btnRefresh = document.getElementById('btn-refresh');
+  if (btnRefresh) btnRefresh.addEventListener('click', () => refreshPermisosYVista());
+
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.getElementById('sidebar-toggle');
+  if (localStorage.getItem(SIDEBAR_KEY) === '1') sidebar.classList.add('expanded');
+  function updateSidebarToggleLabel() {
+    if (!toggle) return;
+    const expanded = sidebar.classList.contains('expanded');
+    toggle.setAttribute('aria-label', expanded ? 'Contraer menú' : 'Expandir menú');
+    toggle.setAttribute('title', expanded ? 'Contraer menú' : 'Expandir menú');
+  }
+  updateSidebarToggleLabel();
+  pandiSyncSidebarBackdrop();
+  const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+  if (sidebarBackdrop) {
+    sidebarBackdrop.addEventListener('click', () => {
+      if (!pandiIsMobileNavLayout() || !sidebar.classList.contains('expanded')) return;
+      sidebar.classList.remove('expanded');
+      localStorage.setItem(SIDEBAR_KEY, '0');
+      updateSidebarToggleLabel();
+      pandiSyncSidebarBackdrop();
+    });
+  }
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      sidebar.classList.toggle('expanded');
+      localStorage.setItem(SIDEBAR_KEY, sidebar.classList.contains('expanded') ? '1' : '0');
+      updateSidebarToggleLabel();
+      pandiSyncSidebarBackdrop();
+    });
+  }
+  let pandiResizeSidebarTid;
+  window.addEventListener('resize', () => {
+    clearTimeout(pandiResizeSidebarTid);
+    pandiResizeSidebarTid = setTimeout(() => pandiSyncSidebarBackdrop(), 150);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.querySelectorAll('.modal-backdrop.activo').length > 0) return;
+    if (!pandiIsMobileNavLayout() || !sidebar.classList.contains('expanded')) return;
+    sidebar.classList.remove('expanded');
+    try {
+      localStorage.setItem(SIDEBAR_KEY, '0');
+    } catch (err) {
+      /* ignore */
+    }
+    updateSidebarToggleLabel();
+    pandiSyncSidebarBackdrop();
+  });
+
+  setupVistasMenu();
+  applyVistasMenuVisibility();
+  updateCcBotonesMovimientoManual();
+  setupPanelControl();
+  setupModalCliente();
+  setupModalIntermediario();
+  setupModalTipoOperacion();
+  setupConfigEmpresaMarcaControles();
+  setupModalReglasNegocio();
+  setupModalOrden();
+  setupModalOrdenOffline();
+  if (typeof window !== 'undefined') {
+    window.__closeModalOrden = function () { solicitarCierreModalOrden({ modo: 'listo', refrescarOrdenes: true }); };
+    window.__closeModalOrdenSolo = function () { solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true }); };
+  }
+  setupModalChatOrden();
+  setupModalTransacciones();
+  setupModalTransaccion();
+  setupModalMovimientoCaja();
+  setupModalTipoMovimientoCaja();
+  setupCajasToggle();
+  setupCajasMovFiltrosYTabs();
+  setupCuentaCorriente();
+  setupModalMovimientoCc();
+  setupModalCcMovimientoManual();
+  setupModalCcManualEditar();
+  setupDelegacionAccionesCcManual();
+  setupModalesDraggable();
+  setupHelpPopovers();
+  const [defaultVistaId, defaultTitle] = getFirstAllowedView();
+  showView(defaultVistaId, defaultTitle);
+  pandiUpdateOfflineToolbarButtons();
+  if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
+  refreshDataIntervalId = setInterval(refreshCurrentViewData, REFRESH_DATA_INTERVAL_MS);
+  setTimeout(() => pandiRefreshOfflineCatalogosCache(), 400);
+  setTimeout(() => maybeShowLoginBromaModal(), 200);
+}
+
 function onSessionReady(session) {
   currentUserEmail = session.user.email || '';
   currentUserId = session.user.id;
   lastActivityTime = Date.now();
+  const loginErr = document.getElementById('login-error');
   ensureProfile(session)
     .then(() =>
       Promise.all([client.rpc('get_my_permissions'), fetchAppEmpresaIntoState()])
     )
     .then(([res, _empRes]) => {
       if (res.error) {
-        document.getElementById('login-error').textContent = res.error.message || 'Error al cargar permisos.';
+        if (loginErr) loginErr.textContent = res.error.message || 'Error al cargar permisos.';
         return Promise.reject(res.error);
       }
       userPermissions = res.data || [];
+      pandiCachePermissionsLocal(userPermissions);
       aplicarMarcaEnTodaLaUI();
       return client.from('app_config').select('value').eq('key', 'session_timeout_minutes').maybeSingle();
     })
@@ -14933,106 +16555,25 @@ function onSessionReady(session) {
         const n = parseInt(configRes.data.value, 10);
         if (n > 0 && n <= 1440) sessionTimeoutMinutes = n;
       }
-      startSessionTimeoutCheck();
-      showAppContent();
-      // Recalcular CC y caja desde orden + transacciones (modelo autónomo); en segundo plano para no bloquear la UI.
-      sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().catch(() => {});
-      const userEmailEl = document.getElementById('user-email');
-      if (userEmailEl) userEmailEl.textContent = currentUserEmail;
-
-      document.getElementById('btn-cerrar-sesion').addEventListener('click', () => {
-        if (sessionCheckIntervalId) clearInterval(sessionCheckIntervalId);
-        sessionCheckIntervalId = null;
-        if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
-        refreshDataIntervalId = null;
-        ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach((ev) => document.removeEventListener(ev, updateSessionActivity));
-        client.auth.signOut().then(() => showLogin());
-      });
-
-      const btnRefresh = document.getElementById('btn-refresh');
-      if (btnRefresh) btnRefresh.addEventListener('click', () => refreshPermisosYVista());
-
-      const sidebar = document.getElementById('sidebar');
-      const toggle = document.getElementById('sidebar-toggle');
-      if (localStorage.getItem(SIDEBAR_KEY) === '1') sidebar.classList.add('expanded');
-      function updateSidebarToggleLabel() {
-        if (!toggle) return;
-        const expanded = sidebar.classList.contains('expanded');
-        toggle.setAttribute('aria-label', expanded ? 'Contraer menú' : 'Expandir menú');
-        toggle.setAttribute('title', expanded ? 'Contraer menú' : 'Expandir menú');
-      }
-      updateSidebarToggleLabel();
-      pandiSyncSidebarBackdrop();
-      const sidebarBackdrop = document.getElementById('sidebar-backdrop');
-      if (sidebarBackdrop) {
-        sidebarBackdrop.addEventListener('click', () => {
-          if (!pandiIsMobileNavLayout() || !sidebar.classList.contains('expanded')) return;
-          sidebar.classList.remove('expanded');
-          localStorage.setItem(SIDEBAR_KEY, '0');
-          updateSidebarToggleLabel();
-          pandiSyncSidebarBackdrop();
-        });
-      }
-      if (toggle) {
-        toggle.addEventListener('click', () => {
-          sidebar.classList.toggle('expanded');
-          localStorage.setItem(SIDEBAR_KEY, sidebar.classList.contains('expanded') ? '1' : '0');
-          updateSidebarToggleLabel();
-          pandiSyncSidebarBackdrop();
-        });
-      }
-      let pandiResizeSidebarTid;
-      window.addEventListener('resize', () => {
-        clearTimeout(pandiResizeSidebarTid);
-        pandiResizeSidebarTid = setTimeout(() => pandiSyncSidebarBackdrop(), 150);
-      });
-      document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape') return;
-        if (document.querySelectorAll('.modal-backdrop.activo').length > 0) return;
-        if (!pandiIsMobileNavLayout() || !sidebar.classList.contains('expanded')) return;
-        sidebar.classList.remove('expanded');
-        try {
-          localStorage.setItem(SIDEBAR_KEY, '0');
-        } catch (err) {
-          /* ignore */
-        }
-        updateSidebarToggleLabel();
-        pandiSyncSidebarBackdrop();
-      });
-
-      setupVistasMenu();
-      applyVistasMenuVisibility();
-      updateCcBotonesMovimientoManual();
-      setupPanelControl();
-      setupModalCliente();
-      setupModalIntermediario();
-      setupModalTipoOperacion();
-      setupConfigEmpresaMarcaControles();
-      setupModalReglasNegocio();
-      setupModalOrden();
-      if (typeof window !== 'undefined') {
-        window.__closeModalOrden = function () { solicitarCierreModalOrden({ modo: 'listo', refrescarOrdenes: true }); };
-        window.__closeModalOrdenSolo = function () { solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true }); };
-      }
-      setupModalChatOrden();
-      setupModalTransacciones();
-      setupModalTransaccion();
-      setupModalMovimientoCaja();
-      setupModalTipoMovimientoCaja();
-      setupCajasToggle();
-      setupCajasMovFiltrosYTabs();
-      setupCuentaCorriente();
-      setupModalMovimientoCc();
-      setupModalCcMovimientoManual();
-      setupModalesDraggable();
-      setupHelpPopovers();
-      const [defaultVistaId, defaultTitle] = getFirstAllowedView();
-      showView(defaultVistaId, defaultTitle);
-      if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
-      refreshDataIntervalId = setInterval(refreshCurrentViewData, REFRESH_DATA_INTERVAL_MS);
-      setTimeout(() => maybeShowLoginBromaModal(), 200);
+      finalizeSessionUiSetup();
     })
-    .catch(() => {});
+    .catch((err) => {
+      if (session && session.user && pandiEsFalloConectividadBootstrap(err)) {
+        userPermissions = pandiLoadCachedPermissionsLocal();
+        aplicarMarcaEnTodaLaUI();
+        finalizeSessionUiSetup();
+        pandiApplyOfflineReducedModeUi();
+        return;
+      }
+      const msg =
+        err && typeof err.message === 'string'
+          ? err.message
+          : err && err.error && typeof err.error.message === 'string'
+            ? err.error.message
+            : 'Error al iniciar sesión.';
+      if (loginErr) loginErr.textContent = msg;
+      showLoginScreenDom();
+    });
 }
 
 /** Ayudas (help): al hacer clic en .help-icon-btn se abre un modal con el contenido del .help-popover asociado. */
@@ -15076,6 +16617,7 @@ function setupHelpPopovers() {
 }
 
 setupLoginBromaModal();
+setupSupabaseConnectivityMonitoring();
 
 // Inicio: getSession puede resolver *después* de un login rápido (autocompletar + Enter); sin guarda, el callback tardío llamaba showLogin() otra vez y duplicaba listeners.
 client.auth.getSession().then(({ data: { session } }) => {
@@ -15087,6 +16629,15 @@ client.auth.getSession().then(({ data: { session } }) => {
     return;
   }
   onSessionReady(session);
+}).catch((e) => {
+  console.warn('[Pandi] getSession:', e && e.message ? e.message : e);
+  if (authBootstrapFromGetSessionDone) return;
+  authBootstrapFromGetSessionDone = true;
+  pandiSupabaseConnectivityIssue = 'unreachable';
+  if (pandiUnreachableSinceMs == null) pandiUnreachableSinceMs = Date.now();
+  updateSupabaseConnectivityBanner();
+  showLogin();
+  setupLoginAndRegister();
 });
 
 client.auth.onAuthStateChange((event, session) => {

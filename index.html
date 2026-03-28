@@ -76,6 +76,65 @@
       display: block;
     }
     .main-content { flex: 1; padding: 1.5rem; overflow-x: auto; position: relative; z-index: 1; background: #f5f5f5; overscroll-behavior-x: contain; }
+    /* Banner conectividad Supabase (misma idea que Gestión Patrimonial / serviceStatus) */
+    .pandi-connectivity-banner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem 1rem;
+      margin: 0 0 1rem 0;
+      padding: 0.85rem 1rem;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      color: #7f1d1d;
+    }
+    .pandi-connectivity-banner.is-visible { display: flex; }
+    .pandi-connectivity-banner.pandi-connectivity-banner--warn {
+      background: #fffbeb;
+      border-color: #fcd34d;
+      color: #78350f;
+    }
+    .pandi-connectivity-banner--warn .pandi-connectivity-banner-title { color: #92400e; }
+    .pandi-connectivity-banner--warn .pandi-connectivity-banner-text { color: #a16207; }
+    .pandi-connectivity-banner-inner { display: flex; align-items: flex-start; gap: 0.75rem; min-width: 0; flex: 1; }
+    .pandi-connectivity-banner-inner svg { flex-shrink: 0; margin-top: 0.1rem; }
+    .pandi-connectivity-banner-title { margin: 0; font-size: 0.95rem; font-weight: 700; color: #991b1b; }
+    .pandi-connectivity-banner-text { margin: 0.25rem 0 0 0; font-size: 0.85rem; color: #b91c1c; line-height: 1.35; }
+    @media (max-width: 768px) {
+      .pandi-connectivity-banner { flex-direction: column; align-items: stretch; }
+      .pandi-connectivity-banner .btn-secondary { width: 100%; justify-content: center; }
+    }
+    /* Modo reducido offline (Supabase caído ~10 min): solo Órdenes + cola local */
+    .pandi-offline-reduced-strip {
+      display: none;
+      align-items: flex-start;
+      gap: 0.65rem;
+      margin: 0 0 1rem 0;
+      padding: 0.75rem 1rem;
+      background: #eff6ff;
+      border: 1px solid #93c5fd;
+      border-radius: 8px;
+      color: #1e3a8a;
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+    .pandi-offline-reduced-strip svg { flex-shrink: 0; margin-top: 0.1rem; }
+    .pandi-offline-reduced-strip-inner { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+    .pandi-offline-reduced-strip-inner > span { flex: 1; min-width: 12rem; }
+    @media (max-width: 768px) {
+      .pandi-offline-reduced-strip { flex-direction: column; align-items: stretch; }
+      #pandi-offline-strip-goto-ordenes { width: 100%; justify-content: center; }
+    }
+    body.pandi-modulo-reducido-offline .sidebar-nav .menu-item:not(#menu-ordenes) {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+    body.pandi-modulo-reducido-offline .sidebar-nav #menu-ordenes {
+      opacity: 1;
+      pointer-events: auto;
+    }
     .app { max-width: 1600px; width: 100%; }
     .page-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; position: relative; z-index: 2; }
     .page-header .page-logo-wrap { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.08); }
@@ -323,6 +382,7 @@
     /* Modal orden abierto: el contenido de fondo no recibe clics ni foco (evita que "quede atrás" el modal) */
     body.modal-orden-abierto #app-content { pointer-events: none; }
     #modal-orden-backdrop.activo { z-index: 1000; }
+    #modal-orden-offline-backdrop.activo { z-index: 1005; }
     /* Desde el wizard de orden: Nueva transacción / listado instrumentación deben quedar por encima del modal orden */
     #modal-transaccion-backdrop.activo,
     #modal-transacciones-backdrop.activo { z-index: 1100; }
@@ -477,6 +537,31 @@
     .form-actions .btn-primary:hover { background: #0a5c2e; }
     .form-actions .btn-secondary { padding: 0.5rem 1rem; background: #fff; color: #333; border: 1px solid #999; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
     .form-actions .btn-secondary:hover { background: #f0f0f0; }
+    /* Anular orden ejecutada / acción destructiva (LyP botones: mismo radio y altura que btn-secondary) */
+    .form-actions .btn-anular-orden-peligro {
+      padding: 0.5rem 1rem;
+      background: #b91c1c;
+      color: #fff;
+      border: 1px solid #991b1b;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-family: inherit;
+      min-height: 2.25rem;
+      box-sizing: border-box;
+    }
+    .form-actions .btn-anular-orden-peligro:hover { background: #991b1b; border-color: #7f1d1d; color: #fff; }
+    .form-actions .btn-anular-orden-peligro .btn-icon svg { stroke: currentColor; }
+    .btn-anular-orden-tabla-peligro {
+      background: #b91c1c;
+      color: #fff;
+      border: 1px solid #991b1b;
+    }
+    .btn-anular-orden-tabla-peligro:hover { background: #991b1b; border-color: #7f1d1d; color: #fff; }
+    .btn-anular-orden-tabla-peligro .btn-icon svg { stroke: currentColor; }
     .btn-excel { padding: 0.5rem 1rem; border: 1px solid #0d7d3d; background: #0d7d3d; color: #fff; border-radius: 8px; cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; min-height: 2.25rem; box-sizing: border-box; }
     .btn-excel:hover { background: #0a5c2e; border-color: #0a5c2e; }
     .btn-excel .btn-icon { width: 18px; height: 18px; flex-shrink: 0; }
@@ -1316,12 +1401,32 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.67</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.68</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
   <main class="main-content">
+    <div id="pandi-supabase-connectivity-banner" class="pandi-connectivity-banner" role="alert" aria-live="polite">
+      <div class="pandi-connectivity-banner-inner">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div>
+          <p class="pandi-connectivity-banner-title" id="pandi-supabase-connectivity-title">Problemas de conectividad</p>
+          <p class="pandi-connectivity-banner-text" id="pandi-supabase-connectivity-text">No pudimos conectar con el servicio. Puede ser temporal (red, tiempo de espera o mantenimiento). Probá de nuevo en unos minutos.</p>
+        </div>
+      </div>
+      <button type="button" class="btn-secondary" id="pandi-supabase-connectivity-retry" title="Comprobar de nuevo" aria-label="Reintentar conexión con el servicio">
+        <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></span>
+        Reintentar
+      </button>
+    </div>
+    <div id="pandi-offline-reduced-strip" class="pandi-offline-reduced-strip" role="status" aria-live="polite" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="12.01"/></svg>
+      <div class="pandi-offline-reduced-strip-inner">
+        <span id="pandi-offline-reduced-strip-text">Modo reducido: sin Supabase. Solo Órdenes y cola local.</span>
+        <button type="button" class="btn-secondary" id="pandi-offline-strip-goto-ordenes" title="Mostrar la vista Órdenes" aria-label="Abrir vista Órdenes"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>Abrir Órdenes</button>
+      </div>
+    </div>
     <div id="login-screen" class="login-screen card" style="display:none;">
       <span class="login-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="login-logo" /></span>
       <h2>Iniciar sesión</h2>
@@ -1495,6 +1600,8 @@
         </h3>
         <div class="vista-toolbar">
           <button type="button" id="btn-nueva-orden" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva orden</button>
+          <button type="button" id="btn-orden-offline-local" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg></span>Orden en cola local</button>
+          <button type="button" id="btn-orden-offline-sync" class="btn-secondary" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span><span id="btn-orden-offline-sync-label">Enviar cola local</span></button>
           <button type="button" id="btn-orden-por-chat" class="btn-chat" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>Cargar por chat</button>
         </div>
         <div class="vista-toolbar ordenes-filtros-wrap" id="ordenes-filtros-wrap" style="flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem; display:none;">
@@ -1793,6 +1900,7 @@
                   <th class="th-sub th-sortable" data-sort="estado" scope="col">Estado</th>
                   <th class="th-nombre th-sortable" id="cc-detalle-th-entity" data-sort="ccPagador" scope="col">Pagador</th>
                   <th class="th-nombre th-sortable" id="cc-detalle-th-originante" data-sort="ccCobrador" scope="col">Cobrador</th>
+                  <th class="th-sub" scope="col">Acción</th>
                 </tr>
               </thead>
               <tbody id="cc-vista-detalle-tbody"></tbody>
@@ -2613,6 +2721,98 @@
     </div>
   </div>
 
+  <div id="modal-orden-offline-backdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal modal-ancho">
+      <div class="modal-header">
+        <div class="modal-header-titulo-wrap">
+          <span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg></span>
+          <h2>Orden en cola local</h2>
+        </div>
+        <button type="button" class="modal-close" id="modal-orden-offline-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="orden-offline-sin-cache" style="display:none; margin:0 0 1rem 0; padding:0.75rem 1rem; background:#fff7ed; border:1px solid #fdba74; border-radius:8px; color:#9a3412; font-size:0.9rem;">No hay catálogo guardado en este navegador. Con sesión y conexión, la app actualiza sola el respaldo local (al entrar y cuando vuelve el servicio). Si nunca usaste Pandi online aquí, abrí cualquier vista con conexión para cargar clientes, intermediarios y tipos.</p>
+        <form id="form-orden-offline">
+          <div class="form-group">
+            <label id="orden-offline-tipo-operacion-label">Tipo de operación *</label>
+            <div class="orden-tipo-operacion-fila">
+              <div class="orden-tipo-operacion-combo-wrap">
+                <select id="orden-offline-tipo" class="orden-tipo-operacion-sr" aria-hidden="true" tabindex="-1" required><option value="">Elegir…</option></select>
+                <div class="orden-tipo-operacion-combo-ui">
+                  <button type="button" class="orden-tipo-operacion-combo-btn" id="orden-offline-tipo-combo-btn" aria-haspopup="listbox" aria-expanded="false" aria-required="true" aria-labelledby="orden-offline-tipo-operacion-label orden-offline-tipo-combo-display" aria-controls="orden-offline-tipo-listbox">
+                    <span id="orden-offline-tipo-combo-display" class="orden-tipo-operacion-combo-display"><span class="orden-tipo-operacion-placeholder">Elegir…</span></span>
+                    <span class="orden-tipo-operacion-combo-chevron" aria-hidden="true">▼</span>
+                  </button>
+                  <ul id="orden-offline-tipo-listbox" class="orden-tipo-operacion-listbox" role="listbox" aria-labelledby="orden-offline-tipo-operacion-label" hidden></ul>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="orden-offline-fecha">Fecha *</label>
+            <input type="date" id="orden-offline-fecha" required />
+          </div>
+          <div class="form-row dos-columnas">
+            <div class="form-group">
+              <label for="orden-offline-cliente">Cliente</label>
+              <select id="orden-offline-cliente"><option value="">—</option></select>
+            </div>
+            <div class="form-group">
+              <label for="orden-offline-intermediario">Intermediario</label>
+              <select id="orden-offline-intermediario"><option value="">—</option></select>
+            </div>
+          </div>
+          <div class="form-row dos-columnas">
+            <div class="form-group">
+              <label for="orden-offline-moneda-r">Moneda que recibimos *</label>
+              <select id="orden-offline-moneda-r" required>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="ARS">ARS</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="orden-offline-monto-r">Monto recibido *</label>
+              <input type="text" id="orden-offline-monto-r" inputmode="decimal" class="input-importe" placeholder="0" autocomplete="off" required />
+            </div>
+          </div>
+          <div class="form-row dos-columnas">
+            <div class="form-group">
+              <label for="orden-offline-moneda-e">Moneda que entregamos *</label>
+              <select id="orden-offline-moneda-e" required>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="ARS">ARS</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="orden-offline-monto-e">Monto entregado *</label>
+              <input type="text" id="orden-offline-monto-e" inputmode="decimal" class="input-importe" placeholder="0" autocomplete="off" required />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="orden-offline-cotizacion">Tipo de cambio del acuerdo (si aplica)</label>
+            <input type="text" id="orden-offline-cotizacion" inputmode="decimal" class="input-importe" placeholder="Opcional según tipo" autocomplete="off" />
+          </div>
+          <div class="form-group" id="orden-offline-wrap-tasa-cheque" style="display:none;">
+            <label for="orden-offline-tasa-cheque-pct">Tasa descuento intermediario CHEQUE-ARS (%)</label>
+            <input type="text" id="orden-offline-tasa-cheque-pct" inputmode="decimal" class="input-importe" placeholder="Ej. 1 para 1%" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label for="orden-offline-observaciones">Observaciones</label>
+            <textarea id="orden-offline-observaciones" rows="2" maxlength="500" placeholder="Opcional"></textarea>
+          </div>
+          <div id="orden-offline-queue-resumen" style="margin:0 0 1rem 0; padding:0.65rem 0.85rem; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; font-size:0.88rem;"></div>
+          <div class="form-actions" style="flex-wrap:wrap; gap:0.5rem;">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar en cola local</button>
+            <button type="button" class="btn-secondary" id="orden-offline-btn-json" title="Descargar respaldo JSON"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>Descargar JSON cola</button>
+            <button type="button" class="btn-secondary" id="modal-orden-offline-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-transacciones-backdrop" class="modal-backdrop">
     <div class="modal modal-ancho">
       <div class="modal-header">
@@ -2732,6 +2932,7 @@
             <select id="transaccion-estado">
               <option value="pendiente">Pendiente</option>
               <option value="ejecutada">Ejecutada</option>
+              <option value="anulada">Anulada</option>
             </select>
           </div>
           <div class="form-group">
@@ -2853,6 +3054,7 @@
                 <th class="th-sortable" data-sort="estado">Estado</th>
                 <th class="th-sortable" data-sort="ccPagador">Pagador</th>
                 <th class="th-sortable" data-sort="ccCobrador">Cobrador</th>
+                <th scope="col">Acción</th>
               </tr>
             </thead>
             <tbody id="cc-detalle-tbody"></tbody>
@@ -2967,6 +3169,33 @@
           <div class="form-actions">
             <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
             <button type="button" class="btn-secondary" id="modal-cc-movimiento-manual-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-cc-manual-editar-backdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Editar movimiento manual (CC)</h2>
+        <button type="button" class="modal-close" id="modal-cc-manual-editar-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="cc-manual-editar-resumen-grupo" class="text-muted" style="margin:0 0 0.75rem 0; font-size:0.9rem; display:none;"></p>
+        <p id="cc-manual-editar-aviso-caja" class="pandi-form-hint" style="margin:0 0 0.75rem 0; padding:0.5rem 0.65rem; background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; display:none;">Este registro vinculó <strong>caja efectivo</strong>. Al guardar también se actualizarán fecha y concepto del movimiento de caja. La acción quedará en el <strong>log de auditoría</strong>.</p>
+        <form id="form-cc-manual-editar">
+          <div class="form-group">
+            <label for="cc-manual-edit-concepto">Concepto</label>
+            <input type="text" id="cc-manual-edit-concepto" maxlength="500" />
+          </div>
+          <div class="form-group">
+            <label for="cc-manual-edit-fecha">Fecha *</label>
+            <input type="date" id="cc-manual-edit-fecha" required />
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            <button type="button" class="btn-secondary" id="modal-cc-manual-editar-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
           </div>
         </form>
       </div>

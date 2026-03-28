@@ -194,7 +194,7 @@ test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
         if ((await btnAnular.count()) === 0 || !(await btnAnular.isVisible())) break;
         await btnAnular.click();
         await expect(page.locator('#modal-confirm-backdrop')).toBeVisible({ timeout: 5000 });
-        await page.getByRole('button', { name: /^anular$/i }).click();
+        await page.getByRole('button', { name: /anular orden/i }).click();
         await expect(page.locator('#modal-confirm-backdrop')).toBeHidden({ timeout: 10000 });
         await page.waitForTimeout(1500);
       }

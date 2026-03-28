@@ -33,7 +33,9 @@ En ambos casos no se tocan montos al ejecutar; solo estado. La regla es única y
 
 | Dónde | Acción | Cumple regla |
 |-------|--------|---------------|
-| Revertir orden (antes de concertar) | UPDATE `estado = 'anulado'`, `estado_fecha` en `movimientos_cuenta_corriente` por `orden_id`. No borra filas ni cambia montos. | Sí. |
+| Flujo unificado (`solicitarConfirmacionYAnularOrden` / `ejecutarAnulacionOrdenCompleta` / `anularMovimientosCcYCajaNoManualPorOrden`) | Siempre: `ordenes.estado = 'anulada'` (también si la orden estaba en `orden_ejecutada`, con confirmación reforzada en UI). **Si todas** las transacciones están **pendientes** (o no hay): **no** se tocan CC ni caja. **Si no:** mismos UPDATE que antes, vía función única (cliente + intermediario, no manual + caja). | Sí. |
+| Confirmación y auditoría | Advertencia explícita; si estaba ejecutada, texto y botón de confirmación reforzados; botón rojo en tabla/modal. `auditoria_app` con `orden_estaba_ejecutada` cuando aplica. Permiso `anular_orden`. RLS: `sql/migracion_rls_anular_orden_cc_caja.sql`. | — |
+| Guardar orden (`saveOrden`) | Tras persistir la orden y comisiones, solo cierra modal y refresca listados; **no** anula CC/caja (eso queda solo en el flujo Anular orden). | — |
 
 El saldo en la vista **excluye** movimientos con `estado === 'anulado'` (ver más abajo).
 

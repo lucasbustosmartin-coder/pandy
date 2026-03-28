@@ -38,12 +38,23 @@ Requiere permiso **`abm_movimientos_caja`** cuando aplica caja.
 ## Permisos CC
 
 - `registrar_movimiento_cc_manual` o `editar_transacciones` para insertar en tablas CC.
+- `editar_movimiento_cc_manual` — editar desde la solapa **Movimientos** (concepto/fecha; si hay grupo, todas las líneas del mismo `manual_grupo_id`).
+- `eliminar_movimiento_cc_manual` — anular esas líneas (`estado = anulado`); si había movimiento de caja vinculado, también se anula en caja.
+- `ver_auditoria` — ver filas en `auditoria_app` (consulta SQL o futura pantalla).
+
+## Edición, anulación y caja
+
+- En **Movimientos**, las filas **Manual** muestran acciones lápiz / papelera según permisos.
+- Si el registro **vinculó caja** (`movimiento_caja_id` en la línea CC, rellenado al guardar manual con efectivo tras `sql/migracion_cc_manual_editar_eliminar_auditoria.sql`), al **editar** o **anular** la app pide **confirmación** advirtiendo caja y **auditoría**.
+- Cada edición/anulación registra un evento en **`auditoria_app`** (categoría `cc_manual`, acción `editar` / `anular`, texto y metadata con ids).
+- Los movimientos generados por **órdenes/transacciones** (`es_movimiento_manual = false`) siguen editándose solo con `editar_transacciones` (no con los permisos de manual).
 
 ## Base de datos
 
 1. `sql/migracion_cc_movimiento_manual.sql` — `es_movimiento_manual`, `manual_tip_movimiento`, permiso, RLS, y **orden_id / transaccion_id NULL** (patas sin orden).
 2. `sql/migracion_cc_manual_pagador_cobrador.sql` — `manual_grupo_id`, `manual_pagador_rol`, `manual_cobrador_rol`, FKs a cliente/intermediario por lado, CHECK de roles.
 3. `sql/migracion_tipos_caja_cc_manual.sql` — tipos fijos ingreso/egreso para caja desde CC manual.
+4. `sql/migracion_cc_manual_editar_eliminar_auditoria.sql` — `movimiento_caja_id` en CC cliente/intermediario, tabla `auditoria_app`, permisos y RLS (manual vs orden en UPDATE; caja actualizable si está vinculada a CC manual).
 
 Si la base tenía `orden_id` NOT NULL en CC (error *«null value in column orden_id»* al guardar manual), ejecutá también **`sql/migracion_cc_movimientos_orden_id_nullable.sql`** (o volvé a correr el bloque §4 de `migracion_cc_movimiento_manual.sql`).
 

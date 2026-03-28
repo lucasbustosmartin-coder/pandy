@@ -1,6 +1,6 @@
 /**
- * Resumen CC (tabla Saldos): la app puede mostrar −E (cobro a favor de Pandy) o +E alineado al algebraico
- * cuando lo pendiente es pago desde Pandy. Los fixtures E2E guardan la suma algebraica E en DB.
+ * Resumen CC (tabla Saldos): el importe mostrado es la suma algebraica E (igual que Movimientos).
+ * Se mantiene tolerancia min(|L+E|,|L−E|) por compatibilidad con datos/lectura UI heredados.
  * @param {number|string} leidoUI
  * @param {number|string} esperadoAlgebraico
  */
