@@ -58,13 +58,16 @@ Después de push a `main`, desde la raíz:
 
 ```bash
 vercel --prod
+npx vercel --yes
 ```
 
-O configurá en Vercel el redeploy automático al hacer push a `main`.
+El segundo comando (sin `--prod`) es **obligatorio** en el flujo acordado: publica **Preview** con el mismo código que acaba de ir a prod; variables **Preview** en Vercel deben apuntar a Supabase **desarrollo**. Ver §4b.
+
+O configurá en Vercel el redeploy automático al hacer push a `main`; igual conviene ejecutar **`npx vercel --yes`** después para no dejar Preview desactualizado respecto a prod.
 
 ### 4b. Preview alineado con producción (mismo front, base dev)
 
-Tras cada despliegue a producción, si querés que la **URL de Preview** muestre el **mismo código** que prod (con variables **Preview** → Supabase desarrollo), ejecutá desde la raíz:
+**Siempre** tras cada despliegue a producción (manual o “ok desplegar”), ejecutá desde la raíz:
 
 ```bash
 npx vercel --yes

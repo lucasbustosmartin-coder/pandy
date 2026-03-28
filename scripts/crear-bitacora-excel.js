@@ -21,6 +21,7 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Flujo despliegue: Preview Vercel obligatorio tras prod', 'bitacora-tareas.mdc y reglas-pandi.mdc: paso 6 npx vercel --yes sin --prod no se omite. docs/GIT_Y_VERCEL.md §4 y §4b. Preview alineado a mismo commit que prod; variables Preview → Supabase dev.', 'Documentación'],
   ['__HOY__', '__AHORA__', 'Despliegue v1.71 (Vercel prod)', 'Versión sidebar v1.71; bitácora Versiones/Resumen; push main y vercel --prod. Incluye ajustes E2E: RPC limpiar_base_e2e alineada a truncar, credenciales Pandy-Dev, volcar sincroniza .env.test, globalTeardown sin limpieza por defecto (E2E_LIMPIAR_AL_FINAL=1 opcional), docs y guía testing.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'E2E: globalTeardown sin limpieza por defecto', 'tests/e2e/global-teardown.js: no ejecuta limpiar-base-e2e salvo E2E_LIMPIAR_AL_FINAL=1 (revisión visual post-suite). TESTING_E2E_GUIA §1.4; .env.test.example.', 'Testing'],
   ['__HOY__', '__AHORA__', 'E2E: credenciales solo Pandy-Dev (no producción)', '.env.test.example y config.example.js: advertencias explícitas. scripts/volcar-pandy-dev-supabase.js sincroniza SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en .env.test. docs/PANDY_DEV_SUPABASE.md, TESTING_E2E_GUIA, rpc_limpiar_base_e2e.sql, limpiar-base-e2e.js, playwright.config, e2e-limpiar-base.js.', 'Documentación'],
