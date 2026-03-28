@@ -23,6 +23,10 @@ Referencia rápida de cómo se comporta la app en pantallas estrechas (≤768px)
 
 - Encabezados **`thead th`** con **`position: sticky`** en wraps de listado, modales y CC; los listados usan **`tabla-clientes-wrap tabla-wrap-con-scroll`** (o **`tabla-movimientos-wrap tabla-wrap-con-scroll`** en Cajas) con **`max-height: 70vh`** y **`overflow-y: auto`** para que el scroll vertical sea el del contenedor y el sticky funcione (con solo `overflow-x: auto` el `thead` no ancla bien al scrollear la página). Excepción visual: tabla de usuarios en Seguridad (fondo oscuro). Regla Cursor: `.cursor/rules/tablas-y-movil-lyp.mdc`.
 
+## Modal Nueva orden
+
+El flujo depende del **tipo de operación** (participantes, bloque azul, patrón intermediario, instrumentación). Regla explícita para no regredir en móvil: **`.cursor/rules/nueva-orden-responsive.mdc`** (también enlazada desde `reglas-pandi.mdc`).
+
 ## Archivos
 
 - Estilos: `index.html` (`@media` y clases anteriores).

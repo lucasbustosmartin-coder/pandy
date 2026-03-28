@@ -1235,17 +1235,62 @@
       .btn-primary, .btn-secondary { min-height: 44px; }
       .toggle-moneda button { min-height: 44px; padding: 0.5rem 0.85rem; }
       .form-row.dos-columnas, .form-row.tres-columnas { grid-template-columns: 1fr; }
-      /* Modal orden: primeros datos en columna única ≤768px */
-      #orden-step-detalles .form-row.tres-columnas.orden-primeros-datos-row,
+      /* Modal orden: “Datos del acuerdo” — en 1 col el DOM intercala labels e inputs; flex+order agrupa cada label con su control */
       #orden-step-detalles .orden-primeros-datos-row {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.65rem;
       }
-      #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-label { grid-row: auto; }
-      #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-input { grid-row: auto; }
-      #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-col3 {
-        grid-column: 1;
-        grid-row: auto;
+      #orden-step-detalles .orden-primeros-datos-row > label[for="orden-importe-cheque"] { order: 1; }
+      #orden-step-detalles .orden-primeros-datos-row > #orden-importe-cheque { order: 2; width: 100%; box-sizing: border-box; }
+      #orden-step-detalles .orden-primeros-datos-row > label[for="orden-tasa-descuento-cliente"] { order: 3; }
+      #orden-step-detalles .orden-primeros-datos-row > #orden-tasa-descuento-cliente { order: 4; width: 100%; box-sizing: border-box; }
+      #orden-step-detalles .orden-primeros-datos-row > .orden-primeros-datos-col3 {
+        order: 5;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+      }
+      #orden-step-detalles .orden-primeros-datos-row > .orden-primeros-datos-col3 .orden-primeros-datos-input { width: 100%; box-sizing: border-box; }
+      /* Nueva orden / wizard: contención y toque (los tipos muestran u ocultan bloques distintos) */
+      .modal.modal-orden .modal-body,
+      #modal-orden-offline-backdrop .modal .modal-body {
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+      .modal.modal-orden .orden-tipo-operacion-combo-btn,
+      #modal-orden-offline-backdrop .orden-tipo-operacion-combo-btn {
+        min-height: 44px;
+        padding: 0.45rem 0.75rem;
+      }
+      #orden-wizard select:not(.orden-tipo-operacion-sr) {
+        min-height: 44px;
+        font-size: 16px;
+      }
+      #orden-step-detalles #orden-wrap-primeros-datos,
+      #orden-step-detalles #orden-wrap-int-patron-instrumentacion {
+        max-width: 100%;
+        box-sizing: border-box;
+      }
+      #orden-inst-multicontraparte-wrap label {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        max-width: 100%;
+      }
+      #orden-inst-multicontraparte-wrap label input[type="checkbox"] {
+        flex-shrink: 0;
+        margin-top: 0.2rem;
+      }
+      #orden-inst-multicontraparte-wrap label span {
+        min-width: 0;
+        line-height: 1.4;
+      }
+      #orden-inst-acuerdo-block {
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
       .form-actions { gap: 0.5rem; }
       .modal-backdrop { padding: 0.5rem; padding-left: max(0.5rem, env(safe-area-inset-left)); padding-right: max(0.5rem, env(safe-area-inset-right)); padding-top: max(0.5rem, env(safe-area-inset-top)); align-items: flex-start; }
@@ -1349,6 +1394,10 @@
         gap: 0.35rem 0.5rem;
       }
       .inicio-card-ordenes-fila .inicio-card-ordenes-badge { min-width: 0; }
+      /* Instrumentación: más área útil en pantallas bajas */
+      #orden-step-instrumentacion .orden-inst-contenido-scroll {
+        max-height: min(58dvh, 380px);
+      }
     }
     .transaccion-acuerdo-datos .transaccion-acuerdo-fila + .transaccion-acuerdo-fila { margin-top: 0.35rem; }
   </style>
@@ -1401,7 +1450,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.69</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.70</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>

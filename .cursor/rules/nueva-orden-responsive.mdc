@@ -1,0 +1,22 @@
+---
+description: Modal Nueva orden — responsividad obligatoria según tipo de operación (Pandi)
+alwaysApply: true
+---
+
+# Nueva orden (modal) — responsividad y tipos de operación
+
+El formulario **cambia según el tipo** (intermediario, CHEQUE-ARS, bloque azul “Datos del acuerdo”, patrón de instrumentación con intermediario, comisión fija, filas moneda/monto, solo Instrumentación, etc.). **Cada variante** debe verse bien en **≤768px** y **≤480px**.
+
+## Obligatorio al tocar esta UI
+
+1. **Archivos habituales:** `index.html` (estilos del modal `#modal-orden-backdrop`, `#orden-wizard`, pasos participantes / detalles / instrumentación, `#modal-orden-offline-backdrop` si aplica), `main.js` solo si el marcado o ids cambian.
+2. **Sin desbordes:** `.modal.modal-orden .modal-body` (y cola offline equivalente) con **`min-width: 0`**, **`max-width: 100%`**, **`overflow-x: hidden`** donde haga falta; bloques internos (`#orden-wrap-primeros-datos`, patrones intermediario) con **`max-width: 100%`** y **`box-sizing: border-box`**.
+3. **Toque e iOS:** en vista estrecha, **inputs y selects del wizard** (no el `<select>` screen-reader del combo tipo) con **`font-size: 16px`** y **`min-height: 44px`** donde corresponda; **botón del combo tipo de operación** ≥ **44px** de alto.
+4. **Grid escritorio vs columna móvil:** si en escritorio se usa **grid** con **labels e inputs en orden distinto** al flujo vertical deseado, en **≤768px** usar **`display: flex; flex-direction: column`** y **`order`** (o reestructurar el DOM) para que **cada etiqueta quede inmediatamente seguida de su control** — no dejar todas las etiquetas arriba y todos los campos abajo.
+5. **Instrumentación:** tabla en `#orden-inst-tabla-wrap` con **`overflow-x: auto`**, **`-webkit-overflow-scrolling: touch`**, **`overscroll-behavior-x: contain`** (alineado a **tablas-y-movil-lyp** y **gestos-trackpad-overscroll-spa**). Textos largos en bloques de acuerdo / multicontraparte: **`overflow-wrap` / `word-break`** para que no ensanchen el modal.
+6. **Bitácora:** al cerrar un cambio que toque esta pantalla, **entrada en Log** (y **Resumen** si cambia la funcionalidad descrita al usuario) en `scripts/crear-bitacora-excel.js` y regenerar `Bitacora_tareas.xlsx`.
+7. **Tests E2E:** si cambian selectores, textos o layout que cubra `tests/e2e/`, **adaptar tests** en la misma sesión.
+
+## Referencia
+
+- Patrón general móvil: `docs/MOBILE_RESPONSIVE.md`, reglas **tablas-y-movil-lyp**, **reglas-pandi** (Responsive).

@@ -61,3 +61,13 @@ vercel --prod
 ```
 
 O configurá en Vercel el redeploy automático al hacer push a `main`.
+
+### 4b. Preview alineado con producción (mismo front, base dev)
+
+Tras cada despliegue a producción, si querés que la **URL de Preview** muestre el **mismo código** que prod (con variables **Preview** → Supabase desarrollo), ejecutá desde la raíz:
+
+```bash
+npx vercel --yes
+```
+
+Sin `--prod`: genera un deployment Preview; la URL puede cambiar cada vez. Requiere proyecto enlazado (`vercel link`) y sesión de Vercel CLI, o `VERCEL_TOKEN`. Detalle del flujo completo (“ok desplegar”) en la regla **bitácora-tareas** (`.cursor/rules/bitacora-tareas.mdc`).

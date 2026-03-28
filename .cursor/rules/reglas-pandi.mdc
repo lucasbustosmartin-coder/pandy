@@ -58,6 +58,7 @@ alwaysApply: true
 - **Regla global LyP:** ver **tablas-y-movil-lyp** — encabezados de tabla **siempre anclados** (sticky) donde haya scroll vertical, y **responsividad móvil obligatoria** en todo cambio de UI (no regresiones en 768px / 480px).
 - **Desde ahora en más:** al agregar o modificar vistas, formularios, tablas o modales en la app, tener **siempre en cuenta la responsividad en móviles**. Incluir o ajustar estilos para pantallas pequeñas: breakpoints típicos 768px (tablet/móvil grande) y 480px (móvil chico), touch targets mínimos 44px, padding y fuentes reducidos, scroll horizontal con `-webkit-overflow-scrolling: touch` donde haga falta, y `viewport-fit=cover` si aplica. No dejar que nuevos componentes rompan el layout en celulares.
 - **Gesto horizontal del trackpad (no “cerrar” la SPA):** en macOS, el scroll horizontal en tablas puede encadenar al navegador y disparar **atrás** en el historial. Ver regla **gestos-trackpad-overscroll-spa**: mantener `overscroll-behavior-x` en `html`/`body`, `.main-content` y cada wrap con `overflow-x: auto`; al sumar tablas con scroll horizontal, incluir `overscroll-behavior-x: contain` en el contenedor.
+- **Nueva orden (modal):** el formulario depende del **tipo de operación**; cualquier cambio en ese flujo debe cumplir la regla **nueva-orden-responsive** (`.cursor/rules/nueva-orden-responsive.mdc`): ≤768px / ≤480px, sin desborde horizontal del modal, label+control en orden legible en móvil, tabla instrumentación con scroll horizontal seguro.
 
 ## No fallar en terminal local
 
@@ -83,7 +84,8 @@ Esta regla es obligatoria. No implementar cambios “para que pase el test” o 
 
 ## Despliegue
 
-- Cuando el usuario pida desplegar (ej. "desplegar", "ok desplegar"), aplicar **siempre** el flujo completo en este orden: 1) Incrementar versión en `index.html` (id `sidebar-version`), 2) Actualizar bitácora en `scripts/crear-bitacora-excel.js` (Versiones, Log, Resumen según corresponda), 3) Regenerar Excel (`node scripts/crear-bitacora-excel.js`), 4) Commit y push a `main` con mensaje `vX.Y: descripción`, 5) `vercel --prod`. Detalle en la regla **bitacora-tareas**. (La PPT no se genera en el flujo de despliegue.)
+- Cuando el usuario pida desplegar (ej. "desplegar", "ok desplegar"), aplicar **siempre** el flujo completo en este orden: 1) Incrementar versión en `index.html` (id `sidebar-version`), 2) Actualizar bitácora en `scripts/crear-bitacora-excel.js` (Versiones, Log, Resumen según corresponda), 3) Regenerar Excel (`node scripts/crear-bitacora-excel.js`), 4) Commit y push a `main` con mensaje `vX.Y: descripción`, 5) `vercel --prod`, 6) **`npx vercel --yes`** (sin `--prod`) para alinear el **Preview** al mismo front que prod; variables **Preview** en Vercel = Supabase dev. Detalle en la regla **bitacora-tareas**. (La PPT no se genera en el flujo de despliegue.)
+- **Preview Vercel + Supabase dev** (misma app que prod, otra base): variables Production/Preview; paso 6 del despliegue con CLI; alternativa por rama `git` — **bitacora-tareas** → *Deploy Preview* y `docs/GIT_Y_VERCEL.md` §4b.
 
 ## Documentación de referencia
 
