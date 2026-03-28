@@ -4,6 +4,10 @@
   "private": true,
   "scripts": {
     "bitacora": "node scripts/crear-bitacora-excel.js",
+    "dev:supabase:volcar": "node scripts/volcar-pandy-dev-supabase.js",
+    "sql:bootstrap:dev": "node scripts/concat-bootstrap-dev-sql.js",
+    "sql:seed:reglas-de-negocio": "node scripts/reglas-de-negocio-csv-a-seed-sql.js",
+    "sql:seed:tipos-operacion": "node scripts/tipos-operacion-csv-a-seed-sql.js",
     "contingencia:excel": "node scripts/crear-excel-contingencia-ordenes.js",
     "assets:iconos-transparentes": "node scripts/quitar-fondo-blanco-iconos.js",
     "dev": "vite --port 5173",

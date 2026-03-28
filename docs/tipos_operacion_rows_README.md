@@ -2,7 +2,19 @@
 
 Para revisar **junto** con `docs/reglas_de_negocio_rows.sql` que exista un tipo activo por cada `tipo_operacion_codigo` que aparece en reglas, conviene tener un volcado de **`public.tipos_operacion`**.
 
-## Cómo generar `docs/tipos_operacion_rows.sql`
+## Archivo en el repo: `docs/tipos_operacion_rows.csv`
+
+En el proyecto suele guardarse un export en **CSV** (`docs/tipos_operacion_rows.csv`) con columnas `id`, `codigo`, `nombre`, `activo`, `created_at`, `moneda_in`, `moneda_out`, `usa_intermediario`, `icono_modo`, `icono_url_publica`, `orden_visual`.
+
+Para generar SQL que **borre y repueble** `tipos_operacion` con esas filas (mismos `id`):
+
+```bash
+npm run sql:seed:tipos-operacion
+```
+
+Eso escribe **`sql/seed_tipos_operacion_from_docs_csv.sql`**. Ejecutalo en el SQL Editor solo en bases **sin órdenes** que referencien `tipo_operacion_id`, o tras limpiar FKs. El bootstrap dev ya incluye **`sql/migracion_tipos_operacion_unique_solo_uq.sql`** (unicidad `codigo` + `usa_intermediario`). Detalle: `docs/PANDY_DEV_SUPABASE.md`.
+
+## Cómo generar `docs/tipos_operacion_rows.sql` (alternativa pg_dump)
 
 En **Supabase** → **SQL Editor**, por ejemplo:
 

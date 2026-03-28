@@ -31,6 +31,7 @@ ALTER TABLE public.transacciones
 -- Obligatorio y único
 UPDATE public.transacciones SET numero = nextval('public.transacciones_numero_seq') WHERE numero IS NULL;
 ALTER TABLE public.transacciones ALTER COLUMN numero SET NOT NULL;
+ALTER TABLE public.transacciones DROP CONSTRAINT IF EXISTS uniq_transacciones_numero;
 ALTER TABLE public.transacciones ADD CONSTRAINT uniq_transacciones_numero UNIQUE (numero);
 
 COMMENT ON COLUMN public.transacciones.numero IS 'Número interno de transacción para trazabilidad en UI y en conceptos de movimientos de caja (ej. nro transacción 42).';

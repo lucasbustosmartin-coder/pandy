@@ -1,5 +1,17 @@
 # Snapshot `reglas_de_negocio_rows.sql` / `reglas_de_negocio_rows (2).sql` / CSV
 
+## CSV con `id` (export Supabase) → SQL de carga
+
+- Archivos reconocidos por el generador (en orden): **`docs/reglas_de_negocio_rows.csv`**, **`docs/reglas_de_negocio_rows (2).csv`** (mismas columnas que la tabla, incl. `id` y `created_at`).
+- Generar script para el SQL Editor:
+
+```bash
+npm run sql:seed:reglas-de-negocio
+```
+
+- Salida: **`sql/seed_reglas_de_negocio_from_docs_csv.sql`**. Hace `DELETE` de toda la tabla, recrea la `UNIQUE` con **`entidad_cc`** (evita **23505** en bases con unicidad vieja) y repone las filas del CSV.
+- **Backup obligatorio** antes de ejecutar en producción. La fuente de verdad del producto sigue siendo **`sql/reglas_de_negocio_tabla.sql`** y migraciones; este seed es para **emparejar** una base con un export revisado.
+
 ## CSV (`docs/reglas_de_negocio_rows (1).csv`)
 
 - **Ubicación en el repo:** `docs/reglas_de_negocio_rows (1).csv` (export tabular; columnas lógicas de la tabla, sin `id` ni timestamps).

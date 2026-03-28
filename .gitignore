@@ -47,3 +47,9 @@ playwright/.cache
 # Respaldos SQL locales (no versionar)
 backup_supabase_*.sql
 supabase/.temp/
+
+# Credenciales Supabase dev (Excel local; no subir)
+docs/Pandy_Dev_Supabase.xlsx
+
+# SQL concatenado para bootstrap (regenerar con npm run sql:bootstrap:dev)
+sql/_generado_bootstrap_pandy_dev.sql
