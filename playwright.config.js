@@ -1,4 +1,4 @@
-// Cargar credenciales de prueba desde .env.test (no subir .env.test al repo)
+// Cargar .env.test (no subir al repo). SUPABASE_* ahí = proyecto desarrollo, alineado a config.js / volcar Pandy-Dev.
 const path = require('path');
 require('dotenv').config({ path: '.env.test' });
 
@@ -14,6 +14,7 @@ const baseURL = process.env.TEST_BASE_URL || 'http://localhost:5173';
 module.exports = {
   testDir: 'tests/e2e',
   globalSetup: path.join(__dirname, 'tests', 'e2e', 'global-setup.js'),
+  globalTeardown: path.join(__dirname, 'tests', 'e2e', 'global-teardown.js'),
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

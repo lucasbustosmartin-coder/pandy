@@ -246,15 +246,11 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
         stepDone.then(async () => {
       // Limpiar base al inicio de cada combinación para evitar conflictos (una orden nueva por combinación, siempre P,P,P,P).
       console.log(`  [${esperado.id}] Limpiando base E2E...`);
-      try {
-        execSync('node scripts/limpiar-base-e2e.js', {
-          cwd: rootDir,
-          stdio: 'inherit',
-          env: { ...process.env, NODE_ENV: 'test' },
-        });
-      } catch (e) {
-        if (e.status !== 0) console.warn(`  [${esperado.id}] limpiar-base-e2e falló o no se ejecutó; continuando.`);
-      }
+      execSync('node scripts/limpiar-base-e2e.js', {
+        cwd: rootDir,
+        stdio: 'inherit',
+        env: { ...process.env, NODE_ENV: 'test' },
+      });
       // Mismo criterio que 02/03: tras reload la sesión y showAppContent pueden tardar; 15s no alcanza a veces.
       await reloadYEsperarAppLista(page, loginAndSeeApp);
       await expect(page.locator('#app-content')).toBeVisible({ timeout: 15000 });

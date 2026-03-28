@@ -1,6 +1,29 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const { initLog, setNroOrdenInterno, logStep, logTransaccion, logCajaControl, writeLogToExcel } = require('./e2e-log-excel');
+const { limpiarBaseE2eDesdeTests } = require('./e2e-limpiar-base');
+
+/** No coincide con `clientes.nombre LIKE 'E2E %'` en rpc_limpiar_base_e2e: sobrevive a limpiarBaseE2eDesdeTests(). */
+const CLIENTE_PLAYWRIGHT_91_RESERVA = 'Cliente Playwright 91';
+
+/**
+ * Tras truncar + DELETE E2E %, el combo de nueva orden puede quedar solo con «Sin asignar».
+ * Crea un cliente estable para los specs que no usan el cliente fijo CHEQUE.
+ */
+async function asegurarClienteReservaPlaywright91(page) {
+  await page.locator('#menu-clientes').click();
+  await expect(page.locator('#vista-clientes')).toBeVisible({ timeout: 5000 });
+  const fila = page.locator('#clientes-tbody tr').filter({ hasText: CLIENTE_PLAYWRIGHT_91_RESERVA });
+  if ((await fila.count()) > 0) return;
+  const btnNuevo = page.locator('#btn-nuevo-cliente');
+  if ((await btnNuevo.count()) === 0 || !(await btnNuevo.isVisible())) return;
+  await btnNuevo.click();
+  await expect(page.locator('#modal-cliente-backdrop.activo')).toBeVisible({ timeout: 5000 });
+  await page.locator('#cliente-nombre').fill(CLIENTE_PLAYWRIGHT_91_RESERVA);
+  await page.locator('#form-cliente').getByRole('button', { name: /guardar/i }).click();
+  await expect(page.locator('#modal-cliente-backdrop.activo')).toBeHidden({ timeout: 10000 });
+  await page.waitForTimeout(400);
+}
 
 const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL || '';
 const TEST_USER_PASSWORD = process.env.TEST_USER_PASSWORD || '';
@@ -75,11 +98,19 @@ async function leerSaldoConSigno(celda) {
 /** Normaliza string de monto (ej. "1.234,56" o "-166.981,23") a número. Formato ES: punto miles, coma decimal. */
 function normalizarMontoSaldo(s) {
   if (s === '–' || s === '' || s == null) return 0;
-  const t = String(s).replace(/^[+\-]/, '').trim();
+  const t = String(s).replace(/^[\s+\-\u2212]+/, '').replace(/\u2212/g, '-').trim();
   if (!t) return 0;
   const normalizado = t.replace(/\./g, '').replace(',', '.');
   const n = Number(normalizado);
   return isNaN(n) ? 0 : n;
+}
+
+/** Igual que 01-cc-combinaciones: string de celda CC (+/− y formato AR) → número con signo. */
+function saldoLeidoANumero(saldoStr) {
+  if (saldoStr === '–' || saldoStr === '' || saldoStr == null) return 0;
+  const neg = /^-|−/.test(String(saldoStr));
+  const abs = normalizarMontoSaldo(saldoStr);
+  return neg ? -abs : abs;
 }
 
 /**
@@ -180,6 +211,7 @@ test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
     test.setTimeout(180000);
     initLog('CHEQUE-ARS');
     try {
+      limpiarBaseE2eDesdeTests();
       await loginAndSeeApp(page);
       logStep('0', 'Login con usuario de prueba', 'Sidebar y app-content visibles', 'expect #login-screen hidden, #sidebar y #app-content visible', 'OK');
 
@@ -322,6 +354,28 @@ test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
       }
       const clienteCero = countCliente === 0 || saldoCliente === '–' || normalizarMontoSaldo(saldoCliente) === 0;
       expect(clienteCero, `Tras 4 ejecutadas CC cliente debe ser 0. Se capturó: ${saldoCliente}, filas: ${countCliente}`).toBe(true);
+
+      const spreadComisionCcClienteEsperada = Math.round(mrNum - meNum);
+      await page.locator('#cc-tab-movimientos').click();
+      await expect(page.locator('#cc-panel-movimientos')).toBeVisible({ timeout: 5000 });
+      await page.locator('#cc-detalle-btn-todo-historial').click({ timeout: 5000 }).catch(() => {});
+      await page.locator('#cc-btn-refrescar-movimientos').click();
+      await expect(page.locator('#cc-loading')).toBeVisible({ timeout: 3000 }).catch(() => {});
+      await expect(page.locator('#cc-loading')).toBeHidden({ timeout: 45000 });
+      await page.waitForTimeout(800);
+      await page.locator('#cc-detalle-entidad-select').selectOption({ label: nombreCliente }).catch(async () => {});
+      const filaComisionCheque = page.locator('#cc-vista-detalle-tbody tr').filter({ hasText: /Comisión del acuerdo/i });
+      await expect(filaComisionCheque.first(), 'CHEQUE-ARS+int: fila «Comisión del acuerdo» en Movimientos CC cliente').toBeVisible({ timeout: 15000 });
+      const celdaArsComision = filaComisionCheque.first().locator('td').nth(6);
+      const textoComisionArs = await leerSaldoConSigno(celdaArsComision);
+      const montoComisionLeido = saldoLeidoANumero(textoComisionArs);
+      expect(
+        Math.abs(montoComisionLeido - spreadComisionCcClienteEsperada),
+        `CHEQUE-ARS: CC cliente — comisión en movimientos debe ser mr−me (${spreadComisionCcClienteEsperada}), no la parte neta Pandy en comisiones_orden; leído: ${textoComisionArs} → ${montoComisionLeido}`
+      ).toBeLessThanOrEqual(1);
+      await page.locator('#cc-tab-saldos').click();
+      await expect(page.locator('#cc-panel-saldos')).toBeVisible({ timeout: 5000 });
+
       logStep('4.1', 'Paso 1: Cliente paga a Pandy (fila 0)', 'CC cliente con saldo ARS positivo (cliente debe a Pandy).', 'Filtro Cliente; celda ARS', 'OK', '', '0 (final)', numerosTransaccion[0]);
       logTransaccion(1, 'Cliente', 'Pandy', 'ARS', 'Cheque', montoRecibido, '0 (final)', 'OK', numerosTransaccion[0]);
       logStep('4.2', 'Paso 2: Pandy paga al cliente (fila 1)', 'CC cliente cierra en 0.', 'Filtro Cliente; sin fila o celda 0', 'OK', '', countCliente === 0 ? '0 (sin fila)' : saldoCliente, numerosTransaccion[1]);
@@ -445,8 +499,10 @@ test.describe('Orden ARS-USD, transacciones y cuenta corriente', () => {
     test.setTimeout(120000);
     initLog('ARS-USD');
     try {
+      limpiarBaseE2eDesdeTests();
       await loginAndSeeApp(page);
       logStep('0', 'Login con usuario de prueba', 'Sidebar y app-content visibles', 'expect #login-screen hidden, #sidebar y #app-content visible', 'OK');
+      await asegurarClienteReservaPlaywright91(page);
 
       await page.locator('#menu-ordenes').click();
       await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
@@ -632,8 +688,10 @@ test.describe('Orden USD-ARS, transacciones y cuenta corriente (sin intermediari
     test.setTimeout(120000);
     initLog('USD-ARS');
     try {
+      limpiarBaseE2eDesdeTests();
       await loginAndSeeApp(page);
       logStep('0', 'Login con usuario de prueba', 'Sidebar y app-content visibles', 'expect #login-screen hidden, #sidebar y #app-content visible', 'OK');
+      await asegurarClienteReservaPlaywright91(page);
 
       await page.locator('#menu-ordenes').click();
       await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
@@ -818,8 +876,10 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
     test.setTimeout(120000);
     initLog('USD-USD');
     try {
+      limpiarBaseE2eDesdeTests();
       await loginAndSeeApp(page);
       logStep('0', 'Login con usuario de prueba', 'Sidebar y app-content visibles', 'expect #login-screen hidden, #sidebar y #app-content visible', 'OK');
+      await asegurarClienteReservaPlaywright91(page);
 
       await page.locator('#menu-ordenes').click();
       await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
@@ -1040,8 +1100,10 @@ test.describe('Orden USD-USD con intermediario, tasas duales y CC', () => {
     test.setTimeout(180000);
     initLog('USD-USD-Int');
     try {
+      limpiarBaseE2eDesdeTests();
       await loginAndSeeApp(page);
       logStep('0', 'Login', 'App lista', 'sidebar visible', 'OK');
+      await asegurarClienteReservaPlaywright91(page);
 
       const optUsdUsdInt = page.locator('#orden-tipo-operacion option[data-codigo="USD-USD"][data-usa-intermediario="true"]');
 
@@ -1169,7 +1231,9 @@ test.describe('Reversa (ejecutada → pendiente): CC y Caja deben volver al esta
     test.setTimeout(180000);
     initLog('Reversa-USD-USD');
     try {
+      limpiarBaseE2eDesdeTests();
       await loginAndSeeApp(page);
+      await asegurarClienteReservaPlaywright91(page);
       await page.locator('#menu-ordenes').click();
       await expect(page.locator('#vista-ordenes')).toBeVisible({ timeout: 5000 });
       await page.locator('#btn-nueva-orden').click();

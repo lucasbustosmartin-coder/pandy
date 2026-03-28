@@ -28,6 +28,7 @@ Eso genera o sobrescribe:
 
 - **`.env`** — `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, etc.
 - **`config.js`** — `window.SUPABASE_URL` y `window.SUPABASE_ANON_KEY` para Vite en local.
+- **`.env.test`** — actualiza o crea `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` al **mismo proyecto (Pandy-Dev)** para que Playwright y `limpiar_base_e2e` no queden apuntando a producción u otro ref. Conserva el resto de líneas (`TEST_USER_*`, etc.). Si no existe `.env.test`, parte de `.env.test.example`.
 
 Ambos archivos están en **`.gitignore`**: no se suben a Git.
 

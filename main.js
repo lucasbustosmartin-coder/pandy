@@ -4629,6 +4629,8 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     comisionIntMonto,
     comisionIntMon,
     montoEfectivoInt,
+    /** CHEQUE-ARS + int.: importe de la fila sintética «comisión» en CC cliente = mr−me (docs/CHEQUE_ARS_INTERMEDIARIO.md). `comisionPandyMonto` sigue siendo el reparto Pandy (caja / trx ganancia / skip ingreso chico). */
+    comisionSpreadAcuerdoClienteCheque = 0,
   } = opts;
   if (!reglasDeNegocio || !reglasDeNegocio.length) return;
   const mr = Number(orden.monto_recibido) || 0;
@@ -4816,9 +4818,14 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
   }
   // Comisión CHEQUE-ARS (comisiones_orden Pandy e intermediario; filas es_comision + condicion_estado_comision).
   const codOpCh = String(tipoOperacionCodigo || '').toUpperCase();
+  const spreadClienteCheque =
+    codOpCh === 'CHEQUE-ARS' && intermediarioId && Number(comisionSpreadAcuerdoClienteCheque) >= 1e-6
+      ? Number(comisionSpreadAcuerdoClienteCheque)
+      : 0;
+  const montoComisionLineaCcClienteCheque = spreadClienteCheque >= 1e-6 ? spreadClienteCheque : comM;
   const nroTransComisionConceptoChequeArs =
     codOpCh === 'CHEQUE-ARS' ? nroTransIngresoClientePandyPrincipalParaComisionConcepto(transacciones, comM) : null;
-  if (codOpCh === 'CHEQUE-ARS' && clienteId && comM >= 1e-6) {
+  if (codOpCh === 'CHEQUE-ARS' && clienteId && montoComisionLineaCcClienteCheque >= 1e-6) {
     const parClienteCerrado =
       (transacciones || []).some((t) =>
         (t.tipo || '').toLowerCase() === 'ingreso' &&
@@ -4860,11 +4867,11 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         fecha,
         usuario_id: currentUserId,
         moneda,
-        monto: signo * comM,
+        monto: signo * montoComisionLineaCcClienteCheque,
         estado: cerrado ? 'cerrado' : 'pendiente',
         estado_fecha: ahora,
         incluir_en_detalle: coercePgBooleanStrict(reglaComPandy.incluir_en_detalle),
-        ...montosCcPorMoneda(moneda, signo * comM)
+        ...montosCcPorMoneda(moneda, signo * montoComisionLineaCcClienteCheque)
       });
     }
   }
@@ -11444,8 +11451,15 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             comisionIntMon = monR;
           }
           const comisionPandy = comisiones.find((c) => (c.beneficiario || '').toString().toLowerCase() === 'pandy');
-          const comisionPandyMonto = comisionPandy ? Number(comisionPandy.monto) || 0 : 0;
+          let comisionPandyMonto = comisionPandy ? Number(comisionPandy.monto) || 0 : 0;
           const comisionPandyMon = (comisionPandy && comisionPandy.moneda) ? String(comisionPandy.moneda).toUpperCase() : (orden.moneda_recibida || 'ARS').toUpperCase();
+          // CHEQUE-ARS + intermediario: sin fila Pandy en comisiones_orden el motor no inserta la línea es_comision y el saldo cliente queda en −(mr−me). Misma idea que la derivación de comisión int. por tasa (arriba): completar con el resto del spread del acuerdo.
+          if (codNorm === 'CHEQUE-ARS' && intermediarioId && comisionPandyMonto < 1e-6 && mr > me + 1e-6) {
+            const spreadAcuerdo = mr - me;
+            comisionPandyMonto = Math.max(0, spreadAcuerdo - (comisionIntMonto > 1e-6 ? comisionIntMonto : 0));
+          }
+          const spreadAcuerdoChequeInt =
+            codNorm === 'CHEQUE-ARS' && intermediarioId && mr > me + 1e-6 ? mr - me : 0;
           const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr;
           const usarMulticontraparteSync = multicontraparteManual && esTipoOpMulticontraparteElegibleDesdeOrden(orden, toJoin);
           const usarMotorEfectivo = usarMotorReglasNegocio && !usarMulticontraparteSync;
@@ -11648,14 +11662,17 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               comisionIntMonto,
               comisionIntMon,
               montoEfectivoInt,
+              comisionSpreadAcuerdoClienteCheque: spreadAcuerdoChequeInt,
             });
           } else if (esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id) {
             const nroTransComisionChequeFb = nroTransIngresoClientePandyPrincipalParaComisionConcepto(transacciones, comisionPandyMonto);
             const tx1EjecutadaFb = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
             const tx2EjecutadaFb = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'cliente' && (t.estado || '').toLowerCase() === 'ejecutada');
             const parClienteCerradoFb = tx1EjecutadaFb && tx2EjecutadaFb;
-            if (clienteId && comisionPandyMonto >= 1e-6 && !parClienteCerradoFb) {
-              rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha, usuario_id: currentUserId, moneda: comisionPandyMon, monto: comisionPandyMonto, estado: 'cerrado', estado_fecha: ahora, ...montosCcPorMoneda(comisionPandyMon, comisionPandyMonto) });
+            const montoComisionCcClienteChequeFb =
+              spreadAcuerdoChequeInt >= 1e-6 ? spreadAcuerdoChequeInt : comisionPandyMonto;
+            if (clienteId && montoComisionCcClienteChequeFb >= 1e-6 && !parClienteCerradoFb) {
+              rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha, usuario_id: currentUserId, moneda: comisionPandyMon, monto: montoComisionCcClienteChequeFb, estado: 'cerrado', estado_fecha: ahora, ...montosCcPorMoneda(comisionPandyMon, montoComisionCcClienteChequeFb) });
             }
             const hayTx3Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && (t.estado || '').toLowerCase() === 'ejecutada');
             const hayTx4Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'intermediario' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');

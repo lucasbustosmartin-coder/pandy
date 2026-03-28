@@ -18,6 +18,7 @@ const DATOS_FIJOS = {
   montoRecibido: 200000, // Tx1 Cliente→Pandy
   montoEntregado: 195000, // Tx2 Pandy→Cliente
   montoEfectivoInt: 197000, // Tx4 Int→Pandy (con tasa)
+  /** En CC cliente, la fila «Comisión del acuerdo» debe ser el spread **mr − me** (5000), no la parte neta en `comisiones_orden` para beneficiario pandy (2000 si int. se lleva 3000). Ver `main.js` `comisionSpreadAcuerdoClienteCheque`. */
   comisionPandy: 5000,
   comisionInt: 3000,
 };

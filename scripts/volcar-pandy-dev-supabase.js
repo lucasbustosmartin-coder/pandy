@@ -5,6 +5,9 @@
  * Encabezados esperados (mayúsculas/minúsculas flexibles):
  *   Proyecto | Pass_DB | Project URL | Publishable key | anon public | service_role
  *
+ * También sincroniza SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en .env.test (Playwright / limpiar_base_e2e)
+ * para que no queden apuntando a otro proyecto (p. ej. producción).
+ *
  * Uso: node scripts/volcar-pandy-dev-supabase.js
  */
 const fs = require('fs');
@@ -15,6 +18,8 @@ const ROOT = path.join(__dirname, '..');
 const XLSX_PATH = path.join(ROOT, 'docs', 'Pandy_Dev_Supabase.xlsx');
 const ENV_PATH = path.join(ROOT, '.env');
 const CONFIG_PATH = path.join(ROOT, 'config.js');
+const ENV_TEST_PATH = path.join(ROOT, '.env.test');
+const ENV_TEST_EXAMPLE_PATH = path.join(ROOT, '.env.test.example');
 
 function normKey(s) {
   return String(s || '')
@@ -56,6 +61,42 @@ function pick(row, ...aliases) {
     }
   }
   return '';
+}
+
+/**
+ * Asegura que .env.test use el mismo Supabase que .env/config (Pandy-Dev).
+ * Quita líneas previas SUPABASE_* y añade un bloque explícito al final.
+ */
+function syncEnvTestWithDevSupabase(url, serviceKey) {
+  let lines;
+  if (fs.existsSync(ENV_TEST_PATH)) {
+    lines = fs.readFileSync(ENV_TEST_PATH, 'utf8').split(/\r?\n/);
+  } else if (fs.existsSync(ENV_TEST_EXAMPLE_PATH)) {
+    lines = fs.readFileSync(ENV_TEST_EXAMPLE_PATH, 'utf8').split(/\r?\n/);
+  } else {
+    lines = ['TEST_BASE_URL=http://localhost:5173', 'TEST_USER_EMAIL=', 'TEST_USER_PASSWORD=', ''];
+  }
+
+  const filtered = lines.filter((line) => {
+    const t = line.trim();
+    if (/^SUPABASE_URL\s*=/.test(t)) return false;
+    if (/^SUPABASE_SERVICE_ROLE_KEY\s*=/.test(t)) return false;
+    if (/^#\s*SUPABASE_URL\s*=/.test(t)) return false;
+    if (/^#\s*SUPABASE_SERVICE_ROLE_KEY\s*=/.test(t)) return false;
+    return true;
+  });
+  while (filtered.length && filtered[filtered.length - 1] === '') filtered.pop();
+
+  const block = [
+    '',
+    '# Pandy-Dev / E2E: sincronizado por volcar-pandy-dev-supabase.js (mismo proyecto que .env — no producción)',
+    `SUPABASE_URL=${url}`,
+    serviceKey
+      ? `SUPABASE_SERVICE_ROLE_KEY=${serviceKey}`
+      : '# SUPABASE_SERVICE_ROLE_KEY=  # agregá la service_role del Excel o Supabase → API (necesaria para limpiar-base-e2e)',
+  ];
+  const out = [...filtered, ...block, ''].join('\n');
+  fs.writeFileSync(ENV_TEST_PATH, out, 'utf8');
 }
 
 function main() {
@@ -114,6 +155,13 @@ window.SUPABASE_ANON_KEY = ${JSON.stringify(anon)};
 
   fs.writeFileSync(CONFIG_PATH, configBody, 'utf8');
   console.log('Escrito:', CONFIG_PATH);
+
+  syncEnvTestWithDevSupabase(url, service || '');
+  console.log('Escrito/actualizado:', ENV_TEST_PATH, '(SUPABASE_* alineados a Pandy-Dev)');
+  if (!service) {
+    console.warn('Aviso: no hay service_role en el Excel; completá SUPABASE_SERVICE_ROLE_KEY en .env.test para E2E (limpieza RPC).');
+  }
+
   console.log('Listo. Levantá la app con: npm run dev');
 }
 

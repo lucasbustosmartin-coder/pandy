@@ -29,22 +29,25 @@ La vista Cuenta corriente hace varias consultas (movimientos, transacciones, ins
    ```
 2. Editá `.env.test` y completá:
    - `TEST_BASE_URL`: URL donde corre la app al probar. Si probás en tu máquina con `npm run dev`, usá `http://localhost:5173` (o el puerto que te muestre Vite).
-   - `TEST_USER_EMAIL`: email del usuario con el que querés que los tests hagan login (puede ser tu usuario o uno solo para pruebas).
+   - `TEST_USER_EMAIL`: email del usuario con el que querés que los tests hagan login (debe existir en **Auth del proyecto de desarrollo**, no en producción).
    - `TEST_USER_PASSWORD`: contraseña de ese usuario.
+   - `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`: **obligatorios** para la limpieza automática; deben ser del **mismo proyecto Supabase de desarrollo** que `config.js` / `.env` (Pandy-Dev). **No uses el proyecto de producción** (truncarías datos reales). Tras `npm run dev:supabase:volcar`, el script suele dejar estas dos claves ya alineadas en `.env.test`.
 
-Ejemplo de `.env.test` (los valores son de ejemplo):
+Ejemplo de `.env.test` (valores ilustrativos):
 
 ```
 TEST_BASE_URL=http://localhost:5173
 TEST_USER_EMAIL=tu-usuario-de-prueba@ejemplo.com
 TEST_USER_PASSWORD=tu_contraseña_secreta
+SUPABASE_URL=https://tu-ref-desarrollo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=(service role del mismo proyecto)
 ```
 
 El archivo `.env.test` ya está en `.gitignore`; no se sube al repositorio.
 
 ### 1.3 Tener la app levantada cuando corras los tests
 
-Los tests abren la URL que configuraste (por ejemplo `http://localhost:5173`). Esa app debe estar corriendo y usando **el mismo proyecto de Supabase** que tu `config.js` (misma URL y anon key).
+Los tests abren la URL que configuraste (por ejemplo `http://localhost:5173`). Esa app debe estar corriendo y usando **el mismo proyecto de Supabase (desarrollo)** que tu `config.js` y las claves `SUPABASE_*` de `.env.test` (misma URL; la service role solo en Node para limpiar la base).
 
 - Para probar en local: en una terminal dejá corriendo `npm run dev` y en otra ejecutá los tests.
 - Si Vite dice "Port 5173 is in use, trying another one..." y arranca en otro puerto (ej. 5174), poné en `.env.test`: `TEST_BASE_URL=http://localhost:5174` (o el puerto que muestre Vite). Si no, los tests intentan abrir 5173 y fallan con `net::ERR_CONNECTION_REFUSED`.
@@ -54,10 +57,12 @@ Los tests abren la URL que configuraste (por ejemplo `http://localhost:5173`). E
 
 Los tests de **Órdenes y Cuenta corriente** crean órdenes y comprueban saldos. Para no acumular suciedad en la base, **antes de cada run** el test ejecuta una limpieza automática (globalSetup):
 
-1. **Borrar** clientes e intermediarios creados por los tests (`clientes.nombre LIKE 'E2E %'`; intermediarios `LIKE 'E2E Int %'` o nombre fijo `E2E CC TiposActivos Int` del spec 02).
-2. **Truncar** órdenes, transacciones, instrumentación, movimientos de CC y caja, y resetear secuencias (igual que `sql/truncar_ordenes_transacciones.sql`).
+1. **Truncar** órdenes, transacciones, instrumentación, movimientos de CC y caja, auditoría/contingencia si aplica, y resetear secuencias (mismo criterio que `sql/truncar_ordenes_transacciones.sql`).
+2. **Borrar** clientes e intermediarios creados por los tests **después** (`clientes.nombre LIKE 'E2E %'`; intermediarios `LIKE 'E2E Int %'` o nombre fijo `E2E CC TiposActivos Int` del spec 02), igual que el bloque opcional al final de `truncar_ordenes_transacciones.sql`.
 
-**Para que la limpieza automática funcione:** ejecutá **una vez** en Supabase (SQL Editor) **`sql/rpc_limpiar_base_e2e.sql`** y en `.env.test` agregá `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`. Si no están, el globalSetup no hace nada y los tests corren igual; podés truncar a mano con **`sql/truncar_ordenes_transacciones.sql`** cuando quieras arranque limpio.
+**Para que la limpieza automática funcione:** en el **proyecto Supabase de desarrollo** (el de Pandy-Dev, no producción), ejecutá **una vez** en SQL Editor **`sql/rpc_limpiar_base_e2e.sql`** (re-ejecutá si cambió). En `.env.test`, `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` deben ser **de ese mismo proyecto** (si apuntan a producción, la RPC limpiaría la base equivocada). **Sin ellas** `scripts/limpiar-base-e2e.js` termina con **código 1** y el **globalSetup** falla. Para omitir a propio riesgo: `E2E_SKIP_LIMPIAR_BASE=1`. La RPC replica **`sql/truncar_ordenes_transacciones.sql`** + `DELETE` E2E (no trunca `auditoria_app`).
+
+**Entre archivos de test (transaccionalidad):** los specs **01 / 02 / 03** llaman a `node scripts/limpiar-base-e2e.js` al **inicio de cada combinación** (o paso), **no** al final del paso: así cada combinación arranca con base vacía. El **`globalSetup`** corre **una vez** al arrancar el suite (también limpia). El **`globalTeardown`** por defecto **no** limpia, para que puedas abrir la app o Supabase y verificar órdenes/CC/caja tras los tests; si querés truncar al terminar todo el suite (p. ej. CI), usá `E2E_LIMPIAR_AL_FINAL=1`. El **`91`** ejecuta limpieza **al inicio de cada** test del archivo (cliente **`Cliente Playwright 91`** no matchea `E2E %`). Sin `SUPABASE_*` en `.env.test`, **91** puede fallar por datos heredados.
 
 **Nota:** `sql/truncar_ordenes_transacciones.sql` **solo** vacía lo transaccional; **no** borra clientes ni intermediarios. Para el mismo efecto que el globalSetup, usá la RPC o el bloque opcional comentado al final de ese archivo. Tras cambiar `rpc_limpiar_base_e2e.sql`, volvé a ejecutarlo en Supabase para reemplazar la función.
 

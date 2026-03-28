@@ -519,15 +519,11 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
           await test.step(`${cfg.codigo} ${esperado.id}`, async () => {
             // Sin timeout por combinación: E,E + red lenta puede superar 5–10 min (2× esperar orden + CC + sync).
             // El test completo tiene test.setTimeout(900000).
-            try {
-              execSync('node scripts/limpiar-base-e2e.js', {
-                cwd: rootDir,
-                stdio: 'inherit',
-                env: { ...process.env, NODE_ENV: 'test' },
-              });
-            } catch (e) {
-              if (e.status !== 0) console.warn(`  [${cfg.codigo} ${esperado.id}] limpiar-base-e2e falló; continuando.`);
-            }
+            execSync('node scripts/limpiar-base-e2e.js', {
+              cwd: rootDir,
+              stdio: 'inherit',
+              env: { ...process.env, NODE_ENV: 'test' },
+            });
             await reloadYEsperarAppLista(page, loginAndSeeApp);
 
                 await page.locator('#menu-clientes').click();

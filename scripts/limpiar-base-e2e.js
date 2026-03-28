@@ -1,13 +1,15 @@
 /**
  * Limpia la base para tests E2E (solo desarrollo).
- * 1) Borra clientes e intermediarios creados por los tests (RPC: E2E % clientes; intermediarios E2E Int % o E2E CC TiposActivos Int).
- * 2) Trunca órdenes, transacciones, instrumentación, movimientos CC y caja; resetea secuencias.
+ * La RPC trunca primero (órdenes, transacciones, CC, caja, etc.) y luego borra clientes/intermediarios E2E
+ * (mismo orden que truncar_ordenes_transacciones.sql + DELETE opcional al final).
  *
- * Requiere en .env.test (o .env): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+ * Requiere en .env.test (o .env): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY del proyecto de DESARROLLO
+ * (mismas que config.js / .env tras volcar Pandy-Dev; nunca producción).
+ * Sin ellas termina con código 1. Para omitir a propio riesgo: E2E_SKIP_LIMPIAR_BASE=1.
  * Ejecutar en Supabase SQL Editor una vez: sql/rpc_limpiar_base_e2e.sql
  *
  * Uso: node scripts/limpiar-base-e2e.js
- * El test E2E puede invocarlo en globalSetup o beforeAll.
+ * Invocación: Playwright globalSetup/globalTeardown, cada combinación en 01/02/03, cada test en 91-orden-cc (tests/e2e/e2e-limpiar-base.js).
  */
 const path = require('path');
 const fs = require('fs');
@@ -31,8 +33,15 @@ if (!url || !serviceKey) {
 }
 
 if (!url || !serviceKey) {
-  console.warn('Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en .env.test o .env. No se ejecuta limpieza.');
-  process.exit(0);
+  if (process.env.E2E_SKIP_LIMPIAR_BASE === '1') {
+    console.warn('E2E_SKIP_LIMPIAR_BASE=1: omitiendo limpieza (faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY).');
+    process.exit(0);
+  }
+  console.error(
+    'limpiar-base-e2e: faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en .env.test o .env. ' +
+      'Sin la RPC la base no se limpia entre tests. Completá las variables o usá E2E_SKIP_LIMPIAR_BASE=1 para omitir.'
+  );
+  process.exit(1);
 }
 
 const { createClient } = require('@supabase/supabase-js');

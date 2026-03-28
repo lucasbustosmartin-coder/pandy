@@ -16,7 +16,7 @@
 --
 -- E2E: si además querés borrar clientes/intermediarios creado por los tests, NO alcanza con este archivo:
 --   ejecutá la RPC public.limpiar_base_e2e() (sql/rpc_limpiar_base_e2e.sql) o node scripts/limpiar-base-e2e.js
---   (trunca igual que acá + DELETE clientes E2E + DELETE intermediarios E2E).
+--   (misma secuencia TRUNCATE que este archivo + DELETE clientes E2E + DELETE intermediarios E2E; no trunca auditoria_app).
 -- Bloque OPCIONAL al final de este archivo: mismo DELETE que la RPC, a ejecutar *después* de los TRUNCATE.
 
 TRUNCATE TABLE public.movimientos_cuenta_corriente CASCADE;
