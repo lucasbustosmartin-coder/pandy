@@ -24,6 +24,22 @@ Así la empresa **toma posición** con quien pagó y **ajusta** con quien cobró
 
 Lo mismo aplica a combinaciones **cliente ↔ intermediario** (dos patas en las tablas que correspondan).
 
+### Signo del importe en la fila de CC (por entidad)
+
+En cada fila de `movimientos_cuenta_corriente` / `movimientos_cuenta_corriente_intermediario`:
+
+1. **Terceros (cliente o intermediario cuyo nombre no coincide con la empresa):** quien **paga** el flujo (`manual_tip` = `cobro_entidad_pandy`) → monto **negativo**; quien **recibe** (`pago_pandy_entidad`) → monto **positivo**.
+2. **Empresa en el libro:** si el **nombre** de esa entidad (cliente o intermediario) coincide, normalizado, con **nombre legal** o **nombre en sistema** configurados en **Empresa / marca** (`app_empresa`), se **invierte** el signo respecto del punto 1: **empresa recibe** → negativo; **empresa paga** → positivo. Así la óptica de CC se alinea con la de caja (ingreso en caja puede ser + aunque en la CC de la entidad “Madero” el saldo vaya en −).
+
+La caja (efectivo) sigue la dirección física: egreso si paga la empresa, ingreso si cobra la empresa.
+
+**Datos ya guardados** con la lógica anterior pueden tener signo distinto; corregirlos solo con criterio explícito (edición manual, SQL puntual o anular y volver a cargar).
+
+### Listado «Movimientos» en CC
+
+- Los manuales sin `orden_id`/`transaccion_id` se deduplican en pantalla por **id de fila**, no solo por monto/concepto, para que no desaparezcan patas distintas del mismo grupo.
+- El rango **Desde/Hasta** y **Todo el historial** no se reinician en cada refresco de datos: solo en la **primera** carga de la sesión se fija el default «solo hoy».
+
 ## Caja
 
 - Solo si en el movimiento participa **explícitamente la empresa** como pagador o cobrador **y** el **modo de pago** es **efectivo**.

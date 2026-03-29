@@ -26,7 +26,7 @@ INSERT INTO public.reglas_de_negocio (
   ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'USD', -1, 'me', true, 'compromiso_cobrar'),
   ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 1, 'ARS', -1, 'mr', true, 'compromiso_cobrar'),
   -- Pandy→Cliente egreso ejecutado (compensa +me en USD)
-  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', 1, 'me', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'me', true, 'compromiso_pago'),
   ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'me', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc,

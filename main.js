@@ -903,6 +903,7 @@ let authBootstrapFromGetSessionDone = false;
 
 function showLoginScreenDom() {
   pandiSessionUiBootstrapped = false;
+  ccDetalleMovimientosRangoInicializado = false;
   document.body.classList.remove('pandi-shell-logged-in');
   document.getElementById('sidebar').style.display = 'none';
   document.getElementById('login-screen').style.display = 'block';
@@ -1512,7 +1513,7 @@ function conceptoConOrden(leyenda, ordenLabel) {
   return leyenda + sufijo;
 }
 
-/** Leyendas unificadas para movimientos CC: "Pago Realizado - Orden x y Trans x", "Cobro Realizado - Orden x y Trans x", "Compromiso de Pago - Orden x y Trans x", "Compromiso a Cobrar - Orden x y Trans x". En listados de detalle se muestran columnas Pagador y Cobrador de la transacción. */
+/** Leyendas unificadas para movimientos CC: "Pago Realizado - Orden x y Trans x", "Cobro Realizado - Orden x y Trans x", "Compromiso de Pago - Orden x y Trans x", "Compromiso a Cobrar - Orden x y Trans x". Compromiso a Cobrar (ingreso pendiente hacia Pandy) va con monto positivo en CC cliente = pendiente de cobro. En listados de detalle se muestran columnas Pagador y Cobrador de la transacción. */
 function conceptoCcLeyenda(tipo, ordenNumero, transNumero) {
   const ord = ordenNumero != null && ordenNumero !== '' ? String(ordenNumero) : '?';
   const tr = transNumero != null && transNumero !== '' ? String(transNumero) : '?';
@@ -1578,17 +1579,47 @@ function montosCcPorMoneda(moneda, valor) {
   };
 }
 
+function ccNormalizarNombreEmpresaCc(s) {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function ccManualNombreVisibleLeg(leg, nomCliPorId, nomIntPorId) {
+  if (!leg) return '';
+  if (leg.kind === 'cliente' && leg.cliente_id) {
+    const n = nomCliPorId[String(leg.cliente_id)] || nomCliPorId[leg.cliente_id];
+    return n != null ? String(n) : '';
+  }
+  if (leg.kind === 'intermediario' && leg.intermediario_id) {
+    const n = nomIntPorId[String(leg.intermediario_id)] || nomIntPorId[leg.intermediario_id];
+    return n != null ? String(n) : '';
+  }
+  return '';
+}
+
+/** Coincide el nombre de la entidad del movimiento con Empresa / marca (app_empresa: nombre legal o nombre en sistema). */
+function ccManualLegEsEmpresaPorNombre(nombreEntidad) {
+  const n = ccNormalizarNombreEmpresaCc(nombreEntidad);
+  if (!n) return false;
+  const legal = ccNormalizarNombreEmpresaCc(appEmpresaState.nombre_legal);
+  const sis = ccNormalizarNombreEmpresaCc(appEmpresaState.nombre_sistema);
+  if (legal && n === legal) return true;
+  if (sis && n === sis) return true;
+  return false;
+}
+
 /**
- * Movimiento CC manual: signo coherente con el resto de la app.
- * Cliente: cobro (entidad pagó a Pandy) → monto negativo; pago (Pandy pagó a entidad) → positivo.
- * Intermediario: mismo hecho económico usa el signo que ya usa el motor en filas análogas (cobro +, pago −).
+ * CC manual — signo en la fila de cada entidad:
+ * - Terceros: quien **paga** (cobro_entidad_pandy) → monto **negativo**; quien **recibe** (pago_pandy_entidad) → **positivo**.
+ * - Fila cuya entidad coincide con **Empresa / marca** (nombre legal o nombre en sistema en Menú Empresa): se **invierte** (empresa **recibe** → negativo; empresa **paga** → positivo), alineado a la óptica de caja.
  */
-function montoCuentaCorrienteManualSigno(entidadTipo, manualTip, montoAbs) {
+function montoCuentaCorrienteManualSigno(leg, montoAbs, nomCliPorId, nomIntPorId) {
   const v = Math.abs(Number(montoAbs) || 0);
   if (v < 1e-9) return 0;
-  const cobro = manualTip === 'cobro_entidad_pandy';
-  if (entidadTipo === 'cliente') return cobro ? -v : v;
-  return cobro ? v : -v;
+  const cobro = leg && leg.tip === 'cobro_entidad_pandy';
+  let sign = cobro ? -1 : 1;
+  const nombreLeg = ccManualNombreVisibleLeg(leg, nomCliPorId || {}, nomIntPorId || {});
+  if (ccManualLegEsEmpresaPorNombre(nombreLeg)) sign *= -1;
+  return sign * v;
 }
 
 function puedeRegistrarMovCcManual() {
@@ -3615,6 +3646,8 @@ let ccDetalleDesde = '';
 let ccDetalleHasta = '';
 /** Si true, no se filtra por fecha en la tabla detalle (todo el historial). Los saldos del resumen siguen siendo históricos completos. */
 let ccMovimientosMostrarTodoHistorial = false;
+/** Tras el primer armado de CC, no resetear desde/hasta a «hoy» en cada loadCuentaCorriente (respeta «Todo el historial» y fechas elegidas). */
+let ccDetalleMovimientosRangoInicializado = false;
 /** Evita que una carga de CC antigua pise una más nueva (fetch paralelo + recarga post-sync). */
 let ccCargaSerial = 0;
 /** Filtro opcional por cliente_id o intermediario_id en solapa Movimientos (vacío = todos). */
@@ -5508,8 +5541,13 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
       tipo_op_usa_intermediario: metaI ? metaI.usa_intermediario === true : false,
     });
   });
-  // Corazón de la app: un movimiento lógico = una fila. Dedupe por (tipo, orden, transacción, monto, concepto) por si la DB tuviera duplicados históricos.
-  const detalleKey = (a) => [a.tipo, a.orden_id, a.transaccion_id, a.monto, (a.concepto || '').slice(0, 60)].join('\t');
+  // Corazón de la app: un movimiento lógico = una fila. Manuales sin orden comparten orden/trans null y concepto parecido: dedupe por id para no colapsar patas distintas del mismo grupo.
+  const detalleKey = (a) => {
+    if (a.es_movimiento_manual) {
+      return [a.tipo, 'manual', a.id != null ? String(a.id) : '', String(a.monto ?? ''), (a.concepto || '').slice(0, 80)].join('\t');
+    }
+    return [a.tipo, a.orden_id, a.transaccion_id, a.monto, (a.concepto || '').slice(0, 60)].join('\t');
+  };
   const seenDetalle = new Set();
   const detalleListUnicos = detalleList.filter((a) => {
     const k = detalleKey(a);
@@ -5529,11 +5567,17 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     hayTipoOperacionActivoConMoneda('ARS'),
     hayTipoOperacionActivoConMoneda('EUR'),
   ]).then(([u, a, e]) => {
-    // Por defecto: movimientos del día (hoy AR); el resumen de saldos sigue usando toda la historia en ccResumenRowsTodos.
-    ccMovimientosMostrarTodoHistorial = false;
-    const hoyCc = fechaHoyYYYYMMDDArgentina();
-    ccDetalleDesde = hoyCc;
-    ccDetalleHasta = hoyCc;
+    if (!ccDetalleMovimientosRangoInicializado) {
+      ccMovimientosMostrarTodoHistorial = false;
+      const hoyCc = fechaHoyYYYYMMDDArgentina();
+      ccDetalleDesde = hoyCc;
+      ccDetalleHasta = hoyCc;
+      const desdeEl0 = document.getElementById('cc-detalle-desde');
+      const hastaEl0 = document.getElementById('cc-detalle-hasta');
+      if (desdeEl0) desdeEl0.value = hoyCc;
+      if (hastaEl0) hastaEl0.value = hoyCc;
+      ccDetalleMovimientosRangoInicializado = true;
+    }
     aplicarVisibilidadMonedasCuentaCorriente({ USD: !!u, ARS: !!a, EUR: !!e });
     poblarSelectCcDetalleEntidad();
     aplicarFiltroCcResumen();
@@ -6630,6 +6674,10 @@ function actualizarCcManualResumenDinamico() {
     const s = document.getElementById(id);
     if (s && s.value && s.options[s.selectedIndex]) tmpInt[s.value] = { nombre: s.options[s.selectedIndex].text };
   });
+  const nomCliPorIdRes = {};
+  Object.keys(tmpCli).forEach((k) => { nomCliPorIdRes[k] = (tmpCli[k] && tmpCli[k].nombre) || ''; });
+  const nomIntPorIdRes = {};
+  Object.keys(tmpInt).forEach((k) => { nomIntPorIdRes[k] = (tmpInt[k] && tmpInt[k].nombre) || ''; });
   const nomPag = ccManualNombreDisplayRol(pagRol, pagCli, pagInt, tmpCli, tmpInt);
   const nomCob = ccManualNombreDisplayRol(cobRol, cobCli, cobInt, tmpCli, tmpInt);
   const moneda = (document.getElementById('cc-manual-moneda') && document.getElementById('cc-manual-moneda').value) || 'USD';
@@ -6649,7 +6697,7 @@ function actualizarCcManualResumenDinamico() {
     html += 'En CC se registrará:<br/><ul style="margin:0.35rem 0 0.5rem 1.1rem;">';
     legsRes.legs.forEach((leg) => {
       const ent = leg.kind === 'cliente' ? 'Cliente' : 'Intermediario';
-      const signed = montoCuentaCorrienteManualSigno(leg.kind, leg.tip, montoAbs);
+      const signed = montoCuentaCorrienteManualSigno(leg, montoAbs, nomCliPorIdRes, nomIntPorIdRes);
       html += '<li>' + ent + ': <strong>' + formatImporteDisplay(signed) + ' ' + escapeHtml(moneda) + '</strong> (' + escapeHtml(leg.tip === 'cobro_entidad_pandy' ? 'entrega del tercero hacia la empresa (CC)' : 'entrega de la empresa hacia el tercero (CC)') + ')</li>';
     });
     html += '</ul>';
@@ -6789,7 +6837,10 @@ function saveCcMovimientoManual() {
     }
   }
 
-  function ejecutarGuardadoCcManual(tipoMovCajaIdFinal) {
+  const idsCliLeg = [...new Set(legs.filter((l) => l.kind === 'cliente' && l.cliente_id).map((l) => l.cliente_id))];
+  const idsIntLeg = [...new Set(legs.filter((l) => l.kind === 'intermediario' && l.intermediario_id).map((l) => l.intermediario_id))];
+
+  function ejecutarGuardadoCcManual(tipoMovCajaIdFinal, nomCliPorId, nomIntPorId) {
     const idsCli = [];
     const idsInt = [];
 
@@ -6854,7 +6905,7 @@ function saveCcMovimientoManual() {
       });
     }
     const leg = legs[idx];
-    const signedCc = montoCuentaCorrienteManualSigno(leg.kind, leg.tip, montoAbs);
+    const signedCc = montoCuentaCorrienteManualSigno(leg, montoAbs, nomCliPorId, nomIntPorId);
     const montos = montosCcPorMoneda(moneda, signedCc);
     const payloadCc = {
       orden_id: null,
@@ -6892,19 +6943,40 @@ function saveCcMovimientoManual() {
     insertNextLeg(0);
   }
 
-  if (!requiereCaja) {
-    ejecutarGuardadoCcManual(null);
-    return;
-  }
-  const dirCaja = ccManualDireccionCajaDesdeFlujo(pagRol, cobRol);
-  loadTiposMovimientoCaja().then(() => {
-    const tipoId = ccManualTipoMovimientoCajaIdPorDireccion(dirCaja);
-    if (!tipoId) {
-      const nom = ccManualNombreTipoCajaFijoPorDireccion(dirCaja);
-      showToast('No existe el tipo de caja «' + nom + '». Ejecutá sql/migracion_tipos_caja_cc_manual.sql en Supabase o creá ese tipo en Cajas → Tipos de movimiento.', 'error');
+  function iniciarGuardadoConNombres(nomCliPorId, nomIntPorId) {
+    if (!requiereCaja) {
+      ejecutarGuardadoCcManual(null, nomCliPorId, nomIntPorId);
       return;
     }
-    ejecutarGuardadoCcManual(tipoId);
+    const dirCaja = ccManualDireccionCajaDesdeFlujo(pagRol, cobRol);
+    loadTiposMovimientoCaja().then(() => {
+      const tipoId = ccManualTipoMovimientoCajaIdPorDireccion(dirCaja);
+      if (!tipoId) {
+        const nom = ccManualNombreTipoCajaFijoPorDireccion(dirCaja);
+        showToast('No existe el tipo de caja «' + nom + '». Ejecutá sql/migracion_tipos_caja_cc_manual.sql en Supabase o creá ese tipo en Cajas → Tipos de movimiento.', 'error');
+        return;
+      }
+      ejecutarGuardadoCcManual(tipoId, nomCliPorId, nomIntPorId);
+    });
+  }
+
+  const promCliNombres = idsCliLeg.length
+    ? client.from('clientes').select('id, nombre').in('id', idsCliLeg)
+    : Promise.resolve({ data: [], error: null });
+  const promIntNombres = idsIntLeg.length
+    ? client.from('intermediarios').select('id, nombre').in('id', idsIntLeg)
+    : Promise.resolve({ data: [], error: null });
+
+  Promise.all([promCliNombres, promIntNombres]).then(([rCli, rInt]) => {
+    if (rCli.error || rInt.error) {
+      showToast('Error al resolver nombres para el signo en cuenta corriente.', 'error');
+      return;
+    }
+    const nomCliPorId = {};
+    (rCli.data || []).forEach((r) => { nomCliPorId[String(r.id)] = r.nombre; });
+    const nomIntPorId = {};
+    (rInt.data || []).forEach((r) => { nomIntPorId[String(r.id)] = r.nombre; });
+    iniciarGuardadoConNombres(nomCliPorId, nomIntPorId);
   });
 }
 
@@ -11698,9 +11770,9 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
 
           // Cierre sintético dos monedas (CC cliente): +montoRecibido en monR y −montoEntregado en monE cuando el “par cliente” está ejecutado.
           // Ingreso: Cliente→Pandy o Cliente→Intermediario (misma semántica que ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado).
-          // Egreso entrega al cliente: Pandy→Cliente **o** Intermediario→Cliente (cp_ic: cobro a Pandy + entrega vía int.; antes solo se miraba Pandy→Cliente y montoEntregado quedaba 0).
-          // Legacy: monR≠monE sin motor. Con motor + usaIntermediario: ver REGLA_CC_SIMPLE_INFALIBLE §3. Multicontraparte manual: CC la arma aplicarCcMulticontraparteManualConciliacionCompleta (no duplicar cierre aquí).
-          if (clienteId && monR !== monE && (!usarMotorReglasNegocio || usaIntermediario) && !usarMulticontraparteSync) {
+          // Egreso entrega al cliente: Pandy→Cliente **o** Intermediario→Cliente (cp_ic: cobro a Pandy + entrega vía int.).
+          // Solo **legacy** si NO corre el motor (`reglas_de_negocio`): con `aplicarMotorCcDesdeReglasDeNegocio` el cierre duplicaría monR/monE y rompe el cierre (ej. ARS-USD+int E,E: +5M ARS y −5k USD extra). Multicontraparte manual: CC la arma aplicarCcMulticontraparteManualConciliacionCompleta (no duplicar cierre aquí).
+          if (clienteId && monR !== monE && !usarMotorEfectivo && !usarMulticontraparteSync) {
             const trxEjecutadaCierre = (t) => (t.estado || '').toString().toLowerCase() === 'ejecutada';
             const ingresosCli = transacciones.filter((t) => {
               const { pag, cob } = pagCobEfectivosTransaccionSync(t);
@@ -12151,8 +12223,9 @@ function insertarMovimientosCcMomentoCero(ordenId, orden, ingresoId, egresoId) {
       const nroIngreso = trs.find((x) => x.id === ingresoId)?.numero;
       const nroEgreso = trs.find((x) => x.id === egresoId)?.numero;
       const ordenNum = orden.numero != null ? orden.numero : null;
-      const conceptoMonR = conceptoCcLeyenda('compromiso_pago', ordenNum, nroIngreso);
-      const conceptoMonE = conceptoCcLeyenda('compromiso_cobrar', ordenNum, nroEgreso);
+      // Alineado a reglas_de_negocio + motor: moneda recibida (ingreso C→Pandy pendiente) = «Compromiso a Cobrar» con monto positivo (pendiente de cobro); moneda entregada (egreso Pandy→C pendiente) = «Compromiso de Pago» con −me.
+      const conceptoMonR = conceptoCcLeyenda('compromiso_cobrar', ordenNum, nroIngreso);
+      const conceptoMonE = conceptoCcLeyenda('compromiso_pago', ordenNum, nroEgreso);
       // Una fila por moneda: solo esa moneda con valor; el resto 0.
       const rowMonR = {
         cliente_id: clienteId,
@@ -12163,10 +12236,10 @@ function insertarMovimientosCcMomentoCero(ordenId, orden, ingresoId, egresoId) {
         fecha,
         usuario_id: currentUserId,
         moneda: monR,
-        monto: -mr,
-        monto_usd: numCc(monR === 'USD' ? -mr : 0),
-        monto_ars: numCc(monR === 'ARS' ? -mr : 0),
-        monto_eur: numCc(monR === 'EUR' ? -mr : 0),
+        monto: mr,
+        monto_usd: numCc(monR === 'USD' ? mr : 0),
+        monto_ars: numCc(monR === 'ARS' ? mr : 0),
+        monto_eur: numCc(monR === 'EUR' ? mr : 0),
       };
       const rowMonE = {
         cliente_id: clienteId,

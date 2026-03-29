@@ -49,10 +49,10 @@ const COMBINACIONES_ARS_USD = [
     id: 'P,E',
     tx1: 'P',
     tx2: 'E',
-    // Tres líneas en detalle: dos USD −me/+me anulan el egreso ejecutado en CC; una ARS −mr es el compromiso cobrar pendiente (Tx1). Saldo neto USD 0, ARS −mr. Ver docs/CC_NETEO_USD_ARS_VS_ARS_USD.md.
+    // Tres líneas en detalle: dos USD −me/+me anulan el egreso ejecutado en CC; una ARS +mr es el «Compromiso a Cobrar» pendiente (ingreso Tx1). Saldo neto USD 0, ARS +mr (pendiente de cobro). Ver docs/CC_NETEO_USD_ARS_VS_ARS_USD.md.
     saldoUSD: 0,
-    saldoARS: -5000000,
-    detalleCliente: [-5000000, -5000, 5000],
+    saldoARS: 5000000,
+    detalleCliente: [-5000, 5000, 5000000],
     cajaUSD: -5000,
     cajaARS: 0,
   },
@@ -75,10 +75,10 @@ const COMBINACIONES_USD_ARS = [
     id: 'P,E',
     tx1: 'P',
     tx2: 'E',
-    // Espejo ARS-USD P,E: egreso ejecutado dos líneas ARS −/+ monto_transacción anulan en CC; queda compromiso USD pendiente (Tx1). Mismo criterio que USD-ARS+int inversa.
-    saldoUSD: -5000,
+    // Espejo ARS-USD P,E: egreso ejecutado dos líneas ARS −/+ monto_transacción anulan en CC; queda «Compromiso a Cobrar» USD pendiente (Tx1) con signo +me (pendiente de cobro).
+    saldoUSD: 5000,
     saldoARS: 0,
-    detalleCliente: [-5000000, -5000, 5000000],
+    detalleCliente: [-5000000, 5000, 5000000],
     cajaUSD: 0,
     cajaARS: -5000000,
   },
