@@ -1120,7 +1120,13 @@ function getMenuParentAndChildren(permission) {
 
 /** Permisos agrupados por opción de menú. Ver = acceso a la vista e información; Operar = crear/editar/anular. */
 const PERMISOS_POR_MENU = [
-  { id: 'inicio', titulo: 'Panel de Control', ver: ['ver_inicio', 'ver_inicio_pendientes'], operar: [] },
+  {
+    id: 'inicio',
+    titulo: 'Panel de Control',
+    ver: ['ver_inicio', 'ver_inicio_pendientes', 'ver_inicio_gp_operativo'],
+    verSubPerms: ['ver_inicio_pendientes', 'ver_inicio_gp_operativo'],
+    operar: [],
+  },
   { id: 'ordenes', titulo: 'Órdenes', ver: ['ver_ordenes'], operar: ['ingresar_orden', 'editar_orden', 'anular_orden', 'editar_estado_orden', 'ingresar_transacciones', 'editar_transacciones', 'eliminar_transacciones'] },
   { id: 'cajas', titulo: 'Cajas', ver: ['ver_cajas', 'ver_cajas_efectivo', 'ver_cajas_banco', 'ver_cajas_cheque'], verSubPerms: ['ver_cajas_efectivo', 'ver_cajas_banco', 'ver_cajas_cheque'], operar: ['abm_movimientos_caja', 'abm_tipos_movimiento_caja'] },
   { id: 'clientes', titulo: 'Clientes', ver: ['ver_clientes'], operar: ['abm_clientes'] },
@@ -1518,6 +1524,40 @@ function fechaHoyYYYYMMDDArgentina() {
   return y + '-' + mo + '-' + d;
 }
 
+/** Suma días a YYYY-MM-DD interpretando el instante como mediodía ART (UTC+3 → 15:00Z) para no cruzar fecha al sumar. */
+function fechaAddDaysYYYYMMDDArgentina(ymd, deltaDays) {
+  const d = new Date(ymd + 'T15:00:00.000Z');
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
+/** Rango inclusive para G/P Operativa (calendario Argentina; semana lun–dom). */
+function inicioGpOperativoRangoFechas(periodo) {
+  const hoy = fechaHoyYYYYMMDDArgentina();
+  if (periodo === 'total') return { desde: null, hasta: null };
+  if (periodo === 'dia') return { desde: hoy, hasta: hoy };
+  if (periodo === 'mes') {
+    const y = parseInt(hoy.slice(0, 4), 10);
+    const mo = parseInt(hoy.slice(5, 7), 10);
+    const ultimo = new Date(y, mo, 0).getDate();
+    const d1 = `${hoy.slice(0, 7)}-01`;
+    const dlast = `${hoy.slice(0, 7)}-${String(ultimo).padStart(2, '0')}`;
+    return { desde: d1, hasta: dlast };
+  }
+  if (periodo === 'semana') {
+    const d = new Date(hoy + 'T15:00:00.000Z');
+    const wd = d.getUTCDay();
+    const diasHastaLun = wd === 0 ? 6 : wd - 1;
+    const lun = fechaAddDaysYYYYMMDDArgentina(hoy, -diasHastaLun);
+    const dom = fechaAddDaysYYYYMMDDArgentina(lun, 6);
+    return { desde: lun, hasta: dom };
+  }
+  return { desde: hoy, hasta: hoy };
+}
+
 // --- Cajas ---
 let cajasMonedaActual = 'TODO';
 /** Tabla movimientos: por defecto solo el día (fechas en AR); «Todo el historial» sin filtro de fecha. */
@@ -1529,6 +1569,9 @@ let cajasMovCajaTipoTab = 'todo';
 let cajasMovFiltrosListenersAttached = false;
 /** Solapa principal vista Cajas: 'movimientos' | 'tipos' (mismo patrón que CC). */
 let cajasVistaSolapa = 'movimientos';
+/** Panel Inicio — G/P Operativa: período activo en la card. */
+let inicioGpOperativoPeriodo = 'dia';
+let inicioGpOperativoListenersAttached = false;
 let tiposMovimientoCaja = [];
 /** Última carga completa (sync + fetch). Cambiar solo moneda/fecha/tipo caja en UI repinta desde acá sin tocar Supabase ni sync masivo — mismo criterio que filtros en memoria en PortfolioDetail (Sistema-Contable). */
 let cajasMovimientosFullCache = null;
@@ -2810,7 +2853,9 @@ function setVisibilidadColumnasMonedasPanelCajas(efectivoFlagsRaw, bancoFlagsRaw
     const card = document.getElementById(cardId);
     if (!card) return;
     const n = ordenMonedas.filter((m) => flags[m]).length;
-    const gridTpl = n === 0 ? labelW : `${labelW} repeat(${n}, minmax(0, 1fr))`;
+    /* Mínimo ancho por moneda: importes largos + Var. con %; si no entra, scroll en .inicio-caja-tabla. */
+    const colMon = window.matchMedia && window.matchMedia('(max-width: 480px)').matches ? 'minmax(5.5rem, 1fr)' : 'minmax(7rem, 1fr)';
+    const gridTpl = n === 0 ? labelW : `${labelW} repeat(${n}, ${colMon})`;
     ordenMonedas.forEach((m) => {
       const show = !!flags[m];
       card.querySelectorAll(`[data-caja-moneda-col="${m}"]`).forEach((el) => {
@@ -3246,6 +3291,186 @@ function refrescarPanelInicioCajasTrasSyncGlobal() {
   ])
     .then(([list, monUsd, monArs, monEur]) => { aplicarInicioTarjetasCajaDesdeLista(list, monUsd, monArs, monEur); })
     .catch(() => {});
+  loadInicioGpOperativo();
+}
+
+function setupInicioGpOperativo() {
+  if (inicioGpOperativoListenersAttached) return;
+  const wrap = document.getElementById('inicio-card-gp-operativo');
+  if (!wrap) return;
+  wrap.querySelectorAll('[data-inicio-gp-periodo]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const p = btn.getAttribute('data-inicio-gp-periodo');
+      if (!p || p === inicioGpOperativoPeriodo) return;
+      inicioGpOperativoPeriodo = p;
+      wrap.querySelectorAll('[data-inicio-gp-periodo]').forEach((b) => {
+        const on = b.getAttribute('data-inicio-gp-periodo') === p;
+        b.classList.toggle('activo', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      loadInicioGpOperativo();
+    });
+  });
+  inicioGpOperativoListenersAttached = true;
+}
+
+function inicioGpSumarCuatroBolsas(cajaMan, cajaOrd, ccC, ccI) {
+  const monedas = ['USD', 'ARS', 'EUR'];
+  const tot = {};
+  monedas.forEach((m) => {
+    const a = Number(cajaMan[m] != null ? cajaMan[m] : 0);
+    const o = Number(cajaOrd[m] != null ? cajaOrd[m] : 0);
+    const b = Number(ccC[m] != null ? ccC[m] : 0);
+    const c = Number(ccI[m] != null ? ccI[m] : 0);
+    tot[m] = a + o + b + c;
+  });
+  return tot;
+}
+
+const MONEDAS_GP_PANEL = ['USD', 'ARS', 'EUR'];
+
+function inicioGpClaseSigno(num) {
+  if (num > 0) return 'positivo';
+  if (num < 0) return 'negativo';
+  return '';
+}
+
+function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
+  if (!elMatriz) return;
+  const monedas = MONEDAS_GP_PANEL;
+  const tot = inicioGpSumarCuatroBolsas(cajaMan, cajaOrd, ccC, ccI);
+  function numBolsa(bolsa, mon) {
+    const v = bolsa[mon];
+    return v != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
+  }
+  function celNum(bolsa, mon, esTotal) {
+    const num = numBolsa(bolsa, mon);
+    const cls = inicioGpClaseSigno(num);
+    const sizeCls = esTotal ? 'inicio-gp-matriz-num-total' : 'inicio-gp-matriz-num-sub';
+    return `<div class="inicio-gp-matriz-num ${sizeCls} ${cls}">${escapeHtml(formatImporteDisplay(num))}</div>`;
+  }
+  const helpIconSvg =
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>';
+  const headers = monedas
+    .map((mon) => {
+      const src = URL_ICONO_MONEDA_ASSETS[mon] || '';
+      const img = src
+        ? `<img src="${src}" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>`
+        : '';
+      return `<div class="inicio-gp-matriz-h">${img}<span>${escapeHtml(mon)}</span></div>`;
+    })
+    .join('');
+  const rowTotal =
+    '<div class="inicio-gp-matriz-label-total">Total</div>' + monedas.map((m) => celNum(tot, m, true)).join('');
+  const rowCaja =
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-manual">Caja manual<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: caja manual en G/P Operativa">' +
+    helpIconSvg +
+    '</button><span class="help-popover"><strong>Caja manual</strong> en esta fila: suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa.</span></span></div>' +
+    monedas.map((m) => celNum(cajaMan, m, false)).join('');
+  const rowCajaOrd =
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-ordenes">Caja por órdenes<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: caja por órdenes en G/P Operativa">' +
+    helpIconSvg +
+    '</button><span class="help-popover"><strong>Caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). Ahí aparece el resultado neto en valores de Pandy cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de la caja manual filtrada por tipo.</span></span></div>' +
+    monedas.map((m) => celNum(cajaOrd, m, false)).join('');
+  const rowCli =
+    '<div class="inicio-gp-matriz-label-sub">CC clientes</div>' + monedas.map((m) => celNum(ccC, m, false)).join('');
+  const rowInt =
+    '<div class="inicio-gp-matriz-label-sub">CC intermediarios</div>' + monedas.map((m) => celNum(ccI, m, false)).join('');
+  elMatriz.innerHTML =
+    '<div class="inicio-gp-matriz-spacer" aria-hidden="true"></div>' +
+    headers +
+    rowTotal +
+    rowCaja +
+    rowCajaOrd +
+    rowCli +
+    rowInt;
+  elMatriz.style.display = 'grid';
+}
+
+function loadInicioGpOperativo() {
+  const wrap = document.getElementById('inicio-card-gp-operativo');
+  if (!wrap) return;
+  if (!userPermissions.includes('ver_inicio_gp_operativo')) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  setupInicioGpOperativo();
+  const leyenda = document.getElementById('inicio-gp-leyenda-periodo');
+  const matrizEl = document.getElementById('inicio-gp-matriz');
+  const loading = document.getElementById('inicio-gp-loading');
+  const rango = inicioGpOperativoRangoFechas(inicioGpOperativoPeriodo);
+  if (leyenda) {
+    if (inicioGpOperativoPeriodo === 'total') {
+      leyenda.textContent = 'Período: todo el historial (desde siempre). Zona horaria: Argentina.';
+    } else if (rango.desde && rango.hasta) {
+      leyenda.textContent = `Período: ${rango.desde} al ${rango.hasta} (inclusive). Argentina.`;
+    } else {
+      leyenda.textContent = '';
+    }
+  }
+  if (loading) loading.style.display = 'block';
+  if (matrizEl) {
+    matrizEl.innerHTML = '';
+    matrizEl.style.display = 'none';
+  }
+  wrap.querySelectorAll('[data-inicio-gp-periodo]').forEach((b) => {
+    const on = b.getAttribute('data-inicio-gp-periodo') === inicioGpOperativoPeriodo;
+    b.classList.toggle('activo', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+
+  client
+    .rpc('gp_operativa_resumen', { p_desde: rango.desde, p_hasta: rango.hasta })
+    .then((res) => {
+      if (loading) loading.style.display = 'none';
+      if (res.error) {
+        if (!isPandiBackgroundRefresh()) {
+          showToast(
+            'G/P Operativa: ' +
+              (res.error.message || 'No se pudo calcular. Ejecutá sql/migracion_gp_operativa_panel.sql en Supabase.'),
+            'error'
+          );
+        }
+        if (matrizEl) {
+          matrizEl.innerHTML =
+            '<div class="inicio-gp-matriz-error">Sin datos (revisá migración SQL en Supabase).</div>';
+          matrizEl.style.display = 'block';
+        }
+        return;
+      }
+      let raw = res.data;
+      if (typeof raw === 'string') {
+        try {
+          raw = JSON.parse(raw);
+        } catch (e) {
+          raw = {};
+        }
+      }
+      const data = raw && typeof raw === 'object' ? raw : {};
+      function bolsaNum(obj) {
+        const o = typeof obj === 'object' && obj ? obj : {};
+        const out = {};
+        Object.keys(o).forEach((k) => {
+          const n = Number(o[k]);
+          out[k] = Number.isFinite(n) ? n : 0;
+        });
+        return out;
+      }
+      const cajaMan = bolsaNum(data.caja_manual);
+      const cajaOrd = bolsaNum(data.caja_ordenes);
+      const ccC = bolsaNum(data.cc_cliente);
+      const ccI = bolsaNum(data.cc_intermediario);
+      pintarInicioGpMatriz(matrizEl, cajaMan, cajaOrd, ccC, ccI);
+    })
+    .catch(() => {
+      if (loading) loading.style.display = 'none';
+      if (!isPandiBackgroundRefresh()) showToast('G/P Operativa: error de red o servidor.', 'error');
+      if (matrizEl) {
+        matrizEl.innerHTML = '<div class="inicio-gp-matriz-error">No se pudo cargar. Reintentá más tarde.</div>';
+        matrizEl.style.display = 'block';
+      }
+    });
 }
 
 function loadInicio() {
@@ -3284,6 +3509,7 @@ function loadInicio() {
     .then(([list, monUsd, monArs, monEur]) => {
       aplicarInicioTarjetasCajaDesdeLista(list, monUsd, monArs, monEur);
       loadInicioPendientes();
+      loadInicioGpOperativo();
     })
     .catch(() => {});
 }
@@ -7331,27 +7557,77 @@ function loadTiposMovimientoCajaTable() {
 
   client
     .from('tipos_movimiento_caja')
-    .select('id, nombre, direccion, activo')
+    .select('id, nombre, direccion, activo, incluye_gp_operativo')
     .order('nombre')
     .then((res) => {
       loadingEl.style.display = 'none';
       if (res.error) {
-        tbody.innerHTML = '<tr><td colspan="4">Error: ' + (res.error.message || '') + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5">Error: ' + (res.error.message || '') + '</td></tr>';
         wrapEl.style.display = 'block';
         return;
       }
       const list = res.data || [];
+      function celdaToggleTipoMovCaja(checked, dataTipoId, claseInput, labelAccesible) {
+        const dis = canAbm ? '' : ' disabled';
+        const aria = escapeHtml(labelAccesible || '');
+        return `<td class="tipo-mov-caja-toggle-cell"><span class="toggle-switch">
+          <input type="checkbox" class="${claseInput}" data-tipo-id="${dataTipoId}"${checked ? ' checked' : ''}${dis} title="${aria}" aria-label="${aria}" />
+          <span class="slider"></span>
+        </span></td>`;
+      }
       tbody.innerHTML = list
-        .map(
-          (t) =>
-            `<tr data-id="${t.id}">
+        .map((t) => {
+          const nom = escapeHtml(t.nombre || 'tipo');
+          const actOn = t.activo !== false;
+          const gpOn = t.incluye_gp_operativo !== false;
+          return `<tr data-id="${t.id}">
               <td>${escapeHtml(t.nombre)}</td>
               <td>${t.direccion === 'egreso' ? 'Egreso' : 'Ingreso'}</td>
-              <td>${t.activo ? 'Sí' : 'No'}</td>
+              ${celdaToggleTipoMovCaja(actOn, t.id, 'tipo-mov-caja-toggle-activo', `Activo: ${nom}`)}
+              ${celdaToggleTipoMovCaja(gpOn, t.id, 'tipo-mov-caja-toggle-gp', `Incluye en G/P: ${nom}`)}
               <td>${canAbm ? `<button type="button" class="btn-editar" data-id="${t.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>` : ''}</td>
-            </tr>`
-        )
+            </tr>`;
+        })
         .join('');
+      tbody.querySelectorAll('.tipo-mov-caja-toggle-activo').forEach((inp) => {
+        inp.addEventListener('change', function () {
+          if (!canAbm) return;
+          const tid = this.getAttribute('data-tipo-id');
+          const val = this.checked;
+          client
+            .from('tipos_movimiento_caja')
+            .update({ activo: val })
+            .eq('id', tid)
+            .then((r) => {
+              if (r.error) {
+                showToast('Error: ' + (r.error.message || 'No se pudo guardar.'), 'error');
+                this.checked = !val;
+                return;
+              }
+              showToast(val ? 'Tipo activo.' : 'Tipo inactivo.', 'success');
+              loadTiposMovimientoCaja().then(() => {});
+            });
+        });
+      });
+      tbody.querySelectorAll('.tipo-mov-caja-toggle-gp').forEach((inp) => {
+        inp.addEventListener('change', function () {
+          if (!canAbm) return;
+          const tid = this.getAttribute('data-tipo-id');
+          const val = this.checked;
+          client
+            .from('tipos_movimiento_caja')
+            .update({ incluye_gp_operativo: val })
+            .eq('id', tid)
+            .then((r) => {
+              if (r.error) {
+                showToast('Error: ' + (r.error.message || 'No se pudo guardar.'), 'error');
+                this.checked = !val;
+                return;
+              }
+              showToast(val ? 'G/P activado para este tipo.' : 'G/P desactivado para este tipo.', 'success');
+            });
+        });
+      });
       tbody.querySelectorAll('.btn-editar').forEach((btn) => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-id');
@@ -7359,7 +7635,7 @@ function loadTiposMovimientoCajaTable() {
           if (row) openModalTipoMovimientoCaja(row);
         });
       });
-      if (list.length === 0) tbody.innerHTML = '<tr><td colspan="4">No hay tipos cargados. Agregá uno para usar en movimientos manuales.</td></tr>';
+      if (list.length === 0) tbody.innerHTML = '<tr><td colspan="5">No hay tipos cargados. Agregá uno para usar en movimientos manuales.</td></tr>';
       wrapEl.style.display = 'block';
     });
 }
@@ -7377,12 +7653,16 @@ function openModalTipoMovimientoCaja(registro) {
     document.getElementById('tipo-movimiento-nombre').value = registro.nombre || '';
     document.getElementById('tipo-movimiento-direccion').value = registro.direccion === 'egreso' ? 'egreso' : 'ingreso';
     document.getElementById('tipo-movimiento-activo').checked = registro.activo !== false;
+    const gpChk = document.getElementById('tipo-movimiento-incluye-gp');
+    if (gpChk) gpChk.checked = registro.incluye_gp_operativo !== false;
   } else {
     titulo.textContent = 'Nuevo tipo de movimiento';
     idEl.value = '';
     form.reset();
     document.getElementById('tipo-movimiento-direccion').value = 'ingreso';
     document.getElementById('tipo-movimiento-activo').checked = true;
+    const gpChkN = document.getElementById('tipo-movimiento-incluye-gp');
+    if (gpChkN) gpChkN.checked = true;
   }
   backdrop.classList.add('activo');
 }
@@ -7402,7 +7682,9 @@ function saveTipoMovimientoCaja() {
   }
   const direccion = document.getElementById('tipo-movimiento-direccion').value;
   const activo = document.getElementById('tipo-movimiento-activo').checked;
-  const payload = { nombre, direccion: direccion || 'ingreso', activo };
+  const gpEl = document.getElementById('tipo-movimiento-incluye-gp');
+  const incluye_gp_operativo = gpEl ? gpEl.checked : true;
+  const payload = { nombre, direccion: direccion || 'ingreso', activo, incluye_gp_operativo };
   const prom = id
     ? client.from('tipos_movimiento_caja').update(payload).eq('id', id)
     : client.from('tipos_movimiento_caja').insert(payload);
@@ -7643,31 +7925,46 @@ function saveMovimientoCaja() {
   };
   const payload = id ? payloadBase : { ...payloadBase, estado: 'cerrado', estado_fecha: ahora };
 
+  function ejecutarGuardadoMovimientoCajaManual() {
+    if (id) {
+      client
+        .from('movimientos_caja')
+        .update(payloadBase)
+        .eq('id', id)
+        .then((res) => {
+          if (res.error) {
+            showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+            return;
+          }
+          closeModalMovimientoCaja();
+          loadCajas();
+        });
+    } else {
+      client
+        .from('movimientos_caja')
+        .insert(payload)
+        .then((res) => {
+          if (res.error) {
+            showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+            return;
+          }
+          closeModalMovimientoCaja();
+          loadCajas();
+        });
+    }
+  }
+
   if (id) {
-    client
-      .from('movimientos_caja')
-      .update(payloadBase)
-      .eq('id', id)
-      .then((res) => {
-        if (res.error) {
-          showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-          return;
-        }
-        closeModalMovimientoCaja();
-        loadCajas();
-      });
+    ejecutarGuardadoMovimientoCajaManual();
   } else {
-    client
-      .from('movimientos_caja')
-      .insert(payload)
-      .then((res) => {
-        if (res.error) {
-          showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-          return;
-        }
-        closeModalMovimientoCaja();
-        loadCajas();
-      });
+    showConfirm(
+      'Este movimiento solo modifica la caja (efectivo, banco o cheque según elegiste). No genera ningún movimiento en las cuentas corrientes de clientes ni de intermediarios.\n\nSi lo que necesitás es registrar algo que impacte esas cuentas, hacelo desde el menú Cuenta corriente (p. ej. movimiento manual en CC).\n\n¿Guardar solo en caja?',
+      'Sí, guardar en caja',
+      ejecutarGuardadoMovimientoCajaManual,
+      undefined,
+      'Cancelar',
+      'Movimiento solo en caja'
+    );
   }
 }
 

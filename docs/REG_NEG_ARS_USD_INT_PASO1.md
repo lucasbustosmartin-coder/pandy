@@ -22,6 +22,7 @@
 - **Panel órdenes:** autocompletado de transacciones vacías para **ARS-USD** y **USD-ARS** con intermediario usa **`ci_pc`** por defecto (alineado a las reglas `ci_pc`). **USD-USD+int** sigue en **`cp_ic`** (tiene reglas para ambos en DB).
 - El motor ya omitía `mr_prorrateado` en egreso **ARS** para ARS-USD sin int (`aplicarMotorCcDesdeReglasDeNegocio`); se mantiene igual con **+int**.
 - **P,E en `ci_pc`:** con compromiso a cobrar pendiente en **+** (USD y ARS), el egreso Pandy→Cliente ejecutado con **`contrapartida_ejecutada = false`** debe registrar **`compromiso_pago` en −me (USD)** para anular la pata USD pendiente; la fila con **`contrapartida_ejecutada = true`** sigue en **+me** (cierra contra el ingreso ya ejecutado). Parche: `sql/migracion_reglas_int_ci_pc_compromiso_pago_anula_cobrar_pendiente.sql` (espejo de USD-ARS+int en `REG_NEG_USD_ARS_INT_PASO1.md`).
+- **E,E en `cp_ic`:** con ingreso Cliente→Pandy y egreso Intermediario→Cliente **ambos ejecutados**, hacen falta **tres** filas CC cliente en la segunda trx (líneas 0–2): +me en moneda entregada, −me (par contable) y **+mr** en moneda recibida del acuerdo para cerrar frente al cobro. Sin las líneas 1–2 el cliente queda con saldos abiertos en ambas monedas. Parche idempotente: **`sql/migracion_reglas_cp_ic_ee_neteo_cliente_cruzadas.sql`** (también USD-ARS y cruces EUR con el mismo patrón `cp_ic`). Los scripts `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql` y `sql/reglas_usd_ars_int_inversa_reglas_de_negocio.sql` incorporan esas filas en el bloque `cp_ic`.
 
 ## E2E
 

@@ -30,6 +30,7 @@ Este documento define los principios que **siempre** deben cumplirse. El sistema
   - **Deterministas:** misma entrada (órdenes + transacciones y estados) → mismo resultado.
   - **Derivadas de una sola fuente de verdad:** órdenes e instrumentación (transacciones); no depender de textos de concepto ni de lógica duplicada.
 - Cualquier cambio que toque CC o caja debe respetar estos principios y no introducir excepciones ocultas.
+- **Fechas en movimientos derivados:** al sincronizar CC/caja desde la orden, la **fecha contable** y **`estado_fecha`** de cada fila generada deben alinearse al **hecho** (`fecha_ejecucion` / `updated_at` de la transacción, o transacción de referencia en líneas sintéticas), no al instante del resync. La RPC sigue pudiendo borrar e insertar por orden; la coherencia temporal del listado depende de esos campos. Ver `fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion` en `main.js`.
 
 ---
 

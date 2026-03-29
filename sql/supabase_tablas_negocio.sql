@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS public.tipos_movimiento_caja (
   nombre text NOT NULL,
   direccion text NOT NULL CHECK (direccion IN ('ingreso', 'egreso')),
   activo boolean DEFAULT true,
+  incluye_gp_operativo boolean NOT NULL DEFAULT true,
   created_at timestamptz DEFAULT now(),
   UNIQUE (nombre, direccion)
 );
