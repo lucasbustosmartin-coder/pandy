@@ -39,6 +39,7 @@ const BOOTSTRAP_FILES = [
   'migracion_ver_cajas_efectivo_banco.sql',
   'migracion_ver_cajas_cheque.sql',
   'migracion_panel_tarjetas_mismos_permisos_ver_cajas.sql',
+  'migracion_permisos_rol_editable.sql',
   'migracion_estado_orden.sql',
   'migracion_orden_anulada.sql',
   'migracion_transacciones_estado_anulada.sql',

@@ -1023,6 +1023,10 @@ function refreshPermisosYVista() {
       if (currentVistaId && !canViewVista(currentVistaId)) {
         const [firstId, firstTitle] = getFirstAllowedView();
         showView(firstId, firstTitle);
+      } else if (currentVistaId === 'vista-inicio') {
+        loadInicio();
+      } else if (currentVistaId === 'vista-cajas') {
+        loadCajas({ soloFiltros: true });
       }
       pandiRefreshOfflineCatalogosCache();
       return fetchAppEmpresaIntoState();
@@ -1095,6 +1099,10 @@ const MENSAJE_AL_DESACTIVAR_PERMISO = {
   eliminar_movimiento_cc_manual: 'Sin este permiso no podrán anular movimientos de CC manuales desde la lista de Movimientos.',
   ver_auditoria: 'Sin este permiso no podrán consultar la tabla de auditoría (registro de acciones sensibles) en Supabase o futuras pantallas de log.',
 };
+
+/** Si faltan políticas RLS + GRANT en app_role_permission, DELETE/INSERT no afectan filas y PostgREST puede no devolver error. */
+const MSG_APP_ROLE_PERM_MIGRACION =
+  'En Supabase ejecutá sql/migracion_permisos_rol_editable.sql (políticas INSERT/DELETE y GRANT en app_role_permission).';
 
 /** Devuelve el permiso "padre" (acceso a la vista) y los "hijos" del menú que contiene este permiso. Si permission es el padre, hijos = resto Ver + Operar. */
 function getMenuParentAndChildren(permission) {
@@ -1410,15 +1418,26 @@ function loadSeguridad() {
           const role = this.getAttribute('data-role');
           const permission = this.getAttribute('data-permission');
           const enable = this.checked;
+          const mismoRolQueSesion = String(role || '').trim() === String(myRole || '').trim();
           if (enable) {
-            client.from('app_role_permission').insert({ role, permission }).then((res) => {
-              if (res.error) {
-                showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-                this.checked = false;
-              } else {
+            client
+              .from('app_role_permission')
+              .insert({ role, permission })
+              .select('role, permission')
+              .then((res) => {
+                if (res.error) {
+                  showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+                  this.checked = false;
+                  return;
+                }
+                if (!res.data || res.data.length === 0) {
+                  showToast('No se guardó el permiso (0 filas). ' + MSG_APP_ROLE_PERM_MIGRACION, 'error');
+                  this.checked = false;
+                  return;
+                }
                 showToast('Permiso activado.', 'success');
-              }
-            });
+                if (mismoRolQueSesion) refreshPermisosYVista();
+              });
             return;
           }
           const menuInfo = getMenuParentAndChildren(permission);
@@ -1427,11 +1446,23 @@ function loadSeguridad() {
             ? menuInfo.children.filter((p) => permMap[p])
             : [];
           const removeParent = () => {
-            client.from('app_role_permission').delete().eq('role', role).eq('permission', permission).then((res) => {
-              if (res.error) {
-                showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-                this.checked = true;
-              } else {
+            client
+              .from('app_role_permission')
+              .delete()
+              .eq('role', role)
+              .eq('permission', permission)
+              .select('role, permission')
+              .then((res) => {
+                if (res.error) {
+                  showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+                  this.checked = true;
+                  return;
+                }
+                if (!res.data || res.data.length === 0) {
+                  showToast('No se eliminó el permiso (0 filas). ' + MSG_APP_ROLE_PERM_MIGRACION, 'error');
+                  this.checked = true;
+                  return;
+                }
                 if (toRemove.length > 0) {
                   showToast('Se desactivó el acceso al menú y también los demás permisos de este ítem (sin acceso no aplican).', 'info');
                 } else {
@@ -1439,14 +1470,24 @@ function loadSeguridad() {
                   if (msg) showToast(msg, 'info');
                   else showToast('Permiso desactivado.', 'success');
                 }
-              }
-            });
+                if (mismoRolQueSesion) refreshPermisosYVista();
+              });
           };
           if (toRemove.length === 0) {
             removeParent();
             return;
           }
-          Promise.all(toRemove.map((p) => client.from('app_role_permission').delete().eq('role', role).eq('permission', p))).then(() => {
+          Promise.all(
+            toRemove.map((p) =>
+              client.from('app_role_permission').delete().eq('role', role).eq('permission', p).select('role, permission')
+            )
+          ).then((results) => {
+            const fail = results.find((r) => r.error);
+            if (fail) {
+              showToast('Error: ' + (fail.error.message || 'No se pudo guardar.'), 'error');
+              this.checked = true;
+              return;
+            }
             toRemove.forEach((p) => {
               const other = permisosGrid.querySelector(`.seguridad-perm-toggle[data-role="${role}"][data-permission="${p}"]`);
               if (other) other.checked = false;
@@ -3221,20 +3262,14 @@ function loadInicio() {
   const hasBancoPerm = userPermissions.includes('ver_cajas_banco');
   const hasChequePerm = userPermissions.includes('ver_cajas_cheque');
   const hasPendientesPerm = userPermissions.includes('ver_inicio_pendientes');
-  const hasAnyPanelCardPerm = hasEfectivoPerm || hasBancoPerm || hasChequePerm || hasPendientesPerm;
-  if (hasAnyPanelCardPerm) {
-    if (elEfectivo) elEfectivo.style.display = hasEfectivoPerm ? '' : 'none';
-    if (elBanco) elBanco.style.display = hasBancoPerm ? '' : 'none';
-    if (elCheque) elCheque.style.display = hasChequePerm ? '' : 'none';
-    if (elSaldos) elSaldos.style.display = hasEfectivoPerm || hasBancoPerm || hasChequePerm ? '' : 'none';
-    if (elPendientes) elPendientes.style.display = hasPendientesPerm ? '' : 'none';
-  } else {
-    if (elEfectivo) elEfectivo.style.display = '';
-    if (elBanco) elBanco.style.display = '';
-    if (elCheque) elCheque.style.display = '';
-    if (elSaldos) elSaldos.style.display = '';
-    if (elPendientes) elPendientes.style.display = '';
-  }
+  const verCajasMenu = userPermissions.includes('ver_cajas');
+  const algunaGranularCaja = hasEfectivoPerm || hasBancoPerm || hasChequePerm;
+  const legacyTodasLasTarjetasCaja = verCajasMenu && !algunaGranularCaja;
+  if (elEfectivo) elEfectivo.style.display = hasEfectivoPerm || legacyTodasLasTarjetasCaja ? '' : 'none';
+  if (elBanco) elBanco.style.display = hasBancoPerm || legacyTodasLasTarjetasCaja ? '' : 'none';
+  if (elCheque) elCheque.style.display = hasChequePerm || legacyTodasLasTarjetasCaja ? '' : 'none';
+  if (elSaldos) elSaldos.style.display = algunaGranularCaja || legacyTodasLasTarjetasCaja ? '' : 'none';
+  if (elPendientes) elPendientes.style.display = hasPendientesPerm ? '' : 'none';
 
   sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
     .catch(() => {})
@@ -3863,6 +3898,44 @@ function pagCobEfectivosTransaccionSync(t) {
   return { pag, cob };
 }
 
+/**
+ * Fecha contable (`fecha`) y `estado_fecha` para movimientos CC/caja derivados de una transacción.
+ * Ancla al hecho: `fecha_ejecucion` y, si existe, `updated_at` de la transacción; si no hay datos, fallback al sync (comportamiento previo).
+ * Prepara etapa posterior de sync por diff (opción 2).
+ */
+function fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fechaFallbackDia, ahoraFallbackIso) {
+  if (!t || typeof t !== 'object') {
+    return { fecha: fechaFallbackDia, estado_fecha: ahoraFallbackIso };
+  }
+  const fe = t.fecha_ejecucion;
+  const feStr = fe != null && String(fe).trim() !== '' ? String(fe).trim().slice(0, 10) : '';
+  const ua = t.updated_at;
+  const diaDesdeUa = ua ? String(ua).slice(0, 10) : '';
+  const dia = feStr || diaDesdeUa || fechaFallbackDia;
+  let estadoFecha = ahoraFallbackIso;
+  if (ua) {
+    const d = new Date(ua);
+    if (!isNaN(d.getTime())) estadoFecha = d.toISOString();
+  } else if (feStr) {
+    estadoFecha = `${feStr}T12:00:00.000Z`;
+  }
+  return { fecha: dia, estado_fecha: estadoFecha };
+}
+
+function fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nro, fechaFallbackDia, ahoraFallbackIso) {
+  if (nro == null || nro === '') return { fecha: fechaFallbackDia, estado_fecha: ahoraFallbackIso };
+  const t = (transacciones || []).find((x) => Number(x.numero) === Number(nro));
+  return fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fechaFallbackDia, ahoraFallbackIso);
+}
+
+/** Filas sintéticas (comisión / cierre sin trx propia): referencia temporal por última transacción ejecutada de la orden. */
+function fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fechaFallbackDia, ahoraFallbackIso) {
+  const ejecutadas = (transacciones || []).filter((x) => (x.estado || '').toLowerCase() === 'ejecutada');
+  if (!ejecutadas.length) return { fecha: fechaFallbackDia, estado_fecha: ahoraFallbackIso };
+  const last = ejecutadas.slice().sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0))[0];
+  return fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(last, fechaFallbackDia, ahoraFallbackIso);
+}
+
 /** ARS-USD / USD-ARS sin intermediario en orden ni en catálogo (instrumentación manual multicontraparte). */
 function esTipoOpMulticontraparteElegibleDesdeOrden(orden, toJoin) {
   if (!orden || !toJoin) return false;
@@ -3881,9 +3954,12 @@ function idClientePagadorEfectivoMulticontraparte(t, orden) {
 }
 
 function idClienteCobradorEfectivoMulticontraparte(t, orden) {
-  const { cob } = pagCobEfectivosTransaccionSync(t);
+  const { pag, cob } = pagCobEfectivosTransaccionSync(t);
   if (cob !== 'cliente') return null;
-  return t.cobrador_cliente_id || orden.cliente_id || null;
+  if (t.cobrador_cliente_id != null && t.cobrador_cliente_id !== '') return t.cobrador_cliente_id;
+  // Cliente→Cliente: sin cobrador_cliente_id no usar orden.cliente_id (sería el mismo que el pagador del acuerdo y rompe el neteo −m/+m + línea al tercero en aplicarCcMulticontraparteManualConciliacionCompleta).
+  if (pag === 'cliente') return null;
+  return orden.cliente_id || null;
 }
 
 function idInterPagadorEfectivoMulticontraparte(t, orden) {
@@ -3963,16 +4039,17 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
     const { pag, cob } = pagCobEfectivosTransaccionSync(t);
     const cidPag = idClientePagadorEfectivoMulticontraparte(t, orden);
     const cidCob = idClienteCobradorEfectivoMulticontraparte(t, orden);
+    const feMc = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
 
     if (pag === 'intermediario' || cob === 'intermediario') {
-      aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt);
+      aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, feMc.fecha, feMc.estado_fecha, rowsCcCliente, rowsCcInt);
       return;
     }
 
     if (estado === 'pendiente') {
       if (!cidAcuerdo) return;
       if (tipo === 'ingreso' && mon === monR && pag === 'cliente' && cidPag && String(cidPag) === String(cidAcuerdo)) {
-        pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: `Instrumentación pendiente — Orden ${ordenNumero} · Trans ${nro != null ? nro : '–'}`,
@@ -3982,7 +4059,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
         });
       }
       if (tipo === 'egreso' && mon === monE && cob === 'cliente' && cidCob && String(cidCob) === String(cidAcuerdo)) {
-        pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: `Entrega ${mon} pendiente — Orden ${ordenNumero} · Trans ${nro != null ? nro : '–'}`,
@@ -3996,10 +4073,11 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
 
     if (tipo === 'ingreso') {
       const esAcuerdoPag = cidAcuerdo && cidPag && String(cidPag) === String(cidAcuerdo);
-      const cobOtroCli = cob === 'cliente' && cidCob && (!cidAcuerdo || String(cidCob) !== String(cidAcuerdo));
+      // Pago a tercero: cobrador rol cliente y distinto del acuerdo, o UUID aún no persistido (evita solo −m sin +m de ajuste en CC del acuerdo).
+      const cobOtroCli = cob === 'cliente' && (!cidAcuerdo || !cidCob || String(cidCob) !== String(cidAcuerdo));
       const cobPandy = cob === 'pandy';
       if (esAcuerdoPag && cobOtroCli) {
-        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, nro) + ' (pago a tercero)',
@@ -4007,7 +4085,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           monto: -monto,
           ...montosCcPorMoneda(mon, -monto),
         });
-        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: `Ajuste libro acuerdo — Orden ${ordenNumero} · Trans ${nro != null ? nro : '–'}`,
@@ -4015,7 +4093,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           monto,
           ...montosCcPorMoneda(mon, monto),
         });
-        pushMcClienteRow(rowsCcCliente, cidCob, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidCob, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, nro),
@@ -4026,7 +4104,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
         return;
       }
       if (esAcuerdoPag && cobPandy) {
-        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, nro),
@@ -4034,7 +4112,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           monto: -monto,
           ...montosCcPorMoneda(mon, -monto),
         });
-        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: `Ajuste libro acuerdo — Orden ${ordenNumero} · Trans ${nro != null ? nro : '–'}`,
@@ -4045,7 +4123,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
         return;
       }
       if (cidPag) {
-        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, nro),
@@ -4055,7 +4133,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
         });
       }
       if (cidCob && (!cidPag || String(cidCob) !== String(cidPag))) {
-        pushMcClienteRow(rowsCcCliente, cidCob, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidCob, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, nro),
@@ -4071,7 +4149,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
       const esAcuerdoCob = cidAcuerdo && cidCob && String(cidCob) === String(cidAcuerdo);
       const pagPandy = pag === 'pandy';
       if (esAcuerdoCob && pagPandy && mon === monE) {
-        pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: conceptoCcLeyenda('pago_realizado', ordenNumero, nro),
@@ -4079,7 +4157,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           monto: -monto,
           ...montosCcPorMoneda(mon, -monto),
         });
-        pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: `Ajuste libro acuerdo — Orden ${ordenNumero} · Trans ${nro != null ? nro : '–'}`,
@@ -4090,7 +4168,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
         return;
       }
       if (cidPag) {
-        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidPag, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, nro),
@@ -4100,7 +4178,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
         });
       }
       if (cidCob && (!cidPag || String(cidCob) !== String(cidPag))) {
-        pushMcClienteRow(rowsCcCliente, cidCob, ordenId, fecha, ahora, {
+        pushMcClienteRow(rowsCcCliente, cidCob, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
           concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, nro),
@@ -4121,14 +4199,21 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
   const mon = (t.moneda || 'USD').toUpperCase();
   const transaccionId = t.id;
   const nro = t.numero != null ? t.numero : null;
+  const { pag: pagMc, cob: cobMc } = pagCobEfectivosTransaccionSync(t);
+  const tipoMc = (t.tipo || '').toLowerCase();
+  const estadoMc = (t.estado || '').toLowerCase();
+  const cidAc = orden.cliente_id || null;
   const cidPag = idClientePagadorEfectivoMulticontraparte(t, orden);
+  /** Ingreso ejecutado: cliente del acuerdo paga a intermediario — mismo neteo en libro del acuerdo que pago a tercero cliente (−m cobro +m ajuste). */
+  const esIngresoAcuerdoAIntermediario =
+    estadoMc === 'ejecutada' && tipoMc === 'ingreso' && pagMc === 'cliente' && cobMc === 'intermediario' && cidAc && cidPag && String(cidPag) === String(cidAc);
   if (cidPag) {
     rowsCcCliente.push({
       cliente_id: cidPag,
       orden_id: ordenId,
       transaccion_id: transaccionId,
       transaccion_numero: nro,
-      concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, nro),
+      concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, nro) + (esIngresoAcuerdoAIntermediario ? ' (pago a intermediario)' : ''),
       fecha,
       usuario_id: currentUserId,
       moneda: mon,
@@ -4137,6 +4222,22 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
       estado_fecha: ahora,
       ...montosCcPorMoneda(mon, -monto),
     });
+    if (esIngresoAcuerdoAIntermediario) {
+      rowsCcCliente.push({
+        cliente_id: cidPag,
+        orden_id: ordenId,
+        transaccion_id: transaccionId,
+        transaccion_numero: nro,
+        concepto: `Ajuste libro acuerdo — Orden ${ordenNumero} · Trans ${nro != null ? nro : '–'}`,
+        fecha,
+        usuario_id: currentUserId,
+        moneda: mon,
+        monto,
+        estado: 'cerrado',
+        estado_fecha: ahora,
+        ...montosCcPorMoneda(mon, monto),
+      });
+    }
   }
   const cidCob = idClienteCobradorEfectivoMulticontraparte(t, orden);
   if (cidCob) {
@@ -4690,6 +4791,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     const contrapartida = contrapartidaEjecutada(transacciones, t.pagador, t.cobrador, t.tipo);
     const reglasTx = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, false, estado, contrapartida);
     if (!reglasTx.length) return;
+    const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
     const estadoMov = (estado === 'ejecutada' ? 'cerrado' : 'pendiente');
     const codOp = String(tipoOperacionCodigo || '').toUpperCase();
     for (const regla of reglasTx) {
@@ -4720,12 +4822,12 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         transaccion_id: t.id,
         transaccion_numero: t.numero != null ? t.numero : null,
         concepto: conceptoCcLeyenda(ley, orden.numero, t.numero != null ? t.numero : null),
-        fecha,
+        fecha: feT.fecha,
         usuario_id: currentUserId,
         moneda,
         monto: montoCc,
         estado: estadoMov,
-        estado_fecha: ahora,
+        estado_fecha: feT.estado_fecha,
         incluir_en_detalle: coercePgBooleanStrict(regla.incluir_en_detalle),
         ...montosCcPorMoneda(moneda, montoCc),
       };
@@ -4759,6 +4861,11 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     nroTransComisionConceptoUsd =
       trIngresoClienteAcuerdoUsd && trIngresoClienteAcuerdoUsd.numero != null ? trIngresoClienteAcuerdoUsd.numero : null;
   }
+  const feComUsd = esUsdUsd
+    ? (nroTransComisionConceptoUsd != null
+      ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionConceptoUsd, fecha, ahora)
+      : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora))
+    : { fecha, estado_fecha: ahora };
   if (esUsdUsd && clienteId && spreadUsdUsd >= 1e-6) {
     const parClienteCerrado =
       ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
@@ -4791,12 +4898,12 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
           transaccion_id: null,
           transaccion_numero: null,
           concepto: conceptoCcLeyenda(ley, orden.numero, nroTransComisionConceptoUsd),
-          fecha,
+          fecha: feComUsd.fecha,
           usuario_id: currentUserId,
           moneda,
           monto: montoCc,
           estado: cerrado ? 'cerrado' : 'pendiente',
-          estado_fecha: ahora,
+          estado_fecha: feComUsd.estado_fecha,
           incluir_en_detalle: coercePgBooleanStrict(reglaCom.incluir_en_detalle),
           ...montosCcPorMoneda(moneda, montoCc),
         });
@@ -4837,12 +4944,12 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
           transaccion_id: null,
           transaccion_numero: null,
           concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConceptoUsd),
-          fecha,
+          fecha: feComUsd.fecha,
           usuario_id: currentUserId,
           moneda: monedaInt,
           monto: montoCcInt,
           estado: cerradoInt ? 'cerrado' : 'pendiente',
-          estado_fecha: ahora,
+          estado_fecha: feComUsd.estado_fecha,
           incluir_en_detalle: coercePgBooleanStrict(reglaComIntUsd.incluir_en_detalle),
           ...montosCcPorMoneda(monedaInt, montoCcInt),
         });
@@ -4858,6 +4965,11 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
   const montoComisionLineaCcClienteCheque = spreadClienteCheque >= 1e-6 ? spreadClienteCheque : comM;
   const nroTransComisionConceptoChequeArs =
     codOpCh === 'CHEQUE-ARS' ? nroTransIngresoClientePandyPrincipalParaComisionConcepto(transacciones, comM) : null;
+  const feComChequeArs = codOpCh === 'CHEQUE-ARS'
+    ? (nroTransComisionConceptoChequeArs != null
+      ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionConceptoChequeArs, fecha, ahora)
+      : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora))
+    : { fecha, estado_fecha: ahora };
   if (codOpCh === 'CHEQUE-ARS' && clienteId && montoComisionLineaCcClienteCheque >= 1e-6) {
     const parClienteCerrado =
       (transacciones || []).some((t) =>
@@ -4897,12 +5009,12 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         transaccion_id: null,
         transaccion_numero: null,
         concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConceptoChequeArs),
-        fecha,
+        fecha: feComChequeArs.fecha,
         usuario_id: currentUserId,
         moneda,
         monto: signo * montoComisionLineaCcClienteCheque,
         estado: cerrado ? 'cerrado' : 'pendiente',
-        estado_fecha: ahora,
+        estado_fecha: feComChequeArs.estado_fecha,
         incluir_en_detalle: coercePgBooleanStrict(reglaComPandy.incluir_en_detalle),
         ...montosCcPorMoneda(moneda, signo * montoComisionLineaCcClienteCheque)
       });
@@ -4935,12 +5047,12 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         transaccion_id: null,
         transaccion_numero: null,
         concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConceptoChequeArs),
-        fecha,
+        fecha: feComChequeArs.fecha,
         usuario_id: currentUserId,
         moneda: monCom,
         monto: signo * comInt,
         estado: parIntCerrado ? 'cerrado' : 'pendiente',
-        estado_fecha: ahora,
+        estado_fecha: feComChequeArs.estado_fecha,
         incluir_en_detalle: coercePgBooleanStrict(reglaComInt.incluir_en_detalle),
         ...montosCcPorMoneda(monCom, signo * comInt)
       });
@@ -4990,6 +5102,8 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion() {
 function loadCuentaCorriente(opts) {
   opts = opts || {};
   const esRecargaPostSync = opts.esRecargaPostSync === true;
+  /** Tras sync explícito (p. ej. botón Refrescar): solo leer movimientos, no volver a borrar/reinsertar toda la CC. */
+  const skipSyncGlobal = opts.skipSyncGlobal === true;
   const loadingEl = document.getElementById('cc-loading');
   const contenido = document.getElementById('cc-contenido');
   const tbody = document.getElementById('cc-resumen-tbody');
@@ -5007,7 +5121,10 @@ function loadCuentaCorriente(opts) {
     if (panelMov) panelMov.style.display = 'none';
   }
 
-  if (!esRecargaPostSync) {
+  // Refresco automático (~30 s): solo SELECT de movimientos. El sync global borra y reinserta CC/caja por cada orden;
+  // hacerlo en cada tick vacía la tabla en lecturas concurrentes y parpadean los saldos sin que haya cambios reales.
+  const debeCorrerSyncGlobalAntesDeLeer = !esRecargaPostSync && !silentCc && !skipSyncGlobal;
+  if (debeCorrerSyncGlobalAntesDeLeer) {
     sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
       .catch(() => {})
       .then(() => {
@@ -7120,7 +7237,7 @@ function setupCuentaCorriente() {
     showToast('Sincronizando CC y caja desde órdenes…', 'info');
     sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
       .then(() => {
-        loadCuentaCorriente();
+        loadCuentaCorriente({ skipSyncGlobal: true });
         showToast('Cuenta corriente actualizada.', 'success');
         setTimeout(() => {
           const tbody = document.getElementById('cc-vista-detalle-tbody');
@@ -10193,14 +10310,66 @@ function renderOrdenWizardInstrumentacion(instId) {
           ? null
           : () => {
             const checked = chkMcInst.checked;
-            client.from('instrumentacion').update({ multicontraparte_manual: checked, updated_at: new Date().toISOString() }).eq('id', instId).then((rUp) => {
-              if (rUp.error) {
-                chkMcInst.checked = !checked;
-                showToast('No se pudo guardar la opción multicontraparte.', 'error');
-                return;
-              }
-              showToast(checked ? 'Multicontraparte manual activada. Podés cargar N transacciones y contrapartes explícitas.' : 'Multicontraparte manual desactivada.', 'info', 4500);
-            });
+            if (!checked) {
+              client.from('instrumentacion').update({ multicontraparte_manual: false, updated_at: new Date().toISOString() }).eq('id', instId).then((rUp) => {
+                if (rUp.error) {
+                  chkMcInst.checked = true;
+                  showToast('No se pudo guardar la opción multicontraparte.', 'error');
+                  return;
+                }
+                showToast('Multicontraparte manual desactivada.', 'info', 4500);
+                renderOrdenWizardInstrumentacion(instId);
+              });
+              return;
+            }
+            if (!eligMcInst) return;
+            if (!userPermissions.includes('eliminar_transacciones')) {
+              chkMcInst.checked = false;
+              showToast('Para activar multicontraparte manual hace falta permiso para eliminar transacciones: se quitan las sugeridas por el sistema si siguen con el esquema Cliente→Pandy (recibida) y Pandy→Cliente (entregada).', 'error');
+              return;
+            }
+            showConfirm(
+              'Se eliminarán, si existen, las transacciones sugeridas: ingreso del cliente a Pandy en la moneda recibida y egreso de Pandy al cliente en la moneda entregada. Si ya las cambiaste (por ejemplo otro cobrador), no se borran. Luego podés cargar N pagos y contrapartes explícitas. ¿Activar multicontraparte manual?',
+              'Activar',
+              () => {
+                chkMcInst.disabled = true;
+                client.from('instrumentacion').update({ multicontraparte_manual: true, updated_at: new Date().toISOString() }).eq('id', instId).then((rUp) => {
+                  if (rUp.error) {
+                    chkMcInst.checked = false;
+                    chkMcInst.disabled = false;
+                    showToast('No se pudo guardar la opción multicontraparte.', 'error');
+                    return;
+                  }
+                  return borrarTransaccionesPlantillaEstandarParaMulticontraparte(instId, orden)
+                    .then((nDel) =>
+                      sincronizarCcYCajaDesdeOrden(ordenId)
+                        .then(() => actualizarEstadoOrden(ordenId))
+                        .then(() => {
+                          chkMcInst.disabled = false;
+                          showToast(
+                            nDel > 0
+                              ? `Multicontraparte manual activada. Se eliminaron ${nDel} transacción(es) sugerida(s) por el sistema.`
+                              : 'Multicontraparte manual activada. No había transacciones en el esquema sugerido (o ya las habías modificado). Podés cargar N transacciones y contrapartes explícitas.',
+                            'success',
+                            5500
+                          );
+                          const vistaCc = document.getElementById('vista-cuenta-corriente');
+                          if (vistaCc && vistaCc.style.display !== 'none') loadCuentaCorriente();
+                          renderOrdenWizardInstrumentacion(instId);
+                        })
+                    )
+                    .catch((err) => {
+                      chkMcInst.checked = false;
+                      chkMcInst.disabled = false;
+                      client.from('instrumentacion').update({ multicontraparte_manual: false, updated_at: new Date().toISOString() }).eq('id', instId).then(() => {
+                        renderOrdenWizardInstrumentacion(instId);
+                      });
+                      showToast('No se pudo completar la activación: ' + (err && (err.message || err.code) ? String(err.message || err.code) : 'error'), 'error');
+                    });
+                });
+              },
+              () => { chkMcInst.checked = false; }
+            );
           };
       }
 
@@ -11467,6 +11636,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
  * Sincroniza CC (cliente e intermediario) y caja desde la orden y sus transacciones.
  * Regla única: orden + instrumentación son la fuente de verdad; CC y caja se recalculan por derivación.
  * Se borran todos los movimientos de esta orden y se vuelven a insertar según el estado actual de las transacciones.
+ * Fecha contable y estado_fecha de cada fila derivada se anclan a la transacción (`fecha_ejecucion`, `updated_at`); ver `fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion`.
  * @param {string} ordenId
  * @returns {Promise<void>}
  */
@@ -11498,7 +11668,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
         const instId = rInst.data.id;
         const multicontraparteManual = !!(rInst.data && rInst.data.multicontraparte_manual);
         return Promise.all([
-          client.from('transacciones').select('id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instId),
+          client.from('transacciones').select('id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at').eq('instrumentacion_id', instId),
           client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
           client.from('modos_pago').select('id, codigo'),
         ]).then(([rTr, rCom, rModos]) => {
@@ -11544,6 +11714,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           // Instrumentación multicontraparte manual (docs/INSTRUMENTACION_MANUAL_MULTICONTRAPARTE.md): sin motor reglas; CC por entidad explícita; caja solo Pandy + efectivo.
           transacciones.forEach((t) => {
             if (t.estado !== 'ejecutada') return;
+            const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
             const transaccionId = t.id;
             const monto = Number(t.monto) || 0;
             const mon = (t.moneda || 'USD').toUpperCase();
@@ -11566,7 +11737,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   orden_numero: orden.numero != null ? orden.numero : null,
                   transaccion_numero: t.numero != null ? t.numero : null,
                   concepto: conceptoCaja,
-                  fecha,
+                  fecha: feT.fecha,
                   usuario_id: currentUserId,
                 });
               }
@@ -11589,7 +11760,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 orden_numero: orden.numero != null ? orden.numero : null,
                 transaccion_numero: t.numero != null ? t.numero : null,
                 concepto: conceptoCaja,
-                fecha,
+                fecha: feT.fecha,
                 usuario_id: currentUserId,
               });
             }
@@ -11611,12 +11782,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   transaccion_id: transaccionId,
                   transaccion_numero: t.numero != null ? t.numero : null,
                   concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero),
-                  fecha,
+                  fecha: feT.fecha,
                   usuario_id: currentUserId,
                   moneda: mon,
                   monto: -montoIngresoCc,
                   estado: 'cerrado',
-                  estado_fecha: ahora,
+                  estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(mon, -montoIngresoCc),
                 });
               }
@@ -11627,12 +11798,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   transaccion_id: transaccionId,
                   transaccion_numero: t.numero != null ? t.numero : null,
                   concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, t.numero),
-                  fecha,
+                  fecha: feT.fecha,
                   usuario_id: currentUserId,
                   moneda: mon,
                   monto: monto,
                   estado: 'cerrado',
-                  estado_fecha: ahora,
+                  estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(mon, monto),
                 });
               }
@@ -11651,10 +11822,10 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   moneda: monInt,
                   monto,
                   concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
-                  fecha,
+                  fecha: feT.fecha,
                   usuario_id: currentUserId,
                   estado: 'cerrado',
-                  estado_fecha: ahora,
+                  estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(monInt, monto),
                 });
               }
@@ -11669,10 +11840,10 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   moneda: monInt,
                   monto: montoEfectivoInt,
                   concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero),
-                  fecha,
+                  fecha: feT.fecha,
                   usuario_id: currentUserId,
                   estado: 'cerrado',
-                  estado_fecha: ahora,
+                  estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(monInt, montoEfectivoInt),
                 });
               }
@@ -11685,10 +11856,10 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   moneda: mon,
                   monto: -monto,
                   concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, t.numero),
-                  fecha,
+                  fecha: feT.fecha,
                   usuario_id: currentUserId,
                   estado: 'cerrado',
-                  estado_fecha: ahora,
+                  estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(mon, -monto),
                 });
               }
@@ -11701,10 +11872,10 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   moneda: mon,
                   monto: -monto,
                   concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
-                  fecha,
+                  fecha: feT.fecha,
                   usuario_id: currentUserId,
                   estado: 'cerrado',
-                  estado_fecha: ahora,
+                  estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(mon, -monto),
                 });
               }
@@ -11738,18 +11909,21 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             });
           } else if (esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id) {
             const nroTransComisionChequeFb = nroTransIngresoClientePandyPrincipalParaComisionConcepto(transacciones, comisionPandyMonto);
+            const feSynthChequeFb = nroTransComisionChequeFb != null
+              ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionChequeFb, fecha, ahora)
+              : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
             const tx1EjecutadaFb = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
             const tx2EjecutadaFb = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'cliente' && (t.estado || '').toLowerCase() === 'ejecutada');
             const parClienteCerradoFb = tx1EjecutadaFb && tx2EjecutadaFb;
             const montoComisionCcClienteChequeFb =
               spreadAcuerdoChequeInt >= 1e-6 ? spreadAcuerdoChequeInt : comisionPandyMonto;
             if (clienteId && montoComisionCcClienteChequeFb >= 1e-6 && !parClienteCerradoFb) {
-              rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha, usuario_id: currentUserId, moneda: comisionPandyMon, monto: montoComisionCcClienteChequeFb, estado: 'cerrado', estado_fecha: ahora, ...montosCcPorMoneda(comisionPandyMon, montoComisionCcClienteChequeFb) });
+              rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: currentUserId, moneda: comisionPandyMon, monto: montoComisionCcClienteChequeFb, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(comisionPandyMon, montoComisionCcClienteChequeFb) });
             }
             const hayTx3Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && (t.estado || '').toLowerCase() === 'ejecutada');
             const hayTx4Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'intermediario' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
             if (intermediarioId && comisionIntMonto >= 1e-6 && (hayTx3Ejecutada || hayTx4Ejecutada || parClienteCerradoFb)) {
-              rowsCcInt.push({ intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha, usuario_id: currentUserId, moneda: comisionIntMon, monto: -comisionIntMonto, estado: 'cerrado', estado_fecha: ahora, ...montosCcPorMoneda(comisionIntMon, -comisionIntMonto) });
+              rowsCcInt.push({ intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: currentUserId, moneda: comisionIntMon, monto: -comisionIntMonto, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(comisionIntMon, -comisionIntMonto) });
             }
             if (intermediarioId && comisionIntMonto >= 1e-6 && parClienteCerradoFb) {
               const monComCajaFb = (comisionIntMon || 'ARS').toUpperCase();
@@ -11762,7 +11936,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 orden_numero: orden.numero != null ? orden.numero : null,
                 transaccion_numero: nroTransComisionChequeFb,
                 concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaFb, comisionIntMonto, orden.numero, nroTransComisionChequeFb),
-                fecha,
+                fecha: feSynthChequeFb.fecha,
                 usuario_id: currentUserId,
               });
             }
@@ -11793,6 +11967,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             const egresoRef = egresosCli.slice().sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0)).pop() || null;
             if (montoRecibido >= 1e-6 && montoEntregado >= 1e-6) {
               const conceptoCierre = 'Cierre orden ' + (orden.numero != null ? orden.numero : ordenId);
+              const feCierre = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(egresoRef, fecha, ahora);
               // Saldo por moneda: −montoRecibido (cobro) + montoEntregado (compromiso) + cierre +montoRecibido en monR −montoEntregado en monE → 0 en ambas.
               // Varios ingresos/egresos parciales (ej. 5k efectivo + 5k transferencia): se suman todos; ref. de nro. trans. = último egreso.
               rowsCcCliente.push({
@@ -11801,12 +11976,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 transaccion_id: egresoRef != null ? egresoRef.id : null,
                 transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
                 concepto: conceptoCierre,
-                fecha,
+                fecha: feCierre.fecha,
                 usuario_id: currentUserId,
                 moneda: monR,
                 monto: montoRecibido,
                 estado: 'cerrado',
-                estado_fecha: ahora,
+                estado_fecha: feCierre.estado_fecha,
                 ...montosCcPorMoneda(monR, montoRecibido),
               });
               rowsCcCliente.push({
@@ -11815,12 +11990,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 transaccion_id: egresoRef != null ? egresoRef.id : null,
                 transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
                 concepto: conceptoCierre,
-                fecha,
+                fecha: feCierre.fecha,
                 usuario_id: currentUserId,
                 moneda: monE,
                 monto: -montoEntregado,
                 estado: 'cerrado',
-                estado_fecha: ahora,
+                estado_fecha: feCierre.estado_fecha,
                 ...montosCcPorMoneda(monE, -montoEntregado),
               });
             }
@@ -12263,6 +12438,47 @@ function insertarMovimientosCcMomentoCero(ordenId, orden, ingresoId, egresoId) {
     console.warn('insertarMovimientosCcMomentoCero:', err && (err.message || err.code));
     return Promise.resolve();
   });
+}
+
+/**
+ * Al activar multicontraparte manual (ARS-USD / USD-ARS sin int.): quita la pareja sugerida por el sistema
+ * (ingreso Cliente→Pandy en monR + egreso Pandy→Cliente en monE) para evitar que queden vivas y se editen
+ * mezcladas con patas libres. No borra ingresos con cobrador distinto de Pandy (p. ej. pago a tercero).
+ */
+function borrarTransaccionesPlantillaEstandarParaMulticontraparte(instrumentacionId, orden) {
+  if (!instrumentacionId || !orden) return Promise.resolve(0);
+  const monR = (orden.moneda_recibida || 'USD').toUpperCase();
+  const monE = (orden.moneda_entregada || 'USD').toUpperCase();
+  return client
+    .from('transacciones')
+    .select('id, tipo, moneda, cobrador, pagador')
+    .eq('instrumentacion_id', instrumentacionId)
+    .then((r) => {
+      if (r.error) return Promise.reject(r.error);
+      const list = r.data || [];
+      const ids = [];
+      list.forEach((t) => {
+        const tipo = (t.tipo || '').toLowerCase();
+        const mon = (t.moneda || 'USD').toUpperCase();
+        const { pag, cob } = pagCobEfectivosTransaccionSync(t);
+        if (tipo === 'ingreso' && pag === 'cliente' && cob === 'pandy' && mon === monR) ids.push(t.id);
+        else if (tipo === 'egreso' && pag === 'pandy' && cob === 'cliente' && mon === monE) ids.push(t.id);
+      });
+      if (ids.length === 0) return Promise.resolve(0);
+      const borrarUna = (trId) =>
+        Promise.all([
+          client.from('movimientos_cuenta_corriente').delete().eq('transaccion_id', trId),
+          client.from('movimientos_cuenta_corriente_intermediario').delete().eq('transaccion_id', trId),
+          client.from('movimientos_caja').delete().eq('transaccion_id', trId),
+        ]).then((results) => {
+          const errDel = results.find((x) => x.error);
+          if (errDel && errDel.error) return Promise.reject(errDel.error);
+          return client.from('transacciones').delete().eq('id', trId).then((rDel) => {
+            if (rDel.error) return Promise.reject(rDel.error);
+          });
+        });
+      return ids.reduce((p, id) => p.then(() => borrarUna(id)), Promise.resolve()).then(() => ids.length);
+    });
 }
 
 /**
@@ -12896,6 +13112,46 @@ function aplicarModoPagadorClienteMulticontraparte(participantes, registro) {
   }
 }
 
+/** Desplegable cobrador cliente (MC): si Pagador y Cobrador son Cliente, no ofrecer «acuerdo» — el cobrador debe ser un tercero. */
+function htmlOptionsCobradorClienteMulticontraparte(listCli, acuerdoId, acuerdoNombre, clienteACliente) {
+  let h = clienteACliente
+    ? '<option value="">Elegí el cliente cobrador…</option>'
+    : `<option value="">${escapeHtml(acuerdoNombre)} (acuerdo)</option>`;
+  (listCli || []).forEach((c) => {
+    if (!c || !c.id) return;
+    if (acuerdoId && String(c.id) === String(acuerdoId)) return;
+    h += `<option value="${escapeHtml(String(c.id))}">${escapeHtml(c.nombre != null ? String(c.nombre) : String(c.id))}</option>`;
+  });
+  return h;
+}
+
+function aplicarValorSelectCobradorClienteMulticontraparte(sel, htmlOpts, idGuardado, acuerdoId) {
+  if (!sel) return;
+  sel.innerHTML = htmlOpts;
+  let selVal = '';
+  if (idGuardado && String(idGuardado) !== String(acuerdoId)) selVal = String(idGuardado);
+  sel.value = selVal;
+  if (selVal && sel.value !== selVal) sel.value = '';
+}
+
+function refillMcCobradorClienteDropdown() {
+  const wrap = document.getElementById('transaccion-multicontraparte-contrapartes-wrap');
+  if (!wrap || wrap.style.display === 'none') return;
+  const sel = document.getElementById('transaccion-cobrador-cliente-id');
+  if (!sel) return;
+  const bd = document.getElementById('modal-transaccion-backdrop');
+  const listCli = bd?._mcListaClientes;
+  if (!Array.isArray(listCli)) return;
+  const acuerdoId = bd?._mcOrdenClienteId || '';
+  const acuerdoNombre = (bd?._mcClienteNombre || 'Cliente del acuerdo').trim() || 'Cliente del acuerdo';
+  const pag = (document.getElementById('transaccion-pagador')?.value || '').toLowerCase();
+  const cob = (document.getElementById('transaccion-cobrador')?.value || '').toLowerCase();
+  const clienteACliente = pag === 'cliente' && cob === 'cliente';
+  const idPrev = sel.value || null;
+  const h = htmlOptionsCobradorClienteMulticontraparte(listCli, acuerdoId, acuerdoNombre, clienteACliente);
+  aplicarValorSelectCobradorClienteMulticontraparte(sel, h, idPrev, acuerdoId);
+}
+
 /** Rellena desplegables de cliente/intermediario concreto cuando la instrumentación tiene multicontraparte manual (ARS-USD / USD-ARS sin int.). */
 function poblarSelectContrapartesMulticontraparteModal(participantes, registro) {
   const wrap = document.getElementById('transaccion-multicontraparte-contrapartes-wrap');
@@ -12913,17 +13169,11 @@ function poblarSelectContrapartesMulticontraparteModal(participantes, registro) 
   const ordenIntId = participantes.ordenIntermediarioId || null;
   function fillCliCobrador(sel, idGuardado) {
     if (!sel) return;
-    let h = `<option value="">${escapeHtml(acuerdoNombre)} (acuerdo)</option>`;
-    listCli.forEach((c) => {
-      if (!c || !c.id) return;
-      if (acuerdoId && c.id === acuerdoId) return;
-      h += `<option value="${escapeHtml(String(c.id))}">${escapeHtml(c.nombre != null ? String(c.nombre) : String(c.id))}</option>`;
-    });
-    sel.innerHTML = h;
-    let selVal = '';
-    if (idGuardado && String(idGuardado) !== String(acuerdoId)) selVal = String(idGuardado);
-    sel.value = selVal;
-    if (selVal && sel.value !== selVal) sel.value = '';
+    const pag = (document.getElementById('transaccion-pagador')?.value || '').toLowerCase();
+    const cob = (document.getElementById('transaccion-cobrador')?.value || '').toLowerCase();
+    const clienteACliente = pag === 'cliente' && cob === 'cliente';
+    const h = htmlOptionsCobradorClienteMulticontraparte(listCli, acuerdoId, acuerdoNombre, clienteACliente);
+    aplicarValorSelectCobradorClienteMulticontraparte(sel, h, idGuardado, acuerdoId);
   }
   function fillInt(sel, idGuardado) {
     if (!sel) return;
@@ -13010,6 +13260,7 @@ function openModalTransaccion(registro, instrumentacionId) {
     if (seq !== openModalTransaccionSeq) return;
 
     function finishOpenModalTransaccion() {
+    let mcSmartApplied = false;
     const formTr = document.getElementById('form-transaccion');
     if (formTr) {
       formTr.querySelectorAll('input:not([type="hidden"]), select, textarea').forEach((el) => { el.disabled = false; });
@@ -13067,14 +13318,49 @@ function openModalTransaccion(registro, instrumentacionId) {
       document.getElementById('form-transaccion').reset();
       if (elEsCheque) elEsCheque.value = esCheque ? '1' : '0';
       if (sel) sel.disabled = false;
-      const pagIng = participantes?.cliente ? 'cliente' : (participantes?.intermediario ? 'intermediario' : 'pandy');
-      document.getElementById('transaccion-tipo').value = 'ingreso';
-      document.getElementById('transaccion-moneda').value = esCheque ? 'ARS' : 'USD';
+      const monRUi = (participantes?.monedaRecibida || '').toString().trim().toUpperCase() || 'USD';
+      const monEUi = (participantes?.monedaEntregada || '').toString().trim().toUpperCase() || 'USD';
+      if (permiteMcUi && Array.isArray(participantes.transaccionesInst) && participantes.ordenClienteId) {
+        const ordenMiniModal = {
+          cliente_id: participantes.ordenClienteId,
+          moneda_recibida: monRUi,
+          moneda_entregada: monEUi,
+          monto_recibido: participantes.montoRecibido,
+          monto_entregado: participantes.montoEntregado,
+          cotizacion: participantes.cotizacion,
+        };
+        const { totalRecibido: totR, totalEntregado: totE } = totalesInstrumentacion(participantes.transaccionesInst, ordenMiniModal, { totalesMulticontraparte: true });
+        const mrN = Number(participantes.montoRecibido) || 0;
+        const meN = Number(participantes.montoEntregado) || 0;
+        const tolMcModal = 1e-6;
+        const faltanR = Math.max(0, mrN - totR);
+        const faltanE = Math.max(0, meN - totE);
+        if (faltanR > tolMcModal) {
+          document.getElementById('transaccion-tipo').value = 'ingreso';
+          document.getElementById('transaccion-moneda').value = esCheque ? 'ARS' : monRUi;
+          document.getElementById('transaccion-pagador').value = 'cliente';
+          document.getElementById('transaccion-cobrador').value = 'pandy';
+          document.getElementById('transaccion-monto').value = formatImporteParaInput(faltanR);
+          mcSmartApplied = true;
+        } else if (faltanE > tolMcModal) {
+          document.getElementById('transaccion-tipo').value = 'egreso';
+          document.getElementById('transaccion-moneda').value = esCheque ? 'ARS' : monEUi;
+          document.getElementById('transaccion-pagador').value = 'pandy';
+          document.getElementById('transaccion-cobrador').value = 'cliente';
+          document.getElementById('transaccion-monto').value = formatImporteParaInput(faltanE);
+          mcSmartApplied = true;
+        }
+      }
+      if (!mcSmartApplied) {
+        const pagIng = participantes?.cliente ? 'cliente' : (participantes?.intermediario ? 'intermediario' : 'pandy');
+        document.getElementById('transaccion-tipo').value = 'ingreso';
+        document.getElementById('transaccion-moneda').value = esCheque ? 'ARS' : 'USD';
+        document.getElementById('transaccion-pagador').value = pagIng;
+        document.getElementById('transaccion-cobrador').value = 'pandy';
+        document.getElementById('transaccion-monto').value = '';
+      }
       document.getElementById('transaccion-modo-pago').value = '';
-      document.getElementById('transaccion-cobrador').value = 'pandy';
-      document.getElementById('transaccion-pagador').value = pagIng;
       document.getElementById('transaccion-estado').value = 'pendiente';
-      document.getElementById('transaccion-monto').value = '';
       if (!esCheque) {
         const tcAcuerdo = participantes?.cotizacion;
         document.getElementById('transaccion-tipo-cambio').value = tcAcuerdo != null ? formatImporteDisplay(tcAcuerdo) : '';
@@ -13098,8 +13384,8 @@ function openModalTransaccion(registro, instrumentacionId) {
     instIdEl.value = instrumentacionId || '';
     adaptarTransaccionTipoYMoneda();
     toggleTransaccionMonedaArs();
-    // Nueva transacción: sugerir monto completo del acuerdo según tipo + moneda (sin “restante” ni lógica automática vs otras trx).
-    if (!registro) {
+    // Nueva transacción: sugerir monto completo del acuerdo según tipo + moneda (MC manual ya fijó restante arriba).
+    if (!registro && !mcSmartApplied) {
       const montoEl = document.getElementById('transaccion-monto');
       const tipoSel = document.getElementById('transaccion-tipo')?.value;
       const monSel = (document.getElementById('transaccion-moneda')?.value || '').toString().toUpperCase().trim();
@@ -13132,11 +13418,17 @@ function openModalTransaccion(registro, instrumentacionId) {
     const cobMcBind = document.getElementById('transaccion-cobrador');
     if (pagMcBind && !pagMcBind._bindMcContraparte) {
       pagMcBind._bindMcContraparte = true;
-      pagMcBind.addEventListener('change', () => actualizarVisibilidadFilasContraparteMulticontraparte());
+      pagMcBind.addEventListener('change', () => {
+        refillMcCobradorClienteDropdown();
+        actualizarVisibilidadFilasContraparteMulticontraparte();
+      });
     }
     if (cobMcBind && !cobMcBind._bindMcContraparte) {
       cobMcBind._bindMcContraparte = true;
-      cobMcBind.addEventListener('change', () => actualizarVisibilidadFilasContraparteMulticontraparte());
+      cobMcBind.addEventListener('change', () => {
+        refillMcCobradorClienteDropdown();
+        actualizarVisibilidadFilasContraparteMulticontraparte();
+      });
     }
 
     const esTrxAnuladaModal = !!(registro && String(registro.estado || '').toLowerCase() === 'anulada');
@@ -13147,19 +13439,35 @@ function openModalTransaccion(registro, instrumentacionId) {
       if (subDis) subDis.disabled = true;
     }
 
+    if (backdrop) {
+      if (permiteMcUi) {
+        backdrop._mcListaClientes = participantes.listaClientes || [];
+        backdrop._mcOrdenClienteId = participantes.ordenClienteId || '';
+        backdrop._mcClienteNombre = participantes.clienteNombre || '';
+      } else {
+        delete backdrop._mcListaClientes;
+        delete backdrop._mcOrdenClienteId;
+        delete backdrop._mcClienteNombre;
+      }
+    }
     backdrop.classList.add('activo');
     setupInputImporte(montoFinal);
     actualizarMontoCalculado();
     }
 
     if (participantes.permiteMulticontraparteUi) {
+      const qTrxInst = !registro && instrumentacionId
+        ? client.from('transacciones').select('id, tipo, moneda, monto, cobrador, pagador, tipo_cambio, estado, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true })
+        : Promise.resolve({ data: [] });
       Promise.all([
         client.from('clientes').select('id, nombre').order('nombre').limit(800),
         client.from('intermediarios').select('id, nombre').order('nombre').limit(800),
-      ]).then(([rCli, rInt]) => {
+        qTrxInst,
+      ]).then(([rCli, rInt, rTrx]) => {
         if (seq !== openModalTransaccionSeq) return;
         participantes.listaClientes = rCli.data || [];
         participantes.listaIntermediarios = rInt.data || [];
+        participantes.transaccionesInst = rTrx.data || [];
         finishOpenModalTransaccion();
       });
       return;
@@ -13174,6 +13482,9 @@ function closeModalTransaccion() {
   if (backdrop) {
     backdrop.classList.remove('activo');
     delete backdrop.dataset.transaccionAnulada;
+    delete backdrop._mcListaClientes;
+    delete backdrop._mcOrdenClienteId;
+    delete backdrop._mcClienteNombre;
   }
 }
 
@@ -13951,6 +14262,18 @@ function saveTransaccion() {
         if (pagador === 'cliente' && wrapPagCliVal && wrapPagCliVal.dataset.pagadorClienteModo === 'otro' && !transaccionProyectada.pagador_cliente_id) {
           showToast('Elegí el cliente pagador.', 'error');
           return;
+        }
+        if (pagador === 'cliente' && cobrador === 'cliente') {
+          const cidPagRes = transaccionProyectada.pagador_cliente_id || orden.cliente_id;
+          const cidCobRes = transaccionProyectada.cobrador_cliente_id;
+          if (!cidCobRes) {
+            showToast('En Cliente → Cliente elegí el cliente cobrador (tercero; no puede quedar el del acuerdo como cobrador genérico).', 'error');
+            return;
+          }
+          if (cidPagRes && String(cidCobRes) === String(cidPagRes)) {
+            showToast('El cobrador no puede ser el mismo cliente que el pagador.', 'error');
+            return;
+          }
         }
       }
       const idsMismaEntidad = totMcSv
