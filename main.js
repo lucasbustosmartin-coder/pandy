@@ -1675,6 +1675,51 @@ function fechaHoyYYYYMMDDArgentina() {
   return y + '-' + mo + '-' + d;
 }
 
+/** Primeras filas de auditoría en exportaciones Excel (quién exporta y cuándo, Argentina). */
+function metaFilasExportacionExcel() {
+  const emailExp = String(currentUserEmail || '').trim();
+  const fh = new Date().toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  return [
+    ['Exportado por', emailExp || '–'],
+    ['Fecha y hora exportación (Argentina)', fh],
+  ];
+}
+
+/**
+ * Emails de `user_profiles` para los UUID indicados (según RLS: propio usuario y, si aplica, permiso assign_roles).
+ * @returns {Promise<Record<string, string>>}
+ */
+function fetchMapaEmailUsuarioPorIds(idsUnicos) {
+  const ids = [...new Set((idsUnicos || []).filter(Boolean))];
+  if (ids.length === 0) return Promise.resolve({});
+  return client
+    .from('user_profiles')
+    .select('id, email')
+    .in('id', ids)
+    .then((r) => {
+      const map = {};
+      (r.data || []).forEach((row) => {
+        if (row.id) map[String(row.id)] = String(row.email || '').trim();
+      });
+      return map;
+    })
+    .catch(() => ({}));
+}
+
+/** Une metadatos + fila en blanco + cabecera + filas de datos para SheetJS. */
+function aoaExcelConMetaExportacion(header, rows) {
+  return [...metaFilasExportacionExcel(), [], header, ...rows];
+}
+
 /** Suma días a YYYY-MM-DD interpretando el instante como mediodía ART (UTC+3 → 15:00Z) para no cruzar fecha al sumar. */
 function fechaAddDaysYYYYMMDDArgentina(ymd, deltaDays) {
   const d = new Date(ymd + 'T15:00:00.000Z');
@@ -2423,7 +2468,7 @@ function montosCancelacionDesdeOrden(item, orden) {
 function fetchMovimientosCajaCerradosSinSync() {
   return client
     .from('movimientos_caja')
-    .select('id, moneda, monto, concepto, fecha, tipo_movimiento_id, orden_id, transaccion_id, orden_numero, transaccion_numero, estado, estado_fecha, caja_tipo')
+    .select('id, moneda, monto, concepto, fecha, tipo_movimiento_id, orden_id, transaccion_id, orden_numero, transaccion_numero, estado, estado_fecha, caja_tipo, usuario_id')
     .eq('estado', 'cerrado')
     .order('fecha', { ascending: false })
     .order('created_at', { ascending: false })
@@ -3130,43 +3175,49 @@ function exportarMovimientosCajaExcel() {
       showToast('No hay movimientos para exportar con el filtro actual.', 'info');
       return;
     }
-    const origenLabel = (m) => {
-      if (m.tipo_movimiento_id) return 'Manual';
-      if (m.transaccion_id) return 'Acuerdo';
-      if (m.orden_id) return 'Orden concertada';
-      return '–';
-    };
-    const tipoIngresoEgreso = (m) => (Number(m.monto) >= 0 ? 'Ingreso' : 'Egreso');
-    const cajaTipoLabel = (m) => {
-      const t = (m.caja_tipo || 'efectivo').toLowerCase();
-      if (t === 'banco') return 'Banco';
-      if (t === 'cheque') return 'Cheque';
-      return 'Efectivo';
-    };
-    const header = ['Fecha', 'Origen', 'Nro orden', 'Nro Trx', 'Tipo', 'Moneda', 'Monto', 'Caja', 'Concepto'];
-    const rows = filtrados.map((m) => {
-      const nroOrden = m.orden_numero != null ? Number(m.orden_numero) : null;
-      const nroTrans = m.transaccion_numero != null ? Number(m.transaccion_numero) : null;
-      const fecha = (m.fecha || '').toString().slice(0, 10);
-      return [
-        fecha,
-        origenLabel(m),
-        nroOrden,
-        nroTrans,
-        tipoIngresoEgreso(m),
-        (m.moneda || '').toString(),
-        m.monto != null ? Number(m.monto) : null,
-        cajaTipoLabel(m),
-        (m.concepto || '').toString(),
-      ];
+    const idsUsuario = filtrados.map((m) => m.usuario_id).filter(Boolean);
+    return fetchMapaEmailUsuarioPorIds(idsUsuario).then((emailPorUsuario) => {
+      const origenLabel = (m) => {
+        if (m.tipo_movimiento_id) return 'Manual';
+        if (m.transaccion_id) return 'Acuerdo';
+        if (m.orden_id) return 'Orden concertada';
+        return '–';
+      };
+      const tipoIngresoEgreso = (m) => (Number(m.monto) >= 0 ? 'Ingreso' : 'Egreso');
+      const cajaTipoLabel = (m) => {
+        const t = (m.caja_tipo || 'efectivo').toLowerCase();
+        if (t === 'banco') return 'Banco';
+        if (t === 'cheque') return 'Cheque';
+        return 'Efectivo';
+      };
+      const header = ['Fecha', 'Origen', 'Nro orden', 'Nro Trx', 'Tipo', 'Moneda', 'Monto', 'Caja', 'Concepto', 'Usuario (registro)'];
+      const rows = filtrados.map((m) => {
+        const nroOrden = m.orden_numero != null ? Number(m.orden_numero) : null;
+        const nroTrans = m.transaccion_numero != null ? Number(m.transaccion_numero) : null;
+        const fecha = (m.fecha || '').toString().slice(0, 10);
+        const uid = m.usuario_id != null ? String(m.usuario_id) : '';
+        const mailReg = uid ? (emailPorUsuario[uid] || '') : '';
+        return [
+          fecha,
+          origenLabel(m),
+          nroOrden,
+          nroTrans,
+          tipoIngresoEgreso(m),
+          (m.moneda || '').toString(),
+          m.monto != null ? Number(m.monto) : null,
+          cajaTipoLabel(m),
+          (m.concepto || '').toString(),
+          mailReg || '–',
+        ];
+      });
+      const aoa = aoaExcelConMetaExportacion(header, rows);
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Movimientos caja');
+      const nombreArchivo = 'caja_movimientos_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
+      XLSX.writeFile(wb, nombreArchivo);
+      showToast('Exportado: ' + nombreArchivo, 'success');
     });
-    const aoa = [header, ...rows];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Movimientos caja');
-    const nombreArchivo = 'caja_movimientos_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
-    XLSX.writeFile(wb, nombreArchivo);
-    showToast('Exportado: ' + nombreArchivo, 'success');
   });
 }
 
@@ -5688,8 +5739,8 @@ function loadCuentaCorriente(opts) {
   return Promise.all([
       client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
       client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
-      client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento' + CC_MOV_MANUAL_PAG_COB_COLS),
-      client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento' + CC_MOV_MANUAL_PAG_COB_COLS),
+      client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS),
+      client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS),
     ])
     .then(([rClientes, rInt, rMovCli, rMovInt]) => {
     const clientes = rClientes.data || [];
@@ -6547,36 +6598,41 @@ function exportarCcResumenExcel() {
       showToast('No hay movimientos para exportar.', 'info');
       return;
     }
-    const monedasExp = MONEDAS_CC_MOVIMIENTOS_COLS.filter((mon) => ccUiMonedasVisibles[mon]);
-    const header = ['Fecha', 'Tipo op.', 'Orden', 'Trans.', 'Concepto', ...monedasExp, 'Estado', 'Pagador', 'Cobrador'];
-    const rows = filtrados.map((m) => {
-      const tienePorMoneda = m.monto_usd != null || m.monto_ars != null || m.monto_eur != null;
-      let usd = null, ars = null, eur = null;
-      if (tienePorMoneda) {
-        usd = m.monto_usd != null ? Number(m.monto_usd) : null;
-        ars = m.monto_ars != null ? Number(m.monto_ars) : null;
-        eur = m.monto_eur != null ? Number(m.monto_eur) : null;
-      } else if (m.moneda && m.monto != null) {
-        const val = Number(m.monto);
-        if (m.moneda === 'USD') usd = val;
-        else if (m.moneda === 'ARS') ars = val;
-        else if (m.moneda === 'EUR') eur = val;
-      }
-      const porMon = { USD: usd, ARS: ars, EUR: eur };
-      const estado = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
-      const nroOrden = m.orden_numero != null ? Number(m.orden_numero) : null;
-      const nroTrans = m.transaccion_numero != null ? Number(m.transaccion_numero) : null;
-      const tipoOp = m.es_movimiento_manual ? 'Manual' : ((m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–');
-      const celdasMon = monedasExp.map((mon) => porMon[mon]);
-      return [(m.fecha || '').toString().slice(0, 10), tipoOp, nroOrden, nroTrans, m.concepto || '', ...celdasMon, estado, m.ccPagador || '', m.ccCobrador || ''];
+    const idsUsuario = filtrados.map((m) => m.usuario_id).filter(Boolean);
+    fetchMapaEmailUsuarioPorIds(idsUsuario).then((emailPorUsuario) => {
+      const monedasExp = MONEDAS_CC_MOVIMIENTOS_COLS.filter((mon) => ccUiMonedasVisibles[mon]);
+      const header = ['Fecha', 'Tipo op.', 'Orden', 'Trans.', 'Concepto', ...monedasExp, 'Estado', 'Pagador', 'Cobrador', 'Usuario (registro)'];
+      const rows = filtrados.map((m) => {
+        const tienePorMoneda = m.monto_usd != null || m.monto_ars != null || m.monto_eur != null;
+        let usd = null, ars = null, eur = null;
+        if (tienePorMoneda) {
+          usd = m.monto_usd != null ? Number(m.monto_usd) : null;
+          ars = m.monto_ars != null ? Number(m.monto_ars) : null;
+          eur = m.monto_eur != null ? Number(m.monto_eur) : null;
+        } else if (m.moneda && m.monto != null) {
+          const val = Number(m.monto);
+          if (m.moneda === 'USD') usd = val;
+          else if (m.moneda === 'ARS') ars = val;
+          else if (m.moneda === 'EUR') eur = val;
+        }
+        const porMon = { USD: usd, ARS: ars, EUR: eur };
+        const estado = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
+        const nroOrden = m.orden_numero != null ? Number(m.orden_numero) : null;
+        const nroTrans = m.transaccion_numero != null ? Number(m.transaccion_numero) : null;
+        const tipoOp = m.es_movimiento_manual ? 'Manual' : ((m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–');
+        const celdasMon = monedasExp.map((mon) => porMon[mon]);
+        const uid = m.usuario_id != null ? String(m.usuario_id) : '';
+        const mailReg = uid ? (emailPorUsuario[uid] || '') : '';
+        return [(m.fecha || '').toString().slice(0, 10), tipoOp, nroOrden, nroTrans, m.concepto || '', ...celdasMon, estado, m.ccPagador || '', m.ccCobrador || '', mailReg || '–'];
+      });
+      const aoa = aoaExcelConMetaExportacion(header, rows);
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'CC detalle movimientos');
+      const nombreArchivo = 'cc_detalle_movimientos_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
+      XLSX.writeFile(wb, nombreArchivo);
+      showToast('Exportado: ' + nombreArchivo, 'success');
     });
-    const aoa = [header, ...rows];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'CC detalle movimientos');
-    const nombreArchivo = 'cc_detalle_movimientos_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
-    XLSX.writeFile(wb, nombreArchivo);
-    showToast('Exportado: ' + nombreArchivo, 'success');
     return;
   }
   const EPSILON_SALDO = 1e-6;
@@ -6599,7 +6655,7 @@ function exportarCcResumenExcel() {
     });
     return cels;
   });
-  const aoa = [header, ...rows];
+  const aoa = aoaExcelConMetaExportacion(header, rows);
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Cuenta corriente');
@@ -6630,8 +6686,8 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
   const tablaMov = tipo === 'cliente' ? 'movimientos_cuenta_corriente' : 'movimientos_cuenta_corriente_intermediario';
   const filtroMov = tipo === 'cliente' ? { cliente_id: entityId } : { intermediario_id: entityId };
   const selectMov = tipo === 'cliente'
-    ? 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento' + CC_MOV_MANUAL_PAG_COB_COLS
-    : 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento' + CC_MOV_MANUAL_PAG_COB_COLS;
+    ? 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS
+    : 'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS;
   return Promise.all([
     client.from(tablaMov).select(selectMov).match(filtroMov).order('fecha', { ascending: false }).order('created_at', { ascending: false }),
     client.from('ordenes').select(ordenesTieneNumeroColumn ? 'id, numero, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario)' : 'id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario)').neq('estado', 'anulada').match({ [campoId]: entityId }),

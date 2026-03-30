@@ -2165,9 +2165,7 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
 /** Rellena el combo Cliente/Intermediario en Movimientos según movimientos cargados y tipo actual. */
 function poblarSelectCcDetalleEntidad() {
   const sel = document.getElementById('cc-detalle-entidad-select');
-  const labelSpan = document.getElementById('cc-detalle-entidad-label-text');
   if (!sel) return;
-  if (labelSpan) labelSpan.textContent = ccFiltroTipo === 'cliente' ? 'Cliente:' : 'Intermediario:';
   const idKey = ccFiltroTipo === 'cliente' ? 'cliente_id' : 'intermediario_id';
   const movs = ccMovimientosDetalleList.filter((m) => m.tipo === ccFiltroTipo);
   const map = new Map();
