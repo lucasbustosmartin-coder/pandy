@@ -42,8 +42,7 @@ INSERT INTO public.reglas_de_negocio (
   estado_transaccion, contrapartida_ejecutada, linea,
   moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
 ) VALUES
-  ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
@@ -71,6 +70,24 @@ WHERE tipo_operacion_codigo = 'USD-USD'
   AND LOWER(cobrador) = 'intermediario'
   AND LOWER(tipo_transaccion) = 'egreso'
   AND LOWER(monto_origen) = 'comision_intermediario';
+
+-- Comisión int. cp_ic P,E (Int→Cliente ejecutado, C→P pendiente): ver sql/migracion_usd_usd_int_cp_ic_intermediario_pe_deuda.sql
+INSERT INTO public.reglas_de_negocio (
+  tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada, linea,
+  moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
+) VALUES
+  ('USD-USD', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0,
+   'USD', -1, 'comision_intermediario', true, 'comision_acuerdo')
+ON CONFLICT (
+  tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
+  estado_transaccion, contrapartida_ejecutada, linea
+) DO UPDATE SET
+  moneda = EXCLUDED.moneda,
+  signo = EXCLUDED.signo,
+  monto_origen = EXCLUDED.monto_origen,
+  incluir_en_detalle = EXCLUDED.incluir_en_detalle,
+  concepto_leyenda = EXCLUDED.concepto_leyenda;
 
 -- --- 2b: ci_pc — CC intermediario por egreso Pandy→Cliente (**solo USD-USD+int**; cruces ya cubiertos por C→I) ----------
 -- (El mismo bloque está en `sql/migracion_reglas_ci_pc_cc_intermediario_pandy_cliente.sql` solo como copia en repo; no ejecutar ese archivo aparte.)

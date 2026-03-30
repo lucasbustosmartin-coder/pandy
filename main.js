@@ -2743,7 +2743,8 @@ function mergePendienteClaseUsdUsdIntIntermediario(intId, saldos, pendienteEnMon
   ordenById = ordenById || {};
   const pendU = pendienteEnMoneda && pendienteEnMoneda.USD;
   const alg = Number(saldos.USD) || 0;
-  if (pendU || Math.abs(alg) < 1e-6) return pendienteClasePorMoneda;
+  // Con deuda neta a favor del int. (saldo negativo), no cortar por pendientes puntuales (p. ej. comisión int. pendiente en cp_ic P,E).
+  if (Math.abs(alg) < 1e-6 || (pendU && alg >= -1e-6)) return pendienteClasePorMoneda;
   if (pendienteClasePorMoneda.USD !== 'ninguno') return pendienteClasePorMoneda;
   if (alg >= -1e-6) return pendienteClasePorMoneda;
   const hayOrdenUsdUsdInt = (movsI || []).some((m) => {
@@ -3363,19 +3364,21 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
   const rowTotal =
     '<div class="inicio-gp-matriz-label-total">Total</div>' + monedas.map((m) => celNum(tot, m, true)).join('');
   const rowCaja =
-    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-manual">Caja manual<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: caja manual en G/P Operativa">' +
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-manual">Movimientos de caja manuales<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja manuales en G/P Operativa">' +
     helpIconSvg +
-    '</button><span class="help-popover"><strong>Caja manual</strong> en esta fila: suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa.</span></span></div>' +
+    '</button><span class="help-popover"><strong>Movimientos de caja manuales</strong> en esta fila: suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa.</span></span></div>' +
     monedas.map((m) => celNum(cajaMan, m, false)).join('');
   const rowCajaOrd =
-    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-ordenes">Caja por órdenes<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: caja por órdenes en G/P Operativa">' +
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-ordenes">Movimientos de caja por órdenes<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja por órdenes en G/P Operativa">' +
     helpIconSvg +
-    '</button><span class="help-popover"><strong>Caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). Ahí aparece el resultado neto en valores de Pandy cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de la caja manual filtrada por tipo.</span></span></div>' +
+    '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
+    escapeHtml(nombreMarcaSistema()) +
+    '</span> cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de los movimientos de caja manuales filtrados por tipo.</span></span></div>' +
     monedas.map((m) => celNum(cajaOrd, m, false)).join('');
   const rowCli =
-    '<div class="inicio-gp-matriz-label-sub">CC clientes</div>' + monedas.map((m) => celNum(ccC, m, false)).join('');
+    '<div class="inicio-gp-matriz-label-sub">Cuenta Corriente Clientes</div>' + monedas.map((m) => celNum(ccC, m, false)).join('');
   const rowInt =
-    '<div class="inicio-gp-matriz-label-sub">CC intermediarios</div>' + monedas.map((m) => celNum(ccI, m, false)).join('');
+    '<div class="inicio-gp-matriz-label-sub">Cuenta Corriente Intermediarios</div>' + monedas.map((m) => celNum(ccI, m, false)).join('');
   elMatriz.innerHTML =
     '<div class="inicio-gp-matriz-spacer" aria-hidden="true"></div>' +
     headers +
@@ -4136,6 +4139,25 @@ function pagCobEfectivosTransaccionSync(t) {
 }
 
 /**
+ * Completa `pagador_*_id` / `cobrador_*_id` en un payload de transacción según roles y la orden (cliente/intermediario del acuerdo).
+ * No pisa valores ya definidos (MC, combos). Si pagador y cobrador son ambos `cliente`, no rellena (dos UUID distintos salen del formulario MC).
+ * Así CC y grillas resuelven nombres con `pagCliTrx`/`cobCliTrx` sin caer en fallback a `mov.cliente_id`.
+ */
+function completarPayloadIdsContraparteDesdeOrden(payload, orden) {
+  if (!payload || !orden || typeof payload !== 'object') return;
+  const pag = String(payload.pagador || '').toLowerCase();
+  const cob = String(payload.cobrador || '').toLowerCase();
+  if (pag === 'cliente' && cob === 'cliente') return;
+  const cid = orden.cliente_id != null && String(orden.cliente_id).trim() !== '' ? String(orden.cliente_id).trim() : null;
+  const iid = orden.intermediario_id != null && String(orden.intermediario_id).trim() !== '' ? String(orden.intermediario_id).trim() : null;
+  const vacio = (x) => x == null || x === '';
+  if (pag === 'cliente' && vacio(payload.pagador_cliente_id) && cid) payload.pagador_cliente_id = cid;
+  if (cob === 'cliente' && vacio(payload.cobrador_cliente_id) && cid) payload.cobrador_cliente_id = cid;
+  if (pag === 'intermediario' && vacio(payload.pagador_intermediario_id) && iid) payload.pagador_intermediario_id = iid;
+  if (cob === 'intermediario' && vacio(payload.cobrador_intermediario_id) && iid) payload.cobrador_intermediario_id = iid;
+}
+
+/**
  * Fecha contable (`fecha`) y `estado_fecha` para movimientos CC/caja derivados de una transacción.
  * Ancla al hecho: `fecha_ejecucion` y, si existe, `updated_at` de la transacción; si no hay datos, fallback al sync (comportamiento previo).
  * Prepara etapa posterior de sync por diff (opción 2).
@@ -4877,6 +4899,16 @@ function egresoEntregaAClienteEjecutado(transacciones) {
   );
 }
 
+/** Patrón cp_ic: egreso Intermediario→Cliente ya ejecutado (el int. entregó al cliente). */
+function egresoIntermediarioAClienteEjecutado(transacciones) {
+  return (transacciones || []).some((t) =>
+    (t.tipo || '').toLowerCase() === 'egreso' &&
+    String(t.pagador || '').toLowerCase() === 'intermediario' &&
+    String(t.cobrador || '').toLowerCase() === 'cliente' &&
+    (t.estado || '').toLowerCase() === 'ejecutada'
+  );
+}
+
 /**
  * Patrón de instrumentación con intermediario (2 tx típicas):
  * - **ci_pc**: ingreso Cliente→Intermediario + egreso Pandy→Cliente (cobro al int., entrega desde caja Pandy).
@@ -5047,6 +5079,27 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
   const mr = Number(orden.monto_recibido) || 0;
   const me = Number(orden.monto_entregado) || 0;
   const comM = Number(comisionPandyMonto) || 0;
+  const spreadUsdUsd = mr - me;
+  const esUsdUsd = String(tipoOperacionCodigo || '').toUpperCase() === 'USD-USD';
+  /** Si el catálogo trae comisión E,P (pendiente/false) y hay spread, el motor agrega +mr−me; la 2.ª línea del egreso pendiente debe ser −mr (no −me) para no duplicar el spread en el saldo (−9700 neto, no −9400). */
+  const tablaTieneComisionUsdUsdEp =
+    esUsdUsd &&
+    !intermediarioId &&
+    spreadUsdUsd >= 1e-6 &&
+    lookupReglasDeNegocio(
+      reglasDeNegocio,
+      tipoOperacionCodigo,
+      'cliente',
+      'pandy',
+      'ingreso',
+      true,
+      'pendiente',
+      false
+    ).length > 0;
+  const epUsdUsdSinIntComisionExplicita =
+    tablaTieneComisionUsdUsdEp &&
+    ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
+    !egresoEntregaAClienteEjecutado(transacciones);
   (transacciones || []).forEach((t) => {
     if ((t.concepto || '').includes('Ganancia del acuerdo')) return;
     const montoT = Number(t.monto) || 0;
@@ -5086,7 +5139,19 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         if (codOp === 'USD-ARS' && monR === 'USD' && mo === 'mr_prorrateado') continue;
         if (codOp === 'ARS-USD' && monR === 'ARS' && mo === 'mr_prorrateado') continue;
       }
-      const base = montoBaseReglaNegocio(regla.monto_origen, {
+      let montoOrigenParaBase = regla.monto_origen;
+      if (
+        epUsdUsdSinIntComisionExplicita &&
+        entidad === 'cliente' &&
+        tipo === 'egreso' &&
+        estado === 'pendiente' &&
+        contrapartida &&
+        String(regla.monto_origen || '').toLowerCase() === 'me' &&
+        Number(regla.linea) === 1
+      ) {
+        montoOrigenParaBase = 'mr';
+      }
+      const base = montoBaseReglaNegocio(montoOrigenParaBase, {
         mr, me, montoT, montoEfectivoInt,
         comisionIntMonto: Number(comisionIntMonto) || 0,
       });
@@ -5122,8 +5187,6 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     }
   });
   // Comisión implícita USD-USD: `reglas_de_negocio` fila es_comision + monto_origen mr_menos_me (ver reglas_de_negocio_tabla / migraciones). Condición de negocio: acuerdo con spread (mr > me) en la orden; par cliente cerrado. No usar comisiones_orden como “llave” para esta fila — el monto sale de mr−me (tabla + orden), no del reparto Pandy/intermediario.
-  const spreadUsdUsd = mr - me;
-  const esUsdUsd = String(tipoOperacionCodigo || '').toUpperCase() === 'USD-USD';
   let nroTransComisionConceptoUsd = null;
   if (esUsdUsd) {
     const trIngresoClienteAcuerdoUsd = (transacciones || [])
@@ -5144,21 +5207,38 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora))
     : { fecha, estado_fecha: ahora };
   if (esUsdUsd && clienteId && spreadUsdUsd >= 1e-6) {
-    const parClienteCerrado =
-      ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
-      egresoEntregaAClienteEjecutado(transacciones);
-    const estadoComPandy = parClienteCerrado ? 'ejecutada' : 'pendiente';
-    const reglasCom = lookupReglasDeNegocio(
-      reglasDeNegocio,
-      tipoOperacionCodigo,
-      'cliente',
-      'pandy',
-      'ingreso',
-      true,
-      estadoComPandy,
-      parClienteCerrado
-    );
-    const reglaCom = reglasCom.length ? reglasCom[0] : null;
+    const ingresoCobroClienteEjecutado = ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones);
+    const egresoEntregaClienteEjecutado = egresoEntregaAClienteEjecutado(transacciones);
+    const parClienteCerrado = ingresoCobroClienteEjecutado && egresoEntregaClienteEjecutado;
+    let reglaCom = null;
+    if (parClienteCerrado) {
+      reglaCom = lookupReglasDeNegocio(
+        reglasDeNegocio,
+        tipoOperacionCodigo,
+        'cliente',
+        'pandy',
+        'ingreso',
+        true,
+        'ejecutada',
+        true
+      )[0];
+    } else if (
+      !intermediarioId &&
+      ingresoCobroClienteEjecutado &&
+      !egresoEntregaClienteEjecutado
+    ) {
+      // Sin int. E,P: comisión mr−me en CC como pendiente (visible; no entra en G/P hasta cerrar par).
+      reglaCom = lookupReglasDeNegocio(
+        reglasDeNegocio,
+        tipoOperacionCodigo,
+        'cliente',
+        'pandy',
+        'ingreso',
+        true,
+        'pendiente',
+        false
+      )[0];
+    }
     if (reglaCom) {
       const base = montoBaseReglaNegocio(reglaCom.monto_origen, {
         mr, me, montoT: 0,
@@ -5168,7 +5248,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       if (Math.abs(montoCc) >= 1e-12) {
         const moneda = String(reglaCom.moneda || 'USD').toUpperCase();
         const ley = reglaCom.concepto_leyenda || 'comision_acuerdo';
-        const cerrado = estadoComPandy === 'ejecutada';
+        const cerrado = parClienteCerrado;
         rowsCcCliente.push({
           cliente_id: clienteId,
           orden_id: ordenId,
@@ -5187,12 +5267,20 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       }
     }
   }
-  // Comisión intermediario USD-USD (comisiones_orden; par cliente cerrado: ingreso desde cliente + entrega al cliente ejecutados).
+  // Comisión intermediario USD-USD (comisiones_orden). Par cerrado: ingreso C→P/I + entrega al cliente ejecutados.
+  // cp_ic P,E: ya entregó Int→Cliente pero el cobro C→P sigue pendiente → devengar comisión int. (regla contrapartida_ejecutada false en tabla).
   if (esUsdUsd && intermediarioId && Number(comisionIntMonto) >= 1e-6) {
     const parClienteCerradoUsdInt =
       ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
       egresoEntregaAClienteEjecutado(transacciones);
-    const estadoComInt = parClienteCerradoUsdInt ? 'ejecutada' : 'pendiente';
+    const patronIntUsdCom = patronInstrumentacionIntDesdeTransacciones(transacciones);
+    const comisionIntCpIcParcial =
+      patronIntUsdCom === 'cp_ic' &&
+      egresoIntermediarioAClienteEjecutado(transacciones) &&
+      !parClienteCerradoUsdInt;
+    const estadoComIntLookup =
+      parClienteCerradoUsdInt || comisionIntCpIcParcial ? 'ejecutada' : 'pendiente';
+    const contrapartidaComIntLookup = comisionIntCpIcParcial ? false : parClienteCerradoUsdInt;
     const reglaComIntUsd = lookupReglasDeNegocio(
       reglasDeNegocio,
       tipoOperacionCodigo,
@@ -5200,8 +5288,8 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       'intermediario',
       'egreso',
       true,
-      estadoComInt,
-      parClienteCerradoUsdInt
+      estadoComIntLookup,
+      contrapartidaComIntLookup
     )[0];
     if (reglaComIntUsd && coercePgBooleanStrict(reglaComIntUsd.incluir_en_detalle)) {
       const baseInt = montoBaseReglaNegocio(reglaComIntUsd.monto_origen, {
@@ -5210,11 +5298,10 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       });
       const rawComInt = Number(reglaComIntUsd.signo) * baseInt;
       // cp_ic: comisión en CC int. negativa (Pandy debe al intermediario). ci_pc: signo inverso (+ comisión a favor del int.).
-      const patronIntUsd = patronInstrumentacionIntDesdeTransacciones(transacciones);
-      const montoCcInt = patronIntUsd === 'ci_pc' ? -rawComInt : rawComInt;
+      const montoCcInt = patronIntUsdCom === 'ci_pc' ? -rawComInt : rawComInt;
       if (Math.abs(montoCcInt) >= 1e-12) {
         const monedaInt = String(comisionIntMon || reglaComIntUsd.moneda || 'USD').toUpperCase();
-        const cerradoInt = estadoComInt === 'ejecutada';
+        const cerradoInt = parClienteCerradoUsdInt;
         rowsCcInt.push({
           intermediario_id: intermediarioId,
           orden_id: ordenId,
@@ -5981,9 +6068,7 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
 /** Rellena el combo Cliente/Intermediario en Movimientos según movimientos cargados y tipo actual. */
 function poblarSelectCcDetalleEntidad() {
   const sel = document.getElementById('cc-detalle-entidad-select');
-  const labelSpan = document.getElementById('cc-detalle-entidad-label-text');
   if (!sel) return;
-  if (labelSpan) labelSpan.textContent = ccFiltroTipo === 'cliente' ? 'Cliente:' : 'Intermediario:';
   const idKey = ccFiltroTipo === 'cliente' ? 'cliente_id' : 'intermediario_id';
   const movs = ccMovimientosDetalleList.filter((m) => m.tipo === ccFiltroTipo);
   const map = new Map();
@@ -12471,6 +12556,7 @@ function asegurarGananciaPandy(ordenId, instrumentacionId, orden, clienteId, com
           return client.from('transacciones').insert({
             instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoId, moneda: monedaCom, monto: comisionPandyMonto,
             cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'ejecutada', concepto: 'Ganancia del acuerdo',
+            pagador_cliente_id: clienteId,
             tipo_cambio: null, fecha_ejecucion: fecha, usuario_id: currentUserId, updated_at: ahora,
           }).select('id, numero').single();
         })
@@ -14651,25 +14737,39 @@ function saveTransaccion() {
     return;
   }
 
-  function leerIdsContraparteMulticontraparteForm() {
+  /** @param {string|null|undefined} clienteIdAcuerdo - orden.cliente_id: obligatorio persistir si pagador = cliente del acuerdo (combo oculto), para CC Pagador/Cobrador y sync. */
+  function leerIdsContraparteMulticontraparteForm(clienteIdAcuerdo) {
     const v = (idEl) => {
       const s = document.getElementById(idEl)?.value;
       if (s == null || String(s).trim() === '') return null;
       return String(s).trim();
     };
+    const cidAc =
+      clienteIdAcuerdo != null && String(clienteIdAcuerdo).trim() !== '' ? String(clienteIdAcuerdo).trim() : null;
     const pagadorRol = (document.getElementById('transaccion-pagador')?.value || '').toLowerCase();
     const cobradorRol = (document.getElementById('transaccion-cobrador')?.value || '').toLowerCase();
     const wrapPagCli = document.getElementById('transaccion-wrap-pagador-cliente-id');
     const modoPagAcuerdo = wrapPagCli && wrapPagCli.dataset.pagadorClienteModo === 'acuerdo';
+    let pagadorClienteId = null;
+    if (pagadorRol === 'cliente') {
+      if (modoPagAcuerdo) {
+        pagadorClienteId = cidAc || v('transaccion-pagador-cliente-id');
+      } else {
+        pagadorClienteId = v('transaccion-pagador-cliente-id');
+      }
+    }
     return {
-      pagador_cliente_id: pagadorRol !== 'cliente' ? null : (modoPagAcuerdo ? null : v('transaccion-pagador-cliente-id')),
+      pagador_cliente_id: pagadorClienteId,
       cobrador_cliente_id: cobradorRol !== 'cliente' ? null : v('transaccion-cobrador-cliente-id'),
       pagador_intermediario_id: pagadorRol !== 'intermediario' ? null : v('transaccion-pagador-intermediario-id'),
       cobrador_intermediario_id: cobradorRol !== 'intermediario' ? null : v('transaccion-cobrador-intermediario-id'),
     };
   }
 
-  const idsMcForm = leerIdsContraparteMulticontraparteForm();
+  let ordenClienteIdParaIdsMc = null;
+  /** Orden cargada en el flujo de guardado; sirve para completar UUIDs de pagador/cobrador en cualquier tipo de trx. */
+  let ordenParaCompletarIdsTransaccion = null;
+  const idsMcForm = leerIdsContraparteMulticontraparteForm(null);
   let transaccionProyectada = { tipo, moneda, monto, tipo_cambio: tipoCambio, cobrador, pagador, ...idsMcForm };
 
   client.from('instrumentacion').select('orden_id, multicontraparte_manual').eq('id', instrumentacionId).single().then((rInst) => {
@@ -14684,10 +14784,12 @@ function saveTransaccion() {
         showToast('No se encontró la orden.', 'error');
         return;
       }
+      ordenClienteIdParaIdsMc = orden.cliente_id || null;
+      ordenParaCompletarIdsTransaccion = orden;
       const toJoinSv = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
       const totMcSv = !!(rInst.data && rInst.data.multicontraparte_manual) && esTipoOpMulticontraparteElegibleDesdeOrden(orden, toJoinSv);
       const totalesOptsSv = totMcSv ? { totalesMulticontraparte: true } : undefined;
-      transaccionProyectada = { ...transaccionProyectada, ...leerIdsContraparteMulticontraparteForm() };
+      transaccionProyectada = { ...transaccionProyectada, ...leerIdsContraparteMulticontraparteForm(orden.cliente_id) };
       const wrapPagCliVal = document.getElementById('transaccion-wrap-pagador-cliente-id');
       if (totMcSv) {
         if (pagador === 'intermediario') {
@@ -14772,7 +14874,7 @@ function saveTransaccion() {
   function guardarTransaccionPayload(montoCompensatorio) {
   const wrapMcSave = document.getElementById('transaccion-multicontraparte-contrapartes-wrap');
   const usarMcSave = wrapMcSave && wrapMcSave.style.display !== 'none';
-  const idsMcSave = leerIdsContraparteMulticontraparteForm();
+  const idsMcSave = leerIdsContraparteMulticontraparteForm(ordenClienteIdParaIdsMc);
   const payload = {
     instrumentacion_id: instrumentacionId,
     tipo,
@@ -14798,6 +14900,7 @@ function saveTransaccion() {
     payload.pagador_intermediario_id = null;
     payload.cobrador_intermediario_id = null;
   }
+  completarPayloadIdsContraparteDesdeOrden(payload, ordenParaCompletarIdsTransaccion);
   if (estado === 'ejecutada') payload.fecha_ejecucion = fechaHoyYYYYMMDDArgentina();
   if (estado === 'ejecutada') payload.usuario_id = currentUserId;
 
@@ -14825,6 +14928,7 @@ function saveTransaccion() {
       pagador_intermediario_id: usarMcSave ? idsMcSave.pagador_intermediario_id : null,
       cobrador_intermediario_id: usarMcSave ? idsMcSave.cobrador_intermediario_id : null,
     };
+    completarPayloadIdsContraparteDesdeOrden(payloadComp, ordenParaCompletarIdsTransaccion);
     return client.from('transacciones').insert(payloadComp).then((r) => {
       if (r.error) showToast('Error al crear la transacción compensatoria: ' + (r.error.message || ''), 'error');
       else showToast('Transacción compensatoria creada por ' + formatImporteDisplay(montoCompensatorio) + ' ' + moneda + '.', 'success');
@@ -17223,61 +17327,6 @@ function startSessionTimeoutCheck() {
   }, 60000);
 }
 
-/** Emails que ven una broma al entrar (una sola vez por navegador, localStorage). */
-const LOGIN_BROMA_EMAILS = new Set(['patriciocarbajal@gmail.com', 'lucas.bustos@hotmail.com']);
-const LOGIN_BROMA_TEXTO = 'Por fin vas a probar la app hijo de una gran puta 😂😂😂';
-
-function loginBromaStorageKey() {
-  const norm = (currentUserEmail || '').trim().toLowerCase();
-  return 'pandi_login_broma_ok_' + norm.replace(/[^a-z0-9@._-]/g, '_');
-}
-
-function closeLoginBromaModal() {
-  const backdrop = document.getElementById('modal-login-broma-backdrop');
-  try {
-    localStorage.setItem(loginBromaStorageKey(), '1');
-  } catch (err) {
-    /* ignore quota / private mode */
-  }
-  if (backdrop) {
-    backdrop.classList.remove('activo');
-    backdrop.setAttribute('aria-hidden', 'true');
-  }
-}
-
-function maybeShowLoginBromaModal() {
-  const norm = (currentUserEmail || '').trim().toLowerCase();
-  if (!LOGIN_BROMA_EMAILS.has(norm)) return;
-  try {
-    if (localStorage.getItem(loginBromaStorageKey()) === '1') return;
-  } catch (err) {
-    return;
-  }
-  const backdrop = document.getElementById('modal-login-broma-backdrop');
-  const textoEl = document.getElementById('modal-login-broma-texto');
-  if (!backdrop || !textoEl) return;
-  textoEl.textContent = LOGIN_BROMA_TEXTO;
-  backdrop.classList.add('activo');
-  backdrop.setAttribute('aria-hidden', 'false');
-}
-
-function setupLoginBromaModal() {
-  const backdrop = document.getElementById('modal-login-broma-backdrop');
-  const btnCerrar = document.getElementById('modal-login-broma-cerrar');
-  const btnOk = document.getElementById('modal-login-broma-btn-ok');
-  if (!backdrop || backdrop.dataset.bromaBound === '1') return;
-  backdrop.dataset.bromaBound = '1';
-  const onClose = () => closeLoginBromaModal();
-  if (btnCerrar) btnCerrar.addEventListener('click', onClose);
-  if (btnOk) btnOk.addEventListener('click', onClose);
-  setupBackdropCloseOnlyOnRealClick(backdrop, onClose);
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if (!backdrop.classList.contains('activo')) return;
-    onClose();
-  });
-}
-
 function finalizeSessionUiSetup() {
   if (pandiSessionUiBootstrapped) return;
   pandiSessionUiBootstrapped = true;
@@ -17383,7 +17432,6 @@ function finalizeSessionUiSetup() {
   if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
   refreshDataIntervalId = setInterval(refreshCurrentViewData, REFRESH_DATA_INTERVAL_MS);
   setTimeout(() => pandiRefreshOfflineCatalogosCache(), 400);
-  setTimeout(() => maybeShowLoginBromaModal(), 200);
 }
 
 function onSessionReady(session) {
@@ -17474,7 +17522,6 @@ function setupHelpPopovers() {
   });
 }
 
-setupLoginBromaModal();
 setupSupabaseConnectivityMonitoring();
 
 // Inicio: getSession puede resolver *después* de un login rápido (autocompletar + Enter); sin guarda, el callback tardío llamaba showLogin() otra vez y duplicaba listeners.

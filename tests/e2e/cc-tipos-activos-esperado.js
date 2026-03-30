@@ -97,8 +97,8 @@ const COMBINACIONES_USD_ARS = [
 
 const COMBINACIONES_USD_USD = [
   { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
-  // E,P: cobro −10.000; egreso pendiente: +10.000 (mr, anula deuda) y −9.700 (me, lo que Pandy debe) → saldo −9.700.
-  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -9700, saldoARS: 0, detalleCliente: [-10000, 10000, -9700], cajaUSD: 10000, cajaARS: 0 },
+  // E,P: cobro −10.000; egreso pendiente +mr y −mr (no −me) cuando hay comisión E,P en catálogo, + comisión pendiente +300 → saldo neto −9.700.
+  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -9700, saldoARS: 0, detalleCliente: [-10000, -10000, 300, 10000], cajaUSD: 10000, cajaARS: 0 },
   // P,E: compromiso cobrar +10.000; pago Pandy anulado en CC (−9.700/+9.700); saldo +10.000 (convención positivo = cliente nos debe).
   {
     id: 'P,E',
@@ -125,7 +125,7 @@ const COMBINACIONES_USD_USD = [
 /**
  * USD-USD con intermediario: mismas expectativas **cliente** / detalle que sin int (`reglas_de_negocio` cliente + mr_menos_me).
  * **Caja:** con patrón cp_ic (Tx2 = Intermediario→Cliente), el egreso del intermediario **no** mueve la caja de Pandy; solo cuenta el ingreso Cliente→Pandy cuando está ejecutado (E,E → +mr; P,E → 0; E,P → +mr).
- * CC intermediario (**cp_ic**): con par cerrado (**E,E**) saldo USD = −(me + parte comisión int. en comisiones_orden). En E2E se cargan **tasa cliente + tasa intermediario** sobre el importe (p. ej. 1,5% + 1,5% = 3% total como sin int.); la parte del intermediario en comisiones_orden coincide numéricamente con la mitad de (mr−me) si las tasas son simétricas.
+ * CC intermediario (**cp_ic**): saldo USD = −(me + parte comisión int.) con **E,E** o **P,E** (Int→Cliente ejecutado aunque C→P pendiente). E2E: tasas 1,5% + 1,5% → comisión int. = mitad de (mr−me).
  */
 const COMISION_USD_USD_INT_INTERMEDIARIO = Math.round(USD_USD_FIJOS.comision / 2);
 /** Negativo en resumen = Pandy debe al intermediario (suma movimientos CC int). */
@@ -133,7 +133,7 @@ const SALDO_INT_USD_USD_EE = -(USD_USD_FIJOS.me + COMISION_USD_USD_INT_INTERMEDI
 const COMBINACIONES_USD_USD_INT = COMBINACIONES_USD_USD.map((c) => {
   const base = {
     ...c,
-    saldoIntermediarioUSD: c.id === 'E,E' ? SALDO_INT_USD_USD_EE : 0,
+    saldoIntermediarioUSD: c.id === 'E,E' || c.id === 'P,E' ? SALDO_INT_USD_USD_EE : 0,
   };
   if (c.id === 'E,E') return { ...base, cajaUSD: USD_USD_FIJOS.mr };
   if (c.id === 'P,E') return { ...base, cajaUSD: 0 };
