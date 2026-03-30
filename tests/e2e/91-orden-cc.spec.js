@@ -1152,9 +1152,9 @@ test.describe('Orden USD-USD con intermediario, tasas duales y CC', () => {
       await page.locator('input[name="orden-int-patron-radio"][value="cp_ic"]').check();
       await expect(page.locator('#orden-wrap-detalles-tras-patron')).toBeVisible({ timeout: 5000 });
 
-      // Montos: recibir 5000, entregar 4700 (tasa cliente 3% + tasa intermediario 3%); comisión 300; 150 Pandy / 150 int (sobre importe).
+      // Montos: solo la tasa cliente reduce lo que entrega el cliente; la tasa intermediario reparte mr−me (no se resta dos veces). 6% cliente → me=4700; 3% int. sobre nominal → 150 al int., 150 a Pandy del spread 300.
       await page.locator('#orden-importe-cheque').fill('5000');
-      await page.locator('#orden-tasa-descuento-cliente').fill('3');
+      await page.locator('#orden-tasa-descuento-cliente').fill('6');
       await page.locator('#orden-tasa-descuento-intermediario').fill('3');
       await page.waitForTimeout(400);
       const montoRecibidoStr = (await page.locator('#orden-monto-recibido').inputValue()) || '';

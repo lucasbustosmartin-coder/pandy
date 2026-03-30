@@ -406,7 +406,7 @@ const TIPOS_SUITE = [
       await expect(page.locator('#orden-wrap-primeros-datos')).toBeVisible({ timeout: 5000 });
       await expect(page.locator('#orden-wrap-tasa-descuento-intermediario')).toBeVisible({ timeout: 5000 });
       await page.locator('#orden-importe-cheque').fill(USD_USD_FIJOS.importe);
-      await page.locator('#orden-tasa-descuento-cliente').fill('1,5');
+      await page.locator('#orden-tasa-descuento-cliente').fill(USD_USD_FIJOS.tasaCliente);
       await page.locator('#orden-tasa-descuento-intermediario').fill('1,5');
       await page.waitForTimeout(500);
       await expect(page.locator('#orden-monto-recibido')).toHaveValue(/.+/);

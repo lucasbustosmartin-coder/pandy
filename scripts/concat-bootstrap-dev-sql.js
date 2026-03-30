@@ -34,6 +34,7 @@ const BOOTSTRAP_FILES = [
   'migracion_transaccion_chk_pagador_cobrador_multicontraparte.sql',
   'migracion_app_empresa.sql',
   'app_config_session_timeout.sql',
+  'migracion_app_config_usd_usd_comision_fija_intermediario.sql',
   'migracion_permisos_ordenes_transacciones.sql',
   'migracion_permisos_vistas.sql',
   'migracion_ver_cajas_efectivo_banco.sql',

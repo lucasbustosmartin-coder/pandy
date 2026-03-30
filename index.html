@@ -1675,7 +1675,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.78</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.79</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2340,6 +2340,28 @@
             </button>
           </div>
         </div>
+        <div id="seguridad-usd-comision-fija-wrap" class="seguridad-usd-comision-fija" style="display:none; margin-bottom:1.25rem; padding:1rem; background:#f9fafb; border-radius:10px; border:1px solid #e5e7eb;">
+          <h3 style="margin:0 0 0.5rem 0; font-size:1rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">USD–USD con intermediario: comisión fija
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: comisión fija USD"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Solo aplica con patrón <strong>cp_ic</strong> (cliente paga a la empresa y el intermediario entrega al cliente). Elegís el <strong>intermediario por ID</strong> y dos <strong>importes en USD</strong>; en la orden el usuario marca cuál corresponde. Si dejás intermediario en «Ninguno», se mantiene la regla anterior por <strong>nombre</strong> (palabra «nacho»). Ejecutá en Supabase si falta la clave: <code>sql/migracion_app_config_usd_usd_comision_fija_intermediario.sql</code>.</span></span>
+          </h3>
+          <div class="form-group" style="margin-bottom:0.65rem;">
+            <label for="seguridad-usd-comision-fija-intermediario">Intermediario</label>
+            <select id="seguridad-usd-comision-fija-intermediario" style="max-width:100%; width:min(420px,100%); padding:0.35rem 0.5rem; border-radius:6px; border:1px solid #ccc; font-size:16px; box-sizing:border-box;">
+              <option value="">Ninguno (compatibilidad: nombre con «nacho»)</option>
+            </select>
+          </div>
+          <div class="vista-toolbar" style="align-items:flex-end; flex-wrap:wrap; gap:0.75rem;">
+            <label style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.9rem;">Opción A (USD)
+              <input type="number" id="seguridad-usd-comision-fija-opcion-a" min="1" max="999999" step="0.01" inputmode="decimal" style="width:8rem; padding:0.35rem 0.5rem; border-radius:6px; border:1px solid #ccc; font-size:16px;" aria-label="Importe opción A comisión fija USD" />
+            </label>
+            <label style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.9rem;">Opción B (USD)
+              <input type="number" id="seguridad-usd-comision-fija-opcion-b" min="1" max="999999" step="0.01" inputmode="decimal" style="width:8rem; padding:0.35rem 0.5rem; border-radius:6px; border:1px solid #ccc; font-size:16px;" aria-label="Importe opción B comisión fija USD" />
+            </label>
+            <button type="button" class="btn-primary" id="seguridad-usd-comision-fija-guardar">
+              <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar
+            </button>
+          </div>
+        </div>
         <div id="seguridad-loading" class="seguridad-loading">Cargando usuarios…</div>
         <div id="seguridad-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="seguridad-tabla">
@@ -2874,10 +2896,11 @@
                   <input type="text" id="orden-tasa-descuento-cliente" inputmode="decimal" class="input-importe orden-primeros-datos-input" placeholder="1,50" autocomplete="off" />
                 </div>
                 <div id="orden-wrap-usd-nacho-comision-fija" class="orden-usd-nacho-fija-wrap" style="display:none; grid-column:1/-1; margin-top:0.5rem; padding-top:0.65rem; border-top:1px solid #cce0ff;">
-                  <p style="margin:0 0 0.4rem 0; font-size:0.88rem; font-weight:600;">Comisión fija del intermediario Nacho (USD) *</p>
+                  <p style="margin:0 0 0.4rem 0; font-size:0.88rem; font-weight:600;">Comisión fija del intermediario (USD) *</p>
+                  <p style="margin:0 0 0.5rem 0; font-size:0.82rem; color:#1e3a5f;">Los importes se configuran en <strong>Seguridad</strong> (admin).</p>
                   <div class="orden-usd-nacho-fija-opciones" style="display:flex; flex-wrap:wrap; gap:0.75rem 1.25rem; align-items:center;">
-                    <label class="orden-int-patron-opcion" style="margin:0;"><input type="radio" name="orden-usd-nacho-comision-usd" value="50" /><span>USD 50</span></label>
-                    <label class="orden-int-patron-opcion" style="margin:0;"><input type="radio" name="orden-usd-nacho-comision-usd" value="75" /><span>USD 75</span></label>
+                    <label class="orden-int-patron-opcion" style="margin:0;"><input type="radio" name="orden-usd-nacho-comision-usd" value="50" /><span class="orden-usd-comision-fija-text-a">USD 50</span></label>
+                    <label class="orden-int-patron-opcion" style="margin:0;"><input type="radio" name="orden-usd-nacho-comision-usd" value="75" /><span class="orden-usd-comision-fija-text-b">USD 75</span></label>
                   </div>
                 </div>
                 <div class="form-row dos-columnas" id="orden-wrap-montos-calculados" style="display:none;">
