@@ -71,11 +71,12 @@ Después de push a `main`, desde la raíz:
 ```bash
 vercel --prod
 npx vercel --yes
+# Luego §4c: merge main → preview-empleado + push (obligatorio para preview.pandi.company)
 ```
 
-El segundo comando (sin `--prod`) es **obligatorio** en el flujo acordado: publica **Preview** con el mismo código que acaba de ir a prod; variables **Preview** en Vercel deben apuntar a Supabase **desarrollo**. Ver §4b.
+El segundo comando (sin `--prod`) es **obligatorio**: publica un deployment Preview con el mismo código que prod y config **dev** embebida; no actualiza por sí solo el dominio fijo **preview.pandi.company**. Para que **https://pandi.company** y **https://preview.pandi.company** queden en el **mismo commit**, hace falta también **§4c** (rama `preview-empleado`). Variables **Preview** en Vercel → Supabase **desarrollo**. Ver §4b y §4c.
 
-O configurá en Vercel el redeploy automático al hacer push a `main`; igual conviene ejecutar **`npx vercel --yes`** después para no dejar Preview desactualizado respecto a prod.
+Si Vercel redeploya `main` solo en producción, igual ejecutá **`npx vercel --yes`** y el **sync de rama** de §4c para no dejar el preview estable desfasado.
 
 ### 4b. Preview alineado con producción (mismo front, base dev)
 
@@ -93,9 +94,9 @@ Opcional: repetir el par **dev** también para entorno **Development** si usás 
 
 ### 4c. Alinear `preview.pandi.company` con el mismo commit que producción
 
-El hostname **`preview.pandi.company`** está asociado en Vercel a la rama Git **`preview-empleado`**. Un `npx vercel --yes` desde `main` no actualiza ese dominio por sí solo.
+El hostname **`preview.pandi.company`** está asociado en Vercel a la rama Git **`preview-empleado`**. Un `npx vercel --yes` desde `main` **no** actualiza ese dominio: solo crea un deployment Preview con URL efímera.
 
-Tras **push a `main`**, `vercel --prod` y `npx vercel --yes`, conviene **actualizar esa rama** para que el subdominio estable muestre el mismo código que prod:
+**Obligatorio** en el flujo de despliegue del proyecto (misma versión del front en ambos dominios comprados): tras **push a `main`**, `vercel --prod` y `npx vercel --yes`, **fusionar `main` en `preview-empleado` y pushear** para que el subdominio estable muestre el mismo commit que **pandi.company**:
 
 ```bash
 git checkout main

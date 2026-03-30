@@ -18,7 +18,7 @@ Si se cambia un ID, un texto de columna, un botón que los tests usan, o un fluj
 ## Tecnología e infraestructura (referencia)
 
 - **Datos:** Supabase (PostgreSQL). Tablas según la app. Scripts SQL en `sql/` se ejecutan en Supabase SQL Editor.
-- **Hosting:** Vercel (cuando esté configurado). Despliegue **producción** con `vercel --prod` tras push a `main`. **Preview** (misma app, URL distinta): variables `SUPABASE_URL` / `SUPABASE_ANON_KEY` con alcance **Preview** apuntando al proyecto Supabase **dev**; ver sección *Deploy Preview* abajo.
+- **Hosting:** Vercel. **Dominios fijos del producto:** producción **https://pandi.company** (Supabase prod) y preview estable **https://preview.pandi.company** (Supabase dev, misma app). Al desplegar, **ambos deben quedar en el mismo commit del front**; ver pasos 5–7 del flujo de despliegue y `docs/GIT_Y_VERCEL.md` §4c. Variables **Preview** en Vercel → Supabase **dev**.
 - **Repositorio:** Git/GitHub (rama `main`). Estructura: `sql/`, `scripts/`, `docs/`, `Base/` (ver regla estructura-proyecto).
 - **Bitácora:** Node.js + SheetJS (xlsx). Script `scripts/crear-bitacora-excel.js` genera `Bitacora_tareas.xlsx` (en raíz) con las solapas **Log**, **Resumen**, **Ref Git y Vercel**, **Versiones**, **Tecnología**.
 
@@ -75,14 +75,15 @@ Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK de
    *(La presentación PowerPoint se regenera solo cuando se desee actualizar la propuesta comercial; no forma parte del flujo de despliegue.)*
 
 5. **Desplegar a producción**  
-   Ejecutar `vercel --prod` (o el comando equivalente) para que la versión desplegada sea la de producción (p. ej. pandi.vercel.app cuando esté conectado el proyecto).
+   Ejecutar `vercel --prod` desde la raíz (mismo commit que el push a `main`). Dominio fijo de producción: **https://pandi.company** (más alias Vercel si aplica).
 
-6. **Desplegar Preview (obligatorio; mismo front que prod, base dev)**  
-   **No omitir:** inmediatamente después del paso 5, desde la raíz del repo (mismo commit que acaba de desplegarse en prod): ejecutar **`npx vercel --yes`** **sin** `--prod**. Así el **Preview** en Vercel queda alineado al mismo código que producción; la **URL con hash** del deployment Preview puede cambiar en cada ejecución (normal). En Vercel, las variables de entorno **Preview** deben apuntar al Supabase **desarrollo** (Production → prod, Preview → dev): mismo front en ambos sitios, bases separadas.  
-   Requisitos: proyecto enlazado (`vercel link` o `.vercel/` local, suele estar en `.gitignore`) y sesión CLI, o `VERCEL_TOKEN` con permiso de deploy. Si falla por credenciales o enlace, indicar al usuario que ejecute `npx vercel --yes` en su máquina desde la raíz (el despliegue no se da por cerrado sin intentar Preview).
+6. **Preview por CLI (obligatorio; base dev embebida)**  
+   **No omitir:** inmediatamente después del paso 5, con **`main`** al día en el working tree, ejecutar **`npx vercel --yes`** **sin** `--prod`. Publica un deployment Preview con el mismo código que prod y build con variables **Preview** → Supabase **dev**. La URL con hash de ese deploy puede cambiar cada vez; **eso no actualiza `preview.pandi.company`** (lo cubre el paso 7).  
+   Requisitos: proyecto enlazado (`vercel link` / `.vercel/`) y sesión CLI o `VERCEL_TOKEN`. Si falla, indicar al usuario que ejecute `npx vercel --yes` desde la raíz; igualmente intentar el paso 7.
 
-7. **Preview estable `preview.pandi.company` (rama `preview-empleado`)**  
-   Si en Vercel el subdominio **preview.pandi.company** está ligado a la rama **`preview-empleado`**, tras el paso 6 conviene **fusionar `main` en `preview-empleado` y pushear** para que ese hostname muestre el mismo commit que producción. Comandos y contexto: `docs/GIT_Y_VERCEL.md` §4c. Si la rama no existe en el remoto, crearla desde `main` una vez.
+7. **Paridad de dominios fijos prod + preview (obligatorio)**  
+   Para que **https://preview.pandi.company** muestre **el mismo commit** que **https://pandi.company**, **fusionar `main` en la rama `preview-empleado` y hacer `git push origin preview-empleado`** (Vercel redespliega Preview y el subdominio comprado queda alineado). Comandos: `docs/GIT_Y_VERCEL.md` §4c; al terminar **`git checkout main`**.  
+   **No dar el despliegue por cerrado** sin haber ejecutado el paso 7 (salvo imposibilidad: merge conflictivo, sin rama/remoto, o instrucción explícita del usuario de otro esquema). Si no se puede completar, avisar para que el usuario haga el merge/push localmente.
 
 No hacer push ni desplegar hasta que el usuario lo indique explícitamente.
 
@@ -90,7 +91,7 @@ No hacer push ni desplegar hasta que el usuario lo indique explícitamente.
 
 ## Deploy Preview (Vercel + Supabase dev) — misma app que prod, otra base
 
-**Tras “ok desplegar”** el paso **6** es **obligatorio**: publica un Preview con el **mismo front** que producción; solo cambia el entorno embebido (Preview → Supabase dev). Así no queda un Preview “viejo” respecto a prod. El paso **7** alinea la rama **preview-empleado** con **main** cuando se usa el dominio estable **preview.pandi.company** (ver §4c en `docs/GIT_Y_VERCEL.md`).
+**Objetivo:** que los dos **hostnames fijos** del producto (**pandi.company** y **preview.pandi.company**) sirvan el **mismo commit** del front; solo cambia la base (prod vs dev). **Tras “ok desplegar”** son obligatorios el **6** (CLI Preview + config dev) y el **7** (merge `main` → `preview-empleado` + push) para que el dominio **preview.pandi.company** no quede desfasado respecto a producción. Detalle: `docs/GIT_Y_VERCEL.md` §4b y §4c.
 
 ### Requisito en Vercel (una sola vez por proyecto)
 

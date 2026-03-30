@@ -21,6 +21,7 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Regla despliegue: paridad obligatoria prod + preview fijos', 'bitacora-tareas.mdc pasos 6–7: npx vercel --yes no alinea preview.pandi.company; merge main→preview-empleado+push obligatorio para mismo commit que pandi.company. reglas-pandi Despliegue; docs/GIT_Y_VERCEL.md §4; solapa Tecnología bitácora.', 'Documentación'],
   ['__HOY__', '__AHORA__', 'Despliegue v1.77 (Vercel prod + Preview)', 'Push main: fechas Argentina, CC MC Inter→Cliente acuerdo, modal MC y sync caja, G/P ayuda, util SQL fechas 29/03; sidebar v1.77; vercel --prod; npx vercel --yes.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'SQL util: fijar fecha contable 2026-03-29 por orden', 'Nuevo sql/util_fijar_fecha_contable_2026_03_29_por_orden.sql: para una orden (variable v_orden_numero, default 1) actualiza orden.fecha, transacciones ejecutadas, caja (solo orden, no manual) y CC cliente/intermediario no manual a 2026-03-29 con estado_fecha mediodía ART. Complementa sql/util_restaurar_fechas_2026_03_29_desde_30.sql (corrección masiva 30→29).', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'MC modal: egreso faltante monE sin Pandy por defecto', 'Nueva trx MC cuando falta moneda entregada: deja de precargar pagador Pandy + cobrador Cliente (trx 6 mal grabada → caja −5k USD pese a pago Madero→Lucas). Precarga Cliente→Cliente, botón Otro pagador, cobrador default acuerdo; combo cobrador permite acuerdo si pagador es otro cliente; option acuerdo con value UUID. aplicarValorSelect cobrador; validación toast. docs INSTRUMENTACION_MANUAL_MULTICONTRAPARTE.', 'Desarrollo'],
@@ -774,7 +775,7 @@ wsVersiones['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 75 }];
 const tecnologia = [
   ['Componente', 'Detalle'],
   ['Datos', 'Supabase (PostgreSQL). Tablas según la app. Scripts SQL en sql/.'],
-  ['Hosting', 'Vercel. Producción https://pandi.company/; Preview estable https://preview.pandi.company/ (rama preview-empleado, Supabase dev). Despliegue: push main, vercel --prod, npx vercel --yes; opcional sync rama preview (docs/GIT_Y_VERCEL.md §4c).'],
+  ['Hosting', 'Vercel. Dominios fijos: https://pandi.company/ (prod, Supabase prod) y https://preview.pandi.company/ (preview estable, Supabase dev). Tras cada despliegue, mismo commit en ambos: vercel --prod, npx vercel --yes, y obligatorio merge main → preview-empleado + push (npx vercel --yes no actualiza el subdominio fijo). docs/GIT_Y_VERCEL.md §4b–§4c; regla bitacora-tareas pasos 6–7.'],
   ['Repositorio', 'Git/GitHub, rama main.'],
   ['Bitácora', 'Node.js + SheetJS (xlsx). Script scripts/crear-bitacora-excel.js genera Bitacora_tareas.xlsx con Log, Resumen, Ref Git y Vercel, Versiones, Tecnología, Presupuesto.'],
 ];
