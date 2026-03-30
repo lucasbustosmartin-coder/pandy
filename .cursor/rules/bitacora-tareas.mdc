@@ -57,6 +57,26 @@ Salida: `Bitacora_tareas.xlsx` (en la raíz del proyecto).
 
 # Flujo cuando el usuario indique desplegar (versionado y despliegue)
 
+## REGLA ESTRICTA — mismo front en producción y en preview estable
+
+Esta regla **no se relaja**: ante “desplegar” / “ok desplegar”, el agente **no puede** dar el despliegue por terminado sin cumplirla.
+
+1. **Qué significa “mismo front”**  
+   **Mismo commit de Git** en `main` y en la rama que sirve **https://preview.pandi.company** (hoy **`preview-empleado`**): mismos `index.html`, `main.js` y resto del repo relevante. La **única** diferencia permitida entre los dos sitios es el **artefacto de build** de Vercel: en **Production** se embeben `SUPABASE_*` de entorno **Production** (prod); en **Preview** se embeben las de **Preview** (dev). **No** puede quedar `preview.pandi.company` con código viejo mientras `pandi.company` ya muestra otra versión.
+
+2. **Qué NO alcanza solo con `npx vercel --yes`**  
+   Ese comando crea un deployment Preview con URL **efímera** (hash distinto cada vez). **No** actualiza por sí solo el dominio fijo **preview.pandi.company**. Por tanto **no sustituye** el merge + push de `preview-empleado`.
+
+3. **Obligatorio en cada despliegue**  
+   Después de `vercel --prod`: ejecutar **`npx vercel --yes`** (paso 6) **y** **`git merge main` en `preview-empleado` + `git push origin preview-empleado`** (paso 7), luego **verificación** (paso 8).
+
+4. **Cierre solo con verificación**  
+   **Prohibido** responder “despliegue listo” sin haber comprobado que **`origin/main` y `origin/preview-empleado` apuntan al mismo commit** (p. ej. `git fetch origin && git rev-parse origin/main origin/preview-empleado`). Si difieren, completar el paso 7 o declarar explícitamente el bloqueo y qué falta. En el mensaje al usuario, **indicar** que ambos remotos están alineados (idealmente SHA corto) o el error.
+
+Detalle operativo: pasos numerados abajo y `docs/GIT_Y_VERCEL.md` §4c–§4d.
+
+---
+
 Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK desplegar"), aplicar **siempre** los siguientes pasos en este orden:
 
 1. **Incrementar versión en la app**  
@@ -85,13 +105,16 @@ Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK de
    Para que **https://preview.pandi.company** muestre **el mismo commit** que **https://pandi.company**, **fusionar `main` en la rama `preview-empleado` y hacer `git push origin preview-empleado`** (Vercel redespliega Preview y el subdominio comprado queda alineado). Comandos: `docs/GIT_Y_VERCEL.md` §4c; al terminar **`git checkout main`**.  
    **No dar el despliegue por cerrado** sin haber ejecutado el paso 7 (salvo imposibilidad: merge conflictivo, sin rama/remoto, o instrucción explícita del usuario de otro esquema). Si no se puede completar, avisar para que el usuario haga el merge/push localmente.
 
+8. **Verificación estricta de mismo commit (obligatorio)**  
+   Ejecutar `git fetch origin` y luego `git rev-parse origin/main origin/preview-empleado`. Los dos SHA deben ser **idénticos**. Si no lo son, **no** declarar el despliegue cerrado: corregir (paso 7) o explicar el fallo. En la respuesta al usuario, **confirmar** la alineación (p. ej. “main y preview-empleado en `abc1234`”) o documentar la excepción.
+
 No hacer push ni desplegar hasta que el usuario lo indique explícitamente.
 
 ---
 
 ## Deploy Preview (Vercel + Supabase dev) — misma app que prod, otra base
 
-**Objetivo:** que los dos **hostnames fijos** del producto (**pandi.company** y **preview.pandi.company**) sirvan el **mismo commit** del front; solo cambia la base (prod vs dev). **Tras “ok desplegar”** son obligatorios el **6** (CLI Preview + config dev) y el **7** (merge `main` → `preview-empleado` + push) para que el dominio **preview.pandi.company** no quede desfasado respecto a producción. Detalle: `docs/GIT_Y_VERCEL.md` §4b y §4c.
+**Objetivo:** que los dos **hostnames fijos** del producto (**pandi.company** y **preview.pandi.company**) sirvan el **mismo commit** del front; solo cambia la base (prod vs dev). **Tras “ok desplegar”** son obligatorios el **6** (CLI Preview + config dev), el **7** (merge `main` → `preview-empleado` + push) y el **8** (verificación `git rev-parse` — ver **REGLA ESTRICTA** arriba). Detalle: `docs/GIT_Y_VERCEL.md` §4b–§4d.
 
 ### Requisito en Vercel (una sola vez por proyecto)
 

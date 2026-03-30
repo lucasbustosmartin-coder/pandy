@@ -71,12 +71,12 @@ Después de push a `main`, desde la raíz:
 ```bash
 vercel --prod
 npx vercel --yes
-# Luego §4c: merge main → preview-empleado + push (obligatorio para preview.pandi.company)
+# Luego §4c + §4d: merge main → preview-empleado + push y verificar SHA
 ```
 
-El segundo comando (sin `--prod`) es **obligatorio**: publica un deployment Preview con el mismo código que prod y config **dev** embebida; no actualiza por sí solo el dominio fijo **preview.pandi.company**. Para que **https://pandi.company** y **https://preview.pandi.company** queden en el **mismo commit**, hace falta también **§4c** (rama `preview-empleado`). Variables **Preview** en Vercel → Supabase **desarrollo**. Ver §4b y §4c.
+El segundo comando (sin `--prod`) es **obligatorio**: publica un deployment Preview con el mismo código que prod y config **dev** embebida; **no** actualiza por sí solo el dominio fijo **preview.pandi.company**. Para que **https://pandi.company** y **https://preview.pandi.company** queden en el **mismo commit**, hace falta **§4c** (rama `preview-empleado`) y **§4d** (comprobar que los SHA remotos coinciden). Variables **Preview** en Vercel → Supabase **desarrollo**. Ver §4b–§4d.
 
-Si Vercel redeploya `main` solo en producción, igual ejecutá **`npx vercel --yes`** y el **sync de rama** de §4c para no dejar el preview estable desfasado.
+Si Vercel redeploya `main` solo en producción, igual ejecutá **`npx vercel --yes`**, el **sync de rama** de §4c y la **verificación** de §4d para no dejar el preview estable desfasado.
 
 ### 4b. Preview alineado con producción (mismo front, base dev)
 
@@ -108,6 +108,17 @@ git checkout main
 ```
 
 Si `preview-empleado` no existe en el remoto, crearla una vez desde `main` y pushearla; en Vercel el dominio Preview debe apuntar a esa rama.
+
+### 4d. Verificación estricta: mismo commit en `main` y `preview-empleado`
+
+**Regla del proyecto:** no dar por cerrado un despliegue sin comprobar que el remoto tiene **el mismo SHA** en ambas ramas (mismo front; solo difiere el entorno de build Vercel / `config.js`).
+
+```bash
+git fetch origin
+git rev-parse origin/main origin/preview-empleado
+```
+
+Las dos líneas de salida deben ser **idénticas**. Si difieren, repetir §4c o revisar que el push a `preview-empleado` haya terminado y que Vercel haya tomado el deploy de esa rama.
 
 ### Alternativa por Git (si no usás CLI)
 

@@ -2506,6 +2506,52 @@ function saldosCajaDesdeLista(list) {
   return saldos;
 }
 
+const EPS_SALDO_CAJA_VALIDACION = 1e-6;
+
+function saldoCajaTipoMonedaDesdeLista(list, cajaTipo, moneda) {
+  const saldos = saldosCajaDesdeLista(list);
+  const tipo = String(cajaTipo || 'efectivo').toLowerCase();
+  const mon = String(moneda || '').toUpperCase();
+  if (!saldos[tipo] || saldos[tipo][mon] == null) return 0;
+  return Number(saldos[tipo][mon]) || 0;
+}
+
+function etiquetaCajaTipoUi(tipo) {
+  const t = String(tipo || '').toLowerCase();
+  if (t === 'banco') return 'banco';
+  if (t === 'cheque') return 'cheques';
+  return 'efectivo';
+}
+
+/** Mensaje claro cuando un egreso de caja empresa supera el saldo del bucket (efectivo / banco / cheque) y moneda. */
+function mensajeSaldoCajaInsuficienteEgreso({ cajaTipo, moneda, disponible, requerido }) {
+  const mon = String(moneda || '').toUpperCase();
+  return (
+    'Saldo insuficiente en caja de la empresa (' + etiquetaCajaTipoUi(cajaTipo) + ', ' + mon + '). Disponible: ' +
+    formatMonto(disponible, mon) + '. Esta operación requiere al menos ' + formatMonto(requerido, mon) + '.'
+  );
+}
+
+/**
+ * @param {Array} list - movimientos caja cerrados (misma convención que saldosCajaDesdeLista)
+ * @returns {{ ok: true } | { ok: false, mensaje: string }}
+ */
+function validarSaldoCajaParaEgresoLista(list, { cajaTipo, moneda, montoAbs }) {
+  const req = Number(montoAbs) || 0;
+  if (req <= EPS_SALDO_CAJA_VALIDACION) return { ok: true };
+  const disp = saldoCajaTipoMonedaDesdeLista(list, cajaTipo, moneda);
+  if (disp + EPS_SALDO_CAJA_VALIDACION >= req) return { ok: true };
+  return {
+    ok: false,
+    mensaje: mensajeSaldoCajaInsuficienteEgreso({
+      cajaTipo,
+      moneda: String(moneda || '').toUpperCase(),
+      disponible: disp,
+      requerido: req,
+    }),
+  };
+}
+
 /**
  * Devuelve true si existe al menos un tipo de operación activo que use la moneda en IN u OUT.
  * Si hay error de consulta, fallback conservador: true (no ocultar columna).
@@ -4177,6 +4223,27 @@ function ccManualNombreDisplayRol(rol, clienteId, intermediarioId, clientesById,
   return '–';
 }
 
+/** Clave estable para mapas indexados por transaccion_id (evita fallas UUID string vs otro tipo). */
+function ccTrxMapKey(transaccionId) {
+  if (transaccionId == null || transaccionId === '') return '';
+  return String(transaccionId);
+}
+
+/**
+ * Completa pagador/cobrador/tipo en mapas desde filas de `transacciones` (clave = String(id)).
+ * Útil tras el SELECT por movimientos y el SELECT por instrumentación: unifica metadatos.
+ */
+function ccAbsorberMetaTransaccionesEnMaps(trPagadorById, trCobradorById, trTipoById, lista) {
+  (lista || []).forEach((t) => {
+    if (!t || t.id == null || t.id === '') return;
+    const id = String(t.id);
+    if (t.tipo != null && String(t.tipo).trim() !== '') trTipoById[id] = String(t.tipo).toLowerCase();
+    if (t.pagador != null && String(t.pagador).trim() !== '') trPagadorById[id] = String(t.pagador).toLowerCase();
+    else if (trPagadorById[id] === undefined) trPagadorById[id] = (t.pagador || '').toString().toLowerCase();
+    if (t.cobrador != null && String(t.cobrador).trim() !== '') trCobradorById[id] = String(t.cobrador).toLowerCase();
+  });
+}
+
 /** Enriquece movimientos CC (modal detalle / refresh) con código y metadatos de icono del tipo de la orden. */
 /** Nombres resueltos de Pagador/Cobrador de la transacción para filas de detalle CC (vista detalle y modal). */
 function ccNombresPagadorCobradorMovimiento(mov, tipoEntidad, ordenById, clientesById, intermediariosById, trTipoById, trPagadorById, trCobradorById, trParticipanteIdsByTrx) {
@@ -4193,42 +4260,48 @@ function ccNombresPagadorCobradorMovimiento(mov, tipoEntidad, ordenById, cliente
   const cobIntTrx = trParticipanteIdsByTrx.cobradorIntermediarioIdByTrx || {};
   function nombreClienteId(clienteId) {
     if (!clienteId) return '–';
-    const row = clientesById[clienteId];
+    const kid = String(clienteId);
+    const row = clientesById[kid] || clientesById[clienteId];
     const nom = row && (row.nombre != null ? String(row.nombre) : '');
     return nom.trim() ? nom : '–';
   }
   function nombreEntidadPagCobValor(valor, m, tipo, lado) {
     const v = String(valor || '').toLowerCase();
     const orden = ordenById[m.orden_id];
-    const tid = m.transaccion_id;
+    const tid = ccTrxMapKey(m.transaccion_id);
     if (!v) return '–';
     if (v === 'pandy') return etiquetaRolParticipanteUi('pandy');
     if (v === 'cliente') {
-      let clienteId = lado === 'pagador' ? pagCliTrx[tid] : cobCliTrx[tid];
+      let clienteId = tid ? (lado === 'pagador' ? pagCliTrx[tid] : cobCliTrx[tid]) : null;
       if (!clienteId) clienteId = tipo === 'cliente' ? m.cliente_id : (orden && orden.cliente_id);
-      return nombreClienteId(clienteId);
+      const nom = nombreClienteId(clienteId);
+      if (nom !== '–') return nom;
+      return etiquetaRolParticipanteUi('cliente');
     }
     if (v === 'intermediario') {
-      let intId = lado === 'pagador' ? pagIntTrx[tid] : cobIntTrx[tid];
+      let intId = tid ? (lado === 'pagador' ? pagIntTrx[tid] : cobIntTrx[tid]) : null;
       if (!intId) intId = orden && orden.intermediario_id;
-      const row = intId && intermediariosById[intId];
-      const nom = row && (row.nombre != null ? String(row.nombre) : '');
-      return nom.trim() ? nom : '–';
+      const row = intId && (intermediariosById[String(intId)] || intermediariosById[intId]);
+      const nomStr = row && row.nombre != null ? String(row.nombre) : '';
+      if (nomStr.trim()) return nomStr.trim();
+      return etiquetaRolParticipanteUi('intermediario');
     }
     return '–';
   }
   function rolPagadorTransaccion(m) {
-    let pag = trPagadorById[m.transaccion_id];
+    const k = ccTrxMapKey(m.transaccion_id);
+    let pag = k ? trPagadorById[k] : undefined;
     if (pag == null || String(pag).trim() === '') {
-      const tipoTr = String(trTipoById[m.transaccion_id] || '').toLowerCase();
+      const tipoTr = String((k && trTipoById[k]) || '').toLowerCase();
       pag = tipoTr === 'egreso' ? 'pandy' : 'cliente';
     } else pag = String(pag).toLowerCase();
     return pag;
   }
   function rolCobradorTransaccion(m) {
-    let cob = trCobradorById[m.transaccion_id];
+    const k = ccTrxMapKey(m.transaccion_id);
+    let cob = k ? trCobradorById[k] : undefined;
     if (cob == null || String(cob).trim() === '') {
-      const tipoTr = String(trTipoById[m.transaccion_id] || '').toLowerCase();
+      const tipoTr = String((k && trTipoById[k]) || '').toLowerCase();
       cob = tipoTr === 'ingreso' ? 'pandy' : 'cliente';
     } else cob = String(cob).toLowerCase();
     return cob;
@@ -4238,14 +4311,15 @@ function ccNombresPagadorCobradorMovimiento(mov, tipoEntidad, ordenById, cliente
   if (conceptoM.startsWith('Instrumentación pendiente')) {
     const orden = ordenById[mov.orden_id];
     const cidAcuerdo = orden && orden.cliente_id;
-    const tid = mov.transaccion_id;
+    const tid = ccTrxMapKey(mov.transaccion_id);
     if (cobCliTrx[tid]) {
       return { ccPagador: nombreClienteId(cidAcuerdo), ccCobrador: nombreClienteId(cobCliTrx[tid]) };
     }
-    if (cobIntTrx[tid]) {
-      const row = intermediariosById[cobIntTrx[tid]];
-      const nom = row && (row.nombre != null ? String(row.nombre) : '');
-      return { ccPagador: nombreClienteId(cidAcuerdo), ccCobrador: nom.trim() ? nom : '–' };
+    if (tid && cobIntTrx[tid]) {
+      const iid = String(cobIntTrx[tid]);
+      const row = intermediariosById[iid] || intermediariosById[cobIntTrx[tid]];
+      const nom = row && row.nombre != null ? String(row.nombre) : '';
+      return { ccPagador: nombreClienteId(cidAcuerdo), ccCobrador: nom.trim() ? nom.trim() : etiquetaRolParticipanteUi('intermediario') };
     }
     const cob = rolCobradorTransaccion(mov);
     return {
@@ -5826,11 +5900,13 @@ function loadCuentaCorriente(opts) {
       const trTipoById = {};
       const trMontoById = {};
       (rTr.data || []).forEach((t) => {
-        trById[t.id] = t.estado;
-        trPagadorById[t.id] = (t.pagador || '').toLowerCase();
-        if (t.cobrador != null) trCobradorById[t.id] = String(t.cobrador).toLowerCase();
-        if (t.tipo != null) trTipoById[t.id] = String(t.tipo).toLowerCase();
-        trMontoById[t.id] = { monto: t.monto, moneda: t.moneda };
+        if (t.id == null || t.id === '') return;
+        const id = String(t.id);
+        trById[id] = t.estado;
+        trPagadorById[id] = (t.pagador || '').toString().toLowerCase();
+        if (t.cobrador != null) trCobradorById[id] = String(t.cobrador).toLowerCase();
+        if (t.tipo != null) trTipoById[id] = String(t.tipo).toLowerCase();
+        trMontoById[id] = { monto: t.monto, moneda: t.moneda };
       });
       const instByOrden = {};
       (rInst.data || []).forEach((i) => { instByOrden[i.orden_id] = i.id; });
@@ -5860,14 +5936,16 @@ function loadCuentaCorriente(opts) {
       const pagadorIntermediarioIdByTrx = {};
       const cobradorIntermediarioIdByTrx = {};
       function ingestTrxParticipanteIds(t) {
-        if (!t || !t.id) return;
-        if (t.pagador_cliente_id) pagadorClienteIdByTrx[t.id] = t.pagador_cliente_id;
-        if (t.cobrador_cliente_id) cobradorClienteIdByTrx[t.id] = t.cobrador_cliente_id;
-        if (t.pagador_intermediario_id) pagadorIntermediarioIdByTrx[t.id] = t.pagador_intermediario_id;
-        if (t.cobrador_intermediario_id) cobradorIntermediarioIdByTrx[t.id] = t.cobrador_intermediario_id;
+        if (!t || t.id == null || t.id === '') return;
+        const kid = String(t.id);
+        if (t.pagador_cliente_id) pagadorClienteIdByTrx[kid] = t.pagador_cliente_id;
+        if (t.cobrador_cliente_id) cobradorClienteIdByTrx[kid] = t.cobrador_cliente_id;
+        if (t.pagador_intermediario_id) pagadorIntermediarioIdByTrx[kid] = t.pagador_intermediario_id;
+        if (t.cobrador_intermediario_id) cobradorIntermediarioIdByTrx[kid] = t.cobrador_intermediario_id;
       }
       (rTrMovsRaw || []).forEach(ingestTrxParticipanteIds);
       (rTrInst.data || []).forEach(ingestTrxParticipanteIds);
+      ccAbsorberMetaTransaccionesEnMaps(trPagadorById, trCobradorById, trTipoById, rTrInst.data || []);
       const trParticipanteIdsByTrx = {
         pagadorClienteIdByTrx,
         cobradorClienteIdByTrx,
@@ -5896,7 +5974,7 @@ function loadCuentaCorriente(opts) {
       // Para intermediario: usar monto real de la transacción en "Compromiso a Cobrar" pendiente (Int→Pandy), así el resumen refleja lo que el intermediario aún debe.
       const movIntEnriched = (movInt || []).map((m) => {
         if (m.estado === 'pendiente' && (m.concepto || '').includes('Compromiso a Cobrar')) {
-          const t = trMontoById[m.transaccion_id];
+          const t = trMontoById[ccTrxMapKey(m.transaccion_id)];
           if (t != null && t.monto != null) {
             const mon = ((t.moneda || m.moneda || 'ARS') || '').toString().toUpperCase();
             const val = Number(t.monto) || 0;
@@ -6707,10 +6785,12 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
       const trPagadorById = {};
       const trCobradorById = {};
       (rTr.data || []).forEach((t) => {
-        trById[t.id] = t.estado;
-        if (t.tipo != null) trTipoById[t.id] = String(t.tipo).toLowerCase();
-        if (t.pagador != null) trPagadorById[t.id] = String(t.pagador).toLowerCase();
-        if (t.cobrador != null) trCobradorById[t.id] = String(t.cobrador).toLowerCase();
+        if (t.id == null || t.id === '') return;
+        const id = String(t.id);
+        trById[id] = t.estado;
+        if (t.tipo != null) trTipoById[id] = String(t.tipo).toLowerCase();
+        trPagadorById[id] = (t.pagador || '').toString().toLowerCase();
+        if (t.cobrador != null) trCobradorById[id] = String(t.cobrador).toLowerCase();
       });
       const instByOrden = {};
       (rInst.data || []).forEach((i) => { instByOrden[i.orden_id] = i.id; });
@@ -6725,14 +6805,16 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
       const pagadorIntermediarioIdByTrx = {};
       const cobradorIntermediarioIdByTrx = {};
       function ingestTrxParticipanteIdsModal(t) {
-        if (!t || !t.id) return;
-        if (t.pagador_cliente_id) pagadorClienteIdByTrx[t.id] = t.pagador_cliente_id;
-        if (t.cobrador_cliente_id) cobradorClienteIdByTrx[t.id] = t.cobrador_cliente_id;
-        if (t.pagador_intermediario_id) pagadorIntermediarioIdByTrx[t.id] = t.pagador_intermediario_id;
-        if (t.cobrador_intermediario_id) cobradorIntermediarioIdByTrx[t.id] = t.cobrador_intermediario_id;
+        if (!t || t.id == null || t.id === '') return;
+        const kid = String(t.id);
+        if (t.pagador_cliente_id) pagadorClienteIdByTrx[kid] = t.pagador_cliente_id;
+        if (t.cobrador_cliente_id) cobradorClienteIdByTrx[kid] = t.cobrador_cliente_id;
+        if (t.pagador_intermediario_id) pagadorIntermediarioIdByTrx[kid] = t.pagador_intermediario_id;
+        if (t.cobrador_intermediario_id) cobradorIntermediarioIdByTrx[kid] = t.cobrador_intermediario_id;
       }
       (rTrMovsRaw || []).forEach(ingestTrxParticipanteIdsModal);
       (rTrInst.data || []).forEach(ingestTrxParticipanteIdsModal);
+      ccAbsorberMetaTransaccionesEnMaps(trPagadorById, trCobradorById, trTipoById, rTrInst.data || []);
       const trParticipanteIdsByTrx = {
         pagadorClienteIdByTrx,
         cobradorClienteIdByTrx,
@@ -7667,15 +7749,29 @@ function saveCcMovimientoManual() {
       return;
     }
     const dirCaja = ccManualDireccionCajaDesdeFlujo(pagRol, cobRol);
-    loadTiposMovimientoCaja().then(() => {
-      const tipoId = ccManualTipoMovimientoCajaIdPorDireccion(dirCaja);
-      if (!tipoId) {
-        const nom = ccManualNombreTipoCajaFijoPorDireccion(dirCaja);
-        showToast('No existe el tipo de caja «' + nom + '». Ejecutá sql/migracion_tipos_caja_cc_manual.sql en Supabase o creá ese tipo en Cajas → Tipos de movimiento.', 'error');
-        return;
-      }
-      ejecutarGuardadoCcManual(tipoId, nomCliPorId, nomIntPorId);
-    });
+    function cargarTipoYGuardarCcManual() {
+      loadTiposMovimientoCaja().then(() => {
+        const tipoId = ccManualTipoMovimientoCajaIdPorDireccion(dirCaja);
+        if (!tipoId) {
+          const nom = ccManualNombreTipoCajaFijoPorDireccion(dirCaja);
+          showToast('No existe el tipo de caja «' + nom + '». Ejecutá sql/migracion_tipos_caja_cc_manual.sql en Supabase o creá ese tipo en Cajas → Tipos de movimiento.', 'error');
+          return;
+        }
+        ejecutarGuardadoCcManual(tipoId, nomCliPorId, nomIntPorId);
+      });
+    }
+    if (dirCaja === 'egreso') {
+      fetchMovimientosCajaCerradosSinSync().then((list) => {
+        const v = validarSaldoCajaParaEgresoLista(list, { cajaTipo: 'efectivo', moneda, montoAbs });
+        if (!v.ok) {
+          showToast(v.mensaje, 'error');
+          return;
+        }
+        cargarTipoYGuardarCcManual();
+      });
+      return;
+    }
+    cargarTipoYGuardarCcManual();
   }
 
   const promCliNombres = idsCliLeg.length
@@ -8301,32 +8397,46 @@ function saveMovimientoCaja() {
   const payload = id ? payloadBase : { ...payloadBase, estado: 'cerrado', estado_fecha: ahora };
 
   function ejecutarGuardadoMovimientoCajaManual() {
-    if (id) {
-      client
-        .from('movimientos_caja')
-        .update(payloadBase)
-        .eq('id', id)
-        .then((res) => {
-          if (res.error) {
-            showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-            return;
-          }
-          closeModalMovimientoCaja();
-          loadCajas();
-        });
-    } else {
-      client
-        .from('movimientos_caja')
-        .insert(payload)
-        .then((res) => {
-          if (res.error) {
-            showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-            return;
-          }
-          closeModalMovimientoCaja();
-          loadCajas();
-        });
+    function guardarCajaInsOUpd() {
+      if (id) {
+        client
+          .from('movimientos_caja')
+          .update(payloadBase)
+          .eq('id', id)
+          .then((res) => {
+            if (res.error) {
+              showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+              return;
+            }
+            closeModalMovimientoCaja();
+            loadCajas();
+          });
+      } else {
+        client
+          .from('movimientos_caja')
+          .insert(payload)
+          .then((res) => {
+            if (res.error) {
+              showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+              return;
+            }
+            closeModalMovimientoCaja();
+            loadCajas();
+          });
+      }
     }
+    if (!id && signo < 0) {
+      fetchMovimientosCajaCerradosSinSync().then((list) => {
+        const v = validarSaldoCajaParaEgresoLista(list, { cajaTipo, moneda, montoAbs: montoInput });
+        if (!v.ok) {
+          showToast(v.mensaje, 'error');
+          return;
+        }
+        guardarCajaInsOUpd();
+      });
+      return;
+    }
+    guardarCajaInsOUpd();
   }
 
   if (id) {
@@ -8531,23 +8641,30 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
         return getReglasDeNegocio(codigoTipoNorm, usaIntermediarioOrd).then((reglasDeNegocio) => {
           const usarMotorReglasNegocio = Array.isArray(reglasDeNegocio) && reglasDeNegocio.length > 0;
           if (usarMotorReglasNegocio) {
-            return client
-              .from('transacciones')
-              .update({ monto: newMonto, updated_at: new Date().toISOString() })
-              .eq('id', transaccionId)
-              .then((rUp) => {
-                if (rUp.error) {
-                  showToast('Error al actualizar monto: ' + (rUp.error?.message || ''), 'error');
-                  return Promise.resolve();
-                }
-                return sincronizarCcYCajaDesdeOrden(ordenId);
-              })
-              .then(() => {
-                if (onSuccess) onSuccess();
-              })
-              .catch((err) => {
-                showToast('Error al reajustar CC/caja: ' + (err?.message || String(err)), 'error');
-              });
+            const tHypo = { ...t, monto: newMonto };
+            return validarSaldoCajaAntesMarcarTransaccionEjecutada(tHypo, instrumentacionId, ordenId).then((vSaldo) => {
+              if (!vSaldo.ok) {
+                showToast(vSaldo.mensaje || 'Saldo de caja insuficiente.', 'error');
+                return Promise.resolve();
+              }
+              return client
+                .from('transacciones')
+                .update({ monto: newMonto, updated_at: new Date().toISOString() })
+                .eq('id', transaccionId)
+                .then((rUp) => {
+                  if (rUp.error) {
+                    showToast('Error al actualizar monto: ' + (rUp.error?.message || ''), 'error');
+                    return Promise.resolve();
+                  }
+                  return sincronizarCcYCajaDesdeOrden(ordenId);
+                })
+                .then(() => {
+                  if (onSuccess) onSuccess();
+                })
+                .catch((err) => {
+                  showToast('Error al reajustar CC/caja: ' + (err?.message || String(err)), 'error');
+                });
+            });
           }
           return Promise.all([
           client.from('movimientos_cuenta_corriente').select('id, transaccion_id, concepto, monto_usd, monto_ars, monto_eur').eq('orden_id', ordenId).eq('cliente_id', clienteId),
@@ -14337,6 +14454,89 @@ function codigoCajaTipoDesdeCodigo(codigo) {
 }
 
 /**
+ * Si esta transacción en estado ejecutada generaría en sync un egreso de caja de la empresa (monto negativo en movimientos_caja),
+ * devuelve { cajaTipo, moneda, montoAbs }. Si no aplica, null.
+ * Alineado a `sincronizarCcYCajaDesdeOrden` (multicontraparte manual vs estándar).
+ */
+function proyectarEgresoCajaEmpresaSiEjecutadaTransaccion(t, ctx) {
+  const EPS = EPS_SALDO_CAJA_VALIDACION;
+  const montoTrx = Number(t.monto) || 0;
+  if (montoTrx < EPS) return null;
+
+  const codigoModoRaw = ctx && ctx.codigoModo != null ? String(ctx.codigoModo) : 'efectivo';
+  const codigoModo = codigoModoRaw.toLowerCase();
+
+  const esGananciaTrx = (t.concepto || '').includes('Ganancia del acuerdo');
+  const comP = ctx && ctx.comisionPandyMonto != null ? Number(ctx.comisionPandyMonto) : null;
+  const esComisionPandyTrx =
+    comP != null && comP >= EPS &&
+    (t.tipo || '').toLowerCase() === 'ingreso' &&
+    String(t.pagador || '').toLowerCase() === 'cliente' &&
+    String(t.cobrador || '').toLowerCase() === 'pandy' &&
+    Math.abs(montoTrx - comP) < 1e-6;
+
+  const ordenMini = (ctx && ctx.orden) || {};
+  const toJoin = ctx && ctx.tipoOperacionJoin;
+  const usarMc =
+    !!(ctx && ctx.multicontraparteManual) &&
+    esTipoOpMulticontraparteElegibleDesdeOrden(ordenMini, toJoin);
+
+  const mon = (t.moneda || 'USD').toUpperCase();
+
+  if (usarMc && !esGananciaTrx && !esComisionPandyTrx) {
+    const pagDb =
+      t.pagador != null && String(t.pagador).trim() !== ''
+        ? String(t.pagador).toLowerCase()
+        : null;
+    const cobDb =
+      t.cobrador != null && String(t.cobrador).trim() !== ''
+        ? String(t.cobrador).toLowerCase()
+        : null;
+    if (!pagDb || !cobDb || (pagDb !== 'pandy' && cobDb !== 'pandy')) return null;
+    if (codigoModo !== 'efectivo') return null;
+    const signoCaja = cobDb === 'pandy' ? 1 : -1;
+    if (signoCaja * montoTrx >= -EPS) return null;
+    return { cajaTipo: 'efectivo', moneda: mon, montoAbs: montoTrx };
+  }
+
+  const { pag, cob } = pagCobEfectivosTransaccionSync(t);
+  if (!(pag === 'pandy' || cob === 'pandy')) return null;
+  const signoCaja = cob === 'pandy' ? 1 : -1;
+  if (signoCaja * montoTrx >= -EPS) return null;
+  const cajaTipo = codigoCajaTipoDesdeCodigo(codigoModo);
+  return { cajaTipo, moneda: mon, montoAbs: montoTrx };
+}
+
+/**
+ * Antes de persistir estado ejecutada: comprueba saldo de caja empresa si la transacción implicaría egreso (sync).
+ * @returns {Promise<{ ok: boolean, mensaje?: string }>}
+ */
+function validarSaldoCajaAntesMarcarTransaccionEjecutada(t, instrumentacionId, ordenId) {
+  return Promise.all([
+    client.from('instrumentacion').select('multicontraparte_manual').eq('id', instrumentacionId).single(),
+    client.from('ordenes').select('cliente_id, intermediario_id, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single(),
+    client.from('comisiones_orden').select('monto').eq('orden_id', ordenId).eq('beneficiario', 'pandy').maybeSingle(),
+    fetchMovimientosCajaCerradosSinSync(),
+    client.from('modos_pago').select('codigo').eq('id', t.modo_pago_id).maybeSingle(),
+  ]).then(([rInstMc, rOrd, rCom, listCaja, rModo]) => {
+    const orden = rOrd.data || {};
+    const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+    const multicontraparteManual = !!(rInstMc.data && rInstMc.data.multicontraparte_manual);
+    const comisionPandyMonto = rCom.data != null ? Number(rCom.data.monto) : null;
+    const codigoModo = (rModo.data && rModo.data.codigo) ? String(rModo.data.codigo) : 'efectivo';
+    const proy = proyectarEgresoCajaEmpresaSiEjecutadaTransaccion(t, {
+      multicontraparteManual,
+      orden,
+      tipoOperacionJoin: toJoin,
+      comisionPandyMonto,
+      codigoModo,
+    });
+    if (!proy) return { ok: true };
+    return validarSaldoCajaParaEgresoLista(listCaja, proy);
+  });
+}
+
+/**
  * Cambia el estado de una transacción (pendiente ↔ ejecutada) desde el combo en la tabla.
  * Actualiza CC y caja si pasa a ejecutada; luego actualiza estado de la orden y refresca la vista.
  * selectEl: opcional, el <select> que disparó el cambio; se usa para mostrar "Actualizando…" y deshabilitar combos.
@@ -14404,6 +14604,13 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
           }
         }
       }
+      const vSaldoCajaEj = await validarSaldoCajaAntesMarcarTransaccionEjecutada(t, instrumentacionId, ordenId);
+      if (!vSaldoCajaEj.ok) {
+        hideLoadingEstado();
+        if (selectEl) selectEl.value = 'pendiente';
+        showToast(vSaldoCajaEj.mensaje || 'Saldo de caja insuficiente.', 'error');
+        return Promise.resolve();
+      }
     }
 
       // Reversión (ejecutada → pendiente): sin límite de veces. Siempre pedir confirmación.
@@ -14446,7 +14653,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
           }
         }
       }
-      return client.from('ordenes').select('cliente_id, intermediario_id, monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, cotizacion, numero, tasa_descuento_intermediario, tipos_operacion(codigo)').eq('id', ordenId).single().then((rOrd) => {
+      return client.from('ordenes').select('cliente_id, intermediario_id, monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, cotizacion, numero, tasa_descuento_intermediario, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
         const orden = rOrd.data || {};
         const clienteId = orden.cliente_id || null;
         const intermediarioId = orden.intermediario_id || null;
@@ -15321,7 +15528,7 @@ function saveTransaccion() {
         hacerCierre();
         return;
       }
-      client.from('ordenes').select('cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, numero, tasa_descuento_intermediario, tipos_operacion(codigo, moneda_in, moneda_out)').eq('id', ordenId).single().then((rO) => {
+      client.from('ordenes').select('cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, numero, tasa_descuento_intermediario, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single().then((rO) => {
         const orden = rO.data || {};
         const clienteId = orden.cliente_id || null;
         const intermediarioId = orden.intermediario_id || null;
@@ -15653,38 +15860,78 @@ function saveTransaccion() {
               promNroTrx.then((nroTrx) => {
                 const cajaTipo = codigoCajaTipo(modoPagoId);
                 const signo = cobrador === 'pandy' ? 1 : -1; // Pandy cobra = ingreso; Pandy paga = egreso
-                const conceptoMov = conceptoCajaTransaccion(cobrador === 'pandy', moneda, monto, orden.numero, nroTrx);
-                const movCaja = {
-                  moneda, monto: signo * monto, caja_tipo: cajaTipo, transaccion_id: transaccionId,
-                  orden_numero: orden.numero != null ? orden.numero : null, transaccion_numero: nroTrx != null ? nroTrx : null,
-                  concepto: conceptoMov, fecha, usuario_id: currentUserId,
-                };
-                client.from('movimientos_caja').insert(movCaja).then((rCaja) => {
-                if (rCaja.error) {
-                  showToast('Error al crear movimiento de caja: ' + (rCaja.error.message || ''), 'error');
-                  hacerCierre(ordenId);
-                  loadCajas();
+                function insertarMovCajaTrasValidarSaldo() {
+                  const conceptoMov = conceptoCajaTransaccion(cobrador === 'pandy', moneda, monto, orden.numero, nroTrx);
+                  const movCaja = {
+                    moneda, monto: signo * monto, caja_tipo: cajaTipo, transaccion_id: transaccionId,
+                    orden_numero: orden.numero != null ? orden.numero : null, transaccion_numero: nroTrx != null ? nroTrx : null,
+                    concepto: conceptoMov, fecha, usuario_id: currentUserId,
+                  };
+                  client.from('movimientos_caja').insert(movCaja).then((rCaja) => {
+                    if (rCaja.error) {
+                      showToast('Error al crear movimiento de caja: ' + (rCaja.error.message || ''), 'error');
+                      hacerCierre(ordenId);
+                      loadCajas();
+                      return;
+                    }
+                    if (!esOrdenCheque || !intermediarioId || !comisionPandyMonto || comisionPandyMonto < 1e-6) {
+                      hacerCierre(ordenId);
+                      loadCajas();
+                      return;
+                    }
+                    client.from('transacciones').select('id, tipo, monto, estado, cobrador, pagador, concepto').eq('instrumentacion_id', instrumentacionId).then((rList) => {
+                      const list = rList.data || [];
+                      const sumIngCli = list.filter((tr) => tr.tipo === 'ingreso' && tr.pagador === 'cliente' && tr.estado === 'ejecutada').reduce((s, tr) => s + Number(tr.monto), 0);
+                      const sumEgrCli = list.filter((tr) => tr.tipo === 'egreso' && tr.cobrador === 'cliente' && tr.estado === 'ejecutada').reduce((s, tr) => s + Number(tr.monto), 0);
+                      if (sumIngCli < mr - 1e-6 || sumEgrCli < me - 1e-6) {
+                        hacerCierre(ordenId);
+                        loadCajas();
+                        return;
+                      }
+                      hacerCierre(ordenId);
+                      loadCajas();
+                    });
+                  });
+                }
+                if (estado === 'ejecutada' && signo < 0) {
+                  const tSynth = {
+                    tipo,
+                    moneda,
+                    monto,
+                    pagador: pagador,
+                    cobrador: cobrador,
+                    modo_pago_id: modoPagoId,
+                    concepto,
+                  };
+                  Promise.all([
+                    client.from('instrumentacion').select('multicontraparte_manual').eq('id', instrumentacionId).single(),
+                    fetchMovimientosCajaCerradosSinSync(),
+                    client.from('modos_pago').select('codigo').eq('id', modoPagoId).maybeSingle(),
+                  ]).then(([rInstMc, listCaja, rModo]) => {
+                    const multicontraparteManual = !!(rInstMc.data && rInstMc.data.multicontraparte_manual);
+                    const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+                    const codigoModo = (rModo.data && rModo.data.codigo) ? String(rModo.data.codigo) : 'efectivo';
+                    const proy = proyectarEgresoCajaEmpresaSiEjecutadaTransaccion(tSynth, {
+                      multicontraparteManual,
+                      orden,
+                      tipoOperacionJoin: toJoin,
+                      comisionPandyMonto,
+                      codigoModo,
+                    });
+                    if (proy) {
+                      const v = validarSaldoCajaParaEgresoLista(listCaja, proy);
+                      if (!v.ok) {
+                        showToast(v.mensaje, 'error');
+                        hacerCierre(ordenId);
+                        loadCajas();
+                        return;
+                      }
+                    }
+                    insertarMovCajaTrasValidarSaldo();
+                  });
                   return;
                 }
-                if (!esOrdenCheque || !intermediarioId || !comisionPandyMonto || comisionPandyMonto < 1e-6) {
-                  hacerCierre(ordenId);
-                  loadCajas();
-                  return;
-                }
-                client.from('transacciones').select('id, tipo, monto, estado, cobrador, pagador, concepto').eq('instrumentacion_id', instrumentacionId).then((rList) => {
-                  const list = rList.data || [];
-                  const sumIngCli = list.filter((tr) => tr.tipo === 'ingreso' && tr.pagador === 'cliente' && tr.estado === 'ejecutada').reduce((s, tr) => s + Number(tr.monto), 0);
-                  const sumEgrCli = list.filter((tr) => tr.tipo === 'egreso' && tr.cobrador === 'cliente' && tr.estado === 'ejecutada').reduce((s, tr) => s + Number(tr.monto), 0);
-                  if (sumIngCli < mr - 1e-6 || sumEgrCli < me - 1e-6) {
-                    hacerCierre(ordenId);
-                    loadCajas();
-                    return;
-                  }
-                  // Comisión en CC desde el acuerdo (no asegurarGananciaPandy).
-                  hacerCierre(ordenId);
-                  loadCajas();
-                });
-              });
+                insertarMovCajaTrasValidarSaldo();
               });
             });
           });
