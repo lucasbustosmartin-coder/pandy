@@ -13524,6 +13524,40 @@ function poblarSelectContrapartesMulticontraparteModal(participantes, registro) 
   actualizarVisibilidadFilasContraparteMulticontraparte();
 }
 
+/** Modal transacción: scroll al inicio del cuerpo y foco en el primer control editable (evita quedar abajo tras 1ª/2ª trx). */
+function scrollModalTransaccionAcuerdoVisibleYFoco() {
+  const bd = document.getElementById('modal-transaccion-backdrop');
+  if (!bd || !bd.classList.contains('activo')) return;
+  const scrollWrap = document.getElementById('transaccion-form-scroll');
+  if (scrollWrap) scrollWrap.scrollTop = 0;
+  else {
+    const body = bd.querySelector('.modal-body');
+    if (body) body.scrollTop = 0;
+  }
+  if (bd.dataset.transaccionAnulada === '1') return;
+  const ids = [
+    'transaccion-tipo',
+    'transaccion-modo-pago',
+    'transaccion-moneda',
+    'transaccion-monto',
+    'transaccion-pagador',
+    'transaccion-cobrador',
+    'transaccion-estado',
+    'transaccion-concepto',
+  ];
+  for (let i = 0; i < ids.length; i++) {
+    const el = document.getElementById(ids[i]);
+    if (!el || el.disabled) continue;
+    if (el.tagName === 'INPUT' && el.readOnly) continue;
+    const st = typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(el) : null;
+    if (st && (st.display === 'none' || st.visibility === 'hidden')) continue;
+    try {
+      el.focus({ preventScroll: true });
+      return;
+    } catch (_) { /* noop */ }
+  }
+}
+
 function openModalTransaccion(registro, instrumentacionId) {
   const backdrop = document.getElementById('modal-transaccion-backdrop');
   const titulo = document.getElementById('modal-transaccion-titulo');
@@ -13780,6 +13814,11 @@ function openModalTransaccion(registro, instrumentacionId) {
     backdrop.classList.add('activo');
     setupInputImporte(montoFinal);
     actualizarMontoCalculado();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollModalTransaccionAcuerdoVisibleYFoco();
+      });
+    });
     }
 
     if (participantes.permiteMulticontraparteUi) {
