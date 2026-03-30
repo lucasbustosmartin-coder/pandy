@@ -365,9 +365,10 @@ const TIPOS_SUITE = [
     fillDetalles: async (page) => {
       await expect(page.locator('#orden-cotizacion')).toBeVisible({ timeout: 5000 });
       await page.locator('#orden-cotizacion').fill(ARS_USD_FIJOS.cotizacion);
-      await page.locator('#orden-monto-recibido').fill(ARS_USD_FIJOS.montoRecibidoArs);
+      // compra_usd: campo operativo = monto entregado (USD); recibido (ARS) se calcula con TC.
+      await page.locator('#orden-monto-entregado').fill(String(ARS_USD_FIJOS.montoEntregadoUsd));
       await page.waitForTimeout(500);
-      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/);
+      await expect(page.locator('#orden-monto-recibido')).toHaveValue(/.+/);
     },
   },
   {
@@ -419,9 +420,9 @@ const TIPOS_SUITE = [
     fillDetalles: async (page) => {
       await expect(page.locator('#orden-cotizacion')).toBeVisible({ timeout: 5000 });
       await page.locator('#orden-cotizacion').fill(EUR_USD_FIJOS.cotizacion);
-      await page.locator('#orden-monto-recibido').fill(EUR_USD_FIJOS.montoRecibidoEur);
+      await page.locator('#orden-monto-entregado').fill(String(EUR_USD_FIJOS.montoEntregadoUsd));
       await page.waitForTimeout(500);
-      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/);
+      await expect(page.locator('#orden-monto-recibido')).toHaveValue(/.+/);
     },
   },
   {
@@ -455,9 +456,9 @@ const TIPOS_SUITE = [
     fillDetalles: async (page) => {
       await expect(page.locator('#orden-cotizacion')).toBeVisible({ timeout: 5000 });
       await page.locator('#orden-cotizacion').fill(ARS_EUR_FIJOS.cotizacion);
-      await page.locator('#orden-monto-recibido').fill(ARS_EUR_FIJOS.montoRecibidoArs);
+      await page.locator('#orden-monto-entregado').fill(String(ARS_EUR_FIJOS.montoEntregadoEur));
       await page.waitForTimeout(500);
-      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/);
+      await expect(page.locator('#orden-monto-recibido')).toHaveValue(/.+/);
     },
   },
 ];

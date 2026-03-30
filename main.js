@@ -3291,7 +3291,7 @@ function refrescarPanelInicioCajasTrasSyncGlobal() {
   ])
     .then(([list, monUsd, monArs, monEur]) => { aplicarInicioTarjetasCajaDesdeLista(list, monUsd, monArs, monEur); })
     .catch(() => {});
-  loadInicioGpOperativo();
+  // G/P: se carga en loadInicio (Promise.all) para no duplicar RPC ni vaciar la matriz dos veces tras el sync global.
 }
 
 function setupInicioGpOperativo() {
@@ -3409,10 +3409,15 @@ function loadInicioGpOperativo() {
       leyenda.textContent = '';
     }
   }
-  if (loading) loading.style.display = 'block';
-  if (matrizEl) {
-    matrizEl.innerHTML = '';
-    matrizEl.style.display = 'none';
+  const silentGp = isPandiBackgroundRefresh();
+  if (!silentGp) {
+    if (loading) loading.style.display = 'block';
+    if (matrizEl) {
+      matrizEl.innerHTML = '';
+      matrizEl.style.display = 'none';
+    }
+  } else if (loading) {
+    loading.style.display = 'none';
   }
   wrap.querySelectorAll('[data-inicio-gp-periodo]').forEach((b) => {
     const on = b.getAttribute('data-inicio-gp-periodo') === inicioGpOperativoPeriodo;
@@ -3425,14 +3430,14 @@ function loadInicioGpOperativo() {
     .then((res) => {
       if (loading) loading.style.display = 'none';
       if (res.error) {
-        if (!isPandiBackgroundRefresh()) {
+        if (!silentGp) {
           showToast(
             'G/P Operativa: ' +
               (res.error.message || 'No se pudo calcular. Ejecutá sql/migracion_gp_operativa_panel.sql en Supabase.'),
             'error'
           );
         }
-        if (matrizEl) {
+        if (matrizEl && !silentGp) {
           matrizEl.innerHTML =
             '<div class="inicio-gp-matriz-error">Sin datos (revisá migración SQL en Supabase).</div>';
           matrizEl.style.display = 'block';
@@ -3465,8 +3470,8 @@ function loadInicioGpOperativo() {
     })
     .catch(() => {
       if (loading) loading.style.display = 'none';
-      if (!isPandiBackgroundRefresh()) showToast('G/P Operativa: error de red o servidor.', 'error');
-      if (matrizEl) {
+      if (!silentGp) showToast('G/P Operativa: error de red o servidor.', 'error');
+      if (matrizEl && !silentGp) {
         matrizEl.innerHTML = '<div class="inicio-gp-matriz-error">No se pudo cargar. Reintentá más tarde.</div>';
         matrizEl.style.display = 'block';
       }
@@ -3496,9 +3501,15 @@ function loadInicio() {
   if (elSaldos) elSaldos.style.display = algunaGranularCaja || legacyTodasLasTarjetasCaja ? '' : 'none';
   if (elPendientes) elPendientes.style.display = hasPendientesPerm ? '' : 'none';
 
-  sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
-    .catch(() => {})
-    .then(() => refrescarPanelInicioCajasTrasSyncGlobal());
+  // Refresco automático (~30 s): no encadenar sync global de todas las órdenes (pesado y vacía/repinta G/P).
+  // Igual criterio que loadCuentaCorriente con isPandiBackgroundRefresh.
+  if (!isPandiBackgroundRefresh()) {
+    sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
+      .catch(() => {})
+      .then(() => refrescarPanelInicioCajasTrasSyncGlobal());
+  } else {
+    refrescarPanelInicioCajasTrasSyncGlobal();
+  }
 
   return Promise.all([
     fetchMovimientosCajaCerradosSinSync(),
@@ -9311,7 +9322,17 @@ function openModalOrden(registro) {
   if (montoEntregadoInput && !montoEntregadoInput.dataset.cursorInicio) {
     montoEntregadoInput.dataset.cursorInicio = '1';
     montoEntregadoInput.addEventListener('focus', () => {
-      const ponerCursorAlInicio = () => { montoEntregadoInput.setSelectionRange(0, 0); };
+      // Solo al inicio del flujo (valor vacío o cero): en móvil, forzar cursor 0,0 en cada focus
+      // puede interferir con el teclado virtual o con edición parcial.
+      const v = (montoEntregadoInput.value || '').trim().replace(/\s/g, '');
+      const esInicio =
+        v === '' || v === '0' || v === '0,00' || v === '0.00' || v === '0,0' || v === '0.';
+      if (!esInicio) return;
+      const ponerCursorAlInicio = () => {
+        try {
+          montoEntregadoInput.setSelectionRange(0, 0);
+        } catch (_) { /* noop */ }
+      };
       requestAnimationFrame(() => {
         ponerCursorAlInicio();
         requestAnimationFrame(ponerCursorAlInicio);
@@ -9469,6 +9490,8 @@ function openModalOrden(registro) {
         setTimeout(() => {
           const el = document.getElementById('orden-monto-entregado');
           if (el) {
+            const vz = (el.value || '').trim();
+            if (vz === '0' || vz === '0,00' || vz === '0.00') el.value = '';
             el.focus();
             setTimeout(() => { el.setSelectionRange(0, 0); }, 0);
             el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -9639,6 +9662,8 @@ function openModalOrden(registro) {
       } else {
         syncOrdenIntPatronInstrumentacionWrap();
       }
+      const inpParticipanteMarca = document.getElementById('orden-participante-nombre-marca');
+      if (inpParticipanteMarca) inpParticipanteMarca.value = nombreMarcaSistema();
       backdrop.classList.add('activo');
       document.body.classList.add('modal-orden-abierto');
       showOrdenWizardStep('participantes');
@@ -10138,8 +10163,13 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     }
   } else {
     setRestoOrdenEditable(true);
-    if (montoRecibidoEl) montoRecibidoEl.readOnly = false;
-    if (montoEntregadoEl) montoEntregadoEl.readOnly = false;
+    // No forzar readOnly=false en ambos montos si es cruce con TC (ARS-USD, etc.):
+    // setRestoOrdenEditable ya dejó solo el campo operativo editable; si ambos quedan
+    // editables, el usuario suele escribir en el gris (calculado) sin TC y parece “bloqueado”.
+    if (!isTipoDosMonedas) {
+      if (montoRecibidoEl) montoRecibidoEl.readOnly = false;
+      if (montoEntregadoEl) montoEntregadoEl.readOnly = false;
+    }
   }
   if (isTipoPrimerosDatos) actualizarPrimerosDatos();
   const lblIntTxt = document.getElementById('orden-label-intermediario-texto');

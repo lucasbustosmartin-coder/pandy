@@ -43,12 +43,24 @@ Cuando tengas la URL del repo y la de Vercel, editá en `scripts/crear-bitacora-
 
 En **Settings** → **Environment Variables** del proyecto:
 
-- `SUPABASE_URL`: URL del proyecto Supabase.
-- `SUPABASE_ANON_KEY`: anon public key.
+- `SUPABASE_URL` y `SUPABASE_ANON_KEY` deben existir **por entorno**:
+  - **Production** → proyecto Supabase **productivo**.
+  - **Preview** → proyecto Supabase **desarrollo** (misma app, otra base).
+- Las anon keys son JWT: los primeros caracteres suelen verse iguales entre proyectos; confirmar que URL y clave **completas** correspondan a cada Supabase.
 
 Opcional: `SUPABASE_SERVICE_ROLE_KEY` solo si la app en producción necesita operaciones con service role (usar con cuidado).
 
-Así `config.js` se genera en el build y la app no queda en blanco por falta de config.
+Así `config.js` se genera en el build (`node scripts/build-config.js`) y la app no queda en blanco por falta de config.
+
+### Dominios propios (referencia actual Pandi)
+
+| Host | Entorno Vercel | Notas |
+|------|----------------|--------|
+| **https://pandi.company** | Production | Dominio principal en producción. |
+| **https://pandy-tau.vercel.app** | Production | Dominio por defecto Vercel (sigue válido como alias). |
+| **https://preview.pandi.company** | Preview | Ligado en Vercel a la rama Git **`preview-empleado`**: muestra el último deploy Preview de esa rama. Variables Preview → Supabase **dev**. |
+
+La URL “fea” que cambia en cada `npx vercel --yes` sigue existiendo en **Deployments**; el subdominio **`preview.pandi.company`** es un nombre estable para compartir el entorno de prueba **siempre que la rama `preview-empleado` esté alineada con `main`** (ver §4c).
 
 ---
 
@@ -73,4 +85,46 @@ O configurá en Vercel el redeploy automático al hacer push a `main`; igual con
 npx vercel --yes
 ```
 
-Sin `--prod`: genera un deployment Preview; la URL puede cambiar cada vez. Requiere proyecto enlazado (`vercel link`) y sesión de Vercel CLI, o `VERCEL_TOKEN`. Detalle del flujo completo (“ok desplegar”) en la regla **bitácora-tareas** (`.cursor/rules/bitacora-tareas.mdc`).
+Sin `--prod`: genera un deployment Preview; la URL con hash puede cambiar cada vez. Requiere proyecto enlazado (`vercel link`) y sesión de Vercel CLI, o `VERCEL_TOKEN`. Detalle del flujo completo (“ok desplegar”) en la regla **bitácora-tareas** (`.cursor/rules/bitacora-tareas.mdc`).
+
+(Así el build Preview ejecuta `node scripts/build-config.js` y embebe la config dev en `config.js`.)
+
+Opcional: repetir el par **dev** también para entorno **Development** si usás `vercel dev` local.
+
+### 4c. Alinear `preview.pandi.company` con el mismo commit que producción
+
+El hostname **`preview.pandi.company`** está asociado en Vercel a la rama Git **`preview-empleado`**. Un `npx vercel --yes` desde `main` no actualiza ese dominio por sí solo.
+
+Tras **push a `main`**, `vercel --prod` y `npx vercel --yes`, conviene **actualizar esa rama** para que el subdominio estable muestre el mismo código que prod:
+
+```bash
+git checkout main
+git pull origin main
+git checkout preview-empleado
+git merge main -m "sync: preview-empleado con main"
+git push origin preview-empleado
+git checkout main
+```
+
+Si `preview-empleado` no existe en el remoto, crearla una vez desde `main` y pushearla; en Vercel el dominio Preview debe apuntar a esa rama.
+
+### Alternativa por Git (si no usás CLI)
+
+Si no usás el paso con `npx vercel --yes`, `main` suele disparar solo **Production**. Para un Preview por integración Git:
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b preview-empleado
+git push -u origin preview-empleado
+```
+
+(Nombre de rama libre: `preview-empleado`, `staging`, etc.)
+
+Luego en **Vercel → Deployments** copiá la **URL del Preview** de esa rama, o usá el dominio asignado (p. ej. `preview.pandi.company`). Los usuarios deben existir en **Auth del Supabase dev**.
+
+### Volver a trabajar en `main`
+
+```bash
+git checkout main
+```

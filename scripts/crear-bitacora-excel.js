@@ -21,6 +21,10 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Despliegue v1.75 + doc Vercel/dominios', 'Producción https://pandi.company/; Preview estable https://preview.pandi.company/ (rama preview-empleado); variables SUPABASE_* por entorno. docs/GIT_Y_VERCEL.md: tabla dominios, §4c merge preview-empleado←main. Ref Git/Vercel en bitácora. Incluye fix wizard compra USD/EUR (un monto editable) y E2E 02/03/91.', 'Despliegue'],
+  ['__HOY__', '__AHORA__', 'Nueva orden: compra USD/EUR con TC — un solo monto editable', 'adaptarFormularioOrden: tras setRestoOrdenEditable(true) ya no se forzaba readOnly=false en ambos montos para isTipoDosMonedas (anulaba compra_usd/compra_eur: el gris calculado quedaba editable; sin TC el tipeo en recibido no actualizaba y parecía bloqueado). Foco orden-monto-entregado: cursor al inicio solo si valor vacío o cero; al pasar a Detalles se limpia «0» como en vende. E2E 02/03/91 rellenan entregado en ARS-USD, EUR-USD y ARS-EUR (+ int). main.js; tests/e2e.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Inicio G/P Operativa: sin parpadeo en refresco automático', 'loadInicio con isPandiBackgroundRefresh ya no encadena sync global de todas las órdenes; solo refresca cajas vía fetch. loadInicioGpOperativo en refresco silencioso no vacía la matriz ni muestra loading (actualiza al llegar el RPC). Eliminada carga duplicada de G/P en refrescarPanelInicioCajasTrasSyncGlobal. main.js.', 'Desarrollo'],
+  ['__HOY__', '__AHORA__', 'Modal Nueva orden: Participante fijo = nombre en sistema', 'Tras form.reset() el campo #orden-participante-nombre-marca volvía al value HTML «Pandi». Se sincroniza con nombreMarcaSistema() (app_empresa.nombre_sistema) al abrir el modal, antes de mostrar el backdrop; value inicial en index vacío. main.js; index.html.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Despliegue v1.74 (Vercel prod + Preview)', 'Push main: G/P Operativa, Panel/Cajas responsive, reglas CC cp_ic E,E (SQL en repo; migraciones Supabase a ejecutar), bitácora Versiones 1.74.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'CC reglas cp_ic: cierre E,E cliente (ARS-USD / cruces)', 'Patrón ingreso Cliente→Pandy + egreso Intermediario→Cliente con ambas ejecutadas: faltaban en reglas_de_negocio las líneas 1–2 (par −/+ moneda de la entrega y +mr moneda recibida) para la clave contrapartida_ejecutada=true; el motor solo aplicaba la línea 0 y la CC del cliente no neteaba a cero. Migración sql/migracion_reglas_cp_ic_ee_neteo_cliente_cruzadas.sql; actualizados reglas_ars_usd_int_inversa_reglas_de_negocio.sql, reglas_usd_ars_int_inversa_reglas_de_negocio.sql e insert_reglas_ars_usd_int_cp_ic_si_faltan.sql. docs/REG_NEG_ARS_USD_INT_PASO1.md.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'G/P Operativa: caja por órdenes en RPC y matriz', 'gp_operativa_resumen suma movimientos_caja con orden_id cerrados en el período (caja_ordenes); el Panel muestra fila «Caja por órdenes» y el Total suma caja manual + caja órdenes + CC cliente + intermediario. Refleja ganancia neta en valores (p. ej. CHEQUE-ARS+int cerrada) que antes solo veía la caja física. sql/migracion_gp_operativa_panel.sql (re-ejecutar); main.js pintarInicioGpMatriz; index.html ayuda G/P.', 'Desarrollo'],
@@ -572,6 +576,7 @@ wsLog['!cols'] = [{ wch: 12 }, { wch: 6 }, { wch: 45 }, { wch: 95 }, { wch: 14 }
 // --- Hoja Resumen
 const funcionalidades = [
   ['Funcionalidad', 'Descripción'],
+  ['Nueva orden: cruces compra con tipo de cambio (ARS-USD, EUR-USD, ARS-EUR)', 'Con TC obligatorio, solo el monto entregado en USD o EUR es editable; el monto en la otra moneda queda calculado y bloqueado (readOnly), para que el foco y el teclado coincidan con el campo operativo.'],
   ['Estructura del repo', 'Carpetas sql/, scripts/, docs/, Base/. Reglas en .cursor/rules (estructura-proyecto, reglas-pandi, tablas-y-movil-lyp, bitácora, preguntas-solo-respuesta). Estándar LyP: tablas con encabezados sticky y UI responsiva móvil.'],
   ['Bitácora', 'Node.js + SheetJS (xlsx). Script scripts/crear-bitacora-excel.js genera Bitacora_tareas.xlsx con Log, Resumen, Ref Git y Vercel, Versiones, Tecnología, Presupuesto.'],
   ['Bootstrap SQL Supabase (dev)', 'npm run sql:bootstrap:dev → 22 tablas en public: supabase_*, app_empresa, app_config (timeout sesión), permisos/vistas/ver_cajas_* + migracion_permisos_rol_editable (toggles Seguridad persisten en app_role_permission), CC/caja + CC manual (tipos caja, RLS, anular_orden), tipos_operacion (unique codigo+usa_intermediario), reglas_de_negocio + RLS, auditoria_app, orden_comisiones_generadas (+ parche movimiento_caja), RPCs, ordenes_insertar. Seeds opcionales: npm run sql:seed:tipos-operacion / sql:seed:reglas-de-negocio. Excluye supabase_admin_inicial, cc_modelo legacy, bucket iconos. docs/PANDY_DEV_SUPABASE.md.'],
@@ -659,7 +664,9 @@ wsResumen['!cols'] = [{ wch: 32 }, { wch: 85 }];
 const refGitVercel = [
   ['Concepto', 'Valor'],
   ['Repositorio GitHub', 'https://github.com/lucasbustosmartin-coder/pandy'],
-  ['URL app en vivo (Vercel)', 'https://pandi.vercel.app/'],
+  ['URL producción (dominio propio)', 'https://pandi.company/'],
+  ['URL producción (alias Vercel)', 'https://pandy-tau.vercel.app/'],
+  ['URL Preview estable (rama preview-empleado)', 'https://preview.pandi.company/'],
   ['Rama principal', 'main'],
   ['Actualizar y subir cambios', 'git add .  →  git commit -m "descripción"  →  git push origin main'],
   ['Vercel redeploy', 'Automático al hacer push a main (cuando esté conectado)'],
@@ -671,6 +678,7 @@ wsRef['!cols'] = [{ wch: 28 }, { wch: 70 }];
 // --- Hoja Versiones
 const versiones = [
   ['Versión', 'Fecha', 'Descripción'],
+  ['1.75', '__HOY__', 'Despliegue: dominios Vercel — producción https://pandi.company/ (y alias pandy-tau.vercel.app); Preview estable https://preview.pandi.company/ (rama preview-empleado, Supabase dev). docs/GIT_Y_VERCEL.md (variables por entorno, §4c sync rama). Wizard Nueva orden: compra USD/EUR con TC un solo monto editable; foco/clear cero en entregado; E2E 02/03/91. Bitácora Ref Git/Vercel actualizada.'],
   ['1.74', '__HOY__', 'Despliegue: Panel G/P Operativa (RPC gp_operativa_resumen: caja_manual, caja_ordenes, CC cliente/intermediario; matriz en Inicio; permiso ver_inicio_gp_operativo; tipos_movimiento_caja.incluye_gp_operativo). Panel/Cajas: grilla y cards responsive, scroll horizontal, iconos moneda en G/P, ayudas modal. CC: reglas cp_ic E,E — migración sql/migracion_reglas_cp_ic_ee_neteo_cliente_cruzadas.sql (ejecutar en Supabase) y scripts reglas alineados; cierre neto cliente en órdenes cruzadas con int. Docs SUPABASE_REQUISITOS, REG_NEG, MC manual. sql/migracion_gp_operativa_panel.sql.'],
   ['1.73', '__HOY__', 'Despliegue: Panel Inicio — tarjetas caja según ver_cajas_efectivo/banco/cheque (sin fallback que mostraba todas si faltaban flags; legacy solo con ver_cajas sin granular). Seguridad — persistencia permisos: insert/delete con .select(), error si 0 filas y guía migracion_permisos_rol_editable.sql; refreshPermisosYVista repinta Inicio/Cajas; comparación rol con trim. Bootstrap dev incluye migracion_permisos_rol_editable.sql; docs/SUPABASE_REQUISITOS §5.'],
   ['1.72', '__HOY__', 'Despliegue: CC con intermediario (ci_pc) — signos en reglas_de_negocio para P,E (compromiso_cobrar +, compromiso_pago −me según moneda) en USD-ARS/ARS-USD, USD-EUR/EUR-USD, ARS-EUR/EUR-ARS; migraciones SQL en sql/; sync sin duplicar movimientos «Cierre orden» cuando corre el motor (main.js). Docs REGLA_CC_SIMPLE_INFALIBLE §3; seeds CSV reglas. E2E OK.'],
@@ -755,7 +763,7 @@ wsVersiones['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 75 }];
 const tecnologia = [
   ['Componente', 'Detalle'],
   ['Datos', 'Supabase (PostgreSQL). Tablas según la app. Scripts SQL en sql/.'],
-  ['Hosting', 'Vercel. Despliegue con vercel --prod tras push a main.'],
+  ['Hosting', 'Vercel. Producción https://pandi.company/; Preview estable https://preview.pandi.company/ (rama preview-empleado, Supabase dev). Despliegue: push main, vercel --prod, npx vercel --yes; opcional sync rama preview (docs/GIT_Y_VERCEL.md §4c).'],
   ['Repositorio', 'Git/GitHub, rama main.'],
   ['Bitácora', 'Node.js + SheetJS (xlsx). Script scripts/crear-bitacora-excel.js genera Bitacora_tareas.xlsx con Log, Resumen, Ref Git y Vercel, Versiones, Tecnología, Presupuesto.'],
 ];

@@ -532,13 +532,14 @@ test.describe('Orden ARS-USD, transacciones y cuenta corriente', () => {
 
       await expect(page.locator('#orden-cotizacion')).toBeVisible({ timeout: 2000 });
       const cotizArsUsd = randomInt(800, 1200);
-      const montoRecibidoArsUsd = randomInt(500000, 1500000);
+      const montoEntregadoUsd = randomInt(500, 1500);
+      const montoRecibidoArsUsd = cotizArsUsd * montoEntregadoUsd;
       await page.locator('#orden-cotizacion').fill(String(cotizArsUsd));
-      await page.locator('#orden-monto-recibido').fill(String(montoRecibidoArsUsd));
+      await page.locator('#orden-monto-entregado').fill(String(montoEntregadoUsd));
       await page.waitForTimeout(500);
-      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/);
-      const montoRecibido = (await page.locator('#orden-monto-recibido').inputValue()) || String(montoRecibidoArsUsd);
-      const montoEntregado = (await page.locator('#orden-monto-entregado').inputValue()) || '';
+      await expect(page.locator('#orden-monto-recibido')).toHaveValue(/.+/);
+      const montoRecibido = (await page.locator('#orden-monto-recibido').inputValue()) || '';
+      const montoEntregado = (await page.locator('#orden-monto-entregado').inputValue()) || String(montoEntregadoUsd);
 
       await page.locator('#orden-btn-ir-instrumentacion').click();
       await expect(page.locator('#orden-step-instrumentacion')).toBeVisible({ timeout: 15000 });

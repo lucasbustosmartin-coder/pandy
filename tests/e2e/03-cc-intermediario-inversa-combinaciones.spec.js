@@ -307,9 +307,9 @@ const TIPOS = [
     combinaciones: COMBINACIONES_ARS_USD_INT_INVERSA,
     fillDetalles: async (page) => {
       await page.locator('#orden-cotizacion').fill(ARS_USD_INT_FIJOS.cotizacion);
-      await page.locator('#orden-monto-recibido').fill(String(ARS_USD_INT_FIJOS.mrArs));
+      await page.locator('#orden-monto-entregado').fill(String(ARS_USD_INT_FIJOS.meUsd));
       await page.waitForTimeout(500);
-      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/, { timeout: 15000 });
+      await expect(page.locator('#orden-monto-recibido')).toHaveValue(/.+/, { timeout: 15000 });
     },
   },
   {
@@ -327,9 +327,9 @@ const TIPOS = [
     combinaciones: COMBINACIONES_EUR_USD_INT_INVERSA,
     fillDetalles: async (page) => {
       await page.locator('#orden-cotizacion').fill(EUR_USD_INT_FIJOS.cotizacion);
-      await page.locator('#orden-monto-recibido').fill(String(EUR_USD_INT_FIJOS.mrArs));
+      await page.locator('#orden-monto-entregado').fill(String(EUR_USD_INT_FIJOS.meUsd));
       await page.waitForTimeout(500);
-      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/, { timeout: 15000 });
+      await expect(page.locator('#orden-monto-recibido')).toHaveValue(/.+/, { timeout: 15000 });
     },
   },
   {
@@ -347,9 +347,9 @@ const TIPOS = [
     combinaciones: COMBINACIONES_ARS_EUR_INT_INVERSA,
     fillDetalles: async (page) => {
       await page.locator('#orden-cotizacion').fill(ARS_EUR_INT_FIJOS.cotizacion);
-      await page.locator('#orden-monto-recibido').fill(String(ARS_EUR_INT_FIJOS.mrArs));
+      await page.locator('#orden-monto-entregado').fill(String(ARS_EUR_INT_FIJOS.meEur));
       await page.waitForTimeout(500);
-      await expect(page.locator('#orden-monto-entregado')).toHaveValue(/.+/, { timeout: 15000 });
+      await expect(page.locator('#orden-monto-recibido')).toHaveValue(/.+/, { timeout: 15000 });
     },
   },
 ];
