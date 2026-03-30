@@ -289,6 +289,10 @@ INSERT INTO public.reglas_de_negocio (
   ('USD-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('USD-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('USD-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  -- ci_pc: CC intermediario por ingreso Cliente→Intermediario (cobro mr; espejo USD-ARS+int). Sin esto solo figuraba el egreso Pandy→Cliente (+me) y parecía un cobro de 9.800 en lugar de los 10.000 recibidos del cliente.
+  ('USD-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 0, 'USD', 1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('USD-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('USD-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_cobrar'),
   ('USD-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
@@ -303,13 +307,15 @@ INSERT INTO public.reglas_de_negocio (
   -- CC intermediario (cp_ic): egreso Int→Cliente con ingreso C→P aún pendiente → una sola línea −me (deuda de Pandy por lo entregado; no par +/− que neteaba a cero). Con par cerrado → línea contrapartida true (igual que antes).
   ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
-  -- ci_pc: CC intermediario por egreso Pandy→Cliente (misma lógica de líneas que entidad cliente; cp_ic no tiene esta pata).
+  -- ci_pc: CC intermediario por egreso Pandy→Cliente. Con ingreso C→Int en +mr, la línea con par cerrado debe ser −me (Pandy entrega me al cliente; no duplicar como +me).
   ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true, 0, 'USD', 1, 'mr_menos_me', true, 'comision_acuerdo'),
+  -- ci_pc: comisión implícita (spread) con ingreso Cliente→Intermediario (no hay fila C→Pandy en instrumentación).
+  ('USD-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', true, 'ejecutada', true, 0, 'USD', 1, 'mr_menos_me', true, 'comision_acuerdo'),
   ('USD-USD', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true, 0, 'USD', -1, 'comision_intermediario', true, 'comision_acuerdo'),
   -- Comisión int. cuando ya entregó Int→Cliente pero el cobro C→P sigue pendiente (cp_ic P,E): misma fila que arriba pero contrapartida_ejecutada false (motor main.js).
   ('USD-USD', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', false, 0, 'USD', -1, 'comision_intermediario', true, 'comision_acuerdo')

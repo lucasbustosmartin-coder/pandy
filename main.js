@@ -5251,6 +5251,10 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     tablaTieneComisionUsdUsdEp &&
     ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
     !egresoEntregaAClienteEjecutado(transacciones);
+  /** ci_pc: el egreso P→C es bilateral Pandy–cliente; no debe figurar en CC intermediario (el +mr del C→I ya ancla el flujo frente al int.; −me duplicaba y rompía el saldo vs deudas previas). */
+  const patronUsdIntMotor = esUsdUsd && intermediarioId
+    ? patronInstrumentacionIntDesdeTransacciones(transacciones)
+    : '';
   (transacciones || []).forEach((t) => {
     if ((t.concepto || '').includes('Ganancia del acuerdo')) return;
     const montoT = Number(t.monto) || 0;
@@ -5325,6 +5329,14 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         ...montosCcPorMoneda(moneda, montoCc),
       };
       if (entidad === 'intermediario') {
+        if (
+          patronUsdIntMotor === 'ci_pc' &&
+          tipo === 'egreso' &&
+          pag === 'pandy' &&
+          cob === 'cliente'
+        ) {
+          continue;
+        }
         rowsCcInt.push({
           intermediario_id: intermediarioId,
           ...rowBase,
@@ -5363,16 +5375,27 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     const parClienteCerrado = ingresoCobroClienteEjecutado && egresoEntregaClienteEjecutado;
     let reglaCom = null;
     if (parClienteCerrado) {
+      // cp_ic: ingreso Cliente→Pandy. ci_pc: ingreso Cliente→Intermediario (misma comisión mr−me en tabla).
       reglaCom = lookupReglasDeNegocio(
         reglasDeNegocio,
         tipoOperacionCodigo,
         'cliente',
-        'pandy',
+        'intermediario',
         'ingreso',
         true,
         'ejecutada',
         true
-      )[0];
+      )[0]
+        || lookupReglasDeNegocio(
+          reglasDeNegocio,
+          tipoOperacionCodigo,
+          'cliente',
+          'pandy',
+          'ingreso',
+          true,
+          'ejecutada',
+          true
+        )[0];
     } else if (
       !intermediarioId &&
       ingresoCobroClienteEjecutado &&
@@ -5448,8 +5471,8 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         comisionIntMonto: Number(comisionIntMonto) || 0,
       });
       const rawComInt = Number(reglaComIntUsd.signo) * baseInt;
-      // cp_ic: comisión en CC int. negativa (Pandy debe al intermediario). ci_pc: signo inverso (+ comisión a favor del int.).
-      const montoCcInt = patronIntUsdCom === 'ci_pc' ? -rawComInt : rawComInt;
+      // Misma convención que cp_ic: signo de la tabla (Pandy → intermediario) = deuda de Pandy hacia el int. en la suma algebraica.
+      const montoCcInt = rawComInt;
       if (Math.abs(montoCcInt) >= 1e-12) {
         const monedaInt = String(comisionIntMon || reglaComIntUsd.moneda || 'USD').toUpperCase();
         const cerradoInt = parClienteCerradoUsdInt;
@@ -12304,7 +12327,13 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           if (!nombreInterSync && rIntNom && rIntNom.data && rIntNom.data.nombre != null) {
             nombreInterSync = String(rIntNom.data.nombre).trim();
           }
-          const esUsdUsdInterComisionFijaSync = codNorm === 'USD-USD' && intermediarioId && intermediarioTieneComisionFijaUsdAcordada(intermediarioId, nombreInterSync);
+          const patronIntUsdSync = patronInstrumentacionIntDesdeTransacciones(transacciones);
+          // Comisión fija 50/75 (Seguridad / «nacho») solo aplica a **cp_ic**; en **ci_pc** siempre tasas % sobre el acuerdo (ver ordenComisionFijaNachoUsdParaPersistir). Si acá fuera true en ci_pc, se bloqueaba mr×tasa y quedaba comisionInt=0 sin fila en CC int.
+          const esUsdUsdInterComisionFijaSync =
+            codNorm === 'USD-USD' &&
+            intermediarioId &&
+            patronIntUsdSync === 'cp_ic' &&
+            intermediarioTieneComisionFijaUsdAcordada(intermediarioId, nombreInterSync);
           const monR = (orden.moneda_recibida || 'USD').toUpperCase();
           const monE = (orden.moneda_entregada || 'USD').toUpperCase();
           const mr = Number(orden.monto_recibido) || 0;
@@ -12314,7 +12343,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           let comisionIntMonto = comisionInt ? Number(comisionInt.monto) || 0 : 0;
           let comisionIntMon = (comisionInt && comisionInt.moneda) ? comisionInt.moneda.toUpperCase() : 'ARS';
           // Si no hay comisión en comisiones_orden pero la orden tiene tasa_descuento_intermediario, derivar: mr * tasa (ej. 50.000 * 0,015 = 750).
-          // USD-USD + Nacho: la comisión del int. es fija (50/75), no % sobre mr; no rellenar aquí o bloquea la inferencia y la fila es_comision en CC int.
+          // Con comisión fija parametrizada **solo en cp_ic** (esUsdUsdInterComisionFijaSync) no usar mr×tasa ni duplicar con inferencia 50/75; en **ci_pc** siempre se permite mr×tasa aunque el intermediario esté en Seguridad para fija en cp_ic.
           if (intermediarioId && comisionIntMonto < 1e-6 && !esUsdUsdInterComisionFijaSync && typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1 && tasa > 1e-12 && mr >= 1e-6) {
             comisionIntMonto = mr * tasa;
             comisionIntMon = monR;
@@ -12328,7 +12357,6 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             comisionPandyMonto = Math.max(0, spreadAcuerdo - (comisionIntMonto > 1e-6 ? comisionIntMonto : 0));
           }
           // USD-USD cp_ic + Nacho: fila int. faltante o sin comisiones_orden; inferir 50/75 y repartir spread (también si no hay fila Pandy: asumir spread = parte Pandy implícita).
-          const patronIntUsdSync = patronInstrumentacionIntDesdeTransacciones(transacciones);
           if (codNorm === 'USD-USD' && intermediarioId && patronIntUsdSync === 'cp_ic' && comisionIntMonto < 1e-6 && mr > me + 1e-6) {
             const spreadUsdAc = mr - me;
             const oaCfg = Number(usdUsdComisionFijaConfig.opcion_a) || 50;
@@ -12351,6 +12379,13 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 comisionIntMon = monR;
                 comisionPandyMonto = Math.max(0, spreadUsdAc - intInf);
               }
+            }
+          }
+          // Tras inferir comisión int. por tasa o por fija cp_ic: si Pandy tenía todo el spread en comisiones_orden y suma > mr−me, ajustar parte Pandy.
+          if (codNorm === 'USD-USD' && intermediarioId && mr > me + 1e-6) {
+            const spUsd = mr - me;
+            if (comisionIntMonto >= 1e-6 && comisionPandyMonto + comisionIntMonto > spUsd + 0.02) {
+              comisionPandyMonto = Math.max(0, spUsd - comisionIntMonto);
             }
           }
           const spreadAcuerdoChequeInt =
