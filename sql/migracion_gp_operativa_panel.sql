@@ -83,6 +83,6 @@ AS $$
   );
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'Suma monto por moneda: caja manual (tipos con incluye_gp_operativo, sin orden), caja por órdenes (mov. caja con orden_id, ejecutados/cerrados), CC cliente e intermediario; fechas inclusive; NULL = sin límite en ese extremo.';
+COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'Suma monto por moneda: caja manual (tipos con incluye_gp_operativo, sin orden), caja por órdenes (mov. caja con orden_id, ejecutados/cerrados), CC cliente e intermediario (suma de líneas, no saldo por entidad). El total por moneda suma cuatro bolsas de distinta naturaleza (caja real vs filas de libro CC); no interpretar como único resultado contable. Fechas inclusive; NULL = sin límite en ese extremo.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_resumen(date, date) TO authenticated;

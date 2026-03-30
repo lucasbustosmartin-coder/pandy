@@ -495,7 +495,7 @@ function pandiExportOfflineQueueJsonFile() {
   const blob = new Blob([JSON.stringify(q, null, 2)], { type: 'application/json;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'pandi-cola-ordenes-offline-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.download = 'pandi-cola-ordenes-offline-' + fechaHoyYYYYMMDDArgentina() + '.json';
   a.click();
   URL.revokeObjectURL(a.href);
   showToast('Archivo JSON descargado (respaldo de la cola).', 'info');
@@ -579,7 +579,7 @@ function pandiOrdenOfflineOpenModal() {
   closeOrdenOfflineTipoOperacionListbox();
   syncOrdenOfflineTipoOperacionIconosPreview();
   rebuildOrdenOfflineTipoOperacionListbox();
-  const fhoy = typeof fechaHoyYYYYMMDDArgentina === 'function' ? fechaHoyYYYYMMDDArgentina() : new Date().toISOString().slice(0, 10);
+  const fhoy = fechaHoyYYYYMMDDArgentina();
   const fe = document.getElementById('orden-offline-fecha');
   if (fe) fe.value = fhoy;
   ['orden-offline-monto-r', 'orden-offline-monto-e', 'orden-offline-cotizacion', 'orden-offline-tasa-cheque-pct', 'orden-offline-observaciones'].forEach((id) => {
@@ -3012,7 +3012,7 @@ function exportarMovimientosCajaExcel() {
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Movimientos caja');
-    const nombreArchivo = 'caja_movimientos_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    const nombreArchivo = 'caja_movimientos_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
     XLSX.writeFile(wb, nombreArchivo);
     showToast('Exportado: ' + nombreArchivo, 'success');
   });
@@ -4441,9 +4441,19 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
   const estadoMc = (t.estado || '').toLowerCase();
   const cidAc = orden.cliente_id || null;
   const cidPag = idClientePagadorEfectivoMulticontraparte(t, orden);
+  const cidCob = idClienteCobradorEfectivoMulticontraparte(t, orden);
   /** Ingreso ejecutado: cliente del acuerdo paga a intermediario — mismo neteo en libro del acuerdo que pago a tercero cliente (−m cobro +m ajuste). */
   const esIngresoAcuerdoAIntermediario =
     estadoMc === 'ejecutada' && tipoMc === 'ingreso' && pagMc === 'cliente' && cobMc === 'intermediario' && cidAc && cidPag && String(cidPag) === String(cidAc);
+  /** Egreso ejecutado: intermediario paga al cliente del acuerdo — mismo neteo en libro del acuerdo que Pandy→Cliente (−m pago +m ajuste). Sin esto queda solo «compromiso» (+m) y no cierra el saldo. */
+  const esEgresoIntermediarioAClienteAcuerdo =
+    estadoMc === 'ejecutada' &&
+    tipoMc === 'egreso' &&
+    pagMc === 'intermediario' &&
+    cobMc === 'cliente' &&
+    cidAc &&
+    cidCob &&
+    String(cidCob) === String(cidAc);
   if (cidPag) {
     rowsCcCliente.push({
       cliente_id: cidPag,
@@ -4476,22 +4486,52 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
       });
     }
   }
-  const cidCob = idClienteCobradorEfectivoMulticontraparte(t, orden);
   if (cidCob) {
-    rowsCcCliente.push({
-      cliente_id: cidCob,
-      orden_id: ordenId,
-      transaccion_id: transaccionId,
-      transaccion_numero: nro,
-      concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, nro),
-      fecha,
-      usuario_id: currentUserId,
-      moneda: mon,
-      monto,
-      estado: 'cerrado',
-      estado_fecha: ahora,
-      ...montosCcPorMoneda(mon, monto),
-    });
+    if (esEgresoIntermediarioAClienteAcuerdo) {
+      rowsCcCliente.push({
+        cliente_id: cidCob,
+        orden_id: ordenId,
+        transaccion_id: transaccionId,
+        transaccion_numero: nro,
+        concepto: conceptoCcLeyenda('pago_realizado', ordenNumero, nro),
+        fecha,
+        usuario_id: currentUserId,
+        moneda: mon,
+        monto: -monto,
+        estado: 'cerrado',
+        estado_fecha: ahora,
+        ...montosCcPorMoneda(mon, -monto),
+      });
+      rowsCcCliente.push({
+        cliente_id: cidCob,
+        orden_id: ordenId,
+        transaccion_id: transaccionId,
+        transaccion_numero: nro,
+        concepto: `Ajuste libro acuerdo — Orden ${ordenNumero} · Trans ${nro != null ? nro : '–'}`,
+        fecha,
+        usuario_id: currentUserId,
+        moneda: mon,
+        monto,
+        estado: 'cerrado',
+        estado_fecha: ahora,
+        ...montosCcPorMoneda(mon, monto),
+      });
+    } else {
+      rowsCcCliente.push({
+        cliente_id: cidCob,
+        orden_id: ordenId,
+        transaccion_id: transaccionId,
+        transaccion_numero: nro,
+        concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, nro),
+        fecha,
+        usuario_id: currentUserId,
+        moneda: mon,
+        monto,
+        estado: 'cerrado',
+        estado_fecha: ahora,
+        ...montosCcPorMoneda(mon, monto),
+      });
+    }
   }
   const iidPag = idInterPagadorEfectivoMulticontraparte(t, orden);
   if (iidPag) {
@@ -6266,7 +6306,7 @@ function exportarCcResumenExcel() {
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'CC detalle movimientos');
-    const nombreArchivo = 'cc_detalle_movimientos_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    const nombreArchivo = 'cc_detalle_movimientos_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
     XLSX.writeFile(wb, nombreArchivo);
     showToast('Exportado: ' + nombreArchivo, 'success');
     return;
@@ -6295,7 +6335,7 @@ function exportarCcResumenExcel() {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Cuenta corriente');
-  const nombreArchivo = 'cuenta_corriente_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  const nombreArchivo = 'cuenta_corriente_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
   XLSX.writeFile(wb, nombreArchivo);
   showToast('Exportado: ' + nombreArchivo, 'success');
 }
@@ -7870,7 +7910,7 @@ function openModalMovimientoCaja(registro) {
       inputMonto.value = formatImporteParaInput(Math.abs(Number(registro.monto)));
       if (!esOrden) selTipo.value = registro.tipo_movimiento_id || '';
     } else {
-      const hoy = new Date().toISOString().slice(0, 10);
+      const hoy = fechaHoyYYYYMMDDArgentina();
       fechaEl.value = hoy;
       selMoneda.value = cajasMonedaActual;
       inputConcepto.value = '';
@@ -7895,7 +7935,7 @@ function saveMovimientoCaja() {
   const fecha = document.getElementById('mov-caja-fecha').value;
 
   if (id && esDeOrden) {
-    const payload = { concepto, fecha: fecha || new Date().toISOString().slice(0, 10) };
+    const payload = { concepto, fecha: fecha || fechaHoyYYYYMMDDArgentina() };
     client
       .from('movimientos_caja')
       .update(payload)
@@ -7931,7 +7971,7 @@ function saveMovimientoCaja() {
     orden_id: null,
     caja_tipo: cajaTipo,
     concepto,
-    fecha: fecha || ahora.slice(0, 10),
+    fecha: fecha || fechaHoyYYYYMMDDArgentina(),
     usuario_id: currentUserId,
   };
   const payload = id ? payloadBase : { ...payloadBase, estado: 'cerrado', estado_fecha: ahora };
@@ -8157,7 +8197,7 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
         const monR = orden.moneda_recibida || 'USD';
         const monE = orden.moneda_entregada || 'USD';
         const ordenLabel = orden.numero != null ? 'nro orden ' + orden.numero : 'nro orden ' + (ordenId || '').toString().slice(0, 8);
-        const fecha = new Date().toISOString().slice(0, 10);
+        const fecha = fechaHoyYYYYMMDDArgentina();
         const ahora = new Date().toISOString();
         const toJoinOrd = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
         const codigoTipoRaw = (toJoinOrd && toJoinOrd.codigo) || null;
@@ -8369,7 +8409,7 @@ function guardarSoloModoPagoTransaccion(transaccionId, modoPagoId, onSuccess, on
         if (onSuccess) onSuccess();
         return;
       }
-      const fecha = new Date().toISOString().slice(0, 10);
+      const fecha = fechaHoyYYYYMMDDArgentina();
       const nroOrden = rOrd.data && rOrd.data.numero;
       return client.from('movimientos_caja').delete().eq('transaccion_id', transaccionId).then(() =>
         client.from('modos_pago').select('codigo').eq('id', modoPagoId).single()
@@ -9104,7 +9144,7 @@ function loadOrdenes() {
 
 /** Crea una orden borrador (mínima) para "Nueva orden". Si el usuario cierra sin guardar, se elimina en closeModalOrden. */
 function crearOrdenBorrador() {
-  const fecha = new Date().toISOString().slice(0, 10);
+  const fecha = fechaHoyYYYYMMDDArgentina();
   const payload = {
     fecha,
     estado: 'pendiente_instrumentar',
@@ -9352,7 +9392,7 @@ function openModalOrden(registro) {
   const promRegistro = registro
     ? Promise.resolve(registro)
     : Promise.resolve({
-        fecha: new Date().toISOString().slice(0, 10),
+        fecha: fechaHoyYYYYMMDDArgentina(),
         estado: 'pendiente_instrumentar',
         moneda_recibida: 'USD',
         moneda_entregada: 'USD',
@@ -9627,7 +9667,7 @@ function openModalOrden(registro) {
       idEl.value = (registroActual && registroActual.id) ? registroActual.id : '';
       // Sin id = alta nueva: el stub siempre es truthy; hacía que nunca se ejecutara reset y quedaran datos de la orden anterior.
       if (!(registroActual && registroActual.id)) form.reset();
-      document.getElementById('orden-fecha').value = (registroActual && registroActual.fecha) ? (registroActual.fecha || '').toString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+      document.getElementById('orden-fecha').value = (registroActual && registroActual.fecha) ? (registroActual.fecha || '').toString().slice(0, 10) : fechaHoyYYYYMMDDArgentina();
       document.getElementById('orden-estado').value = 'pendiente_instrumentar';
       if (registroActual) {
         document.getElementById('orden-moneda-recibida').value = registroActual.moneda_recibida || 'USD';
@@ -9779,7 +9819,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
   if (fechaOrdenEl) {
     if (isUsdUsd) {
       fechaOrdenEl.readOnly = true;
-      fechaOrdenEl.value = new Date().toISOString().slice(0, 10);
+      fechaOrdenEl.value = fechaHoyYYYYMMDDArgentina();
     } else {
       fechaOrdenEl.readOnly = false;
     }
@@ -11858,7 +11898,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
   if (!transaccionId || !currentUserId || estadoTransaccion !== 'ejecutada') return Promise.resolve();
   const ordenId = orden && orden.id;
   if (!ordenId) return Promise.resolve();
-  const fecha = new Date().toISOString().slice(0, 10);
+  const fecha = fechaHoyYYYYMMDDArgentina();
   const ahora = new Date().toISOString();
   const monto = Number(t.monto) || 0;
   const cob = t.cobrador;
@@ -11969,7 +12009,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
  */
 function sincronizarCcYCajaDesdeOrden(ordenId) {
   if (!ordenId || !currentUserId) return Promise.resolve();
-  const fecha = new Date().toISOString().slice(0, 10);
+  const fecha = fechaHoyYYYYMMDDArgentina();
   const ahora = new Date().toISOString();
 
   return client.from('ordenes').select('id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, tasa_descuento_intermediario').eq('id', ordenId).single()
@@ -12052,9 +12092,15 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
 
             if (usarMulticontraparteSync && !esGananciaTrx && !esComisionPandyTrx) {
               const codigoModoMc = (modosMap[t.modo_pago_id] || 'efectivo').toString().toLowerCase();
-              if ((pag === 'pandy' || cob === 'pandy') && codigoModoMc === 'efectivo') {
-                const signoCaja = cob === 'pandy' ? 1 : -1;
-                const conceptoCaja = conceptoCajaTransaccion(cob === 'pandy', mon, monto, orden.numero, t.numero);
+              // Caja solo con roles explícitos en BD: los defaults de pag/cob (p. ej. egreso sin pagador → «pandy»)
+              // inventarían salida de caja de la casa en patas cliente↔cliente o intermediario↔cliente.
+              const pagDb =
+                t.pagador != null && String(t.pagador).trim() !== '' ? String(t.pagador).toLowerCase() : null;
+              const cobDb =
+                t.cobrador != null && String(t.cobrador).trim() !== '' ? String(t.cobrador).toLowerCase() : null;
+              if (pagDb && cobDb && (pagDb === 'pandy' || cobDb === 'pandy') && codigoModoMc === 'efectivo') {
+                const signoCaja = cobDb === 'pandy' ? 1 : -1;
+                const conceptoCaja = conceptoCajaTransaccion(cobDb === 'pandy', mon, monto, orden.numero, t.numero);
                 rowsCaja.push({
                   moneda: mon,
                   monto: signoCaja * monto,
@@ -12417,7 +12463,7 @@ function asegurarGananciaPandy(ordenId, instrumentacionId, orden, clienteId, com
     .then((r) => {
       if (r.data && r.data.id) return Promise.resolve();
       const ahora = new Date().toISOString();
-      const fecha = ahora.slice(0, 10);
+      const fecha = fechaHoyYYYYMMDDArgentina();
       const monedaCom = orden.moneda_recibida || 'ARS';
       return client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle()
         .then((rModo) => {
@@ -12559,7 +12605,7 @@ function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediario
   return client.from('orden_comisiones_generadas').select('id').eq('orden_id', ordenId).eq('tipo', 'comision_intermediario').maybeSingle()
     .then((r) => {
       if (r.data && r.data.id) return Promise.resolve();
-      const fecha = new Date().toISOString().slice(0, 10);
+      const fecha = fechaHoyYYYYMMDDArgentina();
       const conceptoCom = conceptoCajaTransaccionEspecial('Comisión del acuerdo', monCom, montoCom, ordNum, nroRef);
       return client.from('movimientos_caja').insert({
         orden_id: ordenId,
@@ -12614,7 +12660,7 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, transIngr
   const mr = Number(orden.monto_recibido) || 0;
   const monR = orden.moneda_recibida || 'ARS';
   if (mr < 1e-6) return Promise.resolve();
-  const fecha = new Date().toISOString().slice(0, 10);
+  const fecha = fechaHoyYYYYMMDDArgentina();
   return client.from('ordenes').select('numero').eq('id', ordenId).single()
     .then((rOrd) => rOrd.data?.numero)
     .then((ordenNum) =>
@@ -12717,7 +12763,7 @@ function insertarMovimientosCcMomentoCero(ordenId, orden, ingresoId, egresoId) {
   const monE = orden.moneda_entregada || 'USD';
   const mr = Number(orden.monto_recibido) || 0;
   const me = Number(orden.monto_entregado) || 0;
-  const fecha = new Date().toISOString().slice(0, 10);
+  const fecha = fechaHoyYYYYMMDDArgentina();
   const ahora = new Date().toISOString();
 
   return client.from('transacciones').select('id, numero').in('id', [ingresoId, egresoId]).then((rTr) => {
@@ -13439,11 +13485,19 @@ function aplicarModoPagadorClienteMulticontraparte(participantes, registro) {
   }
 }
 
-/** Desplegable cobrador cliente (MC): si Pagador y Cobrador son Cliente, no ofrecer «acuerdo» — el cobrador debe ser un tercero. */
-function htmlOptionsCobradorClienteMulticontraparte(listCli, acuerdoId, acuerdoNombre, clienteACliente) {
-  let h = clienteACliente
+/**
+ * Desplegable cobrador cliente (MC).
+ * - Pagador acuerdo + cobrador cliente: el cobrador es un tercero (no otra fila «acuerdo»).
+ * - Pagador **otro** cliente + cobrador cliente: el cobrador puede ser el **cliente del acuerdo** (recibe la entrega) o un tercero.
+ */
+function htmlOptionsCobradorClienteMulticontraparte(listCli, acuerdoId, acuerdoNombre, clienteACliente, pagadorEsOtroCliente) {
+  const soloTercerosComoCobrador = clienteACliente && !pagadorEsOtroCliente;
+  const valAcuerdo = acuerdoId ? String(acuerdoId) : '';
+  let h = soloTercerosComoCobrador
     ? '<option value="">Elegí el cliente cobrador…</option>'
-    : `<option value="">${escapeHtml(acuerdoNombre)} (acuerdo)</option>`;
+    : valAcuerdo
+      ? `<option value="${escapeHtml(valAcuerdo)}">${escapeHtml(acuerdoNombre)} (acuerdo)</option>`
+      : '<option value="">Elegí el cliente cobrador…</option>';
   (listCli || []).forEach((c) => {
     if (!c || !c.id) return;
     if (acuerdoId && String(c.id) === String(acuerdoId)) return;
@@ -13455,8 +13509,7 @@ function htmlOptionsCobradorClienteMulticontraparte(listCli, acuerdoId, acuerdoN
 function aplicarValorSelectCobradorClienteMulticontraparte(sel, htmlOpts, idGuardado, acuerdoId) {
   if (!sel) return;
   sel.innerHTML = htmlOpts;
-  let selVal = '';
-  if (idGuardado && String(idGuardado) !== String(acuerdoId)) selVal = String(idGuardado);
+  const selVal = idGuardado ? String(idGuardado) : '';
   sel.value = selVal;
   if (selVal && sel.value !== selVal) sel.value = '';
 }
@@ -13473,14 +13526,16 @@ function refillMcCobradorClienteDropdown() {
   const acuerdoNombre = (bd?._mcClienteNombre || 'Cliente del acuerdo').trim() || 'Cliente del acuerdo';
   const pag = (document.getElementById('transaccion-pagador')?.value || '').toLowerCase();
   const cob = (document.getElementById('transaccion-cobrador')?.value || '').toLowerCase();
+  const wrapPagCli = document.getElementById('transaccion-wrap-pagador-cliente-id');
+  const pagadorEsOtroCliente = !!(wrapPagCli && wrapPagCli.dataset.pagadorClienteModo === 'otro');
   const clienteACliente = pag === 'cliente' && cob === 'cliente';
   const idPrev = sel.value || null;
-  const h = htmlOptionsCobradorClienteMulticontraparte(listCli, acuerdoId, acuerdoNombre, clienteACliente);
+  const h = htmlOptionsCobradorClienteMulticontraparte(listCli, acuerdoId, acuerdoNombre, clienteACliente, pagadorEsOtroCliente);
   aplicarValorSelectCobradorClienteMulticontraparte(sel, h, idPrev, acuerdoId);
 }
 
 /** Rellena desplegables de cliente/intermediario concreto cuando la instrumentación tiene multicontraparte manual (ARS-USD / USD-ARS sin int.). */
-function poblarSelectContrapartesMulticontraparteModal(participantes, registro) {
+function poblarSelectContrapartesMulticontraparteModal(participantes, registro, optsMc) {
   const wrap = document.getElementById('transaccion-multicontraparte-contrapartes-wrap');
   if (!wrap) return;
   const permite = participantes.permiteMulticontraparteUi === true;
@@ -13498,8 +13553,10 @@ function poblarSelectContrapartesMulticontraparteModal(participantes, registro) 
     if (!sel) return;
     const pag = (document.getElementById('transaccion-pagador')?.value || '').toLowerCase();
     const cob = (document.getElementById('transaccion-cobrador')?.value || '').toLowerCase();
+    const wrapPagCli = document.getElementById('transaccion-wrap-pagador-cliente-id');
+    const pagadorEsOtroCliente = !!(wrapPagCli && wrapPagCli.dataset.pagadorClienteModo === 'otro');
     const clienteACliente = pag === 'cliente' && cob === 'cliente';
-    const h = htmlOptionsCobradorClienteMulticontraparte(listCli, acuerdoId, acuerdoNombre, clienteACliente);
+    const h = htmlOptionsCobradorClienteMulticontraparte(listCli, acuerdoId, acuerdoNombre, clienteACliente, pagadorEsOtroCliente);
     aplicarValorSelectCobradorClienteMulticontraparte(sel, h, idGuardado, acuerdoId);
   }
   function fillInt(sel, idGuardado) {
@@ -13518,7 +13575,17 @@ function poblarSelectContrapartesMulticontraparteModal(participantes, registro) 
     if (selVal && sel.value !== selVal) sel.value = '';
   }
   aplicarModoPagadorClienteMulticontraparte(participantes, registro);
-  fillCliCobrador(selCobCli, registro?.cobrador_cliente_id);
+  if (optsMc && optsMc.egresoMonEFaltanteMc && !registro) {
+    const btnOtro = document.getElementById('transaccion-pagador-otro-cliente-btn');
+    if (btnOtro) btnOtro.click();
+  }
+  const cobradorIdInicial =
+    registro?.cobrador_cliente_id != null
+      ? registro.cobrador_cliente_id
+      : optsMc && optsMc.egresoMonEFaltanteMc && acuerdoId
+        ? acuerdoId
+        : undefined;
+  fillCliCobrador(selCobCli, cobradorIdInicial);
   fillInt(selPagInt, registro?.pagador_intermediario_id);
   fillInt(selCobInt, registro?.cobrador_intermediario_id);
   actualizarVisibilidadFilasContraparteMulticontraparte();
@@ -13622,6 +13689,7 @@ function openModalTransaccion(registro, instrumentacionId) {
 
     function finishOpenModalTransaccion() {
     let mcSmartApplied = false;
+    let mcEgresoFaltanteMonE = false;
     const formTr = document.getElementById('form-transaccion');
     if (formTr) {
       formTr.querySelectorAll('input:not([type="hidden"]), select, textarea').forEach((el) => { el.disabled = false; });
@@ -13706,8 +13774,15 @@ function openModalTransaccion(registro, instrumentacionId) {
         } else if (faltanE > tolMcModal) {
           document.getElementById('transaccion-tipo').value = 'egreso';
           document.getElementById('transaccion-moneda').value = esCheque ? 'ARS' : monEUi;
-          document.getElementById('transaccion-pagador').value = 'pandy';
-          document.getElementById('transaccion-cobrador').value = 'cliente';
+          if (permiteMcUi) {
+            /* MC: no asumir Pandy→Cliente (generaba caja −m aunque un tercero/intermediario pague en la realidad). */
+            document.getElementById('transaccion-pagador').value = 'cliente';
+            document.getElementById('transaccion-cobrador').value = 'cliente';
+            mcEgresoFaltanteMonE = true;
+          } else {
+            document.getElementById('transaccion-pagador').value = 'pandy';
+            document.getElementById('transaccion-cobrador').value = 'cliente';
+          }
           document.getElementById('transaccion-monto').value = formatImporteParaInput(faltanE);
           mcSmartApplied = true;
         }
@@ -13774,7 +13849,11 @@ function openModalTransaccion(registro, instrumentacionId) {
       }
       montoFinal._importeValorPrevio = montoFinal.value;
     }
-    poblarSelectContrapartesMulticontraparteModal(participantes, registro);
+    poblarSelectContrapartesMulticontraparteModal(
+      participantes,
+      registro,
+      mcEgresoFaltanteMonE ? { egresoMonEFaltanteMc: true } : undefined
+    );
     const pagMcBind = document.getElementById('transaccion-pagador');
     const cobMcBind = document.getElementById('transaccion-cobrador');
     if (pagMcBind && !pagMcBind._bindMcContraparte) {
@@ -13997,7 +14076,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
 
         const payload = { estado: nuevoEstado, updated_at: new Date().toISOString() };
         if (nuevoEstado === 'ejecutada') {
-          payload.fecha_ejecucion = new Date().toISOString().slice(0, 10);
+          payload.fecha_ejecucion = fechaHoyYYYYMMDDArgentina();
           payload.usuario_id = currentUserId;
         }
         if (nuevoEstado === 'pendiente') payload.revertida_una_vez = true;
@@ -14045,7 +14124,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
           return promesaSiguiente.then((rNew) => {
             const nuevaTrxId = rNew && rNew.data && rNew.data.id;
             const nuevaTrxNumero = rNew && rNew.data && rNew.data.numero;
-            const fecha = new Date().toISOString().slice(0, 10);
+            const fecha = fechaHoyYYYYMMDDArgentina();
             const ahora = new Date().toISOString();
             const monR = orden.moneda_recibida || 'USD';
             const monE = orden.moneda_entregada || 'USD';
@@ -14633,7 +14712,7 @@ function saveTransaccion() {
           const cidPagRes = transaccionProyectada.pagador_cliente_id || orden.cliente_id;
           const cidCobRes = transaccionProyectada.cobrador_cliente_id;
           if (!cidCobRes) {
-            showToast('En Cliente → Cliente elegí el cliente cobrador (tercero; no puede quedar el del acuerdo como cobrador genérico).', 'error');
+            showToast('En Cliente → Cliente elegí el cliente cobrador (puede ser el del acuerdo si recibe la entrega, u otro cliente).', 'error');
             return;
           }
           if (cidPagRes && String(cidCobRes) === String(cidPagRes)) {
@@ -14719,7 +14798,7 @@ function saveTransaccion() {
     payload.pagador_intermediario_id = null;
     payload.cobrador_intermediario_id = null;
   }
-  if (estado === 'ejecutada') payload.fecha_ejecucion = new Date().toISOString().slice(0, 10);
+  if (estado === 'ejecutada') payload.fecha_ejecucion = fechaHoyYYYYMMDDArgentina();
   if (estado === 'ejecutada') payload.usuario_id = currentUserId;
 
   const prom = id
@@ -14765,7 +14844,7 @@ function saveTransaccion() {
       return;
     }
     function continuarFlujo() {
-    const fecha = new Date().toISOString().slice(0, 10);
+    const fecha = fechaHoyYYYYMMDDArgentina();
     const ahora = new Date().toISOString();
 
     function refreshCcView() {
@@ -15306,7 +15385,7 @@ function generarMovimientoConversionCc(ordenId) {
               }
             });
             const inserts = [];
-            const fecha = new Date().toISOString().slice(0, 10);
+            const fecha = fechaHoyYYYYMMDDArgentina();
             const ahora = new Date().toISOString();
 
             if (montoRecibidoOrden > 0 && monedaRecibida) {
@@ -15424,7 +15503,7 @@ function generarMovimientoConversionCcIntermediario(ordenId) {
             (rCom.data || []).forEach((c) => {
               if (comisionPorMoneda[c.moneda] != null) comisionPorMoneda[c.moneda] += Number(c.monto) || 0;
             });
-            const fecha = new Date().toISOString().slice(0, 10);
+            const fecha = fechaHoyYYYYMMDDArgentina();
             const ahora = new Date().toISOString();
             const inserts = [];
             const tieneComisionInter = ['USD', 'EUR', 'ARS'].some((mon) => comisionPorMoneda[mon] > 1e-6);
