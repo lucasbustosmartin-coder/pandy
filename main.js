@@ -125,6 +125,32 @@ function pandiLoadCachedPermissionsLocal() {
 }
 
 /** Sesión válida pero sin RPC (red caída): mostrar shell de la app con permisos cacheados. */
+/**
+ * Supabase JS a veces rechaza la promesa (p. ej. TypeError: Load failed en Safari sin red)
+ * en lugar de resolver con { data, error }. Normaliza a { data, error } para Promise.all y caché offline.
+ */
+function pandiSupabaseQuerySafe(promise) {
+  return Promise.resolve(promise).then(
+    (res) => {
+      if (res && typeof res === 'object' && ('data' in res || 'error' in res)) return res;
+      return { data: null, error: { message: 'Respuesta inválida del servidor' } };
+    },
+    (err) => {
+      const msg =
+        err && typeof err === 'object' && err.message != null
+          ? String(err.message)
+          : String(err != null ? err : 'Error de red');
+      return { data: null, error: { message: msg } };
+    },
+  );
+}
+
+/** Guardar orden / instrumentación en servidor: requiere red alcanzable (cola local es el alternativo). */
+function pandiOrdenWizardRequiereRedServidor() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  return pandiSupabaseConnectivityIssue === 'unreachable';
+}
+
 function pandiEsFalloConectividadBootstrap(err) {
   if (pandiSupabaseConnectivityIssue === 'unreachable') return true;
   const code = err && (err.code || (err.error && err.error.code) || '');
@@ -3777,6 +3803,9 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
     const sizeCls = esTotal ? 'inicio-gp-matriz-num-total' : 'inicio-gp-matriz-num-sub';
     return `<div class="inicio-gp-matriz-num ${sizeCls} ${cls}">${escapeHtml(formatImporteDisplay(num))}</div>`;
   }
+  function gpFila(labelHtml, numsHtml) {
+    return `<div class="inicio-gp-matriz-fila"><div class="inicio-gp-matriz-fila-label">${labelHtml}</div><div class="inicio-gp-matriz-fila-monedas">${numsHtml}</div></div>`;
+  }
   const helpIconSvg =
     '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>';
   const headers = monedas
@@ -3788,33 +3817,36 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
       return `<div class="inicio-gp-matriz-h">${img}<span>${escapeHtml(mon)}</span></div>`;
     })
     .join('');
-  const rowTotal =
-    '<div class="inicio-gp-matriz-label-total">Total</div>' + monedas.map((m) => celNum(tot, m, true)).join('');
-  const rowCaja =
+  const filaCabecera =
+    `<div class="inicio-gp-matriz-fila inicio-gp-matriz-fila-cabecera"><div class="inicio-gp-matriz-fila-label" aria-hidden="true"></div><div class="inicio-gp-matriz-fila-monedas">${headers}</div></div>`;
+  const rowTotal = gpFila(
+    '<div class="inicio-gp-matriz-label-total">Total</div>',
+    monedas.map((m) => celNum(tot, m, true)).join(''),
+  );
+  const rowCaja = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-manual">Movimientos de caja manuales<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja manuales en G/P Operativa">' +
-    helpIconSvg +
-    '</button><span class="help-popover"><strong>Movimientos de caja manuales</strong> en esta fila: suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa.</span></span></div>' +
-    monedas.map((m) => celNum(cajaMan, m, false)).join('');
-  const rowCajaOrd =
+      helpIconSvg +
+      '</button><span class="help-popover"><strong>Movimientos de caja manuales</strong> en esta fila: suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa.</span></span></div>',
+    monedas.map((m) => celNum(cajaMan, m, false)).join(''),
+  );
+  const rowCajaOrd = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-ordenes">Movimientos de caja por órdenes<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja por órdenes en G/P Operativa">' +
-    helpIconSvg +
-    '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
-    escapeHtml(nombreMarcaSistema()) +
-    '</span> cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de los movimientos de caja manuales filtrados por tipo.</span></span></div>' +
-    monedas.map((m) => celNum(cajaOrd, m, false)).join('');
-  const rowCli =
-    '<div class="inicio-gp-matriz-label-sub">Cuenta Corriente Clientes</div>' + monedas.map((m) => celNum(ccC, m, false)).join('');
-  const rowInt =
-    '<div class="inicio-gp-matriz-label-sub">Cuenta Corriente Intermediarios</div>' + monedas.map((m) => celNum(ccI, m, false)).join('');
-  elMatriz.innerHTML =
-    '<div class="inicio-gp-matriz-spacer" aria-hidden="true"></div>' +
-    headers +
-    rowTotal +
-    rowCaja +
-    rowCajaOrd +
-    rowCli +
-    rowInt;
-  elMatriz.style.display = 'grid';
+      helpIconSvg +
+      '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
+      escapeHtml(nombreMarcaSistema()) +
+      '</span> cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de los movimientos de caja manuales filtrados por tipo.</span></span></div>',
+    monedas.map((m) => celNum(cajaOrd, m, false)).join(''),
+  );
+  const rowCli = gpFila(
+    '<div class="inicio-gp-matriz-label-sub">Cuenta Corriente Clientes</div>',
+    monedas.map((m) => celNum(ccC, m, false)).join(''),
+  );
+  const rowInt = gpFila(
+    '<div class="inicio-gp-matriz-label-sub">Cuenta Corriente Intermediarios</div>',
+    monedas.map((m) => celNum(ccI, m, false)).join(''),
+  );
+  elMatriz.innerHTML = filaCabecera + rowTotal + rowCaja + rowCajaOrd + rowCli + rowInt;
+  elMatriz.style.display = 'flex';
 }
 
 function loadInicioGpOperativo() {
@@ -10158,12 +10190,18 @@ function openModalOrden(registro) {
 
   const tiposOrdenCols = 'id, codigo, nombre, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica';
   const promDatos = Promise.all([
-    client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
-    tiposOperacionFetchConFallbackOrdenVisual(
-      () => client.from('tipos_operacion').select(tiposOrdenCols + ', orden_visual').eq('activo', true).order('orden_visual', { ascending: true }).order('codigo').order('usa_intermediario').order('id'),
-      () => client.from('tipos_operacion').select(tiposOrdenCols).eq('activo', true).order('codigo').order('usa_intermediario').order('id'),
+    pandiSupabaseQuerySafe(
+      client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
     ),
-    client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
+    pandiSupabaseQuerySafe(
+      tiposOperacionFetchConFallbackOrdenVisual(
+        () => client.from('tipos_operacion').select(tiposOrdenCols + ', orden_visual').eq('activo', true).order('orden_visual', { ascending: true }).order('codigo').order('usa_intermediario').order('id'),
+        () => client.from('tipos_operacion').select(tiposOrdenCols).eq('activo', true).order('codigo').order('usa_intermediario').order('id'),
+      ),
+    ),
+    pandiSupabaseQuerySafe(
+      client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
+    ),
   ]);
   const promRegistro = registro
     ? Promise.resolve(registro)
@@ -10214,9 +10252,6 @@ function openModalOrden(registro) {
         }
       }
       const tipos = ordenarTiposOperacionListaParaOrden(tiposRaw);
-      if (rTipos.error && tipos.length === 0) {
-        showToast('Error al cargar tipos de operación: ' + (rTipos.error.message || ''), 'error');
-      }
 
     const selCliente = document.getElementById('orden-cliente');
     const selTipo = document.getElementById('orden-tipo-operacion');
@@ -10370,6 +10405,13 @@ function openModalOrden(registro) {
     if (btnBackDetalles) btnBackDetalles.onclick = () => showOrdenWizardStep('detalles');
     // Listo/Cerrar del paso instrumentación se asignan en setupModalOrden para que respondan siempre
     if (btnIrInst) btnIrInst.onclick = () => {
+      if (pandiOrdenWizardRequiereRedServidor()) {
+        showToast(
+          'Sin conexión con el servidor no se puede guardar la orden ni abrir instrumentación. Usá «Orden en cola local» o esperá a recuperar la red.',
+          'info',
+        );
+        return;
+      }
       const loadingInstEl = document.getElementById('orden-inst-loading');
       const wrapInstEl = document.getElementById('orden-inst-tabla-wrap');
       guardarOrdenDesdeWizard().then((ordenId) => {

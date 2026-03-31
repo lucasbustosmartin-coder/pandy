@@ -683,13 +683,26 @@
     .inicio-gp-leyenda { margin: 0 0 0.65rem 0; font-size: 0.82rem; color: #6b7280; line-height: 1.4; }
     .inicio-gp-matriz-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; margin-top: 0.25rem; }
     .inicio-gp-matriz {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      min-width: 0;
+      width: 100%;
+    }
+    .inicio-gp-matriz-fila {
       display: grid;
-      grid-template-columns: minmax(7.5rem, 1.35fr) repeat(3, minmax(4.75rem, 1fr));
+      grid-template-columns: minmax(9rem, 1.45fr) repeat(3, minmax(4.75rem, 1fr));
       gap: 0.45rem 0.6rem;
       align-items: baseline;
-      min-width: 280px;
+      min-width: 0;
     }
-    .inicio-gp-matriz-spacer { min-height: 1rem; }
+    .inicio-gp-matriz-fila-monedas {
+      display: contents;
+    }
+    .inicio-gp-matriz-fila-label {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
     /* Misma tipografía que cabeceras USD/ARS/EUR en tarjeta Caja Efectivo (.inicio-caja-fila + .inicio-caja-col-header) */
     .inicio-gp-matriz-h {
       display: flex;
@@ -1565,9 +1578,18 @@
       .inicio-accesos .vista-toolbar { flex-direction: column; align-items: stretch; }
       .inicio-accesos .link-inicio { min-height: 44px; justify-content: center; }
       .help-popover { max-width: min(320px, calc(100vw - 2rem)); }
-      .inicio-gp-matriz {
-        grid-template-columns: minmax(6.85rem, 1.32fr) repeat(3, minmax(4.35rem, 1fr));
-        gap: 0.4rem 0.5rem;
+      .inicio-gp-matriz-fila {
+        grid-template-columns: 1fr;
+        gap: 0.45rem;
+        align-items: stretch;
+      }
+      .inicio-gp-matriz-fila-monedas {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(4.25rem, 1fr));
+        gap: 0.35rem;
+      }
+      .inicio-gp-matriz-fila-cabecera .inicio-gp-matriz-fila-label {
+        display: none;
       }
       .inicio-gp-matriz-label-total { font-size: 1.12rem; }
       .inicio-gp-matriz-num-total { font-size: 1.12rem; }
@@ -1613,10 +1635,12 @@
       .inicio-gp-toolbar { width: 100%; justify-content: flex-start; }
       .inicio-gp-periodos { width: 100%; }
       .inicio-gp-matriz-wrap { margin-left: -0.15rem; margin-right: -0.15rem; padding-bottom: 0.15rem; }
-      .inicio-gp-matriz {
-        grid-template-columns: minmax(5.85rem, 1fr) repeat(3, minmax(3.65rem, 1fr));
-        gap: 0.32rem 0.32rem;
-        min-width: 258px;
+      .inicio-gp-matriz-fila {
+        gap: 0.4rem;
+      }
+      .inicio-gp-matriz-fila-monedas {
+        grid-template-columns: repeat(3, minmax(3.85rem, 1fr));
+        gap: 0.3rem;
       }
       .inicio-gp-matriz-h { font-size: 0.85rem; gap: 0.35rem; }
       .inicio-gp-matriz-label-total { font-size: 1.02rem; }
@@ -1699,7 +1723,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.87</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.88</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
