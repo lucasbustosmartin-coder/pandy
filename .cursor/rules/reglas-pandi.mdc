@@ -11,6 +11,10 @@ alwaysApply: true
 - **Frontend:** App en la raíz (`index.html`, `main.js`). Se irá construyendo sobre esta base.
 - **Estructura del repo:** `sql/` (DDL y scripts SQL), `scripts/` (Python/Node), `docs/` (guías), `Base/` (Excel si aplica). Ver regla **estructura-proyecto**.
 
+## Fechas de negocio (regla estricta — no omitir)
+
+- Cualquier cambio que toque **día contable**, **filtros por fecha**, **defaults**, **RPC/SQL** que asignen o comparen fechas o **día desde timestamp** debe cumplir la regla **fechas-argentina-negocio** (`.cursor/rules/fechas-argentina-negocio.mdc`). **No puede omitirse.** Referencia: `docs/FECHAS_ARGENTINA.md`.
+
 ## Al modificar esquema o datos
 
 - Si se agregan o cambian tablas en Supabase: actualizar `sql/` con los DDL correspondientes, el código que las use y la documentación en `docs/` si aplica.
@@ -93,4 +97,4 @@ Esta regla es obligatoria. No implementar cambios “para que pase el test” o 
 - **Corazón del sistema (CC y caja):** `docs/CORAZON_SISTEMA_CC_Y_CAJA.md` — principios y checklist al tocar CC o caja; CC cliente e intermediario van juntas.
 - Crear y usar proyecto Supabase: `docs/SUPABASE_REQUISITOS.md`.
 - Git y Vercel (repo, push, deploy): `docs/GIT_Y_VERCEL.md`.
-- Fechas en Argentina (timezone para manejo de fechas): `docs/FECHAS_ARGENTINA.md`.
+- Fechas en Argentina (**regla estricta no omitible**): `docs/FECHAS_ARGENTINA.md` y regla **fechas-argentina-negocio**.

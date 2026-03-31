@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS public.movimientos_cuenta_corriente_intermediario (
   monto numeric(18,4) NOT NULL,
   transaccion_id uuid REFERENCES public.transacciones(id) ON DELETE SET NULL,
   concepto text,
-  fecha date NOT NULL DEFAULT CURRENT_DATE,
+  fecha date NOT NULL DEFAULT public.fecha_hoy_argentina(),
   usuario_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   estado text NOT NULL DEFAULT 'cerrado' CHECK (estado IN ('cerrado', 'anulado')),
   estado_fecha timestamptz DEFAULT now(),

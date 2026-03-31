@@ -1,6 +1,7 @@
 -- Re-sincronizar cuenta corriente desde TODAS las transacciones (pendiente y ejecutada)
 -- Corrige movimientos faltantes: p. ej. cuando el cliente cobra del intermediario (cobrador=cliente, pagador=intermediario)
 -- debe verse en la CC del cliente como Haber. Ejecutar una sola vez tras detectar CC incorrecta.
+-- Requiere public.fecha_hoy_argentina() (sql/helpers_fecha_argentina.sql). Fecha desde created_at: calendario Argentina, no UTC.
 
 -- 1) Borrar todos los movimientos de CC que vienen de transacciones (no tocar los de orden concertada u otros)
 DELETE FROM public.movimientos_cuenta_corriente
@@ -13,7 +14,7 @@ WHERE transaccion_id IS NOT NULL;
 INSERT INTO public.movimientos_cuenta_corriente (cliente_id, moneda, monto, transaccion_id, concepto, fecha, usuario_id, estado, estado_fecha)
 SELECT o.cliente_id, t.moneda, -t.monto, t.id,
        CASE WHEN t.estado = 'ejecutada' THEN 'Transacción ejecutada' ELSE 'Transacción pendiente' END,
-       COALESCE(t.fecha_ejecucion, (t.created_at AT TIME ZONE 'UTC')::date, CURRENT_DATE),
+       COALESCE(t.fecha_ejecucion, (t.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date, public.fecha_hoy_argentina()),
        t.usuario_id, 'cerrado', now()
 FROM public.transacciones t
 JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
@@ -24,7 +25,7 @@ WHERE t.cobrador = 'cliente' AND o.cliente_id IS NOT NULL;
 INSERT INTO public.movimientos_cuenta_corriente (cliente_id, moneda, monto, transaccion_id, concepto, fecha, usuario_id, estado, estado_fecha)
 SELECT o.cliente_id, t.moneda, t.monto, t.id,
        CASE WHEN t.estado = 'ejecutada' THEN 'Transacción ejecutada' ELSE 'Transacción pendiente' END,
-       COALESCE(t.fecha_ejecucion, (t.created_at AT TIME ZONE 'UTC')::date, CURRENT_DATE),
+       COALESCE(t.fecha_ejecucion, (t.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date, public.fecha_hoy_argentina()),
        t.usuario_id, 'cerrado', now()
 FROM public.transacciones t
 JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
@@ -35,7 +36,7 @@ WHERE t.pagador = 'cliente' AND o.cliente_id IS NOT NULL;
 INSERT INTO public.movimientos_cuenta_corriente_intermediario (intermediario_id, moneda, monto, transaccion_id, concepto, fecha, usuario_id, estado, estado_fecha)
 SELECT o.intermediario_id, t.moneda, -t.monto, t.id,
        CASE WHEN t.estado = 'ejecutada' THEN 'Transacción ejecutada' ELSE 'Transacción pendiente' END,
-       COALESCE(t.fecha_ejecucion, (t.created_at AT TIME ZONE 'UTC')::date, CURRENT_DATE),
+       COALESCE(t.fecha_ejecucion, (t.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date, public.fecha_hoy_argentina()),
        t.usuario_id, 'cerrado', now()
 FROM public.transacciones t
 JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
@@ -46,7 +47,7 @@ WHERE t.cobrador = 'intermediario' AND o.intermediario_id IS NOT NULL;
 INSERT INTO public.movimientos_cuenta_corriente_intermediario (intermediario_id, moneda, monto, transaccion_id, concepto, fecha, usuario_id, estado, estado_fecha)
 SELECT o.intermediario_id, t.moneda, -t.monto, t.id,
        CASE WHEN t.estado = 'ejecutada' THEN 'Transacción ejecutada' ELSE 'Transacción pendiente' END,
-       COALESCE(t.fecha_ejecucion, (t.created_at AT TIME ZONE 'UTC')::date, CURRENT_DATE),
+       COALESCE(t.fecha_ejecucion, (t.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date, public.fecha_hoy_argentina()),
        t.usuario_id, 'cerrado', now()
 FROM public.transacciones t
 JOIN public.instrumentacion i ON i.id = t.instrumentacion_id

@@ -34,7 +34,7 @@ BEGIN
   SET
     estado = p_estado,
     fecha_ejecucion = CASE
-      WHEN p_estado = 'ejecutada' THEN COALESCE(p_fecha_ejecucion, CURRENT_DATE)
+      WHEN p_estado = 'ejecutada' THEN COALESCE(p_fecha_ejecucion, public.fecha_hoy_argentina())
       WHEN p_estado = 'anulada' THEN NULL
       ELSE NULL
     END,

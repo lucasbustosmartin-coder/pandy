@@ -53,7 +53,7 @@ BEGIN
       (r->>'transaccion_id')::uuid,
       (r->>'transaccion_numero')::integer,
       r->>'concepto',
-      COALESCE((r->>'fecha')::date, CURRENT_DATE),
+      COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina()),
       COALESCE((r->>'usuario_id')::uuid, p_usuario_id),
       r->>'moneda',
       (r->>'monto')::numeric,
@@ -78,7 +78,7 @@ BEGIN
       (r->>'transaccion_id')::uuid,
       (r->>'transaccion_numero')::integer,
       r->>'concepto',
-      COALESCE((r->>'fecha')::date, CURRENT_DATE),
+      COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina()),
       COALESCE((r->>'usuario_id')::uuid, p_usuario_id),
       r->>'moneda',
       (r->>'monto')::numeric,
@@ -106,7 +106,7 @@ BEGIN
       (r->>'orden_numero')::integer,
       (r->>'transaccion_numero')::integer,
       r->>'concepto',
-      COALESCE((r->>'fecha')::date, CURRENT_DATE),
+      COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina()),
       COALESCE((r->>'usuario_id')::uuid, p_usuario_id)
     );
   END LOOP;

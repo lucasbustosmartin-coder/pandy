@@ -1,9 +1,10 @@
 -- Genera el movimiento "Conversión por tipo de cambio" en cuenta corriente del cliente
 -- para órdenes ya ejecutadas: deja el saldo de la orden en cero (no incluye comisión en la CC del cliente).
 -- Las comisiones se manejan aparte. Ejecutar una sola vez para órdenes cerradas antes de esta lógica.
+-- Requiere public.fecha_hoy_argentina() (sql/helpers_fecha_argentina.sql).
 
 INSERT INTO public.movimientos_cuenta_corriente (cliente_id, moneda, monto, orden_id, transaccion_id, concepto, fecha, estado, estado_fecha)
-SELECT s.cliente_id, s.moneda, -s.saldo, s.orden_id, NULL, 'Conversión por tipo de cambio', CURRENT_DATE, 'cerrado', now()
+SELECT s.cliente_id, s.moneda, -s.saldo, s.orden_id, NULL, 'Conversión por tipo de cambio', public.fecha_hoy_argentina(), 'cerrado', now()
 FROM (
   SELECT i.orden_id, m.cliente_id, m.moneda, SUM(m.monto) AS saldo
   FROM public.movimientos_cuenta_corriente m

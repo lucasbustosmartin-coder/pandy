@@ -23,6 +23,7 @@ const OUT_FILE = path.join(SQL_DIR, '_generado_bootstrap_pandy_dev.sql');
 
 /** Orden explícito: dependencias primero. */
 const BOOTSTRAP_FILES = [
+  'helpers_fecha_argentina.sql',
   'supabase_tablas_negocio.sql',
   'supabase_seguridad.sql',
   'supabase_rls_negocio.sql',

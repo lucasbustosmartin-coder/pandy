@@ -1661,25 +1661,54 @@ function loadSeguridad() {
   });
 }
 
-/** Fecha calendario YYYY-MM-DD en zona Argentina (operación del negocio). */
-function fechaHoyYYYYMMDDArgentina() {
+/** Zona horaria del negocio: día contable, filtros y fechas mostradas/guardadas como calendario Argentina (no usar TZ del navegador para el día). Ver docs/FECHAS_ARGENTINA.md */
+const ZONA_ARGENTINA = 'America/Argentina/Buenos_Aires';
+
+/**
+ * YYYY-MM-DD en calendario Argentina para un instante (Date, string ISO timestamptz, etc.).
+ * Devuelve '' si no es parseable.
+ */
+function fechaYYYYMMDDEnZonaArgentina(instante) {
+  const d = instante instanceof Date ? instante : new Date(instante);
+  if (Number.isNaN(d.getTime())) return '';
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Argentina/Buenos_Aires',
+    timeZone: ZONA_ARGENTINA,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(new Date());
-  const y = parts.find((p) => p.type === 'year').value;
-  const mo = parts.find((p) => p.type === 'month').value;
-  const d = parts.find((p) => p.type === 'day').value;
-  return y + '-' + mo + '-' + d;
+  }).formatToParts(d);
+  const y = parts.find((p) => p.type === 'year');
+  const mo = parts.find((p) => p.type === 'month');
+  const day = parts.find((p) => p.type === 'day');
+  if (!y || !mo || !day) return '';
+  return y.value + '-' + mo.value + '-' + day.value;
+}
+
+/** Fecha calendario YYYY-MM-DD en zona Argentina (operación del negocio). */
+function fechaHoyYYYYMMDDArgentina() {
+  return fechaYYYYMMDDEnZonaArgentina(new Date());
+}
+
+/** Último día del mes (mes 1–12, año gregoriano); sin depender de la zona horaria del navegador. */
+function ultimoDiaDelMesGregoriano(anio, mes1a12) {
+  return new Date(Date.UTC(anio, mes1a12, 0)).getUTCDate();
+}
+
+/**
+ * Timestamptz en ISO UTC que ancla el día contable YYYY-MM-DD en Argentina (mediodía ART = 15:00Z).
+ * Coherente con fechaAddDaysYYYYMMDDArgentina. Solo para strings fecha calendario (no reemplazar updated_at real).
+ */
+function estadoFechaUtcAnclaDiaContableArgentina(ymd) {
+  const s = (ymd == null ? '' : String(ymd)).trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  return s + 'T15:00:00.000Z';
 }
 
 /** Primeras filas de auditoría en exportaciones Excel (quién exporta y cuándo, Argentina). */
 function metaFilasExportacionExcel() {
   const emailExp = String(currentUserEmail || '').trim();
   const fh = new Date().toLocaleString('es-AR', {
-    timeZone: 'America/Argentina/Buenos_Aires',
+    timeZone: ZONA_ARGENTINA,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -1738,7 +1767,7 @@ function inicioGpOperativoRangoFechas(periodo) {
   if (periodo === 'mes') {
     const y = parseInt(hoy.slice(0, 4), 10);
     const mo = parseInt(hoy.slice(5, 7), 10);
-    const ultimo = new Date(y, mo, 0).getDate();
+    const ultimo = ultimoDiaDelMesGregoriano(y, mo);
     const d1 = `${hoy.slice(0, 7)}-01`;
     const dlast = `${hoy.slice(0, 7)}-${String(ultimo).padStart(2, '0')}`;
     return { desde: d1, hasta: dlast };
@@ -3475,10 +3504,7 @@ function loadCajas(opts) {
 
 /** Solo tarjetas de caja del panel Inicio (sin pendientes). Misma lista/cálculo que vista Cajas. */
 function aplicarInicioTarjetasCajaDesdeLista(list, monUsd, monArs, monEur) {
-  const hoy = new Date();
-  const ayer = new Date(hoy);
-  ayer.setDate(ayer.getDate() - 1);
-  const ayerStr = ayer.getFullYear() + '-' + String(ayer.getMonth() + 1).padStart(2, '0') + '-' + String(ayer.getDate()).padStart(2, '0');
+  const ayerStr = fechaAddDaysYYYYMMDDArgentina(fechaHoyYYYYMMDDArgentina(), -1);
   const efRaw = { USD: !!monUsd, ARS: !!monArs, EUR: !!monEur };
   const baRaw = { USD: !!monUsd, ARS: !!monArs };
   setVisibilidadColumnasMonedasPanelCajas(efRaw, baRaw);
@@ -4445,14 +4471,15 @@ function fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fechaFallbackDia, 
   const fe = t.fecha_ejecucion;
   const feStr = fe != null && String(fe).trim() !== '' ? String(fe).trim().slice(0, 10) : '';
   const ua = t.updated_at;
-  const diaDesdeUa = ua ? String(ua).slice(0, 10) : '';
+  const diaDesdeUa = ua ? fechaYYYYMMDDEnZonaArgentina(ua) : '';
   const dia = feStr || diaDesdeUa || fechaFallbackDia;
   let estadoFecha = ahoraFallbackIso;
   if (ua) {
     const d = new Date(ua);
     if (!isNaN(d.getTime())) estadoFecha = d.toISOString();
   } else if (feStr) {
-    estadoFecha = `${feStr}T12:00:00.000Z`;
+    const ancla = estadoFechaUtcAnclaDiaContableArgentina(feStr);
+    if (ancla) estadoFecha = ancla;
   }
   return { fecha: dia, estado_fecha: estadoFecha };
 }
@@ -11874,10 +11901,8 @@ function interpretarTextoOrden(texto, clientes, tipos) {
     }
   }
 
-  let fecha = new Date();
-  if (/\bhoy\b/i.test(t)) fecha = new Date();
-  else if (/\bmañana\b/i.test(t)) { fecha = new Date(); fecha.setDate(fecha.getDate() + 1); }
-  const fechaStr = fecha.getFullYear() + '-' + String(fecha.getMonth() + 1).padStart(2, '0') + '-' + String(fecha.getDate()).padStart(2, '0');
+  let fechaStr = fechaHoyYYYYMMDDArgentina();
+  if (/\bmañana\b/i.test(t)) fechaStr = fechaAddDaysYYYYMMDDArgentina(fechaStr, 1);
 
   return {
     cliente_id,

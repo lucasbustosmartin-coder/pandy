@@ -1,0 +1,33 @@
+---
+description: Regla estricta — fechas de negocio siempre en calendario Argentina (front y SQL); no omitir nunca
+alwaysApply: true
+---
+
+# Fechas de negocio — regla estricta (no omitir)
+
+**Toda** fecha de negocio (día contable, filtros desde/hasta, defaults, `fecha` / `fecha_ejecucion` persistidas, derivar día desde `updated_at`) se interpreta en **`America/Argentina/Buenos_Aires`**. **No** usar el calendario del navegador ni `CURRENT_DATE` del servidor como “hoy” sin más. **Esta regla no puede omitirse** en ningún ajuste futuro que maneje fechas.
+
+## Referencia
+
+- `docs/FECHAS_ARGENTINA.md` (detalle y tabla de helpers).
+
+## Frontend (`main.js` y código de app)
+
+- **Constante:** `ZONA_ARGENTINA = 'America/Argentina/Buenos_Aires'` (o equivalente documentado).
+- **Hoy / sumar días / filtros:** `fechaHoyYYYYMMDDArgentina()`, `fechaAddDaysYYYYMMDDArgentina`, `fechaYYYYMMDDEnZonaArgentina(instante)` para timestamps → día contable.
+- **Prohibido** para día de negocio: `new Date().getFullYear()/getMonth()/getDate()` sin zona; `toISOString().slice(0, 10)` como “día” de un instante (eso es UTC); mezclar TZ del usuario con criterio Argentina.
+- Al tocar esto: `node --check main.js` antes de cerrar la tarea.
+
+## SQL / Supabase (`sql/`)
+
+- **Prohibido** como default o fallback de **día contable** sin más: `CURRENT_DATE` (depende de la sesión; en Supabase suele desalinear).
+- **Obligatorio:** `public.fecha_hoy_argentina()` definida en `sql/helpers_fecha_argentina.sql` para `DEFAULT` y `COALESCE` de columnas `date` y RPCs (`sync_cc_caja_orden`, `transacciones_cambiar_estado`, etc.).
+- Scripts que deriven fecha desde `timestamptz`: **`(campo AT TIME ZONE 'America/Argentina/Buenos_Aires')::date`**, no `AT TIME ZONE 'UTC'` ni solo el prefijo del ISO.
+- Nuevas tablas/columnas `fecha` con default: **`DEFAULT public.fecha_hoy_argentina()`** (tras crear la función).
+- **No puede omitirse:** si el cambio toca lógica en backend, actualizar los scripts en `sql/` y lo que corresponda en `docs/` (ver regla **bitacora-tareas** / RPC).
+
+## Checklist antes de dar por cerrada una tarea con fechas
+
+1. ¿Hay “hoy”, “ayer”, rango mensual/semanal o día desde `updated_at`? → ¿Usa Argentina explícitamente?
+2. ¿Hay SQL con `CURRENT_DATE` o default en `fecha`? → ¿Reemplazado o justificado con `fecha_hoy_argentina()`?
+3. ¿Documentación `FECHAS_ARGENTINA.md` actualizada si cambió el modelo?

@@ -1,6 +1,6 @@
 -- Pandi – Tablas de negocio
 -- Ejecutar en Supabase SQL Editor (proyecto Pandi) antes de supabase_seguridad.sql
--- Orden: 1) este archivo  2) supabase_seguridad.sql  3) supabase_rls_negocio.sql
+-- Orden: 0) helpers_fecha_argentina.sql  1) este archivo  2) supabase_seguridad.sql  3) supabase_rls_negocio.sql
 
 -- ========== 1. Clientes ==========
 CREATE TABLE IF NOT EXISTS public.clientes (
@@ -42,7 +42,7 @@ COMMENT ON TABLE public.tipos_movimiento_caja IS 'Tipos para movimientos de caja
 CREATE TABLE IF NOT EXISTS public.ordenes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cliente_id uuid REFERENCES public.clientes(id) ON DELETE SET NULL,
-  fecha date NOT NULL DEFAULT CURRENT_DATE,
+  fecha date NOT NULL DEFAULT public.fecha_hoy_argentina(),
   estado text NOT NULL DEFAULT 'cotizacion' CHECK (estado IN ('cotizacion', 'cerrada', 'concertada')),
   moneda_recibida text NOT NULL CHECK (moneda_recibida IN ('USD', 'EUR', 'ARS')),
   moneda_entregada text NOT NULL CHECK (moneda_entregada IN ('USD', 'EUR', 'ARS')),
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS public.movimientos_caja (
   orden_id uuid REFERENCES public.ordenes(id) ON DELETE SET NULL,
   tipo_movimiento_id uuid REFERENCES public.tipos_movimiento_caja(id) ON DELETE SET NULL,
   concepto text,
-  fecha date NOT NULL DEFAULT CURRENT_DATE,
+  fecha date NOT NULL DEFAULT public.fecha_hoy_argentina(),
   usuario_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   estado text NOT NULL DEFAULT 'cerrado' CHECK (estado IN ('cerrado', 'anulado')),
   estado_fecha timestamptz DEFAULT now(),
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS public.movimientos_cuenta_corriente (
   monto numeric(18,4) NOT NULL,
   orden_id uuid REFERENCES public.ordenes(id) ON DELETE SET NULL,
   concepto text,
-  fecha date NOT NULL DEFAULT CURRENT_DATE,
+  fecha date NOT NULL DEFAULT public.fecha_hoy_argentina(),
   usuario_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   estado text NOT NULL DEFAULT 'cerrado' CHECK (estado IN ('cerrado', 'anulado')),
   estado_fecha timestamptz DEFAULT now(),

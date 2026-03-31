@@ -34,6 +34,8 @@ Copiá `config.example.js` a `config.js` y pegá la **anon key** y la **URL** de
 
 ### 5. Scripts SQL
 
+**Fechas de negocio (Argentina):** ejecutá primero `sql/helpers_fecha_argentina.sql` si armás la base a mano (antes de tablas con `DEFAULT` en `fecha`). En bases ya existentes, `sql/migracion_fecha_default_columnas_argentina.sql` alinea los DEFAULT de columnas `fecha`. Convención: `docs/FECHAS_ARGENTINA.md`.
+
 **Paridad dev/prod:** el bootstrap generado (`npm run sql:bootstrap:dev`) debe dejar **22 tablas** en `public` alineadas a la app actual (incluye `app_config` y `orden_comisiones_generadas`). Si producción tiene más, revisá tablas legacy (`cc_modelo_reglas`) o auxiliares no incluidas en el bundle (p. ej. `contingencia_import_*`). Detalle: `docs/PANDY_DEV_SUPABASE.md`.
 
 Los archivos en `sql/` se ejecutan en el **SQL Editor** de Supabase. **Panel G/P Operativa** (tarjeta en Inicio): `sql/migracion_gp_operativa_panel.sql` — columna `incluye_gp_operativo` en `tipos_movimiento_caja`, permiso `ver_inicio_gp_operativo`, función `gp_operativa_resumen` (JSON con `caja_manual`, `caja_ordenes`, `cc_cliente`, `cc_intermediario`). Re-ejecutar el script actualiza la función si ya estaba desplegada.
