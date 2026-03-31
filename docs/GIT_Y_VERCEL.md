@@ -35,9 +35,8 @@ Cuando tengas la URL del repo y la de Vercel, editá en `scripts/crear-bitacora-
 
 1. [vercel.com](https://vercel.com) → **Add New** → **Project** → importar el repo `pandi`.
 2. Configuración:
-   - **Build Command:** `node scripts/build-config.js`
-   - **Output Directory:** `.`
-   - **Rewrites:** ya definidos en `vercel.json` (raíz → `/index.html`).
+   - **Build Command**, **Output Directory** y **rewrites** los define el archivo **`vercel.json`** en la raíz del repo (Vercel los aplica al proyecto enlazado).
+   - Con **PWA Fase 1** en el repo: build `node scripts/build-config.js && vite build` y salida **`dist/`** (antes era solo `build-config` y directorio `.`). Guía de la rama de prueba: `docs/PWA_RAMA_PREVIEW_PWA_FASE1.md`.
 
 ### Variables de entorno en Vercel
 

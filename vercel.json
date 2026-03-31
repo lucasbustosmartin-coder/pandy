@@ -1,5 +1,5 @@
 {
-  "buildCommand": "node scripts/build-config.js",
-  "outputDirectory": ".",
+  "buildCommand": "node scripts/build-config.js && vite build",
+  "outputDirectory": "dist",
   "rewrites": [{ "source": "/", "destination": "/index.html" }]
 }

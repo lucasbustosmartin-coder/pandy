@@ -18125,3 +18125,33 @@ client.auth.getSession().then(({ data: { session } }) => {
 client.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_OUT' && !session) showLogin();
 });
+
+/** PWA (Fase 1): vite-plugin-pwa expone `virtual:pwa-register` solo en `vite dev` / `vite build`. Fuera de Vite, el import falla y se ignora. */
+try {
+  import('virtual:pwa-register')
+    .then(({ registerSW }) => {
+      const applyPwaUpdate = registerSW({
+        onNeedRefresh() {
+          showConfirm(
+            'Hay una nueva versión de Pandi. ¿Recargar ahora para actualizar?',
+            'Recargar',
+            () => {
+              void applyPwaUpdate(true);
+            },
+            () => {},
+            'Después',
+          );
+        },
+        onOfflineReady() {
+          showToast(
+            'Podés volver a abrir la app sin conexión después de una visita con conexión (caché de la interfaz).',
+            'info',
+            6000,
+          );
+        },
+      });
+    })
+    .catch(() => {});
+} catch (e) {
+  /* ignore */
+}
