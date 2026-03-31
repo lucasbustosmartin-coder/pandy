@@ -131,6 +131,9 @@ if (typeof window !== 'undefined') {
   }
 }
 
+/** Evita doble envío a la cola v2 si el usuario pulsa «Ir a instrumentación» varias veces antes de cerrar el modal. */
+let pandiWizardColaV2Escribiendo = false;
+
 /**
  * PWA instalada (display-mode standalone / fullscreen / minimal-ui, o iOS navigator.standalone).
  * En PWA no se activa el modo reducido offline: evita convivencia forzada «solo Órdenes + cola local»
@@ -651,6 +654,18 @@ function pandiModoPagoEfectivoIdDesdeCache(cache) {
   return r && r.id != null ? r.id : null;
 }
 
+/** Ids efectivo y cheque desde caché (CHEQUE-ARS + intermediario en cola v2). */
+function pandiModosPagoEfectivoChequeDesdeCache(cache) {
+  const rows = cache && cache.modos_pago;
+  if (!Array.isArray(rows)) return { efectivo: null, cheque: null };
+  const by = {};
+  rows.forEach((m) => {
+    const c = String(m.codigo || '').toLowerCase().trim();
+    if (c) by[c] = m.id;
+  });
+  return { efectivo: by.efectivo || null, cheque: by.cheque || null };
+}
+
 /** Catálogo completo en localStorage para contingencia (clientes, intermediarios, tipos con iconos, modos_pago). Sin sesión no hace nada. */
 function pandiRefreshOfflineCatalogosCache() {
   if (!currentUserId) return Promise.resolve();
@@ -752,7 +767,7 @@ function pandiMaybePromptImportOfflineQueue() {
   const q = pandiOfflineQueueRead();
   if (q.length === 0 || !currentUserId) return;
   showConfirm(
-    'Hay ' + q.length + ' orden(es) en cola local (guardadas sin conexión). ¿Importarlas ahora a Supabase? Si guardaste con «Ir a instrumentación» sin red, ya incluyen las dos transacciones de plantilla; revisá igualmente comisiones y el resto en cada orden.',
+    'Hay ' + q.length + ' orden(es) en cola local (guardadas sin conexión). ¿Importarlas ahora a Supabase? Si guardaste con «Ir a instrumentación» sin red, ya incluyen la plantilla de transacciones (2 o 4 según el tipo); revisá comisiones y el resto en cada orden.',
     'Importar ahora',
     () => { pandiImportOfflineQueueSequential(); },
     () => {},
@@ -803,6 +818,7 @@ async function pandiImportOfflineQueueSequential() {
       }
       const instId = insInst.data.id;
       const ahora = new Date().toISOString();
+      const trxIds = [];
       let trxErr = null;
       for (let ti = 0; ti < item.transaccionesPlantilla.length; ti++) {
         const row = item.transaccionesPlantilla[ti];
@@ -812,6 +828,7 @@ async function pandiImportOfflineQueueSequential() {
           trxErr = rTr.error.message || 'transacción';
           break;
         }
+        if (rTr.data && rTr.data.id) trxIds.push(rTr.data.id);
       }
       if (trxErr) {
         failed.push({ ...item, syncState: 'error', lastError: trxErr, attempts: (item.attempts || 0) + 1 });
@@ -826,6 +843,13 @@ async function pandiImportOfflineQueueSequential() {
           showToast('Orden e instrumentación creadas; falló comisiones: ' + (rCom.error.message || 'error'), 'error');
           continue;
         }
+      }
+      const numeroOrden = resOrd.data && resOrd.data[0] && resOrd.data[0].numero != null ? resOrd.data[0].numero : null;
+      const ordenMetaImport = { ...payload, id: ordenId, numero: numeroOrden };
+      if (item.colaV2Plantilla === 'cheque4' && trxIds.length >= 4) {
+        await insertarMovimientosCcMomentoCero(ordenId, ordenMetaImport, trxIds[0], trxIds[1]);
+        await insertarMovimientosCcMomentoCeroIntermediario(ordenId, ordenMetaImport, trxIds[0], trxIds[1]);
+        await actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, ordenMetaImport);
       }
       await actualizarEstadoOrden(ordenId);
       try {
@@ -11420,22 +11444,65 @@ function ordenWrapComisionSplitEsVisible() {
   }
 }
 
-/** Filas `comisiones_orden` para outbox v2 (misma lógica reducida que `guardarComision` sin intermediario). */
+/** Filas `comisiones_orden` para outbox v2 (alineado a `guardarComision` del wizard). Sin `orden_id`. */
 function pandiBuildComisionesOrdenOutboxRows(ctx) {
-  if (!ctx || ctx.intermediarioId) return null;
-  const { tipoCodigoU, tipoCodigo, esChequeArsOrden, comisionUsd } = ctx;
+  if (!ctx) return null;
+  const {
+    tipoCodigoU,
+    tipoCodigo,
+    esChequeArsOrden,
+    intermediarioId,
+    comisionUsd,
+    pctPandy,
+    pctInt,
+    importeChequeWizard,
+    nachoComisionFija,
+    nachoComisionFijaRadio,
+    usdIntMostrarTasa,
+    tasaIntermediarioPct,
+  } = ctx;
   if (!((tipoCodigoU === 'USD-USD' || esChequeArsOrden) && comisionUsd != null && comisionUsd > 0)) return null;
-  const codRaw = String(tipoCodigo || '').trim();
-  const conceptoComision = codRaw === 'USD-ARS' ? 'Comisión USD-ARS' : (esChequeArsOrden ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
+  const conceptoComision = String(tipoCodigo || '').trim() === 'USD-ARS' ? 'Comisión USD-ARS' : (esChequeArsOrden ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
   const comisionMoneda = esChequeArsOrden ? 'ARS' : 'USD';
-  return [{ moneda: comisionMoneda, monto: comisionUsd, concepto: conceptoComision, beneficiario: 'pandy', intermediario_id: null }];
+  let montoPandy;
+  let montoInter;
+  if (tipoCodigoU === 'USD-USD' && intermediarioId) {
+    const importeAc = importeChequeWizard;
+    if (nachoComisionFija && nachoComisionFijaRadio != null) {
+      const fija = Number(nachoComisionFijaRadio) || 0;
+      montoInter = fija;
+      montoPandy = comisionUsd - fija;
+    } else if (usdIntMostrarTasa && typeof importeAc === 'number' && !isNaN(importeAc) && importeAc > 0 && tasaIntermediarioPct != null && typeof tasaIntermediarioPct === 'number' && !isNaN(tasaIntermediarioPct)) {
+      const totalCom = comisionUsd;
+      const brutoInter = importeAc * (tasaIntermediarioPct / 100);
+      montoInter = Math.min(Math.max(0, brutoInter), Math.max(0, totalCom));
+      montoPandy = Math.max(0, totalCom - montoInter);
+    } else {
+      montoPandy = comisionUsd;
+      montoInter = 0;
+    }
+  } else {
+    const a = intermediarioId ? Number(pctPandy) : 100;
+    const b = intermediarioId ? Number(pctInt) : 0;
+    montoPandy = comisionUsd * (a / 100);
+    montoInter = comisionUsd * (b / 100);
+  }
+  if (montoPandy < -1e-6) return null;
+  const rows = [
+    { moneda: comisionMoneda, monto: montoPandy, concepto: conceptoComision, beneficiario: 'pandy', intermediario_id: null },
+  ];
+  if (intermediarioId && montoInter > 0) {
+    rows.push({ moneda: comisionMoneda, monto: montoInter, concepto: conceptoComision, beneficiario: 'intermediario', intermediario_id: intermediarioId });
+  }
+  return rows;
 }
 
 /**
- * Valida el wizard para **nueva** orden, **sin intermediario**, y arma el payload de insert (pendiente_instrumentar).
- * No muestra toasts; el caller usa `error`.
+ * Valida el wizard para **nueva** orden y arma el payload de insert (pendiente_instrumentar).
+ * Incluye sin intermediario y con intermediario (plantilla 2 o 4 transacciones según tipo).
+ * No muestra toasts; el caller usa `error`. `__COMISION_ZERO_CONFIRM__` → showConfirm y reintentar con saltar=true.
  */
-function pandiValidarWizardOrdenPayloadParaColaLocal() {
+function pandiValidarWizardOrdenPayloadParaColaLocal(saltarConfirmComisionCero = false) {
   const idEl = document.getElementById('orden-id');
   const id = idEl && idEl.value ? idEl.value.trim() : '';
   if (id) {
@@ -11464,10 +11531,12 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
     return { error: 'Elegí un tipo de operación.' };
   }
   if (usaIntermediarioTipo && !intermediarioId) {
-    return { error: 'Para este tipo hace falta intermediario; con intermediario no se puede guardar la plantilla de instrumentación en cola. Conectate o usá otro tipo sin intermediario.' };
+    return { error: 'Para este tipo de operación es obligatorio elegir un intermediario.' };
   }
-  if (intermediarioId) {
-    return { error: 'Sin conexión, la cola con instrumentación automática (2 transacciones) solo aplica sin intermediario. Usá «Orden en cola local» o conectate.' };
+  const selTipoOptPre = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+  const tipoCodigoPre = selTipoOptPre ? (selTipoOptPre.getAttribute('data-codigo') || '') : '';
+  if (String(tipoCodigoPre).trim().toUpperCase() === 'USD-USD' && usaIntermediarioTipo && intermediarioId && !ordenIntPatronExplicitoElegido()) {
+    return { error: 'Elegí la instrumentación sugerida (con intermediario) antes de guardar en cola o ir a instrumentación.' };
   }
   if (!fecha || isNaN(montoRecibido) || montoRecibido <= 0 || isNaN(montoEntregado) || montoEntregado <= 0) {
     return { error: 'Completá fecha, monto recibido y monto entregado (números positivos).' };
@@ -11494,15 +11563,49 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
       return { error: 'En operación con cheque (CHEQUE–ARS) la tasa de descuento del intermediario es obligatoria (ej. 1 para 1%, entre 0 y 100).' };
     }
   }
-
+  if (tipoCodigoU === 'USD-USD' && intermediarioId && ordenComisionFijaNachoUsdParaPersistir(tipoCodigo, intermediarioId)) {
+    const nr = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
+    if (!nr) {
+      return { error: 'Elegí la comisión fija del intermediario (USD) antes de guardar en cola.' };
+    }
+  }
+  if (tipoCodigoU === 'USD-USD' && intermediarioId && ordenUsdIntMostrarTasaIntermediarioEnWizard()) {
+    const rawUsdT = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
+    const tUsdInt = rawUsdT ? parseImporteInput(rawUsdT) : null;
+    if (typeof tUsdInt !== 'number' || isNaN(tUsdInt) || tUsdInt <= 0 || tUsdInt >= 100) {
+      return { error: 'En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe).' };
+    }
+  }
   const comisionUsd = tipoCodigoU === 'USD-USD' ? montoRecibido - montoEntregado
     : (esChequeArsOrden ? montoRecibido - montoEntregado
       : (esPatronCompraFiatConTc(patronTcGuardar) && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado
         : (esPatronVendeFiatConTc(patronTcGuardar) && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
+  if (tipoCodigoU === 'USD-USD' && intermediarioId && ordenComisionFijaNachoUsdParaPersistir(tipoCodigo, intermediarioId) && comisionUsd != null) {
+    const nchkW = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
+    const fjW = nchkW ? Number(nchkW.value) || 0 : 0;
+    if (fjW > comisionUsd + 1e-6) {
+      return { error: 'La comisión fija del intermediario no puede superar el beneficio del acuerdo.' };
+    }
+  }
+  const pctPandy = parseImporteInput(document.getElementById('orden-comision-pandy-pct')?.value || '100');
+  const pctInt = parseImporteInput(document.getElementById('orden-comision-intermediario-pct')?.value || '0');
+  const tieneSplitVisible = ordenWrapComisionSplitEsVisible();
+  if ((tipoCodigoU === 'USD-USD' || patronTcGuardar || esChequeArsOrden) && intermediarioId && tieneSplitVisible) {
+    const a = Number(pctPandy);
+    const b = Number(pctInt);
+    if (isNaN(a) || isNaN(b) || a < 0 || b < 0 || a > 100 || b > 100 || Math.abs((a + b) - 100) > 1e-6) {
+      return { error: 'La distribución de comisión debe sumar 100% (Pandy + Intermediario).' };
+    }
+  }
+  if (intermediarioId && tieneSplitVisible && (Number(pctInt) || 0) < 1e-6 && !saltarConfirmComisionCero) {
+    return { error: '__COMISION_ZERO_CONFIRM__' };
+  }
 
   const tasaDescuentoIntPct = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim();
   let tasaDescuentoIntermediario = null;
   if (esChequeArsOrden && tasaDescuentoIntPct) {
+    tasaDescuentoIntermediario = parseImporteInput(tasaDescuentoIntPct) / 100;
+  } else if (tipoCodigoU === 'USD-USD' && intermediarioId && ordenUsdIntMostrarTasaIntermediarioEnWizard() && tasaDescuentoIntPct) {
     tasaDescuentoIntermediario = parseImporteInput(tasaDescuentoIntPct) / 100;
   }
 
@@ -11524,72 +11627,130 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
     updated_at: new Date().toISOString(),
   };
 
+  const nNach = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
   const comisionCtx = {
     tipoCodigoU,
     tipoCodigo,
     esChequeArsOrden,
     intermediarioId,
     comisionUsd,
+    pctPandy,
+    pctInt,
+    importeChequeWizard: parseImporteInput(document.getElementById('orden-importe-cheque')?.value),
+    nachoComisionFija: !!(tipoCodigoU === 'USD-USD' && intermediarioId && ordenComisionFijaNachoUsdParaPersistir(tipoCodigo, intermediarioId)),
+    nachoComisionFijaRadio: nNach ? Number(nNach.value) : null,
+    usdIntMostrarTasa: !!(tipoCodigoU === 'USD-USD' && intermediarioId && ordenUsdIntMostrarTasaIntermediarioEnWizard()),
+    tasaIntermediarioPct: tasaDescuentoIntPct ? parseImporteInput(tasaDescuentoIntPct) : null,
   };
 
   return { error: null, payload, comisionCtx };
 }
 
-/** Sin red: nueva orden sin intermediario → cola local v2 con plantilla de 2 transacciones (+ comisiones USD-USD/CHEQUE si aplica). */
-async function pandiWizardGuardarEnColaLocalConPlantillaInstrumentacion() {
-  if (!currentUserId) {
-    showToast('Iniciá sesión para usar la cola local.', 'error');
-    return;
+/** Sin red: nueva orden → cola local v2 con plantilla (2 o 4 transacciones + comisiones si aplica). */
+async function pandiWizardGuardarEnColaLocalConPlantillaInstrumentacion(saltarConfirmComisionCero = false) {
+  if (pandiWizardColaV2Escribiendo) return;
+  pandiWizardColaV2Escribiendo = true;
+  try {
+    if (!currentUserId) {
+      showToast('Iniciá sesión para usar la cola local.', 'error');
+      return;
+    }
+    if (!userPermissions.includes('ingresar_orden')) {
+      showToast('No tenés permiso para crear órdenes.', 'error');
+      return;
+    }
+    const val = pandiValidarWizardOrdenPayloadParaColaLocal(saltarConfirmComisionCero);
+    if (val.error === '__COMISION_ZERO_CONFIRM__') {
+      showConfirm(
+        'La comisión del intermediario es cero. ¿Guardar en cola local igual?',
+        'Sí, guardar',
+        () => { void pandiWizardGuardarEnColaLocalConPlantillaInstrumentacion(true); },
+      );
+      return;
+    }
+    if (val.error) {
+      showToast(val.error, 'error');
+      return;
+    }
+    const cache = pandiOfflineCatalogosRead();
+    if (!cache || !cache.tipos_operacion || !cache.tipos_operacion.length) {
+      showToast('No hay catálogo en caché. Conectate al menos una vez para actualizar el respaldo local.', 'error');
+      return;
+    }
+    const tipoRow = (cache.tipos_operacion || []).find((t) => String(t.id) === String(val.payload.tipo_operacion_id));
+    if (!tipoRow) {
+      showToast('Falta el tipo de operación en caché. Conectate para refrescar el catálogo.', 'error');
+      return;
+    }
+    const ordenLike = { ...val.payload };
+    let plant = [];
+    let colaV2Plantilla = 'sin_int';
+    if (val.payload.intermediario_id) {
+      if (esTipoOperacionChequeArs(tipoRow.codigo, tipoRow.moneda_in, tipoRow.moneda_out)) {
+        const { efectivo: midEf, cheque: midCh } = pandiModosPagoEfectivoChequeDesdeCache(cache);
+        if (!midEf || !midCh) {
+          showToast('Faltan modos de pago «efectivo» o «cheque» en caché. Conectate para refrescar el catálogo.', 'error');
+          return;
+        }
+        plant = buildPlantillaRowsTransaccionesChequeConIntermediario(ordenLike, null, midEf, midCh);
+        colaV2Plantilla = 'cheque4';
+      } else {
+        const modoId = pandiModoPagoEfectivoIdDesdeCache(cache);
+        if (!modoId) {
+          showToast('Falta el modo de pago «efectivo» en caché. Conectate para refrescar el catálogo.', 'error');
+          return;
+        }
+        const patronInt = getOrdenPatronInstrumentacionInt();
+        plant = buildPlantillaRowsTransaccionesConIntermediario(ordenLike, null, tipoRow, modoId, patronInt);
+        colaV2Plantilla = 'int2';
+      }
+    } else {
+      const modoId = pandiModoPagoEfectivoIdDesdeCache(cache);
+      if (!modoId) {
+        showToast('Falta el modo de pago «efectivo» en caché. Conectate para refrescar el catálogo.', 'error');
+        return;
+      }
+      plant = buildPlantillaRowsTransaccionesSinIntermediario(ordenLike, null, tipoRow, modoId);
+    }
+    if (!plant.length) {
+      showToast('Este tipo no tiene plantilla automática en cola offline. Usá «Orden en cola local» simple o conectate.', 'info');
+      return;
+    }
+    const tag = '[Cola local + instrumentación ' + new Date().toISOString().slice(0, 16) + ']';
+    const payload = {
+      ...val.payload,
+      observaciones: val.payload.observaciones ? val.payload.observaciones + ' · ' + tag : tag,
+    };
+    const comisionesPlantilla = pandiBuildComisionesOrdenOutboxRows(val.comisionCtx);
+    if (val.comisionCtx.nachoComisionFija && val.comisionCtx.nachoComisionFijaRadio != null) {
+      persistirPreferenciaComisionFijaInterUsd(Number(val.comisionCtx.nachoComisionFijaRadio) || 0);
+    }
+    const item = {
+      v: 2,
+      localId: pandiRandomLocalId(),
+      createdAt: new Date().toISOString(),
+      createdByUserId: currentUserId,
+      syncState: 'pending',
+      attempts: 0,
+      payload,
+      transaccionesPlantilla: plant,
+      colaV2Plantilla,
+      ...(comisionesPlantilla && comisionesPlantilla.length ? { comisionesPlantilla } : {}),
+    };
+    const q = pandiOfflineQueueRead();
+    q.push(item);
+    await pandiOfflineQueueWrite(q);
+    showToast(
+      'Orden con instrumentación (' + plant.length + ' transacciones) guardada en cola local (' + q.length + ' en total). Enviá la cola cuando vuelva el servicio.',
+      'success',
+    );
+    pandiUpdateOfflineReducedStripText();
+    pandiUpdateOfflineToolbarButtons();
+    showOrdenWizardStep('participantes');
+    solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true });
+  } finally {
+    pandiWizardColaV2Escribiendo = false;
   }
-  if (!userPermissions.includes('ingresar_orden')) {
-    showToast('No tenés permiso para crear órdenes.', 'error');
-    return;
-  }
-  const val = pandiValidarWizardOrdenPayloadParaColaLocal();
-  if (val.error) {
-    showToast(val.error, 'error');
-    return;
-  }
-  const cache = pandiOfflineCatalogosRead();
-  if (!cache || !cache.tipos_operacion || !cache.tipos_operacion.length) {
-    showToast('No hay catálogo en caché. Conectate al menos una vez para actualizar el respaldo local.', 'error');
-    return;
-  }
-  const tipoRow = (cache.tipos_operacion || []).find((t) => String(t.id) === String(val.payload.tipo_operacion_id));
-  const modoId = pandiModoPagoEfectivoIdDesdeCache(cache);
-  if (!tipoRow || !modoId) {
-    showToast('Falta el tipo en caché o el modo de pago «efectivo». Conectate para refrescar el catálogo.', 'error');
-    return;
-  }
-  const ordenLike = { ...val.payload };
-  const plant = buildPlantillaRowsTransaccionesSinIntermediario(ordenLike, null, tipoRow, modoId);
-  if (!plant.length) {
-    showToast('Este acuerdo no tiene plantilla automática en cola (solo USD-USD, cruces con TC o CHEQUE-ARS sin intermediario). Usá la cola simple u online.', 'info');
-    return;
-  }
-  const tag = '[Cola local + instrumentación ' + new Date().toISOString().slice(0, 16) + ']';
-  const payload = {
-    ...val.payload,
-    observaciones: val.payload.observaciones ? val.payload.observaciones + ' · ' + tag : tag,
-  };
-  const comisionesPlantilla = pandiBuildComisionesOrdenOutboxRows(val.comisionCtx);
-  const item = {
-    v: 2,
-    localId: pandiRandomLocalId(),
-    createdAt: new Date().toISOString(),
-    createdByUserId: currentUserId,
-    syncState: 'pending',
-    attempts: 0,
-    payload,
-    transaccionesPlantilla: plant,
-    ...(comisionesPlantilla && comisionesPlantilla.length ? { comisionesPlantilla } : {}),
-  };
-  const q = pandiOfflineQueueRead();
-  q.push(item);
-  await pandiOfflineQueueWrite(q);
-  showToast('Orden con instrumentación (2 transacciones) guardada en cola local (' + q.length + ' en total). Enviá la cola cuando vuelva el servicio.', 'success');
-  pandiUpdateOfflineReducedStripText();
-  pandiUpdateOfflineToolbarButtons();
 }
 
 /** Guarda la orden según el form, pero sin cerrar el modal. Devuelve Promise<ordenId>. */
@@ -14028,22 +14189,14 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, transIngr
  */
 function autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumentacionId, orden) {
   if (!ordenId || !instrumentacionId || !orden || !orden.intermediario_id || !orden.tipo_operacion_id) return Promise.resolve();
-  const mr = Number(orden.monto_recibido) || 0;
-  const me = Number(orden.monto_entregado) || 0;
-  const tasa = Number(orden.tasa_descuento_intermediario);
-  const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr;
   return client.from('modos_pago').select('id, codigo').in('codigo', ['efectivo', 'cheque']).then((rModos) => {
     const byCodigo = {};
     (rModos.data || []).forEach((m) => { byCodigo[m.codigo] = m.id; });
     const modoEfectivoId = byCodigo.efectivo;
     const modoChequeId = byCodigo.cheque;
     if (!modoEfectivoId || !modoChequeId) return Promise.resolve();
-    const ahora = new Date().toISOString();
-    const row1 = { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoChequeId, moneda: 'ARS', monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora };
-    const row2 = { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoEfectivoId, moneda: 'ARS', monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora };
-    const row3 = { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoChequeId, moneda: 'ARS', monto: mr, cobrador: 'intermediario', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora };
-    const row4 = { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoEfectivoId, moneda: 'ARS', monto: montoEfectivoInt, cobrador: 'pandy', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null, updated_at: ahora };
-    const rows = [row1, row2, row3, row4];
+    const rows = buildPlantillaRowsTransaccionesChequeConIntermediario(orden, instrumentacionId, modoEfectivoId, modoChequeId);
+    if (!rows.length) return Promise.resolve();
     return rows.reduce((prom, row) => prom.then((ids) =>
       client.from('transacciones').insert(row).select('id').single().then((rIns) => {
         const id = rIns.data && rIns.data.id;
@@ -14212,6 +14365,71 @@ function buildPlantillaRowsTransaccionesSinIntermediario(orden, instrumentacionI
 }
 
 /**
+ * CHEQUE-ARS + intermediario: 4 filas (alineado a `autoCompletarInstrumentacionChequeConIntermediario`).
+ */
+function buildPlantillaRowsTransaccionesChequeConIntermediario(orden, instrumentacionId, modoEfectivoId, modoChequeId) {
+  if (!orden || !orden.intermediario_id || !modoEfectivoId || !modoChequeId) return [];
+  const mr = Number(orden.monto_recibido) || 0;
+  const me = Number(orden.monto_entregado) || 0;
+  const tasa = Number(orden.tasa_descuento_intermediario);
+  const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr;
+  const ahora = new Date().toISOString();
+  function fila(extra) {
+    const o = { ...extra, updated_at: ahora };
+    if (instrumentacionId != null && instrumentacionId !== '') o.instrumentacion_id = instrumentacionId;
+    return o;
+  }
+  return [
+    fila({ tipo: 'ingreso', modo_pago_id: modoChequeId, moneda: 'ARS', monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null }),
+    fila({ tipo: 'egreso', modo_pago_id: modoEfectivoId, moneda: 'ARS', monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null }),
+    fila({ tipo: 'egreso', modo_pago_id: modoChequeId, moneda: 'ARS', monto: mr, cobrador: 'intermediario', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null }),
+    fila({ tipo: 'ingreso', modo_pago_id: modoEfectivoId, moneda: 'ARS', monto: montoEfectivoInt, cobrador: 'pandy', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null }),
+  ];
+}
+
+/**
+ * USD-USD o cruce fiat+USD + intermediario: 2 filas (`cp_ic` | `ci_pc`).
+ */
+function buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionId, tipoRow, modoPagoEfectivoId, patronInt) {
+  if (!orden || !orden.intermediario_id || !tipoRow || !modoPagoEfectivoId) return [];
+  const codigoTipo = tipoRow.codigo || '';
+  if (esTipoOperacionChequeArs(codigoTipo, tipoRow.moneda_in, tipoRow.moneda_out)) return [];
+  const mi = (tipoRow.moneda_in || '').toString().toUpperCase().trim();
+  const mo = (tipoRow.moneda_out || '').toString().toUpperCase().trim();
+  const patronTc = patronTipoCambioOrden(mi, mo);
+  const esUsdUsd = mi === 'USD' && mo === 'USD';
+  if (!esUsdUsd && !patronTc) return [];
+  const cotizacion = Number(orden.cotizacion) || null;
+  if (patronTc && !(cotizacion > 0)) return [];
+  const pat = patronInt === 'ci_pc' ? 'ci_pc' : 'cp_ic';
+  let tcIngreso = null;
+  let tcEgreso = null;
+  if (esPatronCompraFiatConTc(patronTc)) tcIngreso = cotizacion;
+  else if (esPatronVendeFiatConTc(patronTc)) tcEgreso = cotizacion;
+  const mr = Number(orden.monto_recibido) || 0;
+  const me = Number(orden.monto_entregado) || 0;
+  const monR = orden.moneda_recibida || 'USD';
+  const monE = orden.moneda_entregada || 'USD';
+  const ahora = new Date().toISOString();
+  function fila(extra) {
+    const o = { ...extra, updated_at: ahora };
+    if (instrumentacionId != null && instrumentacionId !== '') o.instrumentacion_id = instrumentacionId;
+    return o;
+  }
+  const E = modoPagoEfectivoId;
+  if (pat === 'ci_pc') {
+    return [
+      fila({ tipo: 'ingreso', modo_pago_id: E, moneda: monR, monto: mr, cobrador: 'intermediario', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcIngreso }),
+      fila({ tipo: 'egreso', modo_pago_id: E, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcEgreso }),
+    ];
+  }
+  return [
+    fila({ tipo: 'ingreso', modo_pago_id: E, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcIngreso }),
+    fila({ tipo: 'egreso', modo_pago_id: E, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcEgreso }),
+  ];
+}
+
+/**
  * Si la orden es sin intermediario y la instrumentación está vacía, crea dos transacciones por defecto
  * (ingreso moneda recibida, egreso moneda entregada). Por **monedas del tipo** (IN/OUT), no solo por código:
  * USD-USD, cualquier cruce fiat+USD (ARS, EUR, … vía patronTipoCambioOrden) y CHEQUE-ARS (ARS/ARS vía cheque).
@@ -14274,27 +14492,11 @@ function autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instrumenta
     if (!esUsdUsd && !patronTc) return Promise.resolve();
     const cotizacion = Number(orden.cotizacion) || null;
     if (patronTc && !(cotizacion > 0)) return Promise.resolve();
-    let tcIngreso = null;
-    let tcEgreso = null;
-    if (esPatronCompraFiatConTc(patronTc)) tcIngreso = cotizacion;
-    else if (esPatronVendeFiatConTc(patronTc)) tcEgreso = cotizacion;
     return client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle().then((rModo) => {
       const modoPagoEfectivoId = (rModo.data && rModo.data.id) || null;
       if (!modoPagoEfectivoId) return Promise.resolve();
-      const mr = Number(orden.monto_recibido) || 0;
-      const me = Number(orden.monto_entregado) || 0;
-      const monR = orden.moneda_recibida || 'USD';
-      const monE = orden.moneda_entregada || 'USD';
-      const ahora = new Date().toISOString();
-      const rows = pat === 'ci_pc'
-        ? [
-            { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'intermediario', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcIngreso, updated_at: ahora },
-            { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcEgreso, updated_at: ahora },
-          ]
-        : [
-            { instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoPagoEfectivoId, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcIngreso, updated_at: ahora },
-            { instrumentacion_id: instrumentacionId, tipo: 'egreso', modo_pago_id: modoPagoEfectivoId, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcEgreso, updated_at: ahora },
-          ];
+      const rows = buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionId, rowTipo, modoPagoEfectivoId, pat);
+      if (!rows.length) return Promise.resolve();
       return rows.reduce((prom, row) => prom.then(() => client.from('transacciones').insert(row).select('id').single()), Promise.resolve()).then(() => actualizarEstadoOrden(ordenId));
     });
   });
