@@ -123,21 +123,42 @@ function pandiEsFalloConectividadBootstrap(err) {
 
 /** Clasifica error del ping a app_empresa (PostgREST / red). */
 function classifySupabasePingError(error) {
-  const msg = (error.message || '').toLowerCase();
+  if (error == null) return 'unreachable';
+  const msg = String(error.message || '').toLowerCase();
   const code = String(error.code || '');
-  const details = (error.details || '').toLowerCase();
-  const hint = (error.hint || '').toLowerCase();
-  const blob = `${msg} ${details} ${hint}`;
+  const name = String(error.name || '').toLowerCase();
+  const details = String(error.details || '').toLowerCase();
+  const hint = String(error.hint || '').toLowerCase();
+  const blob = `${msg} ${details} ${hint} ${name}`;
+  const status = error.status != null ? Number(error.status) : NaN;
+  const statusCode = error.statusCode != null ? Number(error.statusCode) : NaN;
 
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return 'unreachable';
+  }
+  if (status === 0 || statusCode === 0) {
+    return 'unreachable';
+  }
   if (
+    name === 'typeerror' ||
+    name === 'aborterror' ||
     msg.includes('fetch') ||
     msg.includes('network') ||
     msg.includes('failed to fetch') ||
+    msg.includes('load failed') ||
+    msg.includes('network request failed') ||
+    msg.includes('internet') && msg.includes('offline') ||
+    msg.includes('connection') && (msg.includes('refused') || msg.includes('reset') || msg.includes('lost')) ||
     msg.includes('timeout') ||
     msg.includes('cors') ||
+    msg.includes('err_internet') ||
+    msg.includes('err_network') ||
     (code.length && code.startsWith('5')) ||
     code === 'PGRST301'
   ) {
+    return 'unreachable';
+  }
+  if (/failed to fetch|networkerror|load failed|fetcherror|authretryablefetcherror|network request failed|offline|sin conexión|no internet|could not connect/i.test(blob)) {
     return 'unreachable';
   }
 
@@ -171,6 +192,9 @@ function classifySupabasePingError(error) {
  */
 async function checkSupabaseConnectivity() {
   try {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return { issue: 'unreachable' };
+    }
     const { error } = await client
       .from('app_empresa')
       .select('id')
@@ -188,6 +212,11 @@ const PANDI_SUPABASE_BANNER_COPY = {
   unreachable: {
     title: 'Problemas de conectividad',
     text: 'No pudimos conectar con el servicio. Puede ser temporal (red, tiempo de espera o mantenimiento). Probá de nuevo en unos minutos.',
+    warn: false,
+  },
+  unreachableOffline: {
+    title: 'Sin conexión a internet',
+    text: 'Wi‑Fi y datos están desactivados o no hay señal. La app puede mostrarse desde la caché; los datos en vivo aparecen al volver a conectar. Activá la red y tocá Reintentar.',
     warn: false,
   },
   schema: {
@@ -217,7 +246,14 @@ function updateSupabaseConnectivityBanner() {
     wrap.classList.remove('is-visible', 'pandi-connectivity-banner--warn');
     return;
   }
-  const copy = PANDI_SUPABASE_BANNER_COPY[issue] || PANDI_SUPABASE_BANNER_COPY.config;
+  let copy = PANDI_SUPABASE_BANNER_COPY[issue] || PANDI_SUPABASE_BANNER_COPY.config;
+  if (
+    issue === 'unreachable' &&
+    typeof navigator !== 'undefined' &&
+    navigator.onLine === false
+  ) {
+    copy = PANDI_SUPABASE_BANNER_COPY.unreachableOffline;
+  }
   if (titleEl) titleEl.textContent = copy.title;
   if (textEl) textEl.textContent = copy.text;
   wrap.classList.toggle('pandi-connectivity-banner--warn', !!copy.warn);
@@ -289,6 +325,19 @@ function setupSupabaseConnectivityMonitoring() {
   }
   pandiSupabaseHealthIntervalId = setInterval(runSupabaseHealthCheck, 60000);
   runSupabaseHealthCheck();
+  if (!window.__pandiNavigatorOnlineBound) {
+    window.__pandiNavigatorOnlineBound = true;
+    window.addEventListener('offline', () => {
+      pandiSupabaseConnectivityIssue = 'unreachable';
+      if (pandiUnreachableSinceMs == null) pandiUnreachableSinceMs = Date.now();
+      updateSupabaseConnectivityBanner();
+      pandiUpdateOfflineToolbarButtons();
+    });
+    window.addEventListener('online', () => {
+      pandiUnreachableSinceMs = null;
+      runSupabaseHealthCheck();
+    });
+  }
   const stripGo = document.getElementById('pandi-offline-strip-goto-ordenes');
   if (stripGo && stripGo.dataset.bound !== '1') {
     stripGo.dataset.bound = '1';
