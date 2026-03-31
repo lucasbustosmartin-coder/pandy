@@ -59,6 +59,8 @@ Salida: `Bitacora_tareas.xlsx` (en la raíz del proyecto).
 
 ## REGLA ESTRICTA — mismo front en producción y en preview estable
 
+**Criterio del producto:** **https://preview.pandi.company** debe mostrar **siempre** el mismo front que **https://pandi.company** (mismo commit); solo cambia Supabase vía variables Vercel (Preview = dev).
+
 Esta regla **no se relaja**: ante “desplegar” / “ok desplegar”, el agente **no puede** dar el despliegue por terminado sin cumplirla.
 
 1. **Qué significa “mismo front”**  
