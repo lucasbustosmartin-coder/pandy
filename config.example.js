@@ -1,7 +1,9 @@
-// Copiar a config.js. Usar SOLO el proyecto Supabase de desarrollo (Pandy-Dev / Excel Pandy_Dev_Supabase.xlsx).
-// No pegar URL ni keys del proyecto de producción: la app local y los E2E deben apuntar al mismo ref de dev.
-// Recomendado: npm run dev:supabase:volcar (genera config.js y .env desde el Excel).
-// config.js está en .gitignore.
+// Alternativa manual: copiar este archivo a config.js (no recomendado si ya usás .env).
+// Lo habitual en local es NO editar config.js: definí SUPABASE_URL y SUPABASE_ANON_KEY en .env
+// (plantilla .env.example) y ejecutá npm run dev — build-config.js genera config.js solo.
+//
+// Otra vía: npm run dev:supabase:volcar con docs/Pandy_Dev_Supabase.xlsx (ver docs/PANDY_DEV_SUPABASE.md).
+// Usar SOLO proyecto Supabase de desarrollo; config.js está en .gitignore.
 
 window.SUPABASE_ANON_KEY = '';
 window.SUPABASE_URL = '';

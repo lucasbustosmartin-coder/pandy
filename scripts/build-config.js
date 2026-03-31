@@ -2,12 +2,21 @@
 /**
  * Genera config.js desde variables de entorno (para Vercel u otro deploy).
  * En Vercel: Settings → Environment Variables → SUPABASE_ANON_KEY (y opcional SUPABASE_URL).
+ * En local: lee `.env` y luego `.env.local` (override) para no mantener config.js a mano — ver docs/DESARROLLO_LOCAL.md.
  * Build Command: node scripts/build-config.js
  */
 const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
+try {
+  const dotenv = require('dotenv');
+  dotenv.config({ path: path.join(root, '.env') });
+  dotenv.config({ path: path.join(root, '.env.local'), override: true });
+} catch (_) {
+  /* p. ej. build sin devDependencies: solo process.env del sistema / Vercel */
+}
+
 const url = process.env.SUPABASE_URL || '';
 const anonKey = process.env.SUPABASE_ANON_KEY || '';
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -29,6 +38,11 @@ ${serviceKey ? 'window.SUPABASE_SERVICE_ROLE_KEY = ' + JSON.stringify(serviceKey
 `;
 
 fs.writeFileSync(path.join(root, 'config.js'), content, 'utf8');
+if (!url || !anonKey) {
+  console.warn(
+    '[build-config] SUPABASE_URL o SUPABASE_ANON_KEY vacíos. Completá .env o .env.local (copiá desde .env.example) o ejecutá npm run dev:supabase:volcar. Ver docs/DESARROLLO_LOCAL.md.',
+  );
+}
 console.log(
   'config.js generado en',
   path.join(root, 'config.js'),

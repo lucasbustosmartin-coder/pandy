@@ -32,6 +32,8 @@ Eso genera o sobrescribe:
 
 Ambos archivos están en **`.gitignore`**: no se suben a Git.
 
+Al ejecutar **`npm run dev`**, el proyecto vuelve a correr **`node scripts/build-config.js`**, que lee `.env` / `.env.local` y **regenera `config.js`** (así los cambios en variables locales se reflejan sin tocar Vercel). Detalle: **`docs/DESARROLLO_LOCAL.md`**.
+
 ## Seguridad
 
 - **`Pandy_Dev_Supabase.xlsx` está en `.gitignore`**: no lo commitees; contiene secretos.

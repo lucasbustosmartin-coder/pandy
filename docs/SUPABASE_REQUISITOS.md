@@ -18,7 +18,7 @@
 
 ### 3. Archivo `.env` en la raíz del proyecto
 
-En la carpeta Pandi creá `.env` con:
+En la carpeta Pandi creá `.env` (podés partir de **`.env.example`**: `cp .env.example .env`) con:
 
 ```env
 SUPABASE_URL=https://TU_PROYECTO.supabase.co
@@ -26,11 +26,13 @@ SUPABASE_ANON_KEY=eyJ...
 SUPABASE_SERVICE_ROLE_KEY=<TU_SERVICE_ROLE_KEY>
 ```
 
-No subas este archivo a Git (está en `.gitignore`).
+No subas este archivo a Git (está en `.gitignore`). Opcional **`.env.local`** para pisar claves solo en tu máquina (también ignorado).
 
 ### 4. Config para el frontend
 
-Copiá `config.example.js` a `config.js` y pegá la **anon key** y la **URL** del proyecto. En Vercel, `config.js` se genera en el build desde variables de entorno (ver `docs/GIT_Y_VERCEL.md`).
+- **Local:** con `.env` completo, ejecutá `npm run dev` — se genera **`config.js`** automáticamente antes de Vite (`node scripts/build-config.js`). Guía: **`docs/DESARROLLO_LOCAL.md`**.
+- **Manual (legacy):** copiar `config.example.js` a `config.js` y pegar URL + anon.
+- **Vercel:** `config.js` se genera en el build desde variables de entorno (ver `docs/GIT_Y_VERCEL.md`).
 
 ### 5. Scripts SQL
 

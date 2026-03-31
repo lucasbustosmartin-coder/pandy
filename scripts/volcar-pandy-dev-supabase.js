@@ -162,7 +162,7 @@ window.SUPABASE_ANON_KEY = ${JSON.stringify(anon)};
     console.warn('Aviso: no hay service_role en el Excel; completá SUPABASE_SERVICE_ROLE_KEY en .env.test para E2E (limpieza RPC).');
   }
 
-  console.log('Listo. Levantá la app con: npm run dev');
+  console.log('Listo. Levantá la app con: npm run dev (regenera config.js desde .env antes de Vite).');
 }
 
 main();

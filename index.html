@@ -443,6 +443,7 @@
     #modal-orden-offline-backdrop.activo { z-index: 1005; }
     .pandi-outbox-resumen-list { margin: 0.35rem 0 0 1rem; padding: 0; list-style: disc; }
     .pandi-outbox-resumen-list li { margin: 0.25rem 0; }
+    .pandi-outbox-resumen-li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
     .pandi-outbox-pill { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 0.12rem 0.45rem; border-radius: 6px; vertical-align: middle; }
     .pandi-outbox-pill--pending { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
     .pandi-outbox-pill--error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
@@ -1398,6 +1399,10 @@
     .badge-estado-cotizacion { background: #e5e7eb; color: #4b5563; }
     .badge-estado-concertada { background: #d1fae5; color: #047857; }
     .badge-estado-pendiente { background: #fef3c7; color: #b45309; }
+    .badge-estado-cola-local { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+    .tr-orden-cola-local { background: linear-gradient(90deg, #f5f3ff 0%, #faf5ff 100%); }
+    .tr-orden-cola-local td { border-color: #e9d5ff; }
+    .orden-cola-local-acciones { font-size: 0.85rem; color: #6b21a8; font-weight: 500; }
     .badge-estado-ejecutada { background: #bbf7d0; color: #15803d; }
     .combo-estado-transaccion { border: 1px solid #ccc; border-radius: 6px; padding: 0.35rem 0.5rem; font-size: 0.9rem; font-weight: 500; cursor: pointer; min-width: 7rem; }
     .combo-estado-transaccion.combo-estado-pendiente { background: #fef3c7; color: #b45309; }
@@ -1762,7 +1767,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.93</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.94</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>

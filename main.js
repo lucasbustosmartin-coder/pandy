@@ -763,17 +763,143 @@ function pandiUpdateOfflineToolbarButtons() {
   }
 }
 
+/** Nombre de tipo de operación para textos de cola (mapa de vista o caché offline). */
+function pandiResolverNombreTipoOpCola(tipoOperacionId) {
+  const id = tipoOperacionId != null ? String(tipoOperacionId) : '';
+  if (id && ordenesVistaTiposOpMap[id]) {
+    const t = ordenesVistaTiposOpMap[id];
+    return String(t.nombre || t.codigo || 'Tipo').trim() || 'Tipo';
+  }
+  const cache = pandiOfflineCatalogosRead();
+  const row = (cache && Array.isArray(cache.tipos_operacion) ? cache.tipos_operacion : []).find((x) => String(x.id) === id);
+  return row ? String(row.nombre || row.codigo || 'Tipo').trim() : 'Tipo';
+}
+
+/** Filas sintéticas para listar borradores de la cola en la tabla de Órdenes (mismo navegador). */
+function pandiOrdenesColaLocalComoFilasSinteticas() {
+  return pandiOfflineQueueRead().map((item) => {
+    const p = item && item.payload ? item.payload : {};
+    const localId = item && item.localId ? String(item.localId) : '';
+    return {
+      id: '__cola_local__' + (localId || pandiRandomLocalId()),
+      _pandiColaLocal: true,
+      numero: null,
+      fecha: p.fecha || '',
+      cliente_id: p.cliente_id || null,
+      intermediario_id: p.intermediario_id || null,
+      estado: 'cola_local',
+      tipo_operacion_id: p.tipo_operacion_id || null,
+      moneda_recibida: p.moneda_recibida || 'USD',
+      moneda_entregada: p.moneda_entregada || 'USD',
+      monto_recibido: p.monto_recibido,
+      monto_entregado: p.monto_entregado,
+      cotizacion: p.cotizacion,
+      observaciones: p.observaciones,
+    };
+  });
+}
+
+/** Texto del modal al recuperar conexión: breve + lista numerada (pre-line en CSS). */
+function pandiTextoConfirmImportarColaOffline() {
+  const q = pandiOfflineQueueRead();
+  if (!q.length) return '';
+  const lines = q.map((item, i) => {
+    const p = item.payload || {};
+    const tipoNom = pandiResolverNombreTipoOpCola(p.tipo_operacion_id);
+    const f = (p.fecha || '').toString().slice(0, 10) || '—';
+    return `• ${i + 1}. ${tipoNom} · ${f}`;
+  });
+  return (
+    'Volvió la conexión. ¿Importar a Supabase estas ' +
+    q.length +
+    ' orden(es) de la cola local?\n\n' +
+    lines.join('\n')
+  );
+}
+
 function pandiMaybePromptImportOfflineQueue() {
   const q = pandiOfflineQueueRead();
   if (q.length === 0 || !currentUserId) return;
   showConfirm(
-    'Hay ' + q.length + ' orden(es) en cola local (guardadas sin conexión). ¿Importarlas ahora a Supabase? Si guardaste con «Ir a instrumentación» sin red, ya incluyen la plantilla de transacciones (2 o 4 según el tipo); revisá comisiones y el resto en cada orden.',
-    'Importar ahora',
+    pandiTextoConfirmImportarColaOffline(),
+    'Importar',
     () => { pandiImportOfflineQueueSequential(); },
     () => {},
     'Más tarde',
     'Cola local'
   );
+}
+
+/** Borra orden en servidor tras fallo al importar plantilla v2 (CASCADE instrumentación/transacciones/comisiones). Requiere permiso editar_orden. */
+async function pandiRollbackOrdenImportColaFallida(ordenId) {
+  if (!ordenId) return;
+  const r = await pandiSupabaseQuerySafe(client.from('ordenes').delete().eq('id', ordenId));
+  if (r.error) {
+    showToast(
+      'Quedó un borrador en el servidor que no se pudo eliminar automáticamente. Con permiso «Editar orden», borrála manualmente para no duplicar al reintentar la cola.',
+      'error',
+    );
+  }
+}
+
+async function pandiOfflineQueueRemoveByLocalId(localId) {
+  const id = localId != null ? String(localId).trim() : '';
+  if (!id) return;
+  const q = pandiOfflineQueueRead().filter((x) => String(x && x.localId ? x.localId : '').trim() !== id);
+  await pandiOfflineQueueWrite(q);
+  pandiUpdateOfflineReducedStripText();
+  pandiUpdateOfflineToolbarButtons();
+  if (typeof loadOrdenes === 'function') loadOrdenes();
+}
+
+function pandiOrdenOfflinePintarResumenCola() {
+  const listEl = document.getElementById('orden-offline-queue-resumen');
+  if (!listEl) return;
+  const qq = pandiOfflineQueueRead();
+  listEl.innerHTML = qq.length
+    ? '<strong>En cola (' +
+      qq.length +
+      '):</strong><ul class="pandi-outbox-resumen-list">' +
+      qq
+        .map((x) => {
+          const lid = String(x.localId || '').trim();
+          const err = x.syncState === 'error' && x.lastError;
+          const pill =
+            x.syncState === 'error'
+              ? '<span class="pandi-outbox-pill pandi-outbox-pill--error">Error envío</span>'
+              : '<span class="pandi-outbox-pill pandi-outbox-pill--pending">Pendiente</span>';
+          const errHtml = err
+            ? ' <span class="pandi-outbox-err-hint" title="' +
+              escapeHtml(String(x.lastError)) +
+              '">' +
+              escapeHtml(String(x.lastError).slice(0, 48)) +
+              (String(x.lastError).length > 48 ? '…' : '') +
+              '</span>'
+            : '';
+          const tipoNom = escapeHtml(pandiResolverNombreTipoOpCola(x.payload && x.payload.tipo_operacion_id));
+          const quitarBtn = lid
+            ? '<button type="button" class="btn-secondary pandi-outbox-quitar-btn" data-local-id="' +
+              escapeHtml(lid) +
+              '" style="margin-left:auto;padding:0.25rem 0.55rem;font-size:0.82rem;min-height:2rem;" title="Quitar solo de la cola local">' +
+              '<span class="btn-icon" style="width:16px;height:16px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Quitar</button>'
+            : '';
+          return (
+            '<li class="pandi-outbox-resumen-li">' +
+            pill +
+            ' ' +
+            escapeHtml((x.createdAt || '').slice(0, 19)) +
+            ' · ' +
+            tipoNom +
+            ' · rec. ' +
+            escapeHtml((x.payload && x.payload.monto_recibido) != null ? String(x.payload.monto_recibido) : '?') +
+            errHtml +
+            quitarBtn +
+            '</li>'
+          );
+        })
+        .join('') +
+      '</ul>'
+    : '<em>Sin borradores en cola.</em>';
 }
 
 async function pandiImportOfflineQueueSequential() {
@@ -785,94 +911,119 @@ async function pandiImportOfflineQueueSequential() {
   }
   const failed = [];
   let okCount = 0;
+  const totalInicial = q.length;
   for (let i = 0; i < q.length; i++) {
     const item = q[i];
-    const base = item && item.payload ? item.payload : null;
-    if (!base) continue;
-    const payload = {
-      ...base,
-      usuario_id: currentUserId,
-      updated_at: new Date().toISOString(),
-    };
-    const ver = item.v || 1;
-    if (ver === 2 && item.transaccionesPlantilla && item.transaccionesPlantilla.length) {
-      const resOrd = await insertOrdenConProximoNumero(payload);
-      if (resOrd.error) {
-        failed.push({ ...item, syncState: 'error', lastError: resOrd.error.message || 'error', attempts: (item.attempts || 0) + 1 });
-        showToast('No se importó una orden local: ' + (resOrd.error.message || 'error'), 'error');
-        continue;
-      }
-      const ordenId = resOrd.data && resOrd.data[0] && resOrd.data[0].id;
-      if (!ordenId) {
-        failed.push({ ...item, syncState: 'error', lastError: 'sin id orden', attempts: (item.attempts || 0) + 1 });
-        continue;
-      }
-      const insInst = await pandiSupabaseQuerySafe(
-        client.from('instrumentacion').insert({ orden_id: ordenId }).select('id').single(),
-      );
-      if (insInst.error || !insInst.data || !insInst.data.id) {
-        const msg = (insInst.error && insInst.error.message) || 'instrumentación';
-        failed.push({ ...item, syncState: 'error', lastError: msg, attempts: (item.attempts || 0) + 1 });
-        showToast('Orden creada pero falló instrumentación: ' + msg + ' (revisá orden ' + ordenId + ').', 'error');
-        continue;
-      }
-      const instId = insInst.data.id;
-      const ahora = new Date().toISOString();
-      const trxIds = [];
-      let trxErr = null;
-      for (let ti = 0; ti < item.transaccionesPlantilla.length; ti++) {
-        const row = item.transaccionesPlantilla[ti];
-        const insRow = { ...row, instrumentacion_id: instId, updated_at: ahora };
-        const rTr = await pandiSupabaseQuerySafe(client.from('transacciones').insert(insRow).select('id').single());
-        if (rTr.error) {
-          trxErr = rTr.error.message || 'transacción';
-          break;
-        }
-        if (rTr.data && rTr.data.id) trxIds.push(rTr.data.id);
-      }
-      if (trxErr) {
-        failed.push({ ...item, syncState: 'error', lastError: trxErr, attempts: (item.attempts || 0) + 1 });
-        showToast('Importación parcial: orden ' + ordenId + ' — error al crear transacción: ' + trxErr, 'error');
-        continue;
-      }
-      if (item.comisionesPlantilla && item.comisionesPlantilla.length) {
-        const crows = item.comisionesPlantilla.map((r) => ({ ...r, orden_id: ordenId }));
-        const rCom = await pandiSupabaseQuerySafe(client.from('comisiones_orden').insert(crows));
-        if (rCom.error) {
-          failed.push({ ...item, syncState: 'error', lastError: rCom.error.message || 'comisiones', attempts: (item.attempts || 0) + 1 });
-          showToast('Orden e instrumentación creadas; falló comisiones: ' + (rCom.error.message || 'error'), 'error');
+    try {
+      const base = item && item.payload ? item.payload : null;
+      if (!base) continue;
+      const payload = {
+        ...base,
+        usuario_id: currentUserId,
+        updated_at: new Date().toISOString(),
+      };
+      const ver = item.v || 1;
+      if (ver === 2 && item.transaccionesPlantilla && item.transaccionesPlantilla.length) {
+        const resOrd = await insertOrdenConProximoNumero(payload);
+        if (resOrd.error) {
+          failed.push({ ...item, syncState: 'error', lastError: resOrd.error.message || 'error', attempts: (item.attempts || 0) + 1 });
+          showToast('No se importó una orden local: ' + (resOrd.error.message || 'error'), 'error');
           continue;
         }
+        const ordenId = resOrd.data && resOrd.data[0] && resOrd.data[0].id;
+        if (!ordenId) {
+          failed.push({ ...item, syncState: 'error', lastError: 'sin id orden', attempts: (item.attempts || 0) + 1 });
+          continue;
+        }
+        let importacionEstructuralOk = false;
+        try {
+          if (item.comisionesPlantilla && item.comisionesPlantilla.length) {
+            const crows = item.comisionesPlantilla.map((r) => ({ ...r, orden_id: ordenId }));
+            const rCom = await pandiSupabaseQuerySafe(client.from('comisiones_orden').insert(crows));
+            if (rCom.error) {
+              throw new Error(rCom.error.message || 'comisiones');
+            }
+          }
+          const insInst = await pandiSupabaseQuerySafe(
+            client.from('instrumentacion').insert({ orden_id: ordenId }).select('id').single(),
+          );
+          if (insInst.error || !insInst.data || !insInst.data.id) {
+            const msg = (insInst.error && insInst.error.message) || 'instrumentación';
+            throw new Error(msg);
+          }
+          const instId = insInst.data.id;
+          const ahora = new Date().toISOString();
+          const trxIds = [];
+          for (let ti = 0; ti < item.transaccionesPlantilla.length; ti++) {
+            const row = item.transaccionesPlantilla[ti];
+            const insRow = { ...row, instrumentacion_id: instId, updated_at: ahora };
+            const rTr = await pandiSupabaseQuerySafe(client.from('transacciones').insert(insRow).select('id').single());
+            if (rTr.error) {
+              throw new Error(rTr.error.message || 'transacción');
+            }
+            if (rTr.data && rTr.data.id) trxIds.push(rTr.data.id);
+          }
+          const numeroOrden = resOrd.data && resOrd.data[0] && resOrd.data[0].numero != null ? resOrd.data[0].numero : null;
+          const ordenMetaImport = { ...payload, id: ordenId, numero: numeroOrden };
+          if (item.colaV2Plantilla === 'cheque4' && trxIds.length >= 4) {
+            await insertarMovimientosCcMomentoCero(ordenId, ordenMetaImport, trxIds[0], trxIds[1]);
+            await insertarMovimientosCcMomentoCeroIntermediario(ordenId, ordenMetaImport, trxIds[0], trxIds[1]);
+            await actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, ordenMetaImport);
+          }
+          importacionEstructuralOk = true;
+        } catch (stepErr) {
+          const msg = (stepErr && stepErr.message) ? stepErr.message : String(stepErr);
+          await pandiRollbackOrdenImportColaFallida(ordenId);
+          failed.push({ ...item, syncState: 'error', lastError: msg, attempts: (item.attempts || 0) + 1 });
+          showToast('Error al importar desde cola: ' + msg, 'error');
+          continue;
+        }
+        if (importacionEstructuralOk) {
+          try {
+            await actualizarEstadoOrden(ordenId);
+          } catch (_e) {
+            showToast('Orden importada; revisá el estado en la lista si no se actualizó solo.', 'info');
+          }
+          try {
+            await sincronizarCcYCajaDesdeOrden(ordenId);
+          } catch (_e) {
+            /* sync best-effort */
+          }
+          okCount += 1;
+        }
+        continue;
       }
-      const numeroOrden = resOrd.data && resOrd.data[0] && resOrd.data[0].numero != null ? resOrd.data[0].numero : null;
-      const ordenMetaImport = { ...payload, id: ordenId, numero: numeroOrden };
-      if (item.colaV2Plantilla === 'cheque4' && trxIds.length >= 4) {
-        await insertarMovimientosCcMomentoCero(ordenId, ordenMetaImport, trxIds[0], trxIds[1]);
-        await insertarMovimientosCcMomentoCeroIntermediario(ordenId, ordenMetaImport, trxIds[0], trxIds[1]);
-        await actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, ordenMetaImport);
+      const res = await insertOrdenConProximoNumero(payload);
+      if (res.error) {
+        const copy = { ...item, syncState: 'error', lastError: res.error.message || 'error', attempts: (item.attempts || 0) + 1 };
+        failed.push(copy);
+        showToast('No se importó una orden local: ' + (res.error.message || 'error'), 'error');
+      } else {
+        okCount += 1;
       }
-      await actualizarEstadoOrden(ordenId);
-      try {
-        await sincronizarCcYCajaDesdeOrden(ordenId);
-      } catch (_e) {
-        /* sync best-effort */
-      }
-      okCount += 1;
-      continue;
-    }
-    const res = await insertOrdenConProximoNumero(payload);
-    if (res.error) {
-      const copy = { ...item, syncState: 'error', lastError: res.error.message || 'error', attempts: (item.attempts || 0) + 1 };
-      failed.push(copy);
-      showToast('No se importó una orden local: ' + (res.error.message || 'error'), 'error');
-    } else {
-      okCount += 1;
+    } catch (loopErr) {
+      const msg = (loopErr && loopErr.message) ? loopErr.message : String(loopErr);
+      failed.push({ ...item, syncState: 'error', lastError: msg, attempts: (item.attempts || 0) + 1 });
+      showToast('Error inesperado al procesar la cola: ' + msg, 'error');
     }
   }
   await pandiOfflineQueueWrite(failed);
   pandiUpdateOfflineReducedStripText();
   pandiUpdateOfflineToolbarButtons();
-  if (okCount) showToast('Se importaron ' + okCount + ' orden(es). Revisá la lista e instrumentación.', 'success');
+  const quedan = failed.length;
+  if (okCount > 0) {
+    if (okCount === totalInicial && quedan === 0) {
+      showToast('Se importaron ' + okCount + ' orden(es). Revisá la lista e instrumentación.', 'success');
+    } else {
+      showToast(
+        'Importadas ' + okCount + ' de ' + totalInicial + '. ' +
+          (quedan ? quedan + ' siguen en cola (error o pendiente). Podés quitar duplicados desde «Orden en cola local».' : ''),
+        'info',
+      );
+    }
+  } else if (quedan > 0) {
+    showToast('No se importó ninguna orden. Revisá los errores o quitá ítems desde «Orden en cola local».', 'error');
+  }
   loadOrdenes();
 }
 
@@ -973,43 +1124,7 @@ function pandiOrdenOfflineOpenModal() {
     if (el) el.value = '';
   });
   pandiOrdenOfflineSyncTipoAMonedas();
-  const listEl = document.getElementById('orden-offline-queue-resumen');
-  if (listEl) {
-    const qq = pandiOfflineQueueRead();
-    listEl.innerHTML = qq.length
-      ? '<strong>En cola (' +
-        qq.length +
-        '):</strong><ul class="pandi-outbox-resumen-list">' +
-        qq
-          .map((x) => {
-            const err = x.syncState === 'error' && x.lastError;
-            const pill =
-              x.syncState === 'error'
-                ? '<span class="pandi-outbox-pill pandi-outbox-pill--error">Error envío</span>'
-                : '<span class="pandi-outbox-pill pandi-outbox-pill--pending">Pendiente</span>';
-            const errHtml = err
-              ? ' <span class="pandi-outbox-err-hint" title="' +
-                escapeHtml(String(x.lastError)) +
-                '">' +
-                escapeHtml(String(x.lastError).slice(0, 48)) +
-                (String(x.lastError).length > 48 ? '…' : '') +
-                '</span>'
-              : '';
-            return (
-              '<li>' +
-              pill +
-              ' ' +
-              escapeHtml((x.createdAt || '').slice(0, 19)) +
-              ' · rec. ' +
-              escapeHtml((x.payload && x.payload.monto_recibido) != null ? String(x.payload.monto_recibido) : '?') +
-              errHtml +
-              '</li>'
-            );
-          })
-          .join('') +
-        '</ul>'
-      : '<em>Sin borradores en cola.</em>';
-  }
+  pandiOrdenOfflinePintarResumenCola();
   backdrop.classList.add('activo');
   backdrop.setAttribute('aria-hidden', 'false');
 }
@@ -1121,6 +1236,25 @@ function setupModalOrdenOffline() {
   const selTipo = document.getElementById('orden-offline-tipo');
   if (c) c.addEventListener('click', pandiOrdenOfflineCloseModal);
   if (x) x.addEventListener('click', pandiOrdenOfflineCloseModal);
+  backdrop.addEventListener('click', (ev) => {
+    const btn = ev.target && ev.target.closest ? ev.target.closest('.pandi-outbox-quitar-btn') : null;
+    if (!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const lid = btn.getAttribute('data-local-id');
+    if (!lid) return;
+    showConfirm(
+      '¿Quitar este ítem solo de la cola local? No cambia Supabase. Usalo si la orden ya está cargada o para evitar duplicar al reintentar.',
+      'Quitar de la cola',
+      () => {
+        void (async () => {
+          await pandiOfflineQueueRemoveByLocalId(lid);
+          showToast('Quitado de la cola local.', 'success');
+          pandiOrdenOfflinePintarResumenCola();
+        })();
+      },
+    );
+  });
   setupBackdropCloseOnlyOnRealClick(backdrop, pandiOrdenOfflineCloseModal);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); void pandiOrdenOfflineGuardarEnCola(); });
   if (selTipo) selTipo.addEventListener('change', pandiOrdenOfflineSyncTipoAMonedas);
@@ -9562,7 +9696,21 @@ let pandiOrdenesSnapshotSavedAtIso = null;
 
 /** tiposMap[id] = { codigo, nombre, icono_modo?, icono_url_publica?, usa_intermediario? } o legacy string (solo código). */
 function htmlCeldaTipoOperacionDesdeMap(tipoOpId, tiposMap) {
-  const t = tipoOpId ? tiposMap[tipoOpId] : null;
+  const idKey = tipoOpId != null ? String(tipoOpId) : '';
+  let t = idKey && tiposMap ? tiposMap[idKey] : null;
+  if (t == null && idKey) {
+    const cache = pandiOfflineCatalogosRead();
+    const row = (cache && Array.isArray(cache.tipos_operacion) ? cache.tipos_operacion : []).find((x) => String(x.id) === idKey);
+    if (row) {
+      t = {
+        codigo: row.codigo,
+        nombre: row.nombre,
+        icono_modo: row.icono_modo,
+        icono_url_publica: row.icono_url_publica,
+        usa_intermediario: row.usa_intermediario === true,
+      };
+    }
+  }
   if (t == null) return htmlTipoOperacionIconos('');
   if (typeof t === 'string') return htmlTipoOperacionIconos(t);
   return htmlTipoOperacionIconos(t.codigo || '', t.nombre || '', { iconoModo: t.icono_modo, iconoUrlPublica: t.icono_url_publica, usaIntermediario: t.usa_intermediario === true });
@@ -9789,8 +9937,22 @@ function renderOrdenesTabla(list) {
   const clientesMap = ordenesVistaClientesMap;
   const tiposOpMap = ordenesVistaTiposOpMap;
   const intermediariosMap = ordenesVistaIntermediariosMap;
-  const estadoLabel = (e) => ({ pendiente_instrumentar: 'Pendiente Instrumentar', instrumentacion_parcial: 'Instrumentación Parcial', instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución', orden_ejecutada: 'Orden Ejecutada', anulada: 'Anulada', cotizacion: 'Cotización', concertada: 'Concertada' }[e] || (e ? String(e) : '–'));
-  const estadoBadgeClass = (e) => (e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada', 'cotizacion', 'concertada'].includes(e) ? `badge badge-estado-${e.replace(/_/g, '-')}` : '');
+  const estadoLabel = (e) => ({
+    pendiente_instrumentar: 'Pendiente Instrumentar',
+    instrumentacion_parcial: 'Instrumentación Parcial',
+    instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución',
+    orden_ejecutada: 'Orden Ejecutada',
+    anulada: 'Anulada',
+    cotizacion: 'Cotización',
+    concertada: 'Concertada',
+    cola_local: 'Cola local (sin subir)',
+  }[e] || (e ? String(e) : '–'));
+  const estadoBadgeClass = (e) => {
+    if (e === 'cola_local') return 'badge badge-estado-cola-local';
+    return e && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada', 'cotizacion', 'concertada'].includes(e)
+      ? `badge badge-estado-${e.replace(/_/g, '-')}`
+      : '';
+  };
   if (list.length === 0) {
     tbody.innerHTML = '<tr><td colspan="11">No hay órdenes con los filtros aplicados.</td></tr>';
     wrapEl.style.display = 'block';
@@ -9799,6 +9961,7 @@ function renderOrdenesTabla(list) {
   tbody.innerHTML = list
     .map(
       (o) => {
+        const esColaLocal = !!o._pandiColaLocal;
         const estado = o.estado || '';
         const badgeClass = estadoBadgeClass(estado);
         const estadoHtml = badgeClass ? `<span class="${badgeClass}">${estadoLabel(estado)}</span>` : estadoLabel(estado);
@@ -9809,14 +9972,19 @@ function renderOrdenesTabla(list) {
           canAnularOrden && estado !== 'anulada'
             ? ` <button type="button" class="${clsAnularTabla} btn-icon-only" data-id="${o.id}" title="${titAnularTabla}" aria-label="${titAnularTabla}" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span></button>`
             : '';
-        const puedeEditarEstaOrden = canEditarOrden && estado !== 'anulada';
+        const puedeEditarEstaOrden = canEditarOrden && estado !== 'anulada' && !esColaLocal;
         const toolbarTransaccionesPanel =
           estado === 'anulada'
             ? '<p class="orden-detalle-transacciones-solo-info" style="margin:0 0 0.75rem;font-size:0.9rem;color:#64748b;">Transacciones solo lectura: la orden está anulada y no puede modificarse.</p>'
             : `<div class="vista-toolbar" style="margin-bottom:0.75rem;">
                   <button type="button" class="btn-nuevo btn-nueva-transaccion-panel" data-orden-id="${o.id}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nueva transacción</button>
                 </div>`;
-        return `<tr data-id="${o.id}">
+        const accionesColaLocal =
+          '<span class="orden-cola-local-acciones" title="Borrador en este navegador. Importá con «Enviar cola local» o el aviso al volver la conexión.">Solo en cola local</span>';
+        const celdaAcciones = esColaLocal
+          ? accionesColaLocal
+          : (canVerAccionesOrden ? `${puedeEditarEstaOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${btnAnularTabla}` : '');
+        return `<tr data-id="${o.id}"${esColaLocal ? ' class="tr-orden-cola-local"' : ''}>
           <td>${o.numero != null ? o.numero : '–'}</td>
           <td>${(o.fecha || '').toString().slice(0, 10)}</td>
           <td class="td-tipo-op-iconos">${o.tipo_operacion_id ? htmlCeldaTipoOperacionDesdeMap(o.tipo_operacion_id, tiposOpMap) : htmlTipoOperacionIconos('')}</td>
@@ -9827,7 +9995,7 @@ function renderOrdenesTabla(list) {
           <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(o.moneda_recibida)}</td>
           <td class="td-orden-importe">${formatMonto(o.monto_entregado)}</td>
           <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(o.moneda_entregada)}</td>
-          <td>${canVerAccionesOrden ? `${puedeEditarEstaOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar" aria-label="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${btnAnularTabla}` : ''}</td>
+          <td>${celdaAcciones}</td>
         </tr>
         <tr class="orden-detalle-tr" id="orden-detalle-${o.id}" data-orden-id="${o.id}" style="display:none;">
           <td colspan="11" class="orden-detalle-cell">
@@ -9874,16 +10042,32 @@ function aplicarFiltrosOrdenesVista() {
   const clienteId = selCliente && selCliente.value ? selCliente.value.trim() : '';
   const intermediarioId = selIntermediario && selIntermediario.value ? selIntermediario.value.trim() : '';
   const estadoRaw = selEstado && selEstado.value != null ? String(selEstado.value).trim() : '__activas__';
-  const filtered = ordenesVistaList.filter((o) => {
+  const filtroOrden = (o) => {
     if (clienteId && o.cliente_id !== clienteId) return false;
     if (intermediarioId && o.intermediario_id !== intermediarioId) return false;
+    const es = (o.estado || '').toString();
+    if (o._pandiColaLocal) {
+      if (estadoRaw === '__activas__' || estadoRaw === '') return true;
+      if (estadoRaw === 'pendiente_instrumentar') return true;
+      return false;
+    }
     if (estadoRaw === '__activas__') {
-      const es = (o.estado || '').toString();
       if (es === 'orden_ejecutada' || es === 'anulada') return false;
-    } else if (estadoRaw !== '' && (o.estado || '') !== estadoRaw) return false;
+    } else if (estadoRaw !== '' && es !== estadoRaw) return false;
     return true;
+  };
+  const colaSynth = pandiOrdenesColaLocalComoFilasSinteticas().filter(filtroOrden);
+  const filtered = ordenesVistaList.filter(filtroOrden);
+  const merged = [...colaSynth, ...filtered].sort((a, b) => {
+    const fa = (a.fecha || '').toString().slice(0, 10);
+    const fb = (b.fecha || '').toString().slice(0, 10);
+    const c = fb.localeCompare(fa);
+    if (c !== 0) return c;
+    if (a._pandiColaLocal && !b._pandiColaLocal) return -1;
+    if (!a._pandiColaLocal && b._pandiColaLocal) return 1;
+    return 0;
   });
-  renderOrdenesTabla(filtered);
+  renderOrdenesTabla(merged);
 }
 
 function pandiEsErrorRedOrdenesMessage(msgRaw) {
@@ -10395,6 +10579,12 @@ function openModalOrden(registro) {
   const btnBackDetalles = document.getElementById('orden-btn-back-detalles');
   const btnNuevaTr = document.getElementById('orden-btn-nueva-transaccion');
   if (!backdrop || !titulo || !idEl || !form) return;
+  if (typeof window !== 'undefined' && window._pandiColaV2CierreTid) {
+    try {
+      clearTimeout(window._pandiColaV2CierreTid);
+    } catch (_) { /* noop */ }
+    window._pandiColaV2CierreTid = null;
+  }
   if (registro && String(registro.estado || '') === 'anulada') {
     showToast('La orden está anulada; no se puede editar.', 'info');
     return;
@@ -10549,6 +10739,7 @@ function openModalOrden(registro) {
         } else {
           if (pctPandyEl) pctPandyEl.disabled = false;
           if (pctIntEl) pctIntEl.disabled = false;
+          wrapSplit.style.display = 'grid';
         }
       }
       syncOrdenIntPatronInstrumentacionWrap();
@@ -10739,7 +10930,9 @@ function openModalOrden(registro) {
           btnAnular.classList.add('btn-secondary');
         }
       }
-      promContinuar = client.from('comisiones_orden').select('beneficiario, monto').eq('orden_id', registroActual.id).then((rCom) => {
+      promContinuar = pandiSupabaseQuerySafe(
+        client.from('comisiones_orden').select('beneficiario, monto').eq('orden_id', registroActual.id),
+      ).then((rCom) => {
         const rows = rCom.data || [];
         let pandyMonto = 0, interMonto = 0;
         rows.forEach((row) => {
@@ -10817,7 +11010,15 @@ function openModalOrden(registro) {
       setupInputImporte(document.getElementById('orden-tasa-descuento-cliente'), 2, true);
       setupInputImporte(document.getElementById('orden-comision-pandy-pct'));
       setupInputImporte(document.getElementById('orden-comision-intermediario-pct'));
-    });
+    })
+      .catch((err) => {
+        if (modalLoadSeq !== ordenModalLoadSeq) return;
+        if (typeof console !== 'undefined' && console.error) console.error('openModalOrden (tras comisiones / UI)', err);
+        showToast(
+          'No se pudo abrir el formulario de orden. Probá de nuevo o recargá la página.',
+          'error',
+        );
+      });
   })
   .catch((err) => {
     if (modalLoadSeq !== ordenModalLoadSeq) return;
@@ -11431,17 +11632,17 @@ function insertOrdenConProximoNumero(payload) {
   });
 }
 
-/** El split USD-USD/CHEQUE usa display:flex|none; no confundir style.display === '' con visible (rompe guardar e instrumentación). */
+/**
+ * Split Pandy/Intermediario: confiar en el inline `display` que pone el wizard.
+ * `getComputedStyle` puede devolver `grid` aunque el bloque esté dentro de un paso oculto (CHEQUE-ARS),
+ * y dispara validación de «100%» o insert de comisiones con NaN.
+ */
 function ordenWrapComisionSplitEsVisible() {
   const wrapSplitEl = document.getElementById('orden-wrap-comision-split');
   if (!wrapSplitEl) return false;
-  try {
-    return typeof window !== 'undefined' && window.getComputedStyle
-      ? window.getComputedStyle(wrapSplitEl).display !== 'none'
-      : (wrapSplitEl.style.display !== 'none' && wrapSplitEl.style.display !== '');
-  } catch (_) {
-    return wrapSplitEl.style.display !== 'none' && wrapSplitEl.style.display !== '';
-  }
+  const inline = (wrapSplitEl.style.display || '').trim().toLowerCase();
+  if (inline === 'none' || inline === '') return false;
+  return true;
 }
 
 /** Filas `comisiones_orden` para outbox v2 (alineado a `guardarComision` del wizard). Sin `orden_id`. */
@@ -11455,13 +11656,18 @@ function pandiBuildComisionesOrdenOutboxRows(ctx) {
     comisionUsd,
     pctPandy,
     pctInt,
+    patronTcGuardar,
     importeChequeWizard,
     nachoComisionFija,
     nachoComisionFijaRadio,
     usdIntMostrarTasa,
     tasaIntermediarioPct,
   } = ctx;
-  if (!((tipoCodigoU === 'USD-USD' || esChequeArsOrden) && comisionUsd != null && comisionUsd > 0)) return null;
+  const persistirSpread =
+    (tipoCodigoU === 'USD-USD' || esChequeArsOrden || !!patronTcGuardar) &&
+    comisionUsd != null &&
+    comisionUsd > 0;
+  if (!persistirSpread) return null;
   const conceptoComision = String(tipoCodigo || '').trim() === 'USD-ARS' ? 'Comisión USD-ARS' : (esChequeArsOrden ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
   const comisionMoneda = esChequeArsOrden ? 'ARS' : 'USD';
   let montoPandy;
@@ -11482,8 +11688,12 @@ function pandiBuildComisionesOrdenOutboxRows(ctx) {
       montoInter = 0;
     }
   } else {
-    const a = intermediarioId ? Number(pctPandy) : 100;
-    const b = intermediarioId ? Number(pctInt) : 0;
+    let a = intermediarioId ? Number(pctPandy) : 100;
+    let b = intermediarioId ? Number(pctInt) : 0;
+    if (intermediarioId && (!Number.isFinite(a) || !Number.isFinite(b))) {
+      a = 100;
+      b = 0;
+    }
     montoPandy = comisionUsd * (a / 100);
     montoInter = comisionUsd * (b / 100);
   }
@@ -11636,6 +11846,7 @@ function pandiValidarWizardOrdenPayloadParaColaLocal(saltarConfirmComisionCero =
     comisionUsd,
     pctPandy,
     pctInt,
+    patronTcGuardar: !!patronTcGuardar,
     importeChequeWizard: parseImporteInput(document.getElementById('orden-importe-cheque')?.value),
     nachoComisionFija: !!(tipoCodigoU === 'USD-USD' && intermediarioId && ordenComisionFijaNachoUsdParaPersistir(tipoCodigo, intermediarioId)),
     nachoComisionFijaRadio: nNach ? Number(nNach.value) : null,
@@ -11741,13 +11952,16 @@ async function pandiWizardGuardarEnColaLocalConPlantillaInstrumentacion(saltarCo
     q.push(item);
     await pandiOfflineQueueWrite(q);
     showToast(
-      'Orden con instrumentación (' + plant.length + ' transacciones) guardada en cola local (' + q.length + ' en total). Enviá la cola cuando vuelva el servicio.',
+      'Guardada en cola local (' + q.length + ' en total). Aparece en la lista de Órdenes con aviso «Cola local» hasta que la importes.',
       'success',
     );
     pandiUpdateOfflineReducedStripText();
     pandiUpdateOfflineToolbarButtons();
     showOrdenWizardStep('participantes');
-    solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true });
+    const tCierre = window.setTimeout(() => {
+      solicitarCierreModalOrden({ modo: 'salir', refrescarOrdenes: true });
+    }, 650);
+    if (typeof window !== 'undefined') window._pandiColaV2CierreTid = tCierre;
   } finally {
     pandiWizardColaV2Escribiendo = false;
   }
@@ -11935,7 +12149,7 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
     function guardarComision() {
       const conceptoComision = tipoCodigo === 'USD-ARS' ? 'Comisión USD-ARS' : (esChequeArsOrden ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
       const comisionMoneda = esChequeArsOrden ? 'ARS' : 'USD';
-      if (!((tipoCodigoU === 'USD-USD' || esChequeArsOrden) && comisionUsd != null && comisionUsd > 0)) return Promise.resolve();
+      if (!((tipoCodigoU === 'USD-USD' || esChequeArsOrden || patronTcGuardar) && comisionUsd != null && comisionUsd > 0)) return Promise.resolve();
       return client.from('comisiones_orden').delete().eq('orden_id', ordenId).then(() => {
         let montoPandy;
         let montoInter;
@@ -11963,8 +12177,12 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
             montoInter = 0;
           }
         } else {
-          const a = intermediarioId ? Number(pctPandy) : 100;
-          const b = intermediarioId ? Number(pctInt) : 0;
+          let a = intermediarioId ? Number(pctPandy) : 100;
+          let b = intermediarioId ? Number(pctInt) : 0;
+          if (intermediarioId && (!Number.isFinite(a) || !Number.isFinite(b))) {
+            a = 100;
+            b = 0;
+          }
           montoPandy = comisionUsd * (a / 100);
           montoInter = comisionUsd * (b / 100);
         }
@@ -18913,9 +19131,13 @@ function startSessionTimeoutCheck() {
 }
 
 async function finalizeSessionUiSetup() {
-  await pandiOfflineQueueInit();
   if (pandiSessionUiBootstrapped) return;
   pandiSessionUiBootstrapped = true;
+  // No bloquear el registro de listeners ni showAppContent: si IndexedDB no resuelve (Safari, pestañas colgadas),
+  // antes el await impedía setupModalOrden y el botón «Nueva orden» no hacía nada.
+  void pandiOfflineQueueInit().catch((e) => {
+    if (typeof console !== 'undefined' && console.warn) console.warn('[Pandi] cola offline init:', e);
+  });
   startSessionTimeoutCheck();
   showAppContent();
   // Recalcular CC y caja desde orden + transacciones (modelo autónomo); en segundo plano para no bloquear la UI.
