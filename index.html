@@ -5,14 +5,48 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0d2137" />
   <meta name="description" content="Órdenes, cuenta corriente y caja" />
-  <link rel="apple-touch-icon" href="/assets/favicon-192x192.png" />
+  <!-- Favicon: config.js aquí en head (síncrono) y luego script que inserta link rel=icon; antes estaban links estáticos de prod y el cambio ocurría al final del body — Chrome ya había pedido 32x32 prod y cacheaba blanco en Preview. -->
+  <script src="/config.js"></script>
+  <script>
+    (function () {
+      function hrefWithV(u) {
+        return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'v=4';
+      }
+      var u = (typeof window.PANDI_ICON_192_DEFAULT === 'string' && window.PANDI_ICON_192_DEFAULT.trim())
+        ? window.PANDI_ICON_192_DEFAULT.trim()
+        : '/assets/favicon-192x192.png';
+      var u32 = (typeof window.PANDI_FAVICON_32_DEFAULT === 'string' && window.PANDI_FAVICON_32_DEFAULT.trim())
+        ? window.PANDI_FAVICON_32_DEFAULT.trim()
+        : '/assets/favicon-32x32.png';
+      var u16 = (typeof window.PANDI_FAVICON_16_DEFAULT === 'string' && window.PANDI_FAVICON_16_DEFAULT.trim())
+        ? window.PANDI_FAVICON_16_DEFAULT.trim()
+        : '/assets/favicon-16x16.png';
+      function appendIcon(rel, attrs) {
+        var l = document.createElement('link');
+        l.rel = rel;
+        l.type = 'image/png';
+        if (attrs.sizes) l.setAttribute('sizes', attrs.sizes);
+        if (attrs.id) l.id = attrs.id;
+        l.href = hrefWithV(attrs.href);
+        document.head.appendChild(l);
+      }
+      var a = document.createElement('link');
+      a.rel = 'apple-touch-icon';
+      a.href = hrefWithV(u);
+      document.head.appendChild(a);
+      appendIcon('icon', { sizes: '32x32', id: 'pandi-favicon-32', href: u32 });
+      appendIcon('icon', { sizes: '16x16', id: 'pandi-favicon-16', href: u16 });
+      var alt = document.createElement('link');
+      alt.setAttribute('rel', 'alternate icon');
+      alt.type = 'image/png';
+      alt.id = 'pandi-favicon-alt';
+      alt.href = hrefWithV(u32);
+      document.head.appendChild(alt);
+    })();
+  </script>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Pandi" />
-  <!-- Favicon: recomendación Chrome — PNG cuadrados con sizes (desde Emoji-de-WhatsApp-panda) -->
-  <link rel="icon" type="image/png" sizes="32x32" id="pandi-favicon-32" href="/assets/favicon-32x32.png?v=3" />
-  <link rel="icon" type="image/png" sizes="16x16" id="pandi-favicon-16" href="/assets/favicon-16x16.png?v=3" />
-  <link rel="alternate icon" type="image/png" id="pandi-favicon-alt" href="/assets/favicon-32x32.png?v=3" />
   <title>Pandi</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
@@ -1728,7 +1762,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.90</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.91</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -3642,28 +3676,13 @@
 
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-  <script src="/config.js"></script>
   <script>
     (function () {
       var u = (typeof window.PANDI_ICON_192_DEFAULT === 'string' && window.PANDI_ICON_192_DEFAULT.trim())
         ? window.PANDI_ICON_192_DEFAULT.trim()
         : '/assets/favicon-192x192.png';
-      var u32 = (typeof window.PANDI_FAVICON_32_DEFAULT === 'string' && window.PANDI_FAVICON_32_DEFAULT.trim())
-        ? window.PANDI_FAVICON_32_DEFAULT.trim()
-        : '/assets/favicon-32x32.png';
-      var u16 = (typeof window.PANDI_FAVICON_16_DEFAULT === 'string' && window.PANDI_FAVICON_16_DEFAULT.trim())
-        ? window.PANDI_FAVICON_16_DEFAULT.trim()
-        : '/assets/favicon-16x16.png';
-      var apple = document.querySelector('link[rel="apple-touch-icon"]');
-      if (apple) apple.setAttribute('href', u + (u.indexOf('?') >= 0 ? '&' : '?') + 'v=3');
-      var el32 = document.getElementById('pandi-favicon-32');
-      var el16 = document.getElementById('pandi-favicon-16');
-      var elAlt = document.getElementById('pandi-favicon-alt');
-      if (el32) el32.setAttribute('href', u32 + (u32.indexOf('?') >= 0 ? '&' : '?') + 'v=3');
-      if (el16) el16.setAttribute('href', u16 + (u16.indexOf('?') >= 0 ? '&' : '?') + 'v=3');
-      if (elAlt) elAlt.setAttribute('href', u32 + (u32.indexOf('?') >= 0 ? '&' : '?') + 'v=3');
       document.querySelectorAll('img[src="/assets/favicon-192x192.png"]').forEach(function (img) {
-        img.setAttribute('src', u);
+        img.setAttribute('src', u + (u.indexOf('?') >= 0 ? '&' : '?') + 'v=4');
       });
     })();
   </script>
