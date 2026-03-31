@@ -129,7 +129,13 @@ function classifySupabasePingError(error) {
   const name = String(error.name || '').toLowerCase();
   const details = String(error.details || '').toLowerCase();
   const hint = String(error.hint || '').toLowerCase();
-  const blob = `${msg} ${details} ${hint} ${name}`;
+  let jsonBlob = '';
+  try {
+    jsonBlob = JSON.stringify(error).toLowerCase();
+  } catch (e) {
+    jsonBlob = '';
+  }
+  const blob = `${msg} ${details} ${hint} ${name} ${jsonBlob}`;
   const status = error.status != null ? Number(error.status) : NaN;
   const statusCode = error.statusCode != null ? Number(error.statusCode) : NaN;
 
@@ -183,7 +189,9 @@ function classifySupabasePingError(error) {
     return 'rls';
   }
 
-  return 'config';
+  // iOS / PWA: en avión a veces navigator.onLine sigue true y PostgREST devuelve cuerpos raros.
+  // Mejor “sin servicio” que “revisá SQL”: el caso app_empresa queda cubierto por schema/rls arriba.
+  return 'unreachable';
 }
 
 /**
@@ -211,12 +219,12 @@ async function checkSupabaseConnectivity() {
 const PANDI_SUPABASE_BANNER_COPY = {
   unreachable: {
     title: 'Problemas de conectividad',
-    text: 'No pudimos conectar con el servicio. Puede ser temporal (red, tiempo de espera o mantenimiento). Probá de nuevo en unos minutos.',
+    text: 'No pudimos conectar con el servicio (sin red, modo avión o el servidor no responde). La interfaz puede venir de la caché; los datos en vivo necesitan conexión. Probá Reintentar al volver la red.',
     warn: false,
   },
   unreachableOffline: {
     title: 'Sin conexión a internet',
-    text: 'Wi‑Fi y datos están desactivados o no hay señal. La app puede mostrarse desde la caché; los datos en vivo aparecen al volver a conectar. Activá la red y tocá Reintentar.',
+    text: 'Wi‑Fi y datos están desactivados o no hay señal (o el sistema aún no lo detectó). La app puede mostrarse desde la caché; los datos en vivo aparecen al volver a conectar. Activá la red y tocá Reintentar.',
     warn: false,
   },
   schema: {
