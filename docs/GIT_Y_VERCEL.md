@@ -57,7 +57,7 @@ Así `config.js` se genera en el build (`node scripts/build-config.js`) y la app
 |------|----------------|--------|
 | **https://pandi.company** | Production | Dominio principal en producción. |
 | **https://pandy-tau.vercel.app** | Production | Dominio por defecto Vercel (sigue válido como alias). |
-| **https://preview.pandi.company** | Preview | Ligado en Vercel a la rama Git **`preview-empleado`**: muestra el último deploy Preview de esa rama. Variables Preview → Supabase **dev**. |
+| **https://preview.pandi.company** | Preview | Ligado en Vercel a la rama Git **`preview-empleado`**: muestra el último deploy Preview de esa rama. Variables Preview → Supabase **dev**. *Durante pruebas PWA se puede tener `preview-empleado` con los commits de `preview-pwa-fase1`; al terminar, volver a fusionar `main` en `preview-empleado` (§4c) para alinear con producción.* |
 
 La URL “fea” que cambia en cada `npx vercel --yes` sigue existiendo en **Deployments**; el subdominio **`preview.pandi.company`** es un nombre estable para compartir el entorno de prueba **siempre que la rama `preview-empleado` esté alineada con `main`** (ver §4c).
 

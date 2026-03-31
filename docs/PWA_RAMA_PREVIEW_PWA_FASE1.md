@@ -8,11 +8,32 @@
 
 ## Cómo probar en Vercel sin tocar producción
 
-1. Subí la rama y esperá el **deployment Preview** (URL con hash `*.vercel.app`).
-2. Abrí esa URL en Chrome o Edge → **Instalar** / **Añadir a pantalla de inicio**.
-3. **Offline:** entrá una vez con red, luego activá modo avión y recargá: debería cargarse la interfaz desde caché (los datos siguen yendo a Supabase con red).
+### URL fija `preview.pandi.company` (recomendado mientras probás PWA)
 
-**Producción (`pandi.company`)** no usa esta rama hasta que hagas **merge** a `main` y despliegues.
+Ese dominio sigue la rama Git **`preview-empleado`** (no se configura en el repo). Para **no usar la URL con hash** en cada push, se fusionó **`preview-pwa-fase1` → `preview-empleado`** y se hizo push: cada push a **`preview-pwa-fase1`** seguí haciendo merge rápido a **`preview-empleado`** (o trabajá directo en `preview-empleado` si preferís), y **preview.pandi.company** se actualizará con el último deploy de esa rama.
+
+**Cuando termines las pruebas PWA**, volvé a alinear `preview-empleado` con `main` (mismo criterio que `docs/GIT_Y_VERCEL.md` §4c), por ejemplo:
+
+```bash
+git checkout preview-empleado
+git pull origin preview-empleado
+git merge main -m "sync: preview-empleado con main (post pruebas PWA)"
+git push origin preview-empleado
+```
+
+*(Si `main` aún no tiene PWA, esto “saca” la PWA del preview estable hasta que merges a `main`.)*
+
+### URL con hash (`*.vercel.app`)
+
+Cada push a una rama genera un deployment Preview; la URL con hash sirve para comparar sin tocar `preview-empleado`.
+
+### Qué hacer en el teléfono
+
+1. Abrí **https://preview.pandi.company** (tras el deploy de Vercel, ~1–2 min).
+2. **Instalar** / **Añadir a pantalla de inicio**.
+3. **Offline:** una visita con red y luego modo avión + recargar: interfaz desde caché; datos vivos necesitan red.
+
+**Producción (`pandi.company`)** no cambia hasta **merge** a **`main`** y deploy de producción.
 
 ## Comandos locales
 
