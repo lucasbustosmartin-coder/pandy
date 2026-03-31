@@ -21,6 +21,27 @@ if (!SUPABASE_ANON_KEY || !SUPABASE_URL) {
 
 const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+/** Icono custom de tipo op (URL de otro proyecto o bucket inexistente en dev): fallback a IN→OUT automático. */
+function pandiOnTipoOpCustomImgError(img) {
+  try {
+    if (!img || img.tagName !== 'IMG') return;
+    img.onerror = null;
+    const host = img.closest('.tipo-op-iconos');
+    if (!host) return;
+    const codigo = host.getAttribute('data-pandi-tipo-codigo') || '';
+    const nombre = host.getAttribute('data-pandi-tipo-nombre') || '';
+    const usaInt = host.getAttribute('data-pandi-tipo-int') === '1';
+    host.outerHTML = htmlTipoOperacionIconos(codigo, nombre, {
+      iconoModo: 'auto',
+      iconoUrlPublica: '',
+      usaIntermediario: usaInt,
+    });
+  } catch (_) {
+    /* noop */
+  }
+}
+if (typeof window !== 'undefined') window.pandiOnTipoOpCustomImgError = pandiOnTipoOpCustomImgError;
+
 /** Código interno en BD para el operador (`pagador`/`cobrador`); no se renombra en datos. */
 const MARCA_OPERADOR_CODIGO_DB = 'pandy';
 const MARCA_OPERADOR_DEFAULT_NOMBRE_VISIBLE = 'Pandi';
@@ -43,6 +64,12 @@ function nombreMarcaSistema() {
   return s || MARCA_OPERADOR_DEFAULT_NOMBRE_VISIBLE;
 }
 
+/** Icono app 192×192: prod (cara clara) o dev/Preview (panda celeste) según `window.PANDI_ICON_192_DEFAULT` en config.js. */
+function pandiIcon192Default() {
+  const w = typeof window !== 'undefined' && window.PANDI_ICON_192_DEFAULT;
+  return typeof w === 'string' && w.trim() ? w.trim() : '/assets/favicon-192x192.png';
+}
+
 /** Etiqueta visible para pagador/cobrador en tablas y modales (valor BD `pandy` → nombre de empresa). */
 function etiquetaRolParticipanteUi(rol) {
   const r = String(rol || '').toLowerCase();
@@ -54,10 +81,10 @@ function etiquetaRolParticipanteUi(rol) {
 
 function logoUrlSeguroParaImgSrc() {
   const u = (appEmpresaState.logo_url || '').trim();
-  if (!u) return '/assets/favicon-192x192.png';
+  if (!u) return pandiIcon192Default();
   if (u.startsWith('/') && !u.startsWith('//')) return u;
   if (isHttpsUrlSegura(u)) return u;
-  return '/assets/favicon-192x192.png';
+  return pandiIcon192Default();
 }
 
 function validarLogoUrlInput(u) {
@@ -88,6 +115,21 @@ function fetchAppEmpresaIntoState() {
  */
 let pandiSupabaseConnectivityIssue = 'none';
 let pandiSupabaseHealthIntervalId = null;
+
+/** iOS a veces deja `navigator.onLine === true` en modo avión; el evento `offline` sí suele dispararse. */
+let pandiEventoOfflineActivo = typeof navigator !== 'undefined' && navigator.onLine === false;
+if (typeof window !== 'undefined') {
+  try {
+    window.addEventListener('offline', () => {
+      pandiEventoOfflineActivo = true;
+    });
+    window.addEventListener('online', () => {
+      pandiEventoOfflineActivo = false;
+    });
+  } catch (_) {
+    /* noop */
+  }
+}
 
 /** Modo reducido: tras ~10 min seguidos sin llegar a Supabase (solo `unreachable`). */
 let pandiUnreachableSinceMs = null;
@@ -148,7 +190,34 @@ function pandiSupabaseQuerySafe(promise) {
 /** Guardar orden / instrumentación en servidor: requiere red alcanzable (cola local es el alternativo). */
 function pandiOrdenWizardRequiereRedServidor() {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  if (pandiEventoOfflineActivo) return true;
   return pandiSupabaseConnectivityIssue === 'unreachable';
+}
+
+function pandiEsMensajeErrorRedSupabase(msg) {
+  const s = String(msg || '').toLowerCase();
+  if (!s) return false;
+  return (
+    s.includes('load failed') ||
+    s.includes('failed to fetch') ||
+    s.includes('network error') ||
+    s.includes('network request failed') ||
+    (s.includes('fetch') && (s.includes('fail') || s.includes('error'))) ||
+    s.includes('err_internet') ||
+    s.includes('err_network') ||
+    (s.includes('connection') && (s.includes('refused') || s.includes('reset') || s.includes('lost'))) ||
+    s.includes('timeout') ||
+    (s.includes('typeerror') && s.includes('fetch'))
+  );
+}
+
+function pandiToastSupabaseErrorAmigable(errLike, prefijo) {
+  const msg = errLike && typeof errLike === 'object' && errLike.message != null ? String(errLike.message) : String(errLike || '');
+  const red = pandiEsMensajeErrorRedSupabase(msg);
+  const texto = red
+    ? 'Sin conexión con el servidor no se puede guardar ni instrumentar en la nube. Usá «Orden en cola local» o esperá a recuperar la red.'
+    : (prefijo || 'Error') + (msg ? ': ' + msg : '.');
+  showToast(texto, red ? 'info' : 'error');
 }
 
 function pandiEsFalloConectividadBootstrap(err) {
@@ -975,8 +1044,18 @@ function aplicarMarcaEnTodaLaUI() {
     opt.textContent = nombre;
   });
   const src = logoUrlSeguroParaImgSrc();
-  document.querySelectorAll('.login-logo, #page-logo').forEach((img) => {
+  const fallbackLogo = pandiIcon192Default();
+  document.querySelectorAll('.login-logo, #page-logo, #modal-orden-marca-logo, #modal-orden-offline-marca-logo').forEach((img) => {
     if (img && img.tagName === 'IMG') {
+      img.onerror = function pandiLogoImgOnError() {
+        this.onerror = null;
+        try {
+          const cur = String(this.src || '');
+          if (!/favicon-192x192/i.test(cur)) this.src = fallbackLogo;
+        } catch (_) {
+          this.src = fallbackLogo;
+        }
+      };
       img.src = src;
       img.alt = nombre;
     }
@@ -10423,7 +10502,13 @@ function openModalOrden(registro) {
         }
         if (wrapInstEl) wrapInstEl.style.display = 'none';
         ensureInstrumentacionForOrden(ordenId).then((instId) => {
-          if (!instId) return;
+          if (!instId) {
+            showToast(
+              'No se pudo abrir la instrumentación (sin conexión o error del servidor). Si estás offline, usá «Orden en cola local».',
+              'info',
+            );
+            return;
+          }
           ordenWizardInstrumentacionIdActual = instId;
           renderOrdenWizardInstrumentacion(instId);
           if (btnNuevaTr) {
@@ -11359,9 +11444,10 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
       })
     : insertOrdenConProximoNumero(payload);
 
-  return prom.then((res) => {
+  return pandiSupabaseQuerySafe(prom)
+    .then((res) => {
     if (res.error) {
-      showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+      pandiToastSupabaseErrorAmigable(res.error, 'Error');
       return null;
     }
     const ordenId = id || (res.data && res.data[0] && res.data[0].id);
@@ -11426,15 +11512,27 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
       ).then(() => ordenId).catch(() => null);
     }
     return guardarComision().then(() => ordenId).catch(() => null);
-  });
+  })
+    .catch((err) => {
+      pandiToastSupabaseErrorAmigable(err, 'Error');
+      return null;
+    });
 }
 
 function ensureInstrumentacionForOrden(ordenId) {
   if (!ordenId) return Promise.resolve(null);
-  return client.from('instrumentacion').select('id').eq('orden_id', ordenId).maybeSingle().then((r) => {
+  return pandiSupabaseQuerySafe(
+    client.from('instrumentacion').select('id').eq('orden_id', ordenId).maybeSingle(),
+  ).then((r) => {
+    if (r.error) return null;
     const instId = r.data && r.data.id;
     if (instId) return instId;
-    return client.from('instrumentacion').insert({ orden_id: ordenId }).select('id').single().then((ins) => (ins.data ? ins.data.id : null));
+    return pandiSupabaseQuerySafe(
+      client.from('instrumentacion').insert({ orden_id: ordenId }).select('id').single(),
+    ).then((ins) => {
+      if (ins.error) return null;
+      return ins.data ? ins.data.id : null;
+    });
   });
 }
 
@@ -17074,7 +17172,7 @@ function syncConfigEmpresaLogoPreview() {
   const prev = document.getElementById('config-empresa-logo-preview');
   if (!prev) return;
   const raw = (inp && inp.value || '').trim();
-  let src = '/assets/favicon-192x192.png';
+  let src = pandiIcon192Default();
   if (raw) {
     if (raw.startsWith('/') && !raw.startsWith('//')) src = raw;
     else if (isHttpsUrlSegura(raw)) src = raw;

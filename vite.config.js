@@ -6,6 +6,10 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const isDevIconPwa =
+  process.env.VERCEL_ENV === 'preview' || String(process.env.PANDI_DEV_ICON || '').trim() === '1';
+const pwaIcon192Src = isDevIconPwa ? '/assets/favicon-192x192-dev.png' : '/assets/favicon-192x192.png';
+
 function copyDirSync(src, dest) {
   if (!fs.existsSync(src)) return;
   fs.mkdirSync(dest, { recursive: true });
@@ -44,6 +48,7 @@ export default defineConfig({
         'assets/favicon-16x16.png',
         'assets/favicon-32x32.png',
         'assets/favicon-192x192.png',
+        'assets/favicon-192x192-dev.png',
         'assets/pwa-icon-512.png',
       ],
       manifest: {
@@ -58,7 +63,7 @@ export default defineConfig({
         lang: 'es',
         icons: [
           {
-            src: '/assets/favicon-192x192.png',
+            src: pwaIcon192Src,
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',

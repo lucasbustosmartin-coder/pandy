@@ -137,16 +137,20 @@ function htmlBadgeIntermediarioTipoOp() {
   return `<span class="tipo-op-icono-int" title="${t}" role="img" aria-label="Con intermediario"><svg class="tipo-op-icono-int-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>`;
 }
 
-function wrapTipoOperacionIconosHtml(innerHtml, titleBase, usaIntermediario, extraClass) {
+function wrapTipoOperacionIconosHtml(innerHtml, titleBase, usaIntermediario, extraClass, metaCodigoNombre) {
   const usaInt = usaIntermediario === true;
   let titleFull = titleBase || '';
   if (usaInt) titleFull = titleFull ? `${titleFull} · Con intermediario` : 'Con intermediario';
   const title = escapeAttrTipoOp(titleFull);
   const classes = ['tipo-op-iconos', extraClass || '', usaInt ? 'tipo-op-iconos--con-intermediario' : ''].filter(Boolean).join(' ');
+  const m = metaCodigoNombre || {};
+  const codMeta = (m.codigo != null ? String(m.codigo) : '').trim();
+  const nomMeta = (m.nombre != null ? String(m.nombre) : '').trim();
+  const dataAttrs = ` data-pandi-tipo-codigo="${escapeAttrTipoOp(codMeta)}" data-pandi-tipo-nombre="${escapeAttrTipoOp(nomMeta)}" data-pandi-tipo-int="${usaInt ? '1' : '0'}"`;
   if (!usaInt) {
-    return `<span class="${classes}" title="${title}">${innerHtml}</span>`;
+    return `<span class="${classes}" title="${title}"${dataAttrs}>${innerHtml}</span>`;
   }
-  return `<span class="${classes}" title="${title}"><span class="tipo-op-iconos-cuerpo" aria-hidden="true">${innerHtml}</span>${htmlBadgeIntermediarioTipoOp()}</span>`;
+  return `<span class="${classes}" title="${title}"${dataAttrs}><span class="tipo-op-iconos-cuerpo" aria-hidden="true">${innerHtml}</span>${htmlBadgeIntermediarioTipoOp()}</span>`;
 }
 
 /**
@@ -166,12 +170,15 @@ export function htmlTipoOperacionIconos(codigo, nombreExtra, opts) {
   const nombre = (nombreExtra || '').toString().trim();
   const titleText = raw && nombre ? `${raw} — ${nombre}` : (raw || nombre);
 
+  const metaCn = { codigo: raw, nombre };
+
   if (modo === 'custom' && isHttpsUrlSegura(urlCustom)) {
     return wrapTipoOperacionIconosHtml(
-      `<img src="${escapeAttrTipoOp(urlCustom)}" alt="" width="24" height="24" class="tipo-op-icono-custom" role="presentation"/>`,
+      `<img src="${escapeAttrTipoOp(urlCustom)}" alt="" width="24" height="24" class="tipo-op-icono-custom" role="presentation" onerror="typeof window!=='undefined'&&window.pandiOnTipoOpCustomImgError&&window.pandiOnTipoOpCustomImgError(this)"/>`,
       titleText,
       usaInt,
-      'tipo-op-iconos--custom'
+      'tipo-op-iconos--custom',
+      metaCn,
     );
   }
   if (modo === 'cheque') {
@@ -179,13 +186,14 @@ export function htmlTipoOperacionIconos(codigo, nombreExtra, opts) {
       `<img src="${TIPO_OP_ICONO_CHEQUE}" alt="" width="24" height="24" class="tipo-op-icono-cheque" role="presentation"/>`,
       titleText,
       usaInt,
-      ''
+      '',
+      metaCn,
     );
   }
 
   if (!c || c === '–') {
-    if (nombre) return wrapTipoOperacionIconosHtml(escapeHtmlTipoOp(nombre), nombre, usaInt, '');
-    return wrapTipoOperacionIconosHtml('–', '', false, '');
+    if (nombre) return wrapTipoOperacionIconosHtml(escapeHtmlTipoOp(nombre), nombre, usaInt, '', metaCn);
+    return wrapTipoOperacionIconosHtml('–', '', false, '', metaCn);
   }
 
   const partes = c.split('-').filter(Boolean);
@@ -201,7 +209,8 @@ export function htmlTipoOperacionIconos(codigo, nombreExtra, opts) {
         `<span class="tipo-op-iconos-par" aria-hidden="true">${ia}<span class="tipo-op-iconos-sep">→</span>${ib}</span>`,
         titleText,
         usaInt,
-        ''
+        '',
+        metaCn,
       );
     }
   }
@@ -211,13 +220,14 @@ export function htmlTipoOperacionIconos(codigo, nombreExtra, opts) {
       `<img src="${TIPO_OP_ICONO_CHEQUE}" alt="" width="24" height="24" class="tipo-op-icono-cheque" role="presentation"/>`,
       titleText,
       usaInt,
-      ''
+      '',
+      metaCn,
     );
   }
 
   const parts = c.split('-');
   if (parts.length < 2) {
-    return wrapTipoOperacionIconosHtml(escapeHtmlTipoOp(raw), titleText, usaInt, '');
+    return wrapTipoOperacionIconosHtml(escapeHtmlTipoOp(raw), titleText, usaInt, '', metaCn);
   }
 
   const a = parts[0];
@@ -225,13 +235,14 @@ export function htmlTipoOperacionIconos(codigo, nombreExtra, opts) {
   const ia = htmlSegmentoTipoOpLeg(a, 22);
   const ib = htmlSegmentoTipoOpLeg(b, 22);
   if (!ia || !ib) {
-    return wrapTipoOperacionIconosHtml(escapeHtmlTipoOp(raw), titleText, usaInt, '');
+    return wrapTipoOperacionIconosHtml(escapeHtmlTipoOp(raw), titleText, usaInt, '', metaCn);
   }
 
   return wrapTipoOperacionIconosHtml(
     `<span class="tipo-op-iconos-par" aria-hidden="true">${ia}<span class="tipo-op-iconos-sep">→</span>${ib}</span>`,
     titleText,
     usaInt,
-    ''
+    '',
+    metaCn,
   );
 }

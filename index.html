@@ -471,6 +471,8 @@
     .modal-header-titulo-wrap { display: flex; align-items: center; gap: 0.5rem; }
     .modal-header-icono { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; color: #555; flex-shrink: 0; }
     .modal-header-icono svg { width: 100%; height: 100%; }
+    .modal-header-marca-logo-wrap { width: 32px; height: 32px; border-radius: 50%; overflow: hidden; border: 1px solid rgba(0,0,0,0.08); box-sizing: border-box; background: #fff; }
+    .modal-orden-marca-logo { width: 100%; height: 100%; object-fit: contain; object-position: center; display: block; }
     .modal-header h2 { margin: 0; font-size: 1.25rem; }
     .modal-close { background: none; border: none; padding: 0.35rem; cursor: pointer; color: #666; line-height: 1; border-radius: 4px; }
     .modal-header .modal-close { cursor: pointer; }
@@ -1723,7 +1725,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.88</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.89</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2873,7 +2875,7 @@
     <div class="modal modal-ancho modal-orden">
       <div class="modal-header">
         <div class="modal-header-titulo-wrap">
-          <span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
+          <span class="modal-header-icono modal-header-marca-logo-wrap" aria-hidden="true"><img id="modal-orden-marca-logo" src="/assets/favicon-192x192.png" alt="" width="28" height="28" class="modal-orden-marca-logo" decoding="async" /></span>
           <h2 id="modal-orden-titulo">Nueva orden</h2>
         </div>
         <button type="button" class="modal-close" id="modal-orden-close" aria-label="Cerrar">×</button>
@@ -3097,7 +3099,7 @@
     <div class="modal modal-ancho">
       <div class="modal-header">
         <div class="modal-header-titulo-wrap">
-          <span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg></span>
+          <span class="modal-header-icono modal-header-marca-logo-wrap" aria-hidden="true"><img id="modal-orden-offline-marca-logo" src="/assets/favicon-192x192.png" alt="" width="28" height="28" class="modal-orden-marca-logo" decoding="async" /></span>
           <h2>Orden en cola local</h2>
         </div>
         <button type="button" class="modal-close" id="modal-orden-offline-close" aria-label="Cerrar">×</button>
@@ -3638,6 +3640,18 @@
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
   <script src="/config.js"></script>
+  <script>
+    (function () {
+      var u = (typeof window.PANDI_ICON_192_DEFAULT === 'string' && window.PANDI_ICON_192_DEFAULT.trim())
+        ? window.PANDI_ICON_192_DEFAULT.trim()
+        : '/assets/favicon-192x192.png';
+      var apple = document.querySelector('link[rel="apple-touch-icon"]');
+      if (apple) apple.setAttribute('href', u);
+      document.querySelectorAll('img[src="/assets/favicon-192x192.png"]').forEach(function (img) {
+        img.setAttribute('src', u);
+      });
+    })();
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script type="module" src="/main.js"></script>
 </body>

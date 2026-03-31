@@ -5,6 +5,8 @@
 
 window.SUPABASE_ANON_KEY = '';
 window.SUPABASE_URL = '';
+// Opcional: panda celeste 192×192 (igual que build Preview). Quitá el comentario para confundir menos con prod en local.
+// window.PANDI_ICON_192_DEFAULT = '/assets/favicon-192x192-dev.png';
 
 // Opcional: scripts locales. No exponer en el navegador.
 // window.SUPABASE_SERVICE_ROLE_KEY = '';

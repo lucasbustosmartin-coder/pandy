@@ -57,7 +57,8 @@ Si ya tenías la base creada **antes** de que `migracion_permisos_ordenes_transa
 
 - `sql/supabase_admin_inicial.sql` — depende del email del usuario en Auth.
 - `sql/migracion_tipos_operacion_unique_codigo_usa_intermediario.sql` — toca `cc_modelo_reglas` (legacy); en bases sin esa tabla falla.
-- Bucket de iconos de tipos de operación, y migraciones puntuales de bases ya desplegadas — ver `docs/SUPABASE_REQUISITOS.md`.
+- **Bucket de iconos** (`tipo-operacion-iconos`): ejecutá en el SQL Editor `sql/storage_bucket_tipo_operacion_iconos.sql` en el proyecto **dev** si querés subir iconos custom desde la app (misma política que producción). Si `tipos_operacion.icono_url_publica` o `app_empresa.logo_url` apuntan a la URL de **otro** proyecto Supabase o a un objeto que no existe en dev, el navegador no cargará la imagen: la app hace **fallback** (icono IN→OUT según código y favicon local para el logo de cabecera/modal), pero conviene dejar la URL vacía, usar `/assets/…` o resubir al bucket del proyecto dev.
+- Otras migraciones puntuales de bases ya desplegadas — ver `docs/SUPABASE_REQUISITOS.md`.
 
 El orden de los fragmentos lo mantiene **`scripts/concat-bootstrap-dev-sql.js`** (lista explícita); si agregás migraciones nuevas al bootstrap, editá ese script y volvé a generar.
 

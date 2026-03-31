@@ -24,6 +24,8 @@ En la vista **Empresa / marca**, el botón **Subir imagen** usa el mismo bucket 
 
 El logo por defecto de la app es **`/assets/favicon-192x192.png`**: imagen **cuadrada** (192×192 px), **PNG**, con el dibujo del panda; en cabecera y login se muestra dentro de un **círculo** con `object-fit: contain` (igual que el favicon).
 
+En **Preview de Vercel** (`VERCEL_ENV=preview`) el build usa **`/assets/favicon-192x192-dev.png`**: mismo estilo con la **cara del panda en celeste**, para distinguir rápido de producción. En local podés forzar lo mismo con `PANDI_DEV_ICON=1` al correr `npm run build` (junto con `build-config.js`) o definiendo `window.PANDI_ICON_192_DEFAULT` en `config.js` (ver `config.example.js`).
+
 Para un resultado similar al “hardcode” actual:
 
 - **Formato:** **PNG** (también permitidos: JPEG, WebP, AVIF, GIF, SVG — mismos MIME que el bucket).

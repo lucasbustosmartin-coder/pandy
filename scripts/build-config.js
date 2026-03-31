@@ -11,12 +11,18 @@ const root = path.join(__dirname, '..');
 const url = process.env.SUPABASE_URL || '';
 const anonKey = process.env.SUPABASE_ANON_KEY || '';
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+/** Preview Vercel o build local con PANDI_DEV_ICON=1 → icono 192 panda celeste (diferenciar de prod). */
+const vercelEnv = process.env.VERCEL_ENV || '';
+const useDevIcon =
+  vercelEnv === 'preview' || String(process.env.PANDI_DEV_ICON || '').trim() === '1';
+const icon192Default = useDevIcon ? '/assets/favicon-192x192-dev.png' : '/assets/favicon-192x192.png';
 
 const content = `// Generado en build desde variables de entorno. No editar a mano en producción.
 window.SUPABASE_ANON_KEY = ${JSON.stringify(anonKey)};
 window.SUPABASE_URL = ${JSON.stringify(url)};
+window.PANDI_ICON_192_DEFAULT = ${JSON.stringify(icon192Default)};
 ${serviceKey ? 'window.SUPABASE_SERVICE_ROLE_KEY = ' + JSON.stringify(serviceKey) + ';' : '// window.SUPABASE_SERVICE_ROLE_KEY no definida.'}
 `;
 
 fs.writeFileSync(path.join(root, 'config.js'), content, 'utf8');
-console.log('config.js generado en', path.join(root, 'config.js'));
+console.log('config.js generado en', path.join(root, 'config.js'), '| icono 192:', icon192Default);

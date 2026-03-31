@@ -12,6 +12,7 @@
     "assets:iconos-transparentes": "node scripts/quitar-fondo-blanco-iconos.js",
     "plan-pwa:docx": "node scripts/crear-plan-pwa-offline-docx.js",
     "build": "node scripts/build-config.js && vite build",
+    "build:dev-icon": "PANDI_DEV_ICON=1 node scripts/build-config.js && PANDI_DEV_ICON=1 vite build",
     "dev": "vite --port 5173",
     "dev:open": "vite --open",
     "preview": "vite preview",
