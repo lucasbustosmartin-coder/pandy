@@ -10,9 +10,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Pandi" />
   <!-- Favicon: recomendación Chrome — PNG cuadrados con sizes (desde Emoji-de-WhatsApp-panda) -->
-  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png?v=2" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png?v=2" />
-  <link rel="alternate icon" type="image/png" href="/assets/favicon-32x32.png?v=2" />
+  <link rel="icon" type="image/png" sizes="32x32" id="pandi-favicon-32" href="/assets/favicon-32x32.png?v=3" />
+  <link rel="icon" type="image/png" sizes="16x16" id="pandi-favicon-16" href="/assets/favicon-16x16.png?v=3" />
+  <link rel="alternate icon" type="image/png" id="pandi-favicon-alt" href="/assets/favicon-32x32.png?v=3" />
   <title>Pandi</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
@@ -254,8 +254,11 @@
     .panel-config-empresa .config-empresa-logo-preview-ring img {
       width: 100%;
       height: 100%;
+      max-width: 100%;
+      max-height: 100%;
       object-fit: contain;
       object-position: center;
+      flex-shrink: 0;
     }
     .panel-config-empresa .config-empresa-logo-acciones {
       flex: 1;
@@ -1725,7 +1728,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.89</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.90</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2348,7 +2351,7 @@
             <p style="margin:0 0 0.75rem 0; font-size:0.88rem; color:#4b5563; line-height:1.45;">Misma subida que en <strong>Tipos de operación</strong> → icono personalizado. Recomendado: imagen <strong>cuadrada</strong> (p. ej. <strong>192×192 px</strong>), formato <strong>PNG</strong> con transparencia, para verse como el favicon actual en el círculo.</p>
             <div class="config-empresa-logo-preview-wrap">
               <div class="config-empresa-logo-preview-ring">
-                <img id="config-empresa-logo-preview" src="/assets/favicon-192x192.png" alt="" width="80" height="80" decoding="async" />
+                <img id="config-empresa-logo-preview" src="/assets/favicon-192x192.png" alt="" decoding="async" />
               </div>
               <div class="config-empresa-logo-acciones">
                 <div class="config-empresa-logo-botones">
@@ -3645,8 +3648,20 @@
       var u = (typeof window.PANDI_ICON_192_DEFAULT === 'string' && window.PANDI_ICON_192_DEFAULT.trim())
         ? window.PANDI_ICON_192_DEFAULT.trim()
         : '/assets/favicon-192x192.png';
+      var u32 = (typeof window.PANDI_FAVICON_32_DEFAULT === 'string' && window.PANDI_FAVICON_32_DEFAULT.trim())
+        ? window.PANDI_FAVICON_32_DEFAULT.trim()
+        : '/assets/favicon-32x32.png';
+      var u16 = (typeof window.PANDI_FAVICON_16_DEFAULT === 'string' && window.PANDI_FAVICON_16_DEFAULT.trim())
+        ? window.PANDI_FAVICON_16_DEFAULT.trim()
+        : '/assets/favicon-16x16.png';
       var apple = document.querySelector('link[rel="apple-touch-icon"]');
-      if (apple) apple.setAttribute('href', u);
+      if (apple) apple.setAttribute('href', u + (u.indexOf('?') >= 0 ? '&' : '?') + 'v=3');
+      var el32 = document.getElementById('pandi-favicon-32');
+      var el16 = document.getElementById('pandi-favicon-16');
+      var elAlt = document.getElementById('pandi-favicon-alt');
+      if (el32) el32.setAttribute('href', u32 + (u32.indexOf('?') >= 0 ? '&' : '?') + 'v=3');
+      if (el16) el16.setAttribute('href', u16 + (u16.indexOf('?') >= 0 ? '&' : '?') + 'v=3');
+      if (elAlt) elAlt.setAttribute('href', u32 + (u32.indexOf('?') >= 0 ? '&' : '?') + 'v=3');
       document.querySelectorAll('img[src="/assets/favicon-192x192.png"]').forEach(function (img) {
         img.setAttribute('src', u);
       });

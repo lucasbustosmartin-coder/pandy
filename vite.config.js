@@ -46,7 +46,9 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: [
         'assets/favicon-16x16.png',
+        'assets/favicon-16x16-dev.png',
         'assets/favicon-32x32.png',
+        'assets/favicon-32x32-dev.png',
         'assets/favicon-192x192.png',
         'assets/favicon-192x192-dev.png',
         'assets/pwa-icon-512.png',

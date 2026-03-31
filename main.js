@@ -194,6 +194,50 @@ function pandiOrdenWizardRequiereRedServidor() {
   return pandiSupabaseConnectivityIssue === 'unreachable';
 }
 
+/** Texto legible para toasts / heurística de red (PostgREST a veces deja `message` vacío y el detalle en `details`). */
+function pandiExtractErrorTexto(errLike) {
+  if (errLike == null) return '';
+  if (typeof errLike === 'string') return errLike;
+  if (typeof errLike === 'object') {
+    const o = errLike;
+    const bits = [
+      o.message,
+      o.details,
+      o.hint,
+      o.code,
+      o.error && o.error.message,
+      o.error && o.error.details,
+    ].filter((x) => x != null && String(x).trim() !== '');
+    if (bits.length) return bits.map(String).join(' ');
+    if (typeof o.toString === 'function') {
+      try {
+        const t = o.toString();
+        if (t && t !== '[object Object]') return t;
+      } catch (_) {
+        /* noop */
+      }
+    }
+    try {
+      return JSON.stringify(o);
+    } catch (_) {
+      return '';
+    }
+  }
+  return String(errLike);
+}
+
+function pandiMarcarOfflineSiFalloRedProbable(msg) {
+  const s = String(msg || '').toLowerCase();
+  if (
+    s.includes('load failed') ||
+    s.includes('failed to fetch') ||
+    s.includes('network error') ||
+    s.includes('network request failed')
+  ) {
+    if (typeof window !== 'undefined') pandiEventoOfflineActivo = true;
+  }
+}
+
 function pandiEsMensajeErrorRedSupabase(msg) {
   const s = String(msg || '').toLowerCase();
   if (!s) return false;
@@ -207,13 +251,15 @@ function pandiEsMensajeErrorRedSupabase(msg) {
     s.includes('err_network') ||
     (s.includes('connection') && (s.includes('refused') || s.includes('reset') || s.includes('lost'))) ||
     s.includes('timeout') ||
-    (s.includes('typeerror') && s.includes('fetch'))
+    (s.includes('typeerror') && (s.includes('fetch') || s.includes('load'))) ||
+    s.includes('authretryablefetcherror')
   );
 }
 
 function pandiToastSupabaseErrorAmigable(errLike, prefijo) {
-  const msg = errLike && typeof errLike === 'object' && errLike.message != null ? String(errLike.message) : String(errLike || '');
+  const msg = pandiExtractErrorTexto(errLike);
   const red = pandiEsMensajeErrorRedSupabase(msg);
+  if (red) pandiMarcarOfflineSiFalloRedProbable(msg);
   const texto = red
     ? 'Sin conexión con el servidor no se puede guardar ni instrumentar en la nube. Usá «Orden en cola local» o esperá a recuperar la red.'
     : (prefijo || 'Error') + (msg ? ': ' + msg : '.');
