@@ -1,4 +1,13 @@
 import { formatMonto, formatImporteDisplay, formatImporteParaInput, formatearCeldaMoneda, formatearCeldaMonedaConSigno, htmlTipoOperacionIconos, htmlIconoMonedaTipoOp, isHttpsUrlSegura } from './utils.js';
+import {
+  openPandiOfflineDb,
+  idbOrdenesQueueGetAll,
+  idbOrdenesQueueReplaceAll,
+  readLegacyOrdenesQueueFromLocalStorage,
+  normalizeQueueItemForIdb,
+  idbReadSnapshotGet,
+  idbReadSnapshotPut,
+} from './pandi-offline-idb.js';
 // XLSX se carga por script en index.html (CDN) para que funcione en producción sin bundler
 const XLSX = window.XLSX;
 
@@ -87,6 +96,11 @@ const PANDI_OFFLINE_QUEUE_KEY = 'pandi_offline_ordenes_queue_v1';
 const PANDI_OFFLINE_CACHE_KEY = 'pandi_offline_catalogos_cache_v1';
 const PANDI_CACHED_PERMISSIONS_KEY = 'pandi_cached_permissions_v1';
 const PANDI_OFFLINE_MS_PARA_MODO_REDUCIDO = 10 * 60 * 500;
+
+let _pandiOfflineDb = null;
+let _pandiOfflineQueueMem = [];
+let _pandiOfflineQueueInitDone = false;
+let _pandiOfflineIdbFallbackLocalStorage = false;
 
 /** Evita registrar dos veces listeners de sesión (sidebar, modales, etc.). Se resetea en showLoginScreenDom. */
 let pandiSessionUiBootstrapped = false;
@@ -366,21 +380,70 @@ function pandiRandomLocalId() {
   return 'l' + Date.now() + '-' + Math.random().toString(36).slice(2, 11);
 }
 
-function pandiOfflineQueueRead() {
+async function pandiOfflineQueueInit() {
+  if (_pandiOfflineQueueInitDone) return;
   try {
-    const s = localStorage.getItem(PANDI_OFFLINE_QUEUE_KEY);
-    const arr = s ? JSON.parse(s) : [];
-    return Array.isArray(arr) ? arr : [];
+    const db = await openPandiOfflineDb();
+    _pandiOfflineDb = db;
+    let rows = await idbOrdenesQueueGetAll(db);
+    let finalRows = rows.map(normalizeQueueItemForIdb).filter(Boolean);
+    if (!finalRows.length) {
+      const legacy = readLegacyOrdenesQueueFromLocalStorage(PANDI_OFFLINE_QUEUE_KEY)
+        .map(normalizeQueueItemForIdb)
+        .filter(Boolean);
+      if (legacy.length) {
+        finalRows = legacy.slice().sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+        await idbOrdenesQueueReplaceAll(db, finalRows);
+        try {
+          localStorage.removeItem(PANDI_OFFLINE_QUEUE_KEY);
+        } catch (e) {
+          /* ignore */
+        }
+      }
+    } else {
+      finalRows.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+    }
+    _pandiOfflineQueueMem = finalRows;
   } catch (e) {
-    return [];
+    console.warn('[Pandi] IndexedDB outbox no disponible; cola en localStorage.', e);
+    _pandiOfflineIdbFallbackLocalStorage = true;
+    const legacy = readLegacyOrdenesQueueFromLocalStorage(PANDI_OFFLINE_QUEUE_KEY)
+      .map(normalizeQueueItemForIdb)
+      .filter(Boolean);
+    legacy.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+    _pandiOfflineQueueMem = legacy;
   }
+  _pandiOfflineQueueInitDone = true;
 }
 
-function pandiOfflineQueueWrite(arr) {
+function pandiOfflineQueueRead() {
+  if (!_pandiOfflineQueueInitDone) {
+    return readLegacyOrdenesQueueFromLocalStorage(PANDI_OFFLINE_QUEUE_KEY)
+      .map(normalizeQueueItemForIdb)
+      .filter(Boolean);
+  }
+  return _pandiOfflineQueueMem.slice();
+}
+
+async function pandiOfflineQueueWrite(arr) {
+  const next = Array.isArray(arr) ? arr.map(normalizeQueueItemForIdb).filter(Boolean) : [];
+  next.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  if (!_pandiOfflineQueueInitDone) await pandiOfflineQueueInit();
+  _pandiOfflineQueueMem = next;
   try {
-    localStorage.setItem(PANDI_OFFLINE_QUEUE_KEY, JSON.stringify(arr || []));
+    if (_pandiOfflineIdbFallbackLocalStorage) {
+      localStorage.setItem(PANDI_OFFLINE_QUEUE_KEY, JSON.stringify(_pandiOfflineQueueMem));
+      return;
+    }
+    await idbOrdenesQueueReplaceAll(_pandiOfflineDb, _pandiOfflineQueueMem);
   } catch (e) {
-    showToast('No se pudo guardar en el navegador (espacio o permisos).', 'error');
+    console.warn('[Pandi] Fallo al persistir cola outbox:', e);
+    try {
+      localStorage.setItem(PANDI_OFFLINE_QUEUE_KEY, JSON.stringify(_pandiOfflineQueueMem));
+    } catch (e2) {
+      /* ignore */
+    }
+    showToast('No se pudo guardar la cola en IndexedDB; se usó respaldo local.', 'error');
   }
 }
 
@@ -449,11 +512,13 @@ function pandiTrySaveOfflineCatalogosCache(_clientesRows, _intRows) {
 function pandiUpdateOfflineReducedStripText() {
   const stripText = document.getElementById('pandi-offline-reduced-strip-text');
   if (!stripText) return;
-  const n = pandiOfflineQueueRead().length;
+  const q = pandiOfflineQueueRead();
+  const n = q.length;
+  const nErr = q.filter((x) => x && x.syncState === 'error').length;
   stripText.textContent =
     'Sin respuesta de Supabase hace más de 10 minutos. Solo la vista Órdenes está habilitada. ' +
     (n
-      ? `Cola local: ${n} orden(es) para enviar cuando vuelva el servicio.`
+      ? `Cola local: ${n} orden(es) para enviar cuando vuelva el servicio.${nErr ? ` ${nErr} con error al enviar (reintentá con «Enviar cola local»).` : ''}`
       : 'Usá «Orden en cola local» para registrar acuerdos en este navegador.');
 }
 
@@ -534,13 +599,14 @@ async function pandiImportOfflineQueueSequential() {
     };
     const res = await insertOrdenConProximoNumero(payload);
     if (res.error) {
-      failed.push(item);
+      const copy = { ...item, syncState: 'error', lastError: res.error.message || 'error', attempts: (item.attempts || 0) + 1 };
+      failed.push(copy);
       showToast('No se importó una orden local: ' + (res.error.message || 'error'), 'error');
     } else {
       okCount += 1;
     }
   }
-  pandiOfflineQueueWrite(failed);
+  await pandiOfflineQueueWrite(failed);
   pandiUpdateOfflineReducedStripText();
   pandiUpdateOfflineToolbarButtons();
   if (okCount) showToast('Se importaron ' + okCount + ' orden(es). Revisá la lista e instrumentación.', 'success');
@@ -648,14 +714,44 @@ function pandiOrdenOfflineOpenModal() {
   if (listEl) {
     const qq = pandiOfflineQueueRead();
     listEl.innerHTML = qq.length
-      ? '<strong>En cola (' + qq.length + '):</strong> ' + qq.map((x) => escapeHtml((x.createdAt || '').slice(0, 19)) + ' · ' + escapeHtml((x.payload && x.payload.monto_recibido) != null ? String(x.payload.monto_recibido) : '?')).join(' · ')
+      ? '<strong>En cola (' +
+        qq.length +
+        '):</strong><ul class="pandi-outbox-resumen-list">' +
+        qq
+          .map((x) => {
+            const err = x.syncState === 'error' && x.lastError;
+            const pill =
+              x.syncState === 'error'
+                ? '<span class="pandi-outbox-pill pandi-outbox-pill--error">Error envío</span>'
+                : '<span class="pandi-outbox-pill pandi-outbox-pill--pending">Pendiente</span>';
+            const errHtml = err
+              ? ' <span class="pandi-outbox-err-hint" title="' +
+                escapeHtml(String(x.lastError)) +
+                '">' +
+                escapeHtml(String(x.lastError).slice(0, 48)) +
+                (String(x.lastError).length > 48 ? '…' : '') +
+                '</span>'
+              : '';
+            return (
+              '<li>' +
+              pill +
+              ' ' +
+              escapeHtml((x.createdAt || '').slice(0, 19)) +
+              ' · rec. ' +
+              escapeHtml((x.payload && x.payload.monto_recibido) != null ? String(x.payload.monto_recibido) : '?') +
+              errHtml +
+              '</li>'
+            );
+          })
+          .join('') +
+        '</ul>'
       : '<em>Sin borradores en cola.</em>';
   }
   backdrop.classList.add('activo');
   backdrop.setAttribute('aria-hidden', 'false');
 }
 
-function pandiOrdenOfflineGuardarEnCola() {
+async function pandiOrdenOfflineGuardarEnCola() {
   const cache = pandiOfflineCatalogosRead();
   if (!cache || !(cache.tipos_operacion && cache.tipos_operacion.length)) {
     showToast('No hay catálogo en caché. Conectá la app: el respaldo local se actualiza al iniciar sesión y cuando el servicio responde.', 'error');
@@ -739,11 +835,13 @@ function pandiOrdenOfflineGuardarEnCola() {
     localId: pandiRandomLocalId(),
     createdAt: new Date().toISOString(),
     createdByUserId: currentUserId,
+    syncState: 'pending',
+    attempts: 0,
     payload,
   };
   const q = pandiOfflineQueueRead();
   q.push(item);
-  pandiOfflineQueueWrite(q);
+  await pandiOfflineQueueWrite(q);
   showToast('Orden guardada en cola local (' + q.length + ' en total).', 'success');
   pandiUpdateOfflineReducedStripText();
   pandiUpdateOfflineToolbarButtons();
@@ -761,7 +859,7 @@ function setupModalOrdenOffline() {
   if (c) c.addEventListener('click', pandiOrdenOfflineCloseModal);
   if (x) x.addEventListener('click', pandiOrdenOfflineCloseModal);
   setupBackdropCloseOnlyOnRealClick(backdrop, pandiOrdenOfflineCloseModal);
-  if (form) form.addEventListener('submit', (e) => { e.preventDefault(); pandiOrdenOfflineGuardarEnCola(); });
+  if (form) form.addEventListener('submit', (e) => { e.preventDefault(); void pandiOrdenOfflineGuardarEnCola(); });
   if (selTipo) selTipo.addEventListener('change', pandiOrdenOfflineSyncTipoAMonedas);
   const comboUi = backdrop.querySelector('.orden-tipo-operacion-combo-ui');
   const comboBtn = document.getElementById('orden-offline-tipo-combo-btn');
@@ -1236,6 +1334,7 @@ function showView(vistaId, pageTitle) {
   if (vistaId === 'vista-reglas-negocio') loadReglasNegocioVista();
   if (vistaId === 'vista-configuracion-empresa') loadConfiguracionEmpresa();
   pandiCollapseMobileSidebarAfterNav();
+  updatePandiDatosNoVivosStrip();
 }
 
 /** Mensaje al desactivar un permiso (para mostrar contexto al administrador). Solo permisos con mensaje específico. */
@@ -9170,11 +9269,17 @@ function setupModalTipoMovimientoCaja() {
 }
 
 // --- Órdenes ---
+const PANDI_SNAPSHOT_KEY_ORDENES = 'read_ordenes_v1';
+const PANDI_SNAPSHOT_ORDENES_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const PANDI_SNAPSHOT_ORDENES_STALE_MS = 24 * 60 * 60 * 1000;
 let ordenesVistaList = [];
 let ordenesVistaClientesMap = {};
 let ordenesVistaTiposOpMap = {};
 let ordenesVistaIntermediariosMap = {};
 let ordenesFiltrosListenersAttached = false;
+/** True cuando la grilla de órdenes se armó desde snapshot local (sin fetch en vivo). */
+let pandiOrdenesVistaDesdeCache = false;
+let pandiOrdenesSnapshotSavedAtIso = null;
 
 /** tiposMap[id] = { codigo, nombre, icono_modo?, icono_url_publica?, usa_intermediario? } o legacy string (solo código). */
 function htmlCeldaTipoOperacionDesdeMap(tipoOpId, tiposMap) {
@@ -9502,14 +9607,116 @@ function aplicarFiltrosOrdenesVista() {
   renderOrdenesTabla(filtered);
 }
 
+function pandiEsErrorRedOrdenesMessage(msgRaw) {
+  return /failed to fetch|networkerror|fetcherror|err_network|timeout|load failed|aborted|network request failed/i.test(
+    String(msgRaw || '').toLowerCase(),
+  );
+}
+
+function updatePandiDatosNoVivosStrip() {
+  const strip = document.getElementById('pandi-datos-no-vivos-strip');
+  if (!strip) return;
+  const vistaOrdenes = document.getElementById('vista-ordenes');
+  const vistaOrdenesVisible = vistaOrdenes && vistaOrdenes.style.display === 'block';
+  if (!vistaOrdenesVisible || !pandiOrdenesVistaDesdeCache || !pandiOrdenesSnapshotSavedAtIso) {
+    strip.style.display = 'none';
+    strip.textContent = '';
+    strip.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  const d = new Date(pandiOrdenesSnapshotSavedAtIso);
+  const fechaTxt = Number.isNaN(d.getTime())
+    ? pandiOrdenesSnapshotSavedAtIso.slice(0, 16)
+    : d.toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', dateStyle: 'short', timeStyle: 'short' });
+  const age = Date.now() - d.getTime();
+  const staleNote =
+    !Number.isNaN(d.getTime()) && age > PANDI_SNAPSHOT_ORDENES_STALE_MS
+      ? ' Los datos pueden estar desactualizados (más de 24 h desde esa copia).'
+      : '';
+  strip.innerHTML =
+    '<span class="pandi-datos-no-vivos-strip-inner"><strong>Órdenes en caché</strong> · Copia guardada el ' +
+    escapeHtml(fechaTxt) +
+    ' (sin datos en vivo).' +
+    escapeHtml(staleNote) +
+    '</span>';
+  strip.style.display = 'block';
+  strip.setAttribute('aria-hidden', 'false');
+}
+
+function pandiPersistOrdenesReadSnapshot() {
+  const record = {
+    key: PANDI_SNAPSHOT_KEY_ORDENES,
+    savedAt: new Date().toISOString(),
+    list: ordenesVistaList,
+    clientesMap: ordenesVistaClientesMap,
+    tiposOpMap: ordenesVistaTiposOpMap,
+    intermediariosMap: ordenesVistaIntermediariosMap,
+    ordenesTieneNumeroColumn: ordenesTieneNumeroColumn,
+  };
+  openPandiOfflineDb()
+    .then((db) => idbReadSnapshotPut(db, record))
+    .catch(() => {});
+}
+
+async function pandiTryRestoreOrdenesDesdeSnapshot() {
+  try {
+    const db = await openPandiOfflineDb();
+    const rec = await idbReadSnapshotGet(db, PANDI_SNAPSHOT_KEY_ORDENES);
+    if (!rec || !rec.savedAt || !Array.isArray(rec.list)) return false;
+    const t = new Date(rec.savedAt).getTime();
+    if (Number.isNaN(t)) return false;
+    const age = Date.now() - t;
+    if (age > PANDI_SNAPSHOT_ORDENES_MAX_AGE_MS || age < 0) return false;
+    ordenesVistaList = rec.list;
+    ordenesVistaClientesMap = rec.clientesMap && typeof rec.clientesMap === 'object' ? rec.clientesMap : {};
+    ordenesVistaTiposOpMap = rec.tiposOpMap && typeof rec.tiposOpMap === 'object' ? rec.tiposOpMap : {};
+    ordenesVistaIntermediariosMap =
+      rec.intermediariosMap && typeof rec.intermediariosMap === 'object' ? rec.intermediariosMap : {};
+    if (typeof rec.ordenesTieneNumeroColumn === 'boolean') ordenesTieneNumeroColumn = rec.ordenesTieneNumeroColumn;
+    pandiOrdenesSnapshotSavedAtIso = rec.savedAt;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function pandiBindOrdenesFiltrosSiFalta() {
+  if (ordenesFiltrosListenersAttached) return;
+  const selC = document.getElementById('ordenes-filtro-cliente');
+  const selI = document.getElementById('ordenes-filtro-intermediario');
+  const selE = document.getElementById('ordenes-filtro-estado');
+  if (selC) selC.addEventListener('change', aplicarFiltrosOrdenesVista);
+  if (selI) selI.addEventListener('change', aplicarFiltrosOrdenesVista);
+  if (selE) selE.addEventListener('change', aplicarFiltrosOrdenesVista);
+  ordenesFiltrosListenersAttached = true;
+}
+
+function pandiFillOrdenesFiltrosDesdeMaps() {
+  const selCliente = document.getElementById('ordenes-filtro-cliente');
+  const selIntermediario = document.getElementById('ordenes-filtro-intermediario');
+  const cEntries = Object.keys(ordenesVistaClientesMap).sort((a, b) =>
+    String(ordenesVistaClientesMap[a] || '').localeCompare(String(ordenesVistaClientesMap[b] || ''), 'es'),
+  );
+  const iEntries = Object.keys(ordenesVistaIntermediariosMap).sort((a, b) =>
+    String(ordenesVistaIntermediariosMap[a] || '').localeCompare(String(ordenesVistaIntermediariosMap[b] || ''), 'es'),
+  );
+  if (selCliente) {
+    selCliente.innerHTML =
+      '<option value="">Todos</option>' +
+      cEntries.map((id) => `<option value="${escapeHtml(String(id))}">${escapeHtml(ordenesVistaClientesMap[id] || '')}</option>`).join('');
+  }
+  if (selIntermediario) {
+    selIntermediario.innerHTML =
+      '<option value="">Todos</option>' +
+      iEntries.map((id) => `<option value="${escapeHtml(String(id))}">${escapeHtml(ordenesVistaIntermediariosMap[id] || '')}</option>`).join('');
+  }
+}
+
 /** Mensaje en la grilla cuando falla el SELECT de órdenes (sin mostrar TypeError crudo en pantalla). */
 function pandiHtmlTablaOrdenesMensajeError(msgRaw, silentOrd) {
   if (silentOrd) return '<tr><td colspan="11"></td></tr>';
   const msg = String(msgRaw || '');
-  const esRed =
-    /failed to fetch|networkerror|fetcherror|err_network|timeout|load failed|aborted|network request failed/i.test(
-      msg.toLowerCase(),
-    );
+  const esRed = pandiEsErrorRedOrdenesMessage(msg);
   const nCola = pandiOfflineQueueRead().length;
   if (esRed) {
     let linea =
@@ -9565,22 +9772,36 @@ function loadOrdenes() {
             ordenesTieneNumeroColumn = false;
             return runLoadOrdenes(selectBase);
           }
-          return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(() => {
+          return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(async () => {
             loadingEl.style.display = 'none';
             if (silentOrd) {
               showToast('Error al actualizar órdenes: ' + (msg || ''), 'error');
               return;
             }
-            const esRed =
-              /failed to fetch|networkerror|fetcherror|err_network|timeout|load failed|aborted|network request failed/i.test(
-                String(msg || '').toLowerCase(),
-              );
-            if (esRed) {
+            const esRed = pandiEsErrorRedOrdenesMessage(msg);
+            const intentarCacheOrdenes =
+              esRed || (typeof navigator !== 'undefined' && navigator.onLine === false);
+            if (intentarCacheOrdenes) {
+              const restored = await pandiTryRestoreOrdenesDesdeSnapshot();
+              if (restored) {
+                pandiOrdenesVistaDesdeCache = true;
+                pandiFillOrdenesFiltrosDesdeMaps();
+                if (filtrosWrap) filtrosWrap.style.display = 'flex';
+                pandiBindOrdenesFiltrosSiFalta();
+                aplicarFiltrosOrdenesVista();
+                wrapEl.style.display = 'block';
+                updatePandiDatosNoVivosStrip();
+                pandiUpdateOfflineToolbarButtons();
+                return;
+              }
               ordenesVistaList = [];
               ordenesVistaClientesMap = {};
               ordenesVistaTiposOpMap = {};
               ordenesVistaIntermediariosMap = {};
             }
+            pandiOrdenesVistaDesdeCache = false;
+            pandiOrdenesSnapshotSavedAtIso = null;
+            updatePandiDatosNoVivosStrip();
             tbody.innerHTML = pandiHtmlTablaOrdenesMensajeError(msg, silentOrd);
             wrapEl.style.display = 'block';
             pandiUpdateOfflineToolbarButtons();
@@ -9628,17 +9849,13 @@ function loadOrdenes() {
           if (filtrosWrap) filtrosWrap.style.display = 'flex';
           return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(() => {
             loadingEl.style.display = 'none';
-            if (!ordenesFiltrosListenersAttached) {
-              const selC = document.getElementById('ordenes-filtro-cliente');
-              const selI = document.getElementById('ordenes-filtro-intermediario');
-              const selE = document.getElementById('ordenes-filtro-estado');
-              if (selC) selC.addEventListener('change', aplicarFiltrosOrdenesVista);
-              if (selI) selI.addEventListener('change', aplicarFiltrosOrdenesVista);
-              if (selE) selE.addEventListener('change', aplicarFiltrosOrdenesVista);
-              ordenesFiltrosListenersAttached = true;
-            }
+            pandiBindOrdenesFiltrosSiFalta();
+            pandiOrdenesVistaDesdeCache = false;
+            pandiOrdenesSnapshotSavedAtIso = null;
             aplicarFiltrosOrdenesVista();
+            updatePandiDatosNoVivosStrip();
             pandiUpdateOfflineToolbarButtons();
+            void pandiPersistOrdenesReadSnapshot();
           });
         });
       });
@@ -9650,18 +9867,39 @@ function loadOrdenes() {
   sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().catch(() => {});
   return runLoadOrdenes(selectConNumero).catch((err) => {
     const msg = err && err.message != null ? String(err.message) : String(err || '');
-    ordenesVistaList = [];
-    ordenesVistaClientesMap = {};
-    ordenesVistaTiposOpMap = {};
-    ordenesVistaIntermediariosMap = {};
-    return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(() => {
+    return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(async () => {
       loadingEl.style.display = 'none';
       if (silentOrd) {
         showToast('Error al actualizar órdenes: ' + (msg || ''), 'error');
-      } else {
-        tbody.innerHTML = pandiHtmlTablaOrdenesMensajeError(msg, silentOrd);
-        wrapEl.style.display = 'block';
+        pandiUpdateOfflineToolbarButtons();
+        return;
       }
+      const esRed = pandiEsErrorRedOrdenesMessage(msg);
+      const intentarCacheOrdenes =
+        esRed || (typeof navigator !== 'undefined' && navigator.onLine === false);
+      if (intentarCacheOrdenes) {
+        const restored = await pandiTryRestoreOrdenesDesdeSnapshot();
+        if (restored) {
+          pandiOrdenesVistaDesdeCache = true;
+          pandiFillOrdenesFiltrosDesdeMaps();
+          if (filtrosWrap) filtrosWrap.style.display = 'flex';
+          pandiBindOrdenesFiltrosSiFalta();
+          aplicarFiltrosOrdenesVista();
+          wrapEl.style.display = 'block';
+          updatePandiDatosNoVivosStrip();
+          pandiUpdateOfflineToolbarButtons();
+          return;
+        }
+      }
+      ordenesVistaList = [];
+      ordenesVistaClientesMap = {};
+      ordenesVistaTiposOpMap = {};
+      ordenesVistaIntermediariosMap = {};
+      pandiOrdenesVistaDesdeCache = false;
+      pandiOrdenesSnapshotSavedAtIso = null;
+      updatePandiDatosNoVivosStrip();
+      tbody.innerHTML = pandiHtmlTablaOrdenesMensajeError(msg, silentOrd);
+      wrapEl.style.display = 'block';
       pandiUpdateOfflineToolbarButtons();
     });
   });
@@ -17957,7 +18195,8 @@ function startSessionTimeoutCheck() {
   }, 60000);
 }
 
-function finalizeSessionUiSetup() {
+async function finalizeSessionUiSetup() {
+  await pandiOfflineQueueInit();
   if (pandiSessionUiBootstrapped) return;
   pandiSessionUiBootstrapped = true;
   startSessionTimeoutCheck();
@@ -18086,7 +18325,7 @@ function onSessionReady(session) {
         client.from('app_config').select('value').eq('key', 'usd_usd_comision_fija_config').maybeSingle(),
       ]);
     })
-    .then(([configRes, cfgFijaRes]) => {
+    .then(async ([configRes, cfgFijaRes]) => {
       if (configRes && !configRes.error && configRes.data && configRes.data.value) {
         const n = parseInt(configRes.data.value, 10);
         if (n > 0 && n <= 1440) sessionTimeoutMinutes = n;
@@ -18095,14 +18334,15 @@ function onSessionReady(session) {
         usdUsdComisionFijaConfig = parseUsdUsdComisionFijaConfigJson(cfgFijaRes.data.value);
       }
       aplicarValoresRadiosComisionFijaUsdWizard();
-      finalizeSessionUiSetup();
+      await finalizeSessionUiSetup();
     })
     .catch((err) => {
       if (session && session.user && pandiEsFalloConectividadBootstrap(err)) {
         userPermissions = pandiLoadCachedPermissionsLocal();
         aplicarMarcaEnTodaLaUI();
-        finalizeSessionUiSetup();
-        pandiApplyOfflineReducedModeUi();
+        void finalizeSessionUiSetup().then(() => {
+          pandiApplyOfflineReducedModeUi();
+        });
         return;
       }
       const msg =

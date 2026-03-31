@@ -146,6 +146,18 @@
     .page-header .page-logo-wrap { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.08); }
 .page-header .page-logo-wrap .page-logo { width: 100%; height: 100%; object-fit: contain; object-position: center; }
     .page-header h1, .page-header #page-title { margin: 0; color: #1a1a1a; font-size: 1.5rem; font-weight: 700; }
+    .pandi-datos-no-vivos-strip {
+      margin: 0 0 1rem 0;
+      padding: 0.55rem 1rem;
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+      border-radius: 8px;
+      color: #92400e;
+      font-size: 0.88rem;
+      line-height: 1.45;
+      box-sizing: border-box;
+    }
+    .pandi-datos-no-vivos-strip-inner strong { font-weight: 600; color: #78350f; }
     .card { background: #fff; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
     .login-screen { max-width: 380px; margin: 2rem auto; padding: 2rem; background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
     .login-screen h2 { margin: 0 0 1.25rem 0; font-size: 1.35rem; color: #1a1a1a; }
@@ -392,6 +404,12 @@
     body.modal-orden-abierto #app-content { pointer-events: none; }
     #modal-orden-backdrop.activo { z-index: 1000; }
     #modal-orden-offline-backdrop.activo { z-index: 1005; }
+    .pandi-outbox-resumen-list { margin: 0.35rem 0 0 1rem; padding: 0; list-style: disc; }
+    .pandi-outbox-resumen-list li { margin: 0.25rem 0; }
+    .pandi-outbox-pill { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 0.12rem 0.45rem; border-radius: 6px; vertical-align: middle; }
+    .pandi-outbox-pill--pending { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+    .pandi-outbox-pill--error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .pandi-outbox-err-hint { font-size: 0.8rem; color: #64748b; word-break: break-word; }
     /* Desde el wizard de orden: Nueva transacción / listado instrumentación deben quedar por encima del modal orden */
     #modal-transaccion-backdrop.activo,
     #modal-transacciones-backdrop.activo { z-index: 1100; }
@@ -1681,7 +1699,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.85</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.86</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -1754,6 +1772,8 @@
           <button type="button" class="btn-cerrar" id="btn-cerrar-sesion"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>Cerrar sesión</button>
         </div>
       </header>
+
+      <div id="pandi-datos-no-vivos-strip" class="pandi-datos-no-vivos-strip" role="status" style="display:none;" aria-hidden="true" aria-live="polite"></div>
 
       <div id="vista-inicio" class="card">
         <div style="display:flex;align-items:center;gap:0.35rem;margin-bottom:1rem;flex-wrap:wrap;">
