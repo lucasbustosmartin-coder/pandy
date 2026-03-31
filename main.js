@@ -268,12 +268,9 @@ function updateSupabaseConnectivityBanner() {
     wrap.classList.remove('is-visible', 'pandi-connectivity-banner--warn');
     return;
   }
-  let copy = PANDI_SUPABASE_BANNER_COPY[issue] || PANDI_SUPABASE_BANNER_COPY.config;
-  if (
-    issue === 'unreachable' &&
-    typeof navigator !== 'undefined' &&
-    navigator.onLine === false
-  ) {
+  const offlineNav = typeof navigator !== 'undefined' && navigator.onLine === false;
+  let copy = PANDI_SUPABASE_BANNER_COPY[issue] || PANDI_SUPABASE_BANNER_COPY.unreachable;
+  if (offlineNav) {
     copy = PANDI_SUPABASE_BANNER_COPY.unreachableOffline;
   }
   if (titleEl) titleEl.textContent = copy.title;
@@ -10182,10 +10179,42 @@ function openModalOrden(registro) {
   Promise.all([promDatos, promRegistro])
     .then(([[rClientes, rTipos, rInt], registroActual]) => {
       if (modalLoadSeq !== ordenModalLoadSeq) return;
-      const clientes = (rClientes.data || []);
-      const tipos = ordenarTiposOperacionListaParaOrden(rTipos.data || []);
-      const intermediarios = (rInt.data || []);
-      if (rTipos.error) {
+      let clientes = rClientes.data || [];
+      let tiposRaw = rTipos.data || [];
+      let intermediarios = rInt.data || [];
+      const errC = rClientes.error;
+      const errT = rTipos.error;
+      const errI = rInt.error;
+      const netBad =
+        pandiSupabaseConnectivityIssue !== 'none' ||
+        (typeof navigator !== 'undefined' && navigator.onLine === false);
+      const convieneCache =
+        errC ||
+        errT ||
+        errI ||
+        (netBad && (clientes.length === 0 || tiposRaw.length === 0 || intermediarios.length === 0));
+      if (convieneCache) {
+        const cache = pandiOfflineCatalogosRead();
+        const tiposC = cache && Array.isArray(cache.tipos_operacion) ? cache.tipos_operacion : [];
+        if (tiposC.length > 0) {
+          if (!clientes.length && cache.clientes && cache.clientes.length) clientes = cache.clientes;
+          if (!tiposRaw.length) tiposRaw = tiposC;
+          if (!intermediarios.length && cache.intermediarios && cache.intermediarios.length) {
+            intermediarios = cache.intermediarios;
+          }
+          showToast(
+            'Sin datos en vivo: mostramos el último catálogo guardado en este navegador. Para guardar la orden en el servidor hace falta conexión; offline podés usar «Orden en cola local».',
+            'info',
+          );
+        } else if (errT || (netBad && tiposRaw.length === 0)) {
+          showToast(
+            'No se pudieron cargar los tipos de operación. Conectá la red al menos una vez para actualizar el catálogo, o usá «Orden en cola local».',
+            'error',
+          );
+        }
+      }
+      const tipos = ordenarTiposOperacionListaParaOrden(tiposRaw);
+      if (rTipos.error && tipos.length === 0) {
         showToast('Error al cargar tipos de operación: ' + (rTipos.error.message || ''), 'error');
       }
 
