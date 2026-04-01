@@ -2057,6 +2057,8 @@ function aplicarMarcaEnTodaLaUI() {
 const STORAGE_BUCKET_TIPO_OP_ICONOS = 'tipo-operacion-iconos';
 
 let userPermissions = [];
+/** Si el usuario editó a mano el código interno del modal «Nuevo perfil», no pisarlo al cambiar el nombre. */
+let seguridadNuevoRolKeyManual = false;
 let currentUserEmail = '';
 let currentUserId = null;
 
@@ -2445,7 +2447,9 @@ const MENSAJE_AL_DESACTIVAR_PERMISO = {
   ver_cajas_efectivo: 'Los usuarios no verán la tarjeta Efectivo en Panel de Control ni en Cajas. Si tienen Operar, igual podrán registrar movimientos en efectivo desde órdenes o transacciones.',
   ver_cajas_banco: 'Los usuarios no verán la tarjeta Banco en Panel de Control ni en Cajas. Si tienen Operar, igual podrán registrar movimientos en banco desde órdenes o transacciones.',
   ver_cajas_cheque: 'Los usuarios no verán la tarjeta Cheque (solo ARS) en Panel de Control ni en Cajas. Los movimientos con modo de pago cheque se imputan a Caja Cheque (no a efectivo).',
-  abm_movimientos_caja: 'Los usuarios podrán ver los saldos (según Ver Efectivo/Banco/Cheque) pero no crear ni editar movimientos en Cajas.',
+  alta_movimiento_caja: 'Los usuarios no podrán registrar movimientos nuevos de caja manuales ni insertar movimientos de caja al guardar CC manual con efectivo (sí pueden sincronizar caja por órdenes si tienen permisos de transacciones).',
+  editar_movimiento_caja: 'Los usuarios no podrán editar movimientos de caja (manuales ni los vinculados a órdenes).',
+  anular_movimiento_caja: 'Los usuarios no podrán anular desde Cajas los movimientos manuales solo caja (sin orden ni transacción).',
   abm_tipos_movimiento_caja: 'Los usuarios no podrán crear ni editar tipos de movimiento de caja.',
   abm_reglas_negocio: 'Sin este permiso no podrán abrir el menú crítico de reglas de cuenta corriente (riesgo de romper el modelo CC).',
   abm_configuracion_empresa: 'Sin este permiso no podrán abrir Empresa / marca ni editar nombre legal, nombre visible ni URL del logo.',
@@ -2478,12 +2482,23 @@ const PERMISOS_POR_MENU = [
   {
     id: 'inicio',
     titulo: 'Panel de Control',
-    ver: ['ver_inicio', 'ver_inicio_pendientes', 'ver_inicio_gp_operativo'],
-    verSubPerms: ['ver_inicio_pendientes', 'ver_inicio_gp_operativo'],
+    ver: [
+      'ver_inicio',
+      'ver_inicio_pendientes',
+      'ver_inicio_ordenes_pendientes',
+      'ver_inicio_transacciones_pendientes',
+      'ver_inicio_gp_operativo',
+    ],
+    verSubPerms: [
+      'ver_inicio_pendientes',
+      'ver_inicio_ordenes_pendientes',
+      'ver_inicio_transacciones_pendientes',
+      'ver_inicio_gp_operativo',
+    ],
     operar: [],
   },
   { id: 'ordenes', titulo: 'Órdenes', ver: ['ver_ordenes'], operar: ['ingresar_orden', 'editar_orden', 'anular_orden', 'editar_estado_orden', 'ingresar_transacciones', 'editar_transacciones', 'eliminar_transacciones'] },
-  { id: 'cajas', titulo: 'Cajas', ver: ['ver_cajas', 'ver_cajas_efectivo', 'ver_cajas_banco', 'ver_cajas_cheque'], verSubPerms: ['ver_cajas_efectivo', 'ver_cajas_banco', 'ver_cajas_cheque'], operar: ['abm_movimientos_caja', 'abm_tipos_movimiento_caja'] },
+  { id: 'cajas', titulo: 'Cajas', ver: ['ver_cajas', 'ver_cajas_efectivo', 'ver_cajas_banco', 'ver_cajas_cheque'], verSubPerms: ['ver_cajas_efectivo', 'ver_cajas_banco', 'ver_cajas_cheque'], operar: ['alta_movimiento_caja', 'editar_movimiento_caja', 'anular_movimiento_caja', 'abm_tipos_movimiento_caja'] },
   { id: 'clientes', titulo: 'Clientes', ver: ['ver_clientes'], operar: ['abm_clientes'] },
   { id: 'intermediarios', titulo: 'Intermediarios', ver: ['ver_intermediarios'], operar: ['abm_intermediarios'] },
   { id: 'tipos-operacion', titulo: 'Tipos de operación', ver: [], operar: ['abm_tipos_operacion'] },
@@ -2578,6 +2593,20 @@ function loadConfiguracionEmpresa() {
     });
 }
 
+const ROLES_PERFIL_NO_ELIMINABLES = new Set(['admin', 'encargado', 'visor']);
+
+function slugifyCodigoPerfilSeguridad(raw) {
+  let s = String(raw || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  s = s.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/_+/g, '_');
+  if (!s) return '';
+  if (!/^[a-z]/.test(s)) s = 'p_' + s.replace(/^_+/, '');
+  if (s.length > 64) s = s.slice(0, 64);
+  return s;
+}
+
 function loadSeguridad() {
   const loadingEl = document.getElementById('seguridad-loading');
   const wrapEl = document.getElementById('seguridad-tabla-wrap');
@@ -2618,7 +2647,8 @@ function loadSeguridad() {
     client.from('app_role').select('role, label').order('role'),
     client.from('app_permission').select('permission, description').order('permission'),
     client.from('app_role_permission').select('role, permission'),
-  ]).then(([rUsers, rMyRole, rRoles, rPerms, rRolePerms]) => {
+    client.from('app_user_profile').select('role'),
+  ]).then(([rUsers, rMyRole, rRoles, rPerms, rRolePerms, rUserProfiles]) => {
     loadingEl.style.display = 'none';
 
     const myRole = (rMyRole && rMyRole.data != null) ? String(rMyRole.data) : '';
@@ -2709,6 +2739,11 @@ function loadSeguridad() {
 
     const users = rUsers.data || [];
     const roles = (rRoles.data || []).slice();
+    const userCountByRole = {};
+    (rUserProfiles.data || []).forEach((row) => {
+      const rk = row && row.role;
+      if (rk) userCountByRole[rk] = (userCountByRole[rk] || 0) + 1;
+    });
 
     if (rUsers.error || users.length === 0) {
       if (rUsers.error) tbody.innerHTML = '<tr><td colspan="3">Error: ' + (rUsers.error.message || '') + '</td></tr>';
@@ -2740,6 +2775,7 @@ function loadSeguridad() {
             .rpc('set_user_role', { p_user_id: uid, p_role: newRole })
             .then((r) => {
               if (r.error) showToast('Error: ' + (r.error.message || 'No se pudo guardar.'), 'error');
+              else showToast('Perfil del usuario actualizado.', 'success');
             });
         });
       });
@@ -2799,18 +2835,30 @@ function loadSeguridad() {
       </div>`;
     };
 
+    const toolbarPermisos = document.getElementById('seguridad-permisos-toolbar');
     if (permisosGrid && roles.length > 0 && allPerms.length > 0) {
+      if (toolbarPermisos) toolbarPermisos.style.display = 'flex';
       permisosGrid.innerHTML = roles
         .map((r) => {
           const roleKey = r.role;
           const label = escapeHtml(r.label || roleKey);
+          const nUsuarios = userCountByRole[roleKey] || 0;
+          const puedeEliminar = !ROLES_PERFIL_NO_ELIMINABLES.has(roleKey) && nUsuarios === 0;
+          const btnEliminarPie = puedeEliminar
+            ? `<div class="seguridad-permisos-rol-pie" role="region" aria-label="Acciones del perfil">
+              <div class="seguridad-permisos-rol-pie-inner">
+                <span class="seguridad-permisos-rol-pie-leyenda">Solo si ningún usuario tiene este perfil asignado.</span>
+                <button type="button" class="btn-secondary btn-seguridad-eliminar-perfil" data-role="${escapeHtml(roleKey)}" title="Eliminar este perfil del sistema" aria-label="Eliminar perfil"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span>Eliminar perfil</button>
+              </div>
+            </div>`
+            : '';
           const blocksByMenu = PERMISOS_POR_MENU.map((menu) => renderMenuBlock(menu, roleKey, permMap)).filter(Boolean).join('');
-          return `<div class="seguridad-permisos-rol" data-role="${roleKey}">
-            <button type="button" class="seguridad-permisos-rol-header" aria-expanded="false" aria-controls="seguridad-rol-body-${roleKey}" id="seguridad-rol-header-${roleKey}">
-              <span>${label}</span>
+          return `<div class="seguridad-permisos-rol" data-role="${escapeHtml(roleKey)}">
+            <button type="button" class="seguridad-permisos-rol-header" aria-expanded="false" aria-controls="seguridad-rol-body-${escapeHtml(roleKey)}" id="seguridad-rol-header-${escapeHtml(roleKey)}">
+              <span class="seguridad-permisos-rol-nombre">${label}</span>
               <span class="seguridad-permisos-rol-chevron" aria-hidden="true">${iconChevron}</span>
             </button>
-            <div class="seguridad-permisos-rol-body" id="seguridad-rol-body-${roleKey}" role="region" aria-labelledby="seguridad-rol-header-${roleKey}">${blocksByMenu}</div>
+            <div class="seguridad-permisos-rol-body" id="seguridad-rol-body-${escapeHtml(roleKey)}" role="region" aria-labelledby="seguridad-rol-header-${escapeHtml(roleKey)}">${blocksByMenu}${btnEliminarPie}</div>
           </div>`;
         })
         .join('');
@@ -2835,6 +2883,38 @@ function loadSeguridad() {
           const titulo = block.querySelector('.seguridad-permisos-menu-titulo');
           const name = titulo ? titulo.textContent.trim() : 'menú';
           btn.setAttribute('aria-label', isExpanded ? `Contraer ${name}` : `Expandir ${name}`);
+        });
+      });
+
+      permisosGrid.querySelectorAll('.btn-seguridad-eliminar-perfil').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const rk = btn.getAttribute('data-role');
+          if (!rk) return;
+          showConfirm(
+            'Se eliminará el perfil y sus permisos configurados en la grilla. No debe haber usuarios con este perfil.',
+            'Eliminar',
+            () => {
+              if (pandiAvisoSiSinServidorParaEscritura('Eliminar un perfil en el servidor')) return;
+              client
+                .from('app_role')
+                .delete()
+                .eq('role', rk)
+                .select('role')
+                .then((res) => {
+                  if (res.error) {
+                    showToast('Error: ' + (res.error.message || 'No se pudo eliminar.'), 'error');
+                    return;
+                  }
+                  showToast('Perfil eliminado.', 'success');
+                  loadSeguridad();
+                });
+            },
+            null,
+            'Cancelar',
+            'Eliminar perfil',
+          );
         });
       });
 
@@ -2922,11 +3002,84 @@ function loadSeguridad() {
         });
       });
       if (permisosWrap) permisosWrap.style.display = 'block';
+    } else {
+      if (permisosGrid) permisosGrid.innerHTML = '';
+      if (toolbarPermisos) toolbarPermisos.style.display = 'none';
     }
   }).catch(() => {
     loadingEl.style.display = 'none';
     if (!silentSeg) wrapEl.style.display = 'block';
   });
+}
+
+function openModalSeguridadNuevoPerfil() {
+  seguridadNuevoRolKeyManual = false;
+  const labelEl = document.getElementById('seguridad-nuevo-rol-label');
+  const keyEl = document.getElementById('seguridad-nuevo-rol-key');
+  if (labelEl) labelEl.value = '';
+  if (keyEl) keyEl.value = '';
+  const bd = document.getElementById('modal-seguridad-nuevo-rol-backdrop');
+  if (bd) {
+    bd.classList.add('activo');
+    bd.setAttribute('aria-hidden', 'false');
+  }
+}
+
+function closeModalSeguridadNuevoPerfil() {
+  const bd = document.getElementById('modal-seguridad-nuevo-rol-backdrop');
+  if (bd) {
+    bd.classList.remove('activo');
+    bd.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function guardarNuevoPerfilSeguridad() {
+  if (pandiAvisoSiSinServidorParaEscritura('Crear un perfil en el servidor')) return;
+  const label = (document.getElementById('seguridad-nuevo-rol-label')?.value || '').trim();
+  const role = (document.getElementById('seguridad-nuevo-rol-key')?.value || '').trim().toLowerCase();
+  if (!label || label.length > 120) {
+    showToast('Completá el nombre visible (1–120 caracteres).', 'error');
+    return;
+  }
+  if (!/^[a-z][a-z0-9_]{2,63}$/.test(role)) {
+    showToast('Código interno inválido: 3–64 caracteres, minúsculas, números y guión bajo; debe empezar con letra.', 'error');
+    return;
+  }
+  client
+    .from('app_role')
+    .insert({ role, label })
+    .select('role')
+    .then((r) => {
+      if (r.error) {
+        const msg = r.error.message || 'No se pudo crear.';
+        const hint = r.error.code === '23505' || /unique|duplicate/i.test(String(msg)) ? ' ¿El código ya existe?' : '';
+        showToast('No se pudo crear el perfil: ' + msg + hint, 'error');
+        return;
+      }
+      closeModalSeguridadNuevoPerfil();
+      showToast('Perfil creado. Activá los permisos abajo y asigná usuarios si hace falta.', 'success');
+      loadSeguridad();
+    });
+}
+
+function setupModalSeguridadNuevoPerfil() {
+  const bd = document.getElementById('modal-seguridad-nuevo-rol-backdrop');
+  const labelEl = document.getElementById('seguridad-nuevo-rol-label');
+  const keyEl = document.getElementById('seguridad-nuevo-rol-key');
+  document.getElementById('modal-seguridad-nuevo-rol-close')?.addEventListener('click', closeModalSeguridadNuevoPerfil);
+  document.getElementById('seguridad-nuevo-rol-cancelar')?.addEventListener('click', closeModalSeguridadNuevoPerfil);
+  bd?.addEventListener('click', (e) => {
+    if (e.target === bd) closeModalSeguridadNuevoPerfil();
+  });
+  labelEl?.addEventListener('input', () => {
+    if (seguridadNuevoRolKeyManual || !keyEl) return;
+    keyEl.value = slugifyCodigoPerfilSeguridad(labelEl.value);
+  });
+  keyEl?.addEventListener('input', () => {
+    seguridadNuevoRolKeyManual = true;
+  });
+  document.getElementById('seguridad-nuevo-rol-guardar')?.addEventListener('click', guardarNuevoPerfilSeguridad);
+  document.getElementById('btn-seguridad-nuevo-perfil')?.addEventListener('click', () => openModalSeguridadNuevoPerfil());
 }
 
 /** Zona horaria del negocio: día contable, filtros y fechas mostradas/guardadas como calendario Argentina (no usar TZ del navegador para el día). Ver docs/FECHAS_ARGENTINA.md */
@@ -3209,6 +3362,23 @@ function puedeEditarMovimientoCcManual() {
 
 function puedeEliminarMovimientoCcManual() {
   return userPermissions.includes('eliminar_movimiento_cc_manual');
+}
+
+/** Permiso granular; si la base aún no migró abm→granular, get_my_permissions puede devolver solo abm_movimientos_caja. */
+function tienePermisoLegacyAbmMovimientosCaja() {
+  return userPermissions.includes('abm_movimientos_caja');
+}
+
+function tienePermisoAltaMovimientoCaja() {
+  return userPermissions.includes('alta_movimiento_caja') || tienePermisoLegacyAbmMovimientosCaja();
+}
+
+function tienePermisoEditarMovimientoCaja() {
+  return userPermissions.includes('editar_movimiento_caja') || tienePermisoLegacyAbmMovimientosCaja();
+}
+
+function tienePermisoAnularMovimientoCaja() {
+  return userPermissions.includes('anular_movimiento_caja') || tienePermisoLegacyAbmMovimientosCaja();
 }
 
 /** Registro de auditoría (tabla auditoria_app tras migración). Falla silenciosa si la tabla no existe aún. */
@@ -3603,6 +3773,70 @@ function confirmarYAnularCcManualDesdeFila(m) {
   }).catch((err) => {
     showToast('No se pudo cargar el movimiento: ' + (err && err.message ? err.message : 'error'), 'error');
   });
+}
+
+/** Movimiento de caja registrado solo como manual (tipo_movimiento_id, sin orden ni transacción); anulable con anular_movimiento_caja. */
+function esMovimientoCajaSoloManualAnulable(m) {
+  if (!m || m.estado === 'anulado') return false;
+  if (!m.tipo_movimiento_id) return false;
+  if (m.orden_id || m.transaccion_id) return false;
+  return true;
+}
+
+function confirmarYAnularMovimientoCajaManualDesdeTabla(m) {
+  if (!m || !esMovimientoCajaSoloManualAnulable(m)) return;
+  if (!tienePermisoAnularMovimientoCaja()) return;
+  if (pandiAvisoSiSinServidorParaEscritura('Anular este movimiento en el servidor')) return;
+  const concepto = (m.concepto || '(sin concepto)').toString().slice(0, 120);
+  const moneda = (m.moneda || '').toUpperCase();
+  const montoStr = formatMonto(m.monto, moneda || undefined);
+  const mensaje =
+    'Vas a anular este movimiento manual de caja (' +
+    moneda +
+    ' ' +
+    montoStr +
+    ' — ' +
+    concepto +
+    '). Dejará de sumar al saldo y la acción queda registrada en auditoría. No podés deshacerlo desde la app.';
+  showConfirm(mensaje, 'Anular', () => {
+    ejecutarAnularMovimientoCajaManualPorId(m.id, m);
+  }, null, 'Cancelar', 'Anular movimiento de caja');
+}
+
+function ejecutarAnularMovimientoCajaManualPorId(movId, mRef) {
+  if (pandiAvisoSiSinServidorParaEscritura('Anular este movimiento en el servidor')) return;
+  const id = movId != null ? String(movId) : '';
+  if (!id) return;
+  const ahora = new Date().toISOString();
+  client
+    .from('movimientos_caja')
+    .update({ estado: 'anulado', estado_fecha: ahora })
+    .eq('id', id)
+    .then((r) => {
+      if (r.error) {
+        showToast('No se pudo anular: ' + (r.error.message || 'revisá permisos.'), 'error');
+        return;
+      }
+      const m = mRef || {};
+      const detalle =
+        'Movimiento caja manual id=' +
+        id +
+        ', ' +
+        (m.moneda || '') +
+        ' ' +
+        (m.monto != null ? String(m.monto) : '') +
+        ', caja_tipo=' +
+        (m.caja_tipo || '') +
+        (m.concepto ? ', concepto=' + String(m.concepto).slice(0, 200) : '');
+      registrarAuditoriaApp('caja_manual', 'anular', detalle, {
+        movimiento_caja_id: id,
+        moneda: m.moneda,
+        monto: m.monto,
+        caja_tipo: m.caja_tipo,
+      });
+      showToast('Movimiento de caja anulado.', 'success');
+      loadCajas();
+    });
 }
 
 function ejecutarAnularCcManualContexto(ctx) {
@@ -4527,6 +4761,16 @@ function normalizarCajasMovCajaTipoTabSegunPermisos() {
   }
 }
 
+/** Botón «Nuevo» en toolbar Movimientos de caja (HTML parte en display:none). */
+function aplicarVisibilidadBotonNuevoMovimientoCaja() {
+  const btnNuevo = document.getElementById('btn-nuevo-movimiento-caja');
+  if (!btnNuevo) return;
+  const panelMov = document.getElementById('cajas-panel-movimientos');
+  const enSolapaMovimientos = !panelMov || panelMov.style.display !== 'none';
+  if (!enSolapaMovimientos) return;
+  btnNuevo.style.display = tienePermisoAltaMovimientoCaja() ? '' : 'none';
+}
+
 /** Muestra/oculta botones [data-caja-tab] según ver_cajas_efectivo/banco/cheque (misma lógica que las cards). */
 function aplicarVisibilidadBotonesFiltroCajaMovimientos() {
   const { verEfectivo, verBanco, verCheque, tieneAlgunoSubPerm } = getPermisosVerCajaTipoMovimientos();
@@ -4708,13 +4952,15 @@ function pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, ctx) {
       if (t === 'cheque') return 'Cheque';
       return 'Efectivo';
     };
-    const canAbmCaja = userPermissions.includes('abm_movimientos_caja');
+    const canAltaCaja = tienePermisoAltaMovimientoCaja();
+    const canEditarCaja = tienePermisoEditarMovimientoCaja();
+    const canAnularCaja = tienePermisoAnularMovimientoCaja();
     tbody.innerHTML = filtrados
       .map((m) => {
         const celdaAcciones = (() => {
           if (m.pandi_caja_offline_pending) {
             const lid = m.pandi_caja_offline_local_id != null ? String(m.pandi_caja_offline_local_id) : '';
-            if (!canAbmCaja || !lid) return '–';
+            if (!canAltaCaja || !lid) return '–';
             return (
               '<div class="caja-acciones-mov-wrap" style="display:flex;flex-wrap:wrap;gap:0.25rem;align-items:center;">' +
               '<span class="caja-pend-offline-label" title="Se enviará al reconectar">Sin sincronizar</span>' +
@@ -4724,9 +4970,19 @@ function pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, ctx) {
               '</div>'
             );
           }
-          return canAbmCaja
+          if (!canEditarCaja && !canAnularCaja) return '';
+          const btnEditar = canEditarCaja
             ? `<button type="button" class="btn-editar btn-editar-mov-caja" data-id="${escapeHtml(String(m.id))}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>`
             : '';
+          const btnAnular = canAnularCaja && esMovimientoCajaSoloManualAnulable(m)
+            ? `<button type="button" class="btn-secondary btn-anular-mov-caja-manual" data-id="${escapeHtml(String(m.id))}" title="Anular movimiento manual de caja" aria-label="Anular movimiento manual de caja"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span>Anular</button>`
+            : '';
+          return (
+            '<div class="caja-acciones-mov-wrap" style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;">' +
+            btnEditar +
+            btnAnular +
+            '</div>'
+          );
         })();
         return `<tr>
               <td class="td-caja-fecha">${(m.fecha || '').toString().slice(0, 10)}</td>
@@ -4752,10 +5008,17 @@ function pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, ctx) {
           if (mov) openModalMovimientoCaja(mov);
         });
       });
+      tbody.querySelectorAll('.btn-anular-mov-caja-manual').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const mov = list.find((x) => String(x.id) === String(id));
+          if (mov) confirmarYAnularMovimientoCajaManualDesdeTabla(mov);
+        });
+      });
       tbody.querySelectorAll('.btn-caja-mov-quitar-cola').forEach((btn) => {
         btn.addEventListener('click', () => {
           const lid = btn.getAttribute('data-caja-mov-local-id');
-          if (!lid || !userPermissions.includes('abm_movimientos_caja')) return;
+          if (!lid || !tienePermisoAltaMovimientoCaja()) return;
           showConfirm(
             '¿Quitar este movimiento de la cola local? No se enviará al servidor.',
             'Quitar',
@@ -4781,6 +5044,7 @@ function pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, ctx) {
       });
     }
     wrapEl.style.display = 'block';
+    aplicarVisibilidadBotonNuevoMovimientoCaja();
   });
 }
 
@@ -4835,8 +5099,7 @@ function loadCajas(opts) {
   const toggleMoneda = document.getElementById('cajas-toggle-moneda');
   if (!loadingEl || !wrapEl || !tbody) return Promise.resolve();
 
-  const canAbm = userPermissions.includes('abm_movimientos_caja');
-  if (btnNuevo) btnNuevo.style.display = canAbm ? '' : 'none';
+  aplicarVisibilidadBotonNuevoMovimientoCaja();
 
   const verEfectivo = userPermissions.includes('ver_cajas_efectivo');
   const verBanco = userPermissions.includes('ver_cajas_banco');
@@ -5197,6 +5460,17 @@ function pandiGpBolsasDesdeRpcPayload(raw) {
   };
 }
 
+/** Visibilidad de tarjetas de pendientes en Panel (permisos nuevos o solo ver_inicio_pendientes antes de migración). */
+function pandiInicioPendientesCardsVisibles() {
+  const hasOrd = userPermissions.includes('ver_inicio_ordenes_pendientes');
+  const hasTr = userPermissions.includes('ver_inicio_transacciones_pendientes');
+  const legacy = userPermissions.includes('ver_inicio_pendientes') && !hasOrd && !hasTr;
+  return {
+    ordenes: hasOrd || legacy,
+    transacciones: hasTr || legacy,
+  };
+}
+
 function loadInicioGpOperativo() {
   const wrap = document.getElementById('inicio-card-gp-operativo');
   if (!wrap) return;
@@ -5303,15 +5577,19 @@ function loadInicio() {
   const hasEfectivoPerm = userPermissions.includes('ver_cajas_efectivo');
   const hasBancoPerm = userPermissions.includes('ver_cajas_banco');
   const hasChequePerm = userPermissions.includes('ver_cajas_cheque');
-  const hasPendientesPerm = userPermissions.includes('ver_inicio_pendientes');
-  const verCajasMenu = userPermissions.includes('ver_cajas');
   const algunaGranularCaja = hasEfectivoPerm || hasBancoPerm || hasChequePerm;
-  const legacyTodasLasTarjetasCaja = verCajasMenu && !algunaGranularCaja;
-  if (elEfectivo) elEfectivo.style.display = hasEfectivoPerm || legacyTodasLasTarjetasCaja ? '' : 'none';
-  if (elBanco) elBanco.style.display = hasBancoPerm || legacyTodasLasTarjetasCaja ? '' : 'none';
-  if (elCheque) elCheque.style.display = hasChequePerm || legacyTodasLasTarjetasCaja ? '' : 'none';
-  if (elSaldos) elSaldos.style.display = algunaGranularCaja || legacyTodasLasTarjetasCaja ? '' : 'none';
-  if (elPendientes) elPendientes.style.display = hasPendientesPerm ? '' : 'none';
+  const tieneGpOperativo = userPermissions.includes('ver_inicio_gp_operativo');
+  if (elEfectivo) elEfectivo.style.display = hasEfectivoPerm ? '' : 'none';
+  if (elBanco) elBanco.style.display = hasBancoPerm ? '' : 'none';
+  if (elCheque) elCheque.style.display = hasChequePerm ? '' : 'none';
+  if (elSaldos) elSaldos.style.display = algunaGranularCaja || tieneGpOperativo ? '' : 'none';
+
+  const penVis = pandiInicioPendientesCardsVisibles();
+  const elCardOrdPen = document.getElementById('inicio-card-ordenes-pendientes');
+  const elCardTrPen = document.getElementById('inicio-card-transacciones-pendientes');
+  if (elCardOrdPen) elCardOrdPen.style.display = penVis.ordenes ? '' : 'none';
+  if (elCardTrPen) elCardTrPen.style.display = penVis.transacciones ? '' : 'none';
+  if (elPendientes) elPendientes.style.display = penVis.ordenes || penVis.transacciones ? '' : 'none';
 
   // Refresco automático (~30 s): no encadenar sync global de todas las órdenes (pesado y vacía/repinta G/P).
   // Igual criterio que loadCuentaCorriente con isPandiBackgroundRefresh.
@@ -5416,13 +5694,22 @@ function loadInicioPendientes() {
   const elCountTr = document.getElementById('inicio-count-transacciones-pendientes');
   if (!bodyOrd && !elCountTr) return;
 
+  const penVis = pandiInicioPendientesCardsVisibles();
   const silentPen = isPandiBackgroundRefresh();
-  const promOrd = bodyOrd
+  const promOrd = bodyOrd && penVis.ordenes
     ? client.from('ordenes').select('id, estado').neq('estado', 'orden_ejecutada').neq('estado', 'anulada')
     : Promise.resolve({ data: [], error: null });
-  const promTr = elCountTr
+  const promTr = elCountTr && penVis.transacciones
     ? client.from('transacciones').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente')
     : Promise.resolve({ count: null, error: null });
+
+  if (bodyOrd && !penVis.ordenes) {
+    bodyOrd.innerHTML =
+      '<div class="inicio-card-ordenes-fila"><span class="inicio-card-pendientes-valor" style="grid-column:1/-1;">–</span></div>';
+  }
+  if (elCountTr && !penVis.transacciones) {
+    elCountTr.textContent = '–';
+  }
 
   Promise.all([promOrd, promTr]).then(async ([rOrd, rTr]) => {
     const errO = rOrd.error;
@@ -9215,8 +9502,8 @@ function actualizarCcManualResumenDinamico() {
 
   const emp = ccManualParticipaEmpresa(pagRol, cobRol);
   if (emp && modoPago === 'efectivo') {
-    if (!userPermissions.includes('abm_movimientos_caja')) {
-      html += '<span style="color:#b45309;">Caja (efectivo): falta permiso <em>abm_movimientos_caja</em> para guardar.</span>';
+    if (!tienePermisoAltaMovimientoCaja()) {
+      html += '<span style="color:#b45309;">Caja (efectivo): falta permiso <em>alta_movimiento_caja</em> para guardar el movimiento de caja.</span>';
     } else {
       const dir = ccManualDireccionCajaDesdeFlujo(pagRol, cobRol);
       const nombreTipo = dir ? ccManualNombreTipoCajaFijoPorDireccion(dir) : '–';
@@ -9596,8 +9883,8 @@ async function pandiFlushPendingCcManualOffline() {
     try {
       let tipoId = null;
       if (requiereCaja) {
-        if (!userPermissions.includes('abm_movimientos_caja')) {
-          showToast('Hay movimientos CC en cola con caja; hace falta permiso abm_movimientos_caja para enviarlos.', 'error');
+        if (!tienePermisoAltaMovimientoCaja()) {
+          showToast('Hay movimientos CC en cola con caja; hace falta permiso alta_movimiento_caja para insertar el movimiento de caja.', 'error');
           break;
         }
         const dirCaja = ccManualDireccionCajaDesdeFlujo(pagRol, cobRol);
@@ -9788,6 +10075,7 @@ async function pandiCajaMovEnqueueOffline(payload) {
 
 async function pandiFlushPendingCajaMovOffline() {
   if (!currentUserId || !pandiCajaMovimientoGuardadoEnServidorOk()) return;
+  if (!tienePermisoAltaMovimientoCaja()) return;
   let db;
   try {
     db = await openPandiOfflineDb();
@@ -9911,8 +10199,8 @@ function saveCcMovimientoManual() {
   const participaEmp = ccManualParticipaEmpresa(pagRol, cobRol);
   const requiereCaja = participaEmp && modoPago === 'efectivo';
   if (requiereCaja) {
-    if (!userPermissions.includes('abm_movimientos_caja')) {
-      showToast('Para registrar efectivo en caja necesitás permiso abm_movimientos_caja.', 'error');
+    if (!tienePermisoAltaMovimientoCaja()) {
+      showToast('Para registrar efectivo en caja necesitás permiso alta_movimiento_caja.', 'error');
       return;
     }
   }
@@ -10492,6 +10780,7 @@ function syncCajasPaneles() {
   const esMov = cajasVistaSolapa === 'movimientos';
   panelMov.style.display = esMov ? '' : 'none';
   panelTipos.style.display = esMov ? 'none' : '';
+  aplicarVisibilidadBotonNuevoMovimientoCaja();
   tablist.querySelectorAll('button[data-cajas-vista]').forEach((b) => {
     const v = b.getAttribute('data-cajas-vista');
     const on = (v === 'movimientos' && esMov) || (v === 'tipos' && !esMov);
@@ -10605,6 +10894,23 @@ function openModalMovimientoCaja(registro) {
     : Promise.resolve(null);
 
   promTipos.then((tiposFetched) => {
+    if (registro == null) {
+      if (!tienePermisoAltaMovimientoCaja()) {
+        showToast('No tenés permiso para dar de alta movimientos de caja.', 'info');
+        return;
+      }
+    } else {
+      const esOrdenRow = !!registro.orden_id;
+      if (!tienePermisoEditarMovimientoCaja()) {
+        showToast(
+          esOrdenRow
+            ? 'No tenés permiso para editar movimientos de caja vinculados a órdenes.'
+            : 'No tenés permiso para editar movimientos de caja.',
+          'info',
+        );
+        return;
+      }
+    }
     if (tiposFetched != null) {
       tiposMovimientoCaja = tiposFetched;
     } else {
@@ -10678,6 +10984,10 @@ function saveMovimientoCaja() {
   const fecha = document.getElementById('mov-caja-fecha').value;
 
   if (id && esDeOrden) {
+    if (!tienePermisoEditarMovimientoCaja()) {
+      showToast('No tenés permiso para editar movimientos de caja vinculados a órdenes.', 'error');
+      return;
+    }
     if (pandiAvisoSiSinServidorParaEscritura('Guardar cambios en un movimiento de caja vinculado a una orden')) return;
     const payload = { concepto, fecha: fecha || fechaHoyYYYYMMDDArgentina() };
     client
@@ -10693,6 +11003,19 @@ function saveMovimientoCaja() {
         loadCajas();
       });
     return;
+  }
+
+  if (id && !esDeOrden) {
+    if (!tienePermisoEditarMovimientoCaja()) {
+      showToast('No tenés permiso para editar movimientos de caja.', 'error');
+      return;
+    }
+  }
+  if (!id) {
+    if (!tienePermisoAltaMovimientoCaja()) {
+      showToast('No tenés permiso para registrar movimientos nuevos de caja.', 'error');
+      return;
+    }
   }
 
   const moneda = document.getElementById('mov-caja-moneda').value;
@@ -21999,6 +22322,7 @@ async function finalizeSessionUiSetup() {
   setupDelegacionAccionesCcManual();
   setupModalesDraggable();
   setupHelpPopovers();
+  setupModalSeguridadNuevoPerfil();
   const [defaultVistaId, defaultTitle] = getFirstAllowedView();
   showView(defaultVistaId, defaultTitle);
   pandiUpdateOfflineToolbarButtons();

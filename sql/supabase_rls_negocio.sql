@@ -78,21 +78,7 @@ DROP POLICY IF EXISTS "movimientos_caja_select_authenticated" ON public.movimien
 CREATE POLICY "movimientos_caja_select_authenticated"
   ON public.movimientos_caja FOR SELECT TO authenticated USING (true);
 
-DROP POLICY IF EXISTS "movimientos_caja_insert_abm" ON public.movimientos_caja;
-CREATE POLICY "movimientos_caja_insert_abm"
-  ON public.movimientos_caja FOR INSERT TO authenticated
-  WITH CHECK (public.has_permission('abm_movimientos_caja'));
-
-DROP POLICY IF EXISTS "movimientos_caja_update_abm" ON public.movimientos_caja;
-CREATE POLICY "movimientos_caja_update_abm"
-  ON public.movimientos_caja FOR UPDATE TO authenticated
-  USING (public.has_permission('abm_movimientos_caja'))
-  WITH CHECK (public.has_permission('abm_movimientos_caja'));
-
-DROP POLICY IF EXISTS "movimientos_caja_delete_abm" ON public.movimientos_caja;
-CREATE POLICY "movimientos_caja_delete_abm"
-  ON public.movimientos_caja FOR DELETE TO authenticated
-  USING (public.has_permission('abm_movimientos_caja'));
+-- INSERT/UPDATE/DELETE: migracion_permisos_movimientos_caja_granular.sql (concat bootstrap tras columnas orden/transacción en caja).
 
 -- ========== movimientos_cuenta_corriente ==========
 ALTER TABLE public.movimientos_cuenta_corriente ENABLE ROW LEVEL SECURITY;

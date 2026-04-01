@@ -49,7 +49,7 @@ La caja (efectivo) sigue la dirección física: egreso si paga la empresa, ingre
 - Script: `sql/migracion_tipos_caja_cc_manual.sql`. El movimiento en `movimientos_caja` lleva `caja_tipo = efectivo`.
 - **Banco/transferencia** y **cheque** no generan movimiento en caja; el modo queda reflejado en el **concepto** (`[Banco]` / `[Cheque]`).
 
-Requiere permiso **`abm_movimientos_caja`** cuando aplica caja.
+Requiere permiso **`alta_movimiento_caja`** cuando aplica caja (insert del movimiento en `movimientos_caja`). La edición de filas de caja vinculadas a CC manual sigue **`editar_movimiento_cc_manual`**; en RLS también entra **`editar_movimiento_caja`** para otros casos.
 
 ## Permisos CC
 

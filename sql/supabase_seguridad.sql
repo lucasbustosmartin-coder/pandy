@@ -32,7 +32,9 @@ INSERT INTO public.app_permission (permission, description) VALUES
   ('assign_roles', 'Asignar roles a usuarios'),
   ('abm_clientes', 'ABM de clientes'),
   ('abm_ordenes', 'ABM de órdenes'),
-  ('abm_movimientos_caja', 'Crear/editar movimientos de caja'),
+  ('alta_movimiento_caja', 'Alta de movimientos de caja (manuales y registro asociado a órdenes/transacciones según RLS).'),
+  ('editar_movimiento_caja', 'Edición de movimientos de caja (mantiene estado cerrado; ver RLS).'),
+  ('anular_movimiento_caja', 'Anulación de movimientos de caja manuales solo caja (sin orden ni transacción).'),
   ('abm_tipos_movimiento_caja', 'ABM de tipos de movimiento de caja')
 ON CONFLICT (permission) DO NOTHING;
 
@@ -46,11 +48,15 @@ INSERT INTO public.app_role_permission (role, permission) VALUES
   ('admin', 'assign_roles'),
   ('admin', 'abm_clientes'),
   ('admin', 'abm_ordenes'),
-  ('admin', 'abm_movimientos_caja'),
+  ('admin', 'alta_movimiento_caja'),
+  ('admin', 'editar_movimiento_caja'),
+  ('admin', 'anular_movimiento_caja'),
   ('admin', 'abm_tipos_movimiento_caja'),
   ('encargado', 'abm_clientes'),
   ('encargado', 'abm_ordenes'),
-  ('encargado', 'abm_movimientos_caja'),
+  ('encargado', 'alta_movimiento_caja'),
+  ('encargado', 'editar_movimiento_caja'),
+  ('encargado', 'anular_movimiento_caja'),
   ('encargado', 'abm_tipos_movimiento_caja')
 ON CONFLICT (role, permission) DO NOTHING;
 
@@ -146,7 +152,7 @@ AS $$
   WHERE public.has_permission('assign_roles');
 $$;
 
--- Admin: asignar rol a un usuario
+-- Asignar rol a un usuario (cualquier fila existente en app_role)
 CREATE OR REPLACE FUNCTION public.set_user_role(p_user_id uuid, p_role text)
 RETURNS void
 LANGUAGE plpgsql
@@ -157,7 +163,10 @@ BEGIN
   IF NOT public.has_permission('assign_roles') THEN
     RAISE EXCEPTION 'Sin permiso para asignar roles';
   END IF;
-  IF p_role NOT IN ('admin', 'encargado', 'visor') THEN
+  IF p_role IS NULL OR btrim(p_role) = '' THEN
+    RAISE EXCEPTION 'Rol no válido';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.app_role r WHERE r.role = p_role) THEN
     RAISE EXCEPTION 'Rol no válido';
   END IF;
   INSERT INTO public.app_user_profile (user_id, role, updated_at, updated_by)
@@ -175,6 +184,31 @@ ALTER TABLE public.app_role ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "app_role_select_authenticated" ON public.app_role;
 CREATE POLICY "app_role_select_authenticated"
   ON public.app_role FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "app_role_insert_assign_roles" ON public.app_role;
+CREATE POLICY "app_role_insert_assign_roles"
+  ON public.app_role FOR INSERT TO authenticated
+  WITH CHECK (
+    public.has_permission('assign_roles')
+    AND role = lower(btrim(role))
+    AND label = btrim(label)
+    AND char_length(role) >= 3
+    AND char_length(role) <= 64
+    AND role ~ '^[a-z][a-z0-9_]*$'
+    AND char_length(label) >= 1
+    AND char_length(label) <= 120
+    AND role NOT IN ('anon', 'authenticated', 'service_role', 'supabase_admin', 'dashboard_user')
+    AND role NOT LIKE 'pg\_%' ESCAPE '\'
+  );
+
+DROP POLICY IF EXISTS "app_role_delete_assign_roles" ON public.app_role;
+CREATE POLICY "app_role_delete_assign_roles"
+  ON public.app_role FOR DELETE TO authenticated
+  USING (
+    public.has_permission('assign_roles')
+    AND role NOT IN ('admin', 'encargado', 'visor')
+    AND NOT EXISTS (SELECT 1 FROM public.app_user_profile u WHERE u.role = app_role.role)
+  );
 
 ALTER TABLE public.app_permission ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "app_permission_select_authenticated" ON public.app_permission;
@@ -243,7 +277,7 @@ CREATE POLICY "app_user_profile_update_admin"
 -- ========== 7. Grants ==========
 
 GRANT USAGE ON SCHEMA public TO authenticated;
-GRANT SELECT ON public.app_role TO authenticated;
+GRANT SELECT, INSERT, DELETE ON public.app_role TO authenticated;
 GRANT SELECT ON public.app_permission TO authenticated;
 GRANT SELECT ON public.app_role_permission TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.user_profiles TO authenticated;

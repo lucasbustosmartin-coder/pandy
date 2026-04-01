@@ -327,6 +327,14 @@
     .seguridad-permisos-rol:not(.expanded) .seguridad-permisos-rol-header { box-shadow: none; }
     .seguridad-permisos-rol-header:hover { background: #f9fafb; }
     .seguridad-permisos-rol-header:focus { outline: 2px solid #0d7d3d; outline-offset: 2px; }
+    .seguridad-permisos-rol-nombre { flex: 1; min-width: 0; text-align: left; }
+    .seguridad-permisos-rol-pie { margin-top: 0.75rem; padding-top: 0.85rem; border-top: 1px solid #e5e7eb; }
+    .seguridad-permisos-rol-pie-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem 0.75rem; }
+    .seguridad-permisos-rol-pie-leyenda { font-size: 0.8rem; color: #6b7280; line-height: 1.35; flex: 1 1 12rem; min-width: 0; }
+    @media (max-width: 480px) {
+      .seguridad-permisos-rol-pie-inner { flex-direction: column; align-items: stretch; }
+      .seguridad-permisos-rol-pie-inner .btn-seguridad-eliminar-perfil { width: 100%; justify-content: center; }
+    }
     .seguridad-permisos-rol-chevron { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; color: #6b7280; flex-shrink: 0; transition: transform 0.2s ease; }
     .seguridad-permisos-rol.expanded .seguridad-permisos-rol-chevron { transform: rotate(180deg); }
     .seguridad-permisos-rol-body { padding: 1rem 1.25rem 1rem; border-top: 1px solid #e5e7eb; }
@@ -1825,7 +1833,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.95</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.96</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2476,7 +2484,7 @@
         <h2 style="margin:0 0 0.75rem 0; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span style="width:24px; height:24px; color:#555; flex-shrink:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
           Seguridad – Usuarios y roles
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: seguridad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Asigná el <strong>rol</strong> (Admin, Encargado, Visor) a cada usuario. Más abajo podés configurar <strong>permisos por rol</strong> (qué menús ve y en cuáles puede operar) y, si sos Admin, el <strong>tiempo de inactividad</strong> antes del cierre de sesión automático.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: seguridad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Asigná el <strong>perfil</strong> (rol) a cada usuario: los base son Admin, Encargado y Visor; podés <strong>crear perfiles nuevos</strong> (ej. comercial o administrativo) y luego darles permisos. Más abajo configurás <strong>permisos por perfil</strong> (qué menús ve y en cuáles puede operar) y, si sos Admin, el <strong>tiempo de inactividad</strong> antes del cierre de sesión automático.</span></span>
         </h2>
         <div id="seguridad-tiempo-sesion-wrap" class="seguridad-tiempo-sesion" style="display:none; margin-bottom:1.25rem; padding:1rem; background:#f9fafb; border-radius:10px; border:1px solid #e5e7eb;">
           <h3 style="margin:0 0 0.5rem 0; font-size:1rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Tiempo de inactividad
@@ -2522,14 +2530,44 @@
           </table>
         </div>
         <div id="seguridad-permisos-wrap" style="margin-top:1.5rem; display:none;">
-          <h3 style="margin:0 0 0.75rem 0; font-size:1.05rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Permisos por rol
-            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: permisos por rol"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Para cada opción de menú podés permitir <strong>Ver</strong> (acceso a la vista y a la información) y <strong>Operar</strong> (crear, editar o anular según corresponda). Los cambios aplican a <strong>todos los usuarios</strong> con ese rol.</span></span>
+          <h3 style="margin:0 0 0.75rem 0; font-size:1.05rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Permisos por perfil
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: permisos por perfil"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Para cada opción de menú podés permitir <strong>Ver</strong> (acceso a la vista y a la información) y <strong>Operar</strong> (crear, editar o anular según corresponda). Los cambios aplican a <strong>todos los usuarios</strong> con ese perfil. Los perfiles nuevos empiezan <strong>sin permisos</strong> hasta que actives los interruptores.</span></span>
           </h3>
+          <div id="seguridad-permisos-toolbar" class="vista-toolbar" style="display:none; margin-bottom:0.85rem; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <button type="button" class="btn-primary" id="btn-seguridad-nuevo-perfil" title="Crear un perfil para asignar permisos y usuarios">
+              <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></span>Nuevo perfil
+            </button>
+          </div>
           <div id="seguridad-permisos-grid"></div>
         </div>
       </div>
     </div>
   </main>
+
+  <div id="modal-seguridad-nuevo-rol-backdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-seguridad-nuevo-rol-titulo">Nuevo perfil</h2>
+        <button type="button" class="modal-close" id="modal-seguridad-nuevo-rol-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 1rem 0; font-size:0.9rem; color:#4b5563;">El perfil se crea <strong>sin permisos</strong>. Después activalos en la grilla «Permisos por perfil» y asigná usuarios en la tabla superior.</p>
+        <div class="form-group">
+          <label for="seguridad-nuevo-rol-label">Nombre visible *</label>
+          <input type="text" id="seguridad-nuevo-rol-label" maxlength="120" placeholder="Ej. Empleado administrativo" autocomplete="off" style="max-width:100%; box-sizing:border-box;" />
+        </div>
+        <div class="form-group">
+          <label for="seguridad-nuevo-rol-key">Código interno *</label>
+          <input type="text" id="seguridad-nuevo-rol-key" maxlength="64" placeholder="ej. empleado_administrativo" autocomplete="off" style="max-width:100%; box-sizing:border-box; font-family:ui-monospace,monospace;" />
+          <p style="margin:0.35rem 0 0 0; font-size:0.8rem; color:#6b7280;">Solo minúsculas, números y guión bajo; 3–64 caracteres; debe empezar con letra. No se puede cambiar después.</p>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" id="seguridad-nuevo-rol-cancelar">Cancelar</button>
+          <button type="button" class="btn-primary" id="seguridad-nuevo-rol-guardar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Crear perfil</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div id="modal-cliente-backdrop" class="modal-backdrop">
     <div class="modal">

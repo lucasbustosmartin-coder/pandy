@@ -1,5 +1,6 @@
 -- CC manual: vínculo a caja, permisos editar/eliminar, auditoría, RLS.
 -- Ejecutar en Supabase SQL Editor después de migracion_cc_movimiento_manual.sql y políticas CC vigentes.
+-- Políticas INSERT/UPDATE/DELETE en movimientos_caja: migracion_permisos_movimientos_caja_granular.sql (incluido en bootstrap dev tras este archivo).
 
 -- ========== 1) Vínculo CC manual → movimiento de caja (efectivo) ==========
 ALTER TABLE public.movimientos_cuenta_corriente
@@ -155,49 +156,5 @@ CREATE POLICY "mov_cc_int_delete_perm"
     )
   );
 
--- ========== 6) Caja: quien edita/anula filas vinculadas a CC manual ==========
-DROP POLICY IF EXISTS "movimientos_caja_update_abm" ON public.movimientos_caja;
-CREATE POLICY "movimientos_caja_update_abm"
-  ON public.movimientos_caja FOR UPDATE TO authenticated
-  USING (
-    public.has_permission('abm_movimientos_caja')
-    OR (
-      (
-        public.has_permission('editar_movimiento_cc_manual')
-        OR public.has_permission('eliminar_movimiento_cc_manual')
-      )
-      AND (
-        EXISTS (
-          SELECT 1 FROM public.movimientos_cuenta_corriente m
-          WHERE m.movimiento_caja_id = movimientos_caja.id
-            AND COALESCE(m.es_movimiento_manual, false) = true
-        )
-        OR EXISTS (
-          SELECT 1 FROM public.movimientos_cuenta_corriente_intermediario mi
-          WHERE mi.movimiento_caja_id = movimientos_caja.id
-            AND COALESCE(mi.es_movimiento_manual, false) = true
-        )
-      )
-    )
-  )
-  WITH CHECK (
-    public.has_permission('abm_movimientos_caja')
-    OR (
-      (
-        public.has_permission('editar_movimiento_cc_manual')
-        OR public.has_permission('eliminar_movimiento_cc_manual')
-      )
-      AND (
-        EXISTS (
-          SELECT 1 FROM public.movimientos_cuenta_corriente m
-          WHERE m.movimiento_caja_id = movimientos_caja.id
-            AND COALESCE(m.es_movimiento_manual, false) = true
-        )
-        OR EXISTS (
-          SELECT 1 FROM public.movimientos_cuenta_corriente_intermediario mi
-          WHERE mi.movimiento_caja_id = movimientos_caja.id
-            AND COALESCE(mi.es_movimiento_manual, false) = true
-        )
-      )
-    )
-  );
+-- ========== 6) Políticas movimientos_caja ==========
+-- Definidas en migracion_permisos_movimientos_caja_granular.sql (bootstrap concat o ejecución manual en Supabase).
