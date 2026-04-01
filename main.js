@@ -2432,6 +2432,10 @@ function showView(vistaId, pageTitle) {
   if (vistaId === 'vista-reglas-negocio') loadReglasNegocioVista();
   if (vistaId === 'vista-configuracion-empresa') loadConfiguracionEmpresa();
   pandiCollapseMobileSidebarAfterNav();
+  if (pandiIsMobileNavLayout()) {
+    const mc = document.querySelector('.main-content');
+    if (mc) mc.scrollTop = 0;
+  }
   updatePandiDatosNoVivosStrip();
 }
 
@@ -11834,7 +11838,7 @@ function renderOrdenesTabla(list) {
           <td colspan="11" class="orden-detalle-cell">
             <div class="orden-detalle-panel" id="panel-orden-${o.id}" data-orden-id="${o.id}">
               <div class="orden-detalle-encabezado"></div>
-              <div class="orden-detalle-loading" style="display:none;">Cargando transacciones…</div>
+              <div class="orden-detalle-loading vista-loading-spinner" style="display:none;">Cargando transacciones…</div>
               <div class="orden-detalle-content" style="display:none;">
                 <div class="orden-detalle-totales" style="margin-bottom:0.75rem; font-size:0.9rem; color:#555;"></div>
                 ${toolbarTransaccionesPanel}
