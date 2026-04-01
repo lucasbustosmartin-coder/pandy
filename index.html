@@ -440,7 +440,10 @@
     /* Modal orden abierto: el contenido de fondo no recibe clics ni foco (evita que "quede atrás" el modal) */
     body.modal-orden-abierto #app-content { pointer-events: none; }
     #modal-orden-backdrop.activo { z-index: 1000; }
-    #modal-orden-offline-backdrop.activo { z-index: 1005; }
+    #modal-orden-offline-backdrop.activo,
+    #modal-cola-v2-edit-backdrop.activo { z-index: 1005; }
+    #cola-v2-edit-tabla-wrap { max-height: min(55vh, 28rem); overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; margin-top: 0.75rem; }
+    #cola-v2-edit-tabla-wrap thead th { position: sticky; top: 0; z-index: 1; background: #f1f5f9; box-shadow: 0 1px 0 #e2e8f0; }
     .pandi-outbox-resumen-list { margin: 0.35rem 0 0 1rem; padding: 0; list-style: disc; }
     .pandi-outbox-resumen-list li { margin: 0.25rem 0; }
     .pandi-outbox-resumen-li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
@@ -1374,6 +1377,12 @@
       text-align: center;
       min-width: 4.25rem;
     }
+    #tabla-movimientos-caja .th-caja-movimiento-nombre,
+    #tabla-movimientos-caja .td-caja-movimiento-nombre {
+      max-width: 12rem;
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
     #tabla-movimientos-caja .th-caja-tipo-mov,
     #tabla-movimientos-caja .td-caja-tipo-mov { white-space: nowrap; }
     #tabla-movimientos-caja .th-caja-monto,
@@ -2111,7 +2120,7 @@
           <div id="cajas-loading" class="cajas-loading vista-loading-spinner" style="display:none;">Cargando movimientos…</div>
           <div id="cajas-tabla-wrap" class="tabla-movimientos-wrap tabla-wrap-con-scroll" style="display:none;">
             <table class="tabla-movimientos" id="tabla-movimientos-caja">
-              <thead><tr><th class="th-caja-fecha">Fecha</th><th class="th-caja-origen">Origen</th><th class="th-caja-nro">Nro orden</th><th class="th-caja-nro">Nro Trx</th><th class="th-caja-tipo-mov">Tipo</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda</span></th><th class="th-caja-monto">Monto</th><th class="th-caja-caja-tipo">Caja</th><th>Concepto</th><th></th></tr></thead>
+              <thead><tr><th class="th-caja-fecha">Fecha</th><th class="th-caja-origen">Origen</th><th class="th-caja-nro">Nro orden</th><th class="th-caja-nro">Nro Trx</th><th class="th-caja-movimiento-nombre">Movimiento</th><th class="th-caja-tipo-mov">Tipo</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda</span></th><th class="th-caja-monto">Monto</th><th class="th-caja-caja-tipo">Caja</th><th>Concepto</th><th></th></tr></thead>
               <tbody id="movimientos-caja-tbody"></tbody>
             </table>
           </div>
@@ -3225,6 +3234,43 @@
             <button type="button" class="btn-secondary" id="modal-orden-offline-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-cola-v2-edit-backdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal modal-ancho">
+      <div class="modal-header">
+        <h2 id="cola-v2-edit-h2">Editar instrumentación</h2>
+        <button type="button" class="modal-close" id="modal-cola-v2-edit-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="cola-v2-edit-local-id" value="" />
+        <input type="hidden" id="cola-v2-edit-orden-id" value="" />
+        <input type="hidden" id="cola-v2-edit-instrumentacion-id" value="" />
+        <p id="cola-v2-edit-intro" style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#475569; line-height:1.45;"></p>
+        <p id="cola-v2-edit-resumen" style="margin:0 0 0.5rem 0; font-size:0.88rem; color:#334155;"></p>
+        <div id="cola-v2-edit-tabla-wrap" class="tabla-clientes-wrap">
+          <table class="tabla-movimientos" style="width:100%; min-width:640px;">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Tipo</th>
+                <th>Moneda</th>
+                <th>Monto</th>
+                <th>Modo pago</th>
+                <th>Pagador / Cobrador</th>
+                <th>Estado</th>
+                <th>Fecha ejecución</th>
+              </tr>
+            </thead>
+            <tbody id="cola-v2-edit-tbody"></tbody>
+          </table>
+        </div>
+        <div class="form-actions" style="margin-top:1rem; flex-wrap:wrap; gap:0.5rem;">
+          <button type="button" class="btn-primary" id="cola-v2-edit-guardar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span><span id="cola-v2-edit-guardar-texto">Guardar</span></button>
+          <button type="button" class="btn-secondary" id="modal-cola-v2-edit-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>
+        </div>
       </div>
     </div>
   </div>

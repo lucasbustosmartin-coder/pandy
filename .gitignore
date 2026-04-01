@@ -53,3 +53,7 @@ docs/Pandy_Dev_Supabase.xlsx
 
 # SQL concatenado para bootstrap (regenerar con npm run sql:bootstrap:dev)
 sql/_generado_bootstrap_pandy_dev.sql
+
+# Informes Lighthouse (regenerar con npm run lighthouse)
+docs/lighthouse-report.html
+docs/lighthouse-report-mobile.html

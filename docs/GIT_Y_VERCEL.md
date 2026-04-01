@@ -59,7 +59,7 @@ Así `config.js` se genera en el build (`node scripts/build-config.js`) y la app
 | **https://pandy-tau.vercel.app** | Production | Dominio por defecto Vercel (sigue válido como alias). |
 | **https://preview.pandi.company** | Preview | Ligado en Vercel a la rama Git **`preview-empleado`**: muestra el último deploy Preview de esa rama. Variables Preview → Supabase **dev**. *Durante pruebas PWA se puede tener `preview-empleado` con los commits de `preview-pwa-fase1`; al terminar, volver a fusionar `main` en `preview-empleado` (§4c) para alinear con producción.* |
 
-La URL “fea” que cambia en cada `npx vercel --yes` sigue existiendo en **Deployments**; el subdominio **`preview.pandi.company`** es un nombre estable para compartir el entorno de prueba **siempre que la rama `preview-empleado` esté alineada con `main`** (ver §4c).
+La URL “fea” que cambia en cada `npx vercel --yes` sigue existiendo en **Deployments**; el subdominio **`preview.pandi.company`** es un nombre estable para compartir el entorno de prueba **siempre que `preview-empleado` lleve el mismo commit que `main`** (referencia: prod; ver §4c y **Dirección de la paridad**).
 
 ---
 
@@ -73,9 +73,15 @@ npx vercel --yes
 # Luego §4c + §4d: merge main → preview-empleado + push y verificar SHA
 ```
 
-El segundo comando (sin `--prod`) es **obligatorio**: publica un deployment Preview con el mismo código que prod y config **dev** embebida; **no** actualiza por sí solo el dominio fijo **preview.pandi.company**. Para que **https://pandi.company** y **https://preview.pandi.company** queden en el **mismo commit**, hace falta **§4c** (rama `preview-empleado`) y **§4d** (comprobar que los SHA remotos coinciden). Variables **Preview** en Vercel → Supabase **desarrollo**. Ver §4b–§4d.
+El segundo comando (sin `--prod`) es **obligatorio**: publica un deployment Preview con el mismo código que prod y config **dev** embebida; **no** actualiza por sí solo el dominio fijo **preview.pandi.company**. Para que **preview.pandi.company** muestre **el mismo commit que ya desplegaste en producción** (`main`), hace falta **§4c** (merge `main` → `preview-empleado`) y **§4d** (SHA iguales en remoto). Variables **Preview** en Vercel → Supabase **desarrollo**. Ver §4b–§4d y la subsección **Dirección de la paridad** arriba.
 
 Si Vercel redeploya `main` solo en producción, igual ejecutá **`npx vercel --yes`**, el **sync de rama** de §4c y la **verificación** de §4d para no dejar el preview estable desfasado.
+
+### Dirección de la paridad (no al revés)
+
+- **Referencia del front** en el producto es **`main`** en el estado en que quedó **tras publicar en producción** (`vercel --prod` → **https://pandi.company**).  
+- **https://preview.pandi.company** (rama **`preview-empleado`**) debe **igualarse a ese mismo front**: siempre **`git merge main` en `preview-empleado`** y push (§4c). El preview **replica** el código que ya está (o va a estar) en prod.  
+- **No** es la regla de negocio “igualar producción al preview”: **no** se asume que `preview-empleado` manda y prod lo sigue. Publicar en producción es **push/commit en `main` + deploy Production**; el preview estable **solo se pone al día** trayendo `main`.
 
 ### 4b. Preview alineado con producción (mismo front, base dev)
 

@@ -2,6 +2,7 @@
 """
 Genera un PDF reducido orientado al manual de usuario:
 - Textos de interfaz y ayudas desde index.html (BeautifulSoup)
+- Capítulo offline/PWA desde docs/MANUAL_USUARIO_OFFLINE.md (lenguaje usuario)
 - Líneas de main.js que muestran mensajes al usuario (showToast, showConfirm)
 
 Salida: manual_usuario.pdf (y manual_usuario_fuente.txt opcional para revisión)
@@ -17,6 +18,7 @@ from fpdf import FPDF
 ROOT = Path(__file__).resolve().parent.parent
 INDEX_HTML = ROOT / "index.html"
 MAIN_JS = ROOT / "main.js"
+MANUAL_OFFLINE_MD = ROOT / "docs" / "MANUAL_USUARIO_OFFLINE.md"
 OUT_TXT = ROOT / "manual_usuario_fuente.txt"
 OUT_PDF = ROOT / "manual_usuario.pdf"
 FONT_FILE = Path(__file__).resolve().parent / "fonts" / "DejaVuSansMono.ttf"
@@ -111,6 +113,29 @@ def extract_html_content(html: str) -> tuple[list[str], list[str], list[str]]:
     return ayudas, ui, meta
 
 
+def load_manual_offline_block() -> list[str]:
+    """Capítulo fijo de offline/PWA desde docs (lenguaje usuario)."""
+    if not MANUAL_OFFLINE_MD.is_file():
+        return [
+            "",
+            "=" * 60,
+            "GUÍA OFFLINE Y PWA (usuario)",
+            "=" * 60,
+            f"(Falta {MANUAL_OFFLINE_MD.relative_to(ROOT)} — crear el archivo en docs/)",
+            "",
+        ]
+    raw = MANUAL_OFFLINE_MD.read_text(encoding="utf-8", errors="replace")
+    lines = [
+        "",
+        "=" * 60,
+        f"GUÍA OFFLINE Y PWA (usuario) — {MANUAL_OFFLINE_MD.relative_to(ROOT)}",
+        "=" * 60,
+    ]
+    lines.extend(raw.splitlines())
+    lines.append("")
+    return lines
+
+
 def extract_main_js_user_lines(path: Path) -> list[str]:
     out: list[str] = []
     pat = re.compile(r"showToast\s*\(|showConfirm\s*\(")
@@ -140,6 +165,7 @@ def build_document() -> str:
     parts.append("=" * 60)
     parts.extend(meta or ["(sin título en <title>)"])
     parts.append("")
+    parts.extend(load_manual_offline_block())
     parts.append("=" * 60)
     parts.append(f"AYUDAS CONTEXTUALES (help-popover) — {len(ayudas)} textos")
     parts.append("=" * 60)

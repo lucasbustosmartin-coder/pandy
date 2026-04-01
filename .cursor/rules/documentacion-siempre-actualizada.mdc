@@ -1,0 +1,24 @@
+---
+description: Mantener docs/ y artefactos generados alineados al código en la misma sesión, sin pedir confirmación al usuario
+alwaysApply: true
+---
+
+# Documentación siempre actualizada (Pandi)
+
+## Regla que no puede omitirse
+
+Al completar una tarea que cambie **comportamiento de la app**, **UI**, **offline/PWA**, **flujos de usuario**, **SQL/RPC**, **requisitos de Supabase** o **scripts documentados**:
+
+1. **Actualizar en la misma sesión** los archivos en **`docs/`** que correspondan (guías, plan, manual técnico, requisitos, testing, etc.). No dejar el código adelantado respecto de la documentación.
+2. **No preguntar** al usuario si debe actualizarse la documentación: hacerlo por defecto.
+3. **Regenerar artefactos derivados** cuando el archivo fuente haya cambiado (en la misma sesión, salvo imposibilidad técnica):
+   - **`Bitacora_tareas.xlsx`:** `node scripts/crear-bitacora-excel.js` tras editar `scripts/crear-bitacora-excel.js` o al cumplir la regla bitácora (ver **bitacora-tareas**).
+   - **`manual_usuario.pdf`** y `manual_usuario_fuente.txt`:** `python3 scripts/export_manual_usuario_pdf.py` si cambió `docs/MANUAL_USUARIO_OFFLINE.md`, textos de ayuda relevantes en `index.html`, o mensajes de usuario masivos en `main.js` que el manual deba reflejar.
+   - **`docs/PLAN_PWA_OPERACION_OFFLINE.docx`:** `npm run plan-pwa:docx` si cambió `docs/PLAN_PWA_OPERACION_OFFLINE.md`.
+4. **Coherencia cruzada:** si se toca `docs/PWA_OFFLINE_TECNICO.md` o el plan PWA, revisar que **`docs/MANUAL_USUARIO_OFFLINE.md`** y **`docs/LIGHTHOUSE_PWA.md`** no contradigan el código; actualizar **`.cursor/rules/estructura-proyecto.mdc`** si se agregan rutas nuevas bajo `docs/`.
+5. **Presentación comercial:** si el alcance o el presupuesto cambian, aplicar la regla **bitácora-tareas** (solapa Presupuesto, `presentacion/`).
+
+## Referencia
+
+- Regla bitácora: **bitacora-tareas**.  
+- Estructura de carpetas: **estructura-proyecto**.

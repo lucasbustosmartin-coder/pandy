@@ -101,3 +101,40 @@ export async function idbReadSnapshotPut(db, record) {
     tx.onabort = () => reject(tx.error || new Error('idb snapshot abort'));
   });
 }
+
+/** @param {IDBDatabase} db */
+export async function idbReadSnapshotDelete(db, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_READ_SNAPSHOTS, 'readwrite');
+    tx.objectStore(STORE_READ_SNAPSHOTS).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('idb snapshot delete abort'));
+  });
+}
+
+/**
+ * Lista claves en read_snapshots cuyo key empieza con prefix (p. ej. pending por orden).
+ * @param {IDBDatabase} db
+ * @param {string} prefix
+ */
+export async function idbReadSnapshotKeysByPrefix(db, prefix) {
+  const pre = String(prefix || '');
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_READ_SNAPSHOTS, 'readonly');
+    const st = tx.objectStore(STORE_READ_SNAPSHOTS);
+    const req = st.openCursor();
+    const keys = [];
+    req.onsuccess = () => {
+      const cur = req.result;
+      if (!cur) {
+        resolve(keys);
+        return;
+      }
+      const k = cur.key;
+      if (typeof k === 'string' && k.startsWith(pre)) keys.push(k);
+      cur.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}

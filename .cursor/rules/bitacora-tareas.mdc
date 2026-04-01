@@ -10,15 +10,16 @@ alwaysApply: true
 Al completar una tarea que toque funcionalidad o UI:
 
 1. **Bitácora:** actualizar siempre la bitácora según esta regla (Log y las solapas que correspondan; regenerar Excel). No saltear salvo que el usuario lo pida explícitamente.
-2. **RPC / funciones en Supabase:** si el cambio afecta lógica que se ejecuta en el backend (funciones en `sql/`, p. ej. `rpc_sync_cc_caja_orden`, `transacciones_cambiar_estado`), **hay que revisar si las RPC deben adaptarse** y actualizar los scripts en `sql/` y la documentación si aplica. **No puede omitirse este paso:** si la regla de negocio o los datos que se persisten cambian, verificar si la RPC construye esos datos (y actualizarla) o si solo recibe lo que envía el front (en ese caso puede no hacer falta tocar la RPC). **Fechas:** si el cambio toca día contable, `CURRENT_DATE`, defaults `fecha` o comparación de fechas en SQL, aplicar la regla estricta **fechas-argentina-negocio** (no omitir).
-3. **Tests:** si el cambio afecta flujos o pantallas cubiertos por tests (E2E en `tests/e2e/`, o tests unitarios si los hubiera), **hay que adaptar o ampliar los tests** para que sigan pasando y reflejen el nuevo comportamiento. No omitir este paso: revisar selectores, textos, columnas, conceptos o pasos que hayan cambiado y actualizar los tests en la misma sesión.
+2. **Documentación en `docs/` y artefactos generados (PDF, Word, etc.):** aplicar la regla **documentacion-siempre-actualizada** — mantener guías alineadas al código y regenerar salidas en la misma sesión **sin preguntar** al usuario.
+3. **RPC / funciones en Supabase:** si el cambio afecta lógica que se ejecuta en el backend (funciones en `sql/`, p. ej. `rpc_sync_cc_caja_orden`, `transacciones_cambiar_estado`), **hay que revisar si las RPC deben adaptarse** y actualizar los scripts en `sql/` y la documentación si aplica. **No puede omitirse este paso:** si la regla de negocio o los datos que se persisten cambian, verificar si la RPC construye esos datos (y actualizarla) o si solo recibe lo que envía el front (en ese caso puede no hacer falta tocar la RPC). **Fechas:** si el cambio toca día contable, `CURRENT_DATE`, defaults `fecha` o comparación de fechas en SQL, aplicar la regla estricta **fechas-argentina-negocio** (no omitir).
+4. **Tests:** si el cambio afecta flujos o pantallas cubiertos por tests (E2E en `tests/e2e/`, o tests unitarios si los hubiera), **hay que adaptar o ampliar los tests** para que sigan pasando y reflejen el nuevo comportamiento. No omitir este paso: revisar selectores, textos, columnas, conceptos o pasos que hayan cambiado y actualizar los tests en la misma sesión.
 
 Si se cambia un ID, un texto de columna, un botón que los tests usan, o un flujo que los E2E recorren, los tests deben actualizarse en consecuencia.
 
 ## Tecnología e infraestructura (referencia)
 
 - **Datos:** Supabase (PostgreSQL). Tablas según la app. Scripts SQL en `sql/` se ejecutan en Supabase SQL Editor.
-- **Hosting:** Vercel. **Dominios fijos del producto:** producción **https://pandi.company** (Supabase prod) y preview estable **https://preview.pandi.company** (Supabase dev, misma app). Al desplegar, **ambos deben quedar en el mismo commit del front**; ver pasos 5–7 del flujo de despliegue y `docs/GIT_Y_VERCEL.md` §4c. Variables **Preview** en Vercel → Supabase **dev**.
+- **Hosting:** Vercel. **Dominios fijos del producto:** producción **https://pandi.company** (Supabase prod) y preview estable **https://preview.pandi.company** (Supabase dev, misma app). **Referencia del front:** `main` / producción; el preview estable se **iguala a ese front** (`merge main` en `preview-empleado`), **no al revés**. Ver pasos 5–8 y `docs/GIT_Y_VERCEL.md` § “Dirección de la paridad” y §4c. Variables **Preview** en Vercel → Supabase **dev**.
 - **Repositorio:** Git/GitHub (rama `main`). Estructura: `sql/`, `scripts/`, `docs/`, `Base/` (ver regla estructura-proyecto).
 - **Bitácora:** Node.js + SheetJS (xlsx). Script `scripts/crear-bitacora-excel.js` genera `Bitacora_tareas.xlsx` (en raíz) con las solapas **Log**, **Resumen**, **Ref Git y Vercel**, **Versiones**, **Tecnología**.
 
@@ -57,9 +58,9 @@ Salida: `Bitacora_tareas.xlsx` (en la raíz del proyecto).
 
 # Flujo cuando el usuario indique desplegar (versionado y despliegue)
 
-## REGLA ESTRICTA — mismo front en producción y en preview estable
+## REGLA ESTRICTA — preview estable igual al front de producción (mismo commit)
 
-**Criterio del producto:** **https://preview.pandi.company** debe mostrar **siempre** el mismo front que **https://pandi.company** (mismo commit); solo cambia Supabase vía variables Vercel (Preview = dev).
+**Criterio del producto:** **https://preview.pandi.company** debe mostrar **el mismo front que https://pandi.company** (mismo commit en `main` y en `preview-empleado`). La **fuente de verdad** del código desplegado en dominios fijos es **`main`** tras el despliegue a producción; **`preview-empleado` se actualiza para igualar** ese estado (`git merge main` en `preview-empleado` + push), **no** se “sube” producción desde el preview. Solo cambia la base de datos vía variables Vercel (Preview = dev).
 
 Esta regla **no se relaja**: ante “desplegar” / “ok desplegar”, el agente **no puede** dar el despliegue por terminado sin cumplirla.
 

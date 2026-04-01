@@ -70,6 +70,7 @@ alwaysApply: true
 
 ## Bitácora, RPC y tests (regla que no puede omitirse)
 
+- **Documentación y artefactos generados:** mantener `docs/` y PDF/Word/Excel derivados alineados al código **en la misma sesión**, **sin preguntar** al usuario si debe actualizarse. Detalle: regla **documentacion-siempre-actualizada**.
 - **Bitácora:** Al completar una tarea, actualizar la bitácora (Log y solapas que correspondan) y regenerar el Excel. Detalle en la regla **bitacora-tareas**. No saltear salvo que el usuario lo pida explícitamente.
 - **RPC / Supabase:** Si el cambio afecta lógica que corre en el backend (funciones en `sql/`, p. ej. `sync_cc_caja_orden`, `transacciones_cambiar_estado`), **hay que revisar si las RPC deben adaptarse** y actualizar los scripts en `sql/` cuando corresponda. No puede omitirse este paso.
 - **Tests:** Si el cambio afecta flujos o UI cubiertos por tests (E2E en `tests/e2e/`, o tests unitarios), **hay que adaptar o ampliar los tests** en la misma sesión para que sigan pasando y reflejen el nuevo comportamiento. No omitir: revisar selectores, textos, columnas o pasos que hayan cambiado. Guía: `docs/TESTING_E2E_GUIA.md`.
@@ -88,9 +89,9 @@ Esta regla es obligatoria. No implementar cambios “para que pase el test” o 
 
 ## Despliegue
 
-- **REGLA ESTRICTA (paridad prod / preview estable):** ver **bitácora-tareas** — sección homónima. “Mismo front” = **mismo commit** en `main` y en `preview-empleado`; solo cambia `config.js` embebido (Supabase prod vs dev). **`npx vercel --yes` no alinea `preview.pandi.company`**; hace falta merge + push de la rama preview **y** verificación de SHA.
+- **REGLA ESTRICTA (preview = mismo front que prod):** ver **bitácora-tareas**. **Referencia:** `main`/producción; **`preview-empleado` se iguala** con `merge main` + push (no al revés). Mismo commit en ambas ramas; solo cambia `config.js` embebido (Supabase prod vs dev). **`npx vercel --yes` no alinea `preview.pandi.company`**; hace falta merge + push de `preview-empleado` **y** verificación de SHA.
 - Cuando el usuario pida desplegar (ej. "desplegar", "ok desplegar"), aplicar **siempre** el flujo completo: 1) Versión en `index.html` (`sidebar-version`), 2) Bitácora en `scripts/crear-bitacora-excel.js` (Versiones, Log, Resumen si aplica), 3) `node scripts/crear-bitacora-excel.js`, 4) Commit y push a `main` (`vX.Y: …`), 5) `vercel --prod` (**https://pandi.company**), 6) **`npx vercel --yes`** (sin `--prod`; build Preview + Supabase dev; URL efímera), 7) **obligatorio** merge **`main` → `preview-empleado`** y **`git push origin preview-empleado`**, 8) **verificación** `git fetch origin && git rev-parse origin/main origin/preview-empleado` (deben coincidir; **bitácora-tareas** pasos 7–8, `docs/GIT_Y_VERCEL.md` §4c–§4d). **Prohibido** declarar despliegue cerrado sin 6, 7 y 8 salvo fallo documentado (credenciales, git, conflicto). En la respuesta al usuario, **indicar** alineación de commits o el bloqueo. La PPT no forma parte del despliegue.
-- **Dominios fijos prod + preview:** **https://pandi.company** y **https://preview.pandi.company** deben servir el mismo código tras cada despliegue; pasos 7–8 alinean y verifican el preview estable. Variables Production/Preview en Vercel; **bitácora-tareas** y `docs/GIT_Y_VERCEL.md` §4b–§4d.
+- **Dominios fijos prod + preview:** tras desplegar prod, el preview estable debe **replicar** ese front (pasos 7–8). Variables Production/Preview en Vercel; **bitácora-tareas** y `docs/GIT_Y_VERCEL.md` (§ “Dirección de la paridad”, §4b–§4d).
 
 ## Documentación de referencia
 
