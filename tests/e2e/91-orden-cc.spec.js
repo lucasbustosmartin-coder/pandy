@@ -2,6 +2,7 @@
 const { test, expect } = require('@playwright/test');
 const { initLog, setNroOrdenInterno, logStep, logTransaccion, logCajaControl, writeLogToExcel } = require('./e2e-log-excel');
 const { limpiarBaseE2eDesdeTests } = require('./e2e-limpiar-base');
+const { E2E_CAJA_SEED } = require('./e2e-caja-seed-saldos');
 
 /** No coincide con `clientes.nombre LIKE 'E2E %'` en rpc_limpiar_base_e2e: sobrevive a limpiarBaseE2eDesdeTests(). */
 const CLIENTE_PLAYWRIGHT_91_RESERVA = 'Cliente Playwright 91';
@@ -291,8 +292,11 @@ test.describe('Orden CHEQUE-ARS, transacciones y cuenta corriente', () => {
       const montoEfectivoInt = Math.round(mrNum * 0.985) || 197000;
       const montoEfectivoIntStr = String(montoEfectivoInt);
       // Tras Tx1..Tx4 ejecutadas: efectivo −me + efectivo int.; cheque +mr −mr (Tx3 egreso cheque).
-      const espEfArsPorPaso = [0, -meNum, -meNum, -meNum + montoEfectivoInt];
-      const espBaArsPorPaso = [mrNum, mrNum, 0, 0];
+      // Saldos absolutos incluyen semilla post–limpiar_base_e2e (tests/e2e/e2e-caja-seed-saldos.js).
+      const seedEfArs = E2E_CAJA_SEED.efectivoARS;
+      const seedBancoArs = E2E_CAJA_SEED.bancoARS;
+      const espEfArsPorPaso = [0, -meNum, -meNum, -meNum + montoEfectivoInt].map((x) => x + seedEfArs);
+      const espBaArsPorPaso = [mrNum + seedBancoArs, mrNum + seedBancoArs, seedBancoArs, seedBancoArs];
       const fmtEsp = (n) => (typeof n === 'number' && !isNaN(n) ? String(Math.round(n)) : '');
 
       await page.locator('#orden-btn-ir-instrumentacion').click();
@@ -604,7 +608,7 @@ test.describe('Orden ARS-USD, transacciones y cuenta corriente', () => {
         }
 
         // Control de caja tras esta transacción (Exp_Sdo_CE / Real_Sdo_CE / Saldo_CE_Rdo: solo efectivo ARS)
-        const expCEArsUsd = Number(montoRecibido); // Tx1 ingreso ARS; Tx2 no mueve ARS
+        const expCEArsUsd = Number(montoRecibido) + E2E_CAJA_SEED.efectivoARS; // Tx1 ingreso ARS; Tx2 no mueve ARS; + semilla E2E
         try {
           const saldos = await irACajasYLeerSaldos(page);
           const res = saldos.ok ? 'OK' : 'err';
@@ -655,7 +659,7 @@ test.describe('Orden ARS-USD, transacciones y cuenta corriente', () => {
         controlCajaError = (e && (e.message || e.toString())) || 'Error desconocido';
       }
       const resArsUsd = controlCajaOk ? 'OK' : 'err';
-      const expCEFinalArsUsd = Number(montoRecibido);
+      const expCEFinalArsUsd = Number(montoRecibido) + E2E_CAJA_SEED.efectivoARS;
       const saldoCE_RdoArsUsd = controlCajaOk && Math.abs(efArsNum - expCEFinalArsUsd) <= 1 ? 'PASS' : 'ERR';
       logCajaControl({
         efectivo: { USD: { app: efUsd, resultado: resArsUsd }, ARS: { app: efArs, resultado: resArsUsd }, EUR: { app: efEur, resultado: resArsUsd } },
@@ -792,7 +796,7 @@ test.describe('Orden USD-ARS, transacciones y cuenta corriente (sin intermediari
         }
 
         // Control de caja tras esta transacción (Exp_Sdo_CE / Real_Sdo_CE / Saldo_CE_Rdo: solo efectivo ARS)
-        const expCEUsdArs = i === 0 ? 0 : -Number(montoEntregado); // Tx1 no ARS; Tx2 egreso ARS
+        const expCEUsdArs = (i === 0 ? 0 : -Number(montoEntregado)) + E2E_CAJA_SEED.efectivoARS; // Tx1 no ARS; Tx2 egreso ARS; + semilla E2E
         try {
           const saldos = await irACajasYLeerSaldos(page);
           const res = saldos.ok ? 'OK' : 'err';
@@ -843,7 +847,7 @@ test.describe('Orden USD-ARS, transacciones y cuenta corriente (sin intermediari
         controlCajaError = (e && (e.message || e.toString())) || 'Error desconocido';
       }
       const resUsdArs = controlCajaOk ? 'OK' : 'err';
-      const expCEFinalUsdArs = -Number(montoEntregado);
+      const expCEFinalUsdArs = -Number(montoEntregado) + E2E_CAJA_SEED.efectivoARS;
       const saldoCE_RdoUsdArs = controlCajaOk && Math.abs(efArsNum - expCEFinalUsdArs) <= 1 ? 'PASS' : 'ERR';
       logCajaControl({
         efectivo: { USD: { app: efUsd, resultado: resUsdArs }, ARS: { app: efArs, resultado: resUsdArs }, EUR: { app: efEur, resultado: resUsdArs } },
@@ -920,8 +924,10 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
       const meNum = parseFloat(String(montoEntregado).replace(/\./g, '').replace(',', '.')) || 0;
       const comisionPandy = Math.round(mrNum - meNum);
       const fmtEsp = (n) => (typeof n === 'number' && !isNaN(n) ? String(Math.round(n)) : '');
-      const espEfUsdPorPaso = [mrNum, comisionPandy];
-      const espBaUsdPorPaso = [0, 0];
+      const seedEfUsd = E2E_CAJA_SEED.efectivoUSD;
+      const seedBancoUsd = E2E_CAJA_SEED.bancoUSD;
+      const espEfUsdPorPaso = [mrNum + seedEfUsd, comisionPandy + seedEfUsd];
+      const espBaUsdPorPaso = [seedBancoUsd, seedBancoUsd];
 
       await page.locator('#orden-btn-ir-instrumentacion').click();
       await expect(page.locator('#orden-step-instrumentacion')).toBeVisible({ timeout: 15000 });
@@ -999,8 +1005,8 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
           await expect(page.locator('#cc-contenido')).toBeVisible({ timeout: 5000 });
         }
 
-        // Control caja efectivo ARS: USD-USD no mueve ARS → Exp_Sdo_CE = 0
-        const expCEUsdUsd = 0;
+        // Control caja efectivo ARS: USD-USD no mueve ARS; saldo ARS = solo semilla E2E
+        const expCEUsdUsd = E2E_CAJA_SEED.efectivoARS;
         try {
           const saldos = await irACajasYLeerSaldos(page);
           const res = saldos.ok ? 'OK' : 'err';
@@ -1059,7 +1065,7 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
         controlCajaError = (e && (e.message || e.toString())) || 'Error desconocido';
       }
       const resUsdUsd = controlCajaOk ? 'OK' : 'err';
-      const expCEFinalUsdUsd = 0;
+      const expCEFinalUsdUsd = E2E_CAJA_SEED.efectivoARS;
       const saldoCE_RdoUsdUsd = controlCajaOk && Math.abs(efArsNum - expCEFinalUsdUsd) <= 1 ? 'PASS' : 'ERR';
       logCajaControl({
         efectivo: {
@@ -1078,6 +1084,7 @@ test.describe('Orden USD-USD, transacciones y cuenta corriente (sin intermediari
       logStep('6.1', 'Control caja Efectivo', 'Saldos Efectivo visibles (USD, ARS, EUR).', 'Montos leídos de #cajas-saldo-efectivo-*', controlCajaOk ? 'OK' : 'Fallo', controlCajaOk ? montosEfectivo : controlCajaError);
       logStep('6.2', 'Control caja Banco', 'Saldos Banco visibles (USD, ARS).', 'Montos leídos de #cajas-saldo-banco-*', controlCajaOk ? 'OK' : 'Fallo', controlCajaOk ? montosBanco : controlCajaError);
       if (!controlCajaOk) throw new Error(controlCajaError);
+      expect(Math.abs(efArsNum - expCEFinalUsdUsd), `Saldo caja efectivo ARS esperado ${expCEFinalUsdUsd}, real ${efArsNum}`).toBeLessThanOrEqual(1);
     } catch (err) {
       logStep('Error', 'Test falló', '-', '-', 'Fallo', (err && (err.message || err.toString())) || 'Error desconocido');
       throw err;
@@ -1297,7 +1304,7 @@ test.describe('Reversa (ejecutada → pendiente): CC y Caja deben volver al esta
       const cajaDespuesAmbas = await irACajasYLeerSaldos(page);
       expect(cajaDespuesAmbas.ok, 'Caja debe cargar').toBe(true);
       const efUsdAmbas = normalizarMontoSaldo(cajaDespuesAmbas.efUsd || '–');
-      const expCE = 0; // USD-USD no mueve ARS
+      const expCE = E2E_CAJA_SEED.efectivoARS; // USD-USD no mueve ARS; ARS efectivo = semilla E2E
       const saldoCE_RdoAmbas = Math.abs((cajaDespuesAmbas.efArsNum ?? 0) - expCE) <= 1 ? 'PASS' : 'ERR';
       logCajaControl({
         efectivo: { USD: { app: cajaDespuesAmbas.efUsd, resultado: 'OK' }, ARS: { app: cajaDespuesAmbas.efArs, resultado: 'OK' }, EUR: { app: cajaDespuesAmbas.efEur, resultado: 'OK' } },

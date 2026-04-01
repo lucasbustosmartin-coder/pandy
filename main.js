@@ -14189,15 +14189,14 @@ function showOrdenWizardStep(which) {
     if (which === 'detalles' || which === 'instrumentacion') modalOrden.classList.add('modal-orden-con-instrumentacion');
     else modalOrden.classList.remove('modal-orden-con-instrumentacion');
   }
-  // Al mostrar instrumentación: scroll a Listo/Cerrar y dar foco al botón Listo para que el modal no pierda foco
+  // Al mostrar instrumentación: el listado arranca arriba (más transacciones visibles); foco en Listo sin forzar scroll del viewport
   if (which === 'instrumentacion') {
+    const instScroll = document.querySelector('#orden-step-instrumentacion .orden-inst-contenido-scroll');
     const btnCerrar = document.getElementById('orden-btn-cerrar-wizard');
-    if (btnCerrar) {
-      requestAnimationFrame(() => {
-        btnCerrar.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        btnCerrar.focus({ preventScroll: true });
-      });
-    }
+    requestAnimationFrame(() => {
+      if (instScroll) instScroll.scrollTop = 0;
+      if (btnCerrar) btnCerrar.focus({ preventScroll: true });
+    });
   }
 }
 

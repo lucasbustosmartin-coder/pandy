@@ -4,6 +4,7 @@
 -- trunca órdenes/transacciones/CC/caja y borra clientes/intermediarios E2E.
 -- Tu .env.test (SUPABASE_URL + service_role) debe ser del mismo proyecto donde corrés este SQL.
 -- Ejecutar este archivo en Supabase SQL Editor una vez por proyecto.
+-- Tras truncar, se insertan movimientos de caja «E2E seed» (Ajuste ingreso) alineados a tests/e2e/e2e-caja-seed-saldos.js.
 -- 1) Trunca transaccionalidad en el mismo orden que truncar_ordenes_transacciones.sql
 --    (incluye CC/caja manuales vinculados a las mismas tablas), staging contingencia si existe,
 --    y resetea secuencias ordenes_numero_seq y transacciones_numero_seq.
@@ -58,10 +59,44 @@ BEGIN
   DELETE FROM public.intermediarios
   WHERE nombre LIKE 'E2E Int %'
      OR nombre = 'E2E CC TiposActivos Int';
+
+  -- Semilla de caja para E2E: tras TRUNCATE no queda saldo; los egresos validan contra movimientos cerrados.
+  -- Tipo: ingreso manual de ajuste; nombre en catálogo puede ser «Ajuste ingreso» o «Ajuste Ingreso» → ILIKE.
+  -- Montos alineados con tests/e2e/e2e-caja-seed-saldos.js (re-ejecutar esta función en Supabase dev tras cambiar montos).
+  INSERT INTO public.movimientos_caja (moneda, monto, tipo_movimiento_id, concepto, fecha, caja_tipo, estado)
+  SELECT 'ARS', 500000000::numeric, t.id, 'E2E seed caja tras limpiar_base_e2e', public.fecha_hoy_argentina(), 'efectivo', 'cerrado'
+  FROM public.tipos_movimiento_caja t
+  WHERE trim(t.nombre) ILIKE 'Ajuste ingreso' AND lower(trim(t.direccion)) = 'ingreso'
+  LIMIT 1;
+  INSERT INTO public.movimientos_caja (moneda, monto, tipo_movimiento_id, concepto, fecha, caja_tipo, estado)
+  SELECT 'USD', 50000000::numeric, t.id, 'E2E seed caja tras limpiar_base_e2e', public.fecha_hoy_argentina(), 'efectivo', 'cerrado'
+  FROM public.tipos_movimiento_caja t
+  WHERE trim(t.nombre) ILIKE 'Ajuste ingreso' AND lower(trim(t.direccion)) = 'ingreso'
+  LIMIT 1;
+  INSERT INTO public.movimientos_caja (moneda, monto, tipo_movimiento_id, concepto, fecha, caja_tipo, estado)
+  SELECT 'EUR', 50000000::numeric, t.id, 'E2E seed caja tras limpiar_base_e2e', public.fecha_hoy_argentina(), 'efectivo', 'cerrado'
+  FROM public.tipos_movimiento_caja t
+  WHERE trim(t.nombre) ILIKE 'Ajuste ingreso' AND lower(trim(t.direccion)) = 'ingreso'
+  LIMIT 1;
+  INSERT INTO public.movimientos_caja (moneda, monto, tipo_movimiento_id, concepto, fecha, caja_tipo, estado)
+  SELECT 'USD', 50000000::numeric, t.id, 'E2E seed caja tras limpiar_base_e2e', public.fecha_hoy_argentina(), 'banco', 'cerrado'
+  FROM public.tipos_movimiento_caja t
+  WHERE trim(t.nombre) ILIKE 'Ajuste ingreso' AND lower(trim(t.direccion)) = 'ingreso'
+  LIMIT 1;
+  INSERT INTO public.movimientos_caja (moneda, monto, tipo_movimiento_id, concepto, fecha, caja_tipo, estado)
+  SELECT 'ARS', 500000000::numeric, t.id, 'E2E seed caja tras limpiar_base_e2e', public.fecha_hoy_argentina(), 'banco', 'cerrado'
+  FROM public.tipos_movimiento_caja t
+  WHERE trim(t.nombre) ILIKE 'Ajuste ingreso' AND lower(trim(t.direccion)) = 'ingreso'
+  LIMIT 1;
+  INSERT INTO public.movimientos_caja (moneda, monto, tipo_movimiento_id, concepto, fecha, caja_tipo, estado)
+  SELECT 'ARS', 500000000::numeric, t.id, 'E2E seed caja tras limpiar_base_e2e', public.fecha_hoy_argentina(), 'cheque', 'cerrado'
+  FROM public.tipos_movimiento_caja t
+  WHERE trim(t.nombre) ILIKE 'Ajuste ingreso' AND lower(trim(t.direccion)) = 'ingreso'
+  LIMIT 1;
 END;
 $$;
 
-COMMENT ON FUNCTION public.limpiar_base_e2e() IS 'Limpieza para E2E: trunca órdenes/transacciones/CC/caja y luego borra clientes/intermediarios E2E. Solo desarrollo.';
+COMMENT ON FUNCTION public.limpiar_base_e2e() IS 'Limpieza para E2E: trunca órdenes/transacciones/CC/caja, borra clientes/intermediarios E2E, inserta semilla de caja (ingresos manuales por moneda/tipo). Solo desarrollo.';
 
 -- Permitir llamada desde service_role (script con SUPABASE_SERVICE_ROLE_KEY)
 GRANT EXECUTE ON FUNCTION public.limpiar_base_e2e() TO service_role;

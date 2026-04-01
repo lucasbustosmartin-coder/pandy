@@ -554,9 +554,25 @@
     .modal.modal-ancho { max-width: 920px; width: 95%; }
     /* min-height: evita caja casi vacía en “Nueva orden”; el listbox de tipo va en position:fixed (main.js) para no recortarlo por overflow del modal */
     .modal.modal-orden { max-width: min(90vw, 720px); width: 90%; margin-left: auto; margin-right: auto; min-height: 220px; }
-    .modal.modal-orden.modal-orden-con-instrumentacion { max-width: min(95vw, 1020px); width: 95%; }
+    /* Detalles / instrumentación: usar casi toda la altura útil del viewport (backdrop padding + cabecera modal + pie Listo/Cerrar) */
+    .modal.modal-orden.modal-orden-con-instrumentacion {
+      max-width: min(95vw, 1020px);
+      width: 95%;
+      max-height: min(96dvh, calc(100vh - 1.25rem));
+    }
     .orden-inst-form-actions-sticky { position: sticky; bottom: 0; background: #fff; z-index: 10; padding-top: 0.5rem; margin-bottom: -0.5rem; box-shadow: 0 -2px 8px rgba(0,0,0,0.06); pointer-events: auto; }
-    #orden-step-instrumentacion .orden-inst-contenido-scroll { max-height: min(60vh, 480px); overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.75rem; }
+    /* Una sola zona de scroll vertical: casi todo el viewport menos cabecera modal + pie Listo/Cerrar + padding backdrop; sin tope 480px ni doble 70vh en la tabla */
+    #orden-step-instrumentacion .orden-inst-contenido-scroll {
+      max-height: min(88dvh, calc(100vh - 9.5rem));
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      margin-bottom: 0.75rem;
+    }
+    #orden-step-instrumentacion #orden-inst-tabla-wrap.tabla-wrap-con-scroll {
+      max-height: none;
+      overflow-y: visible;
+    }
     /* Acuerdo visible al scrollear la tabla de transacciones (instrumentación manual) */
     #orden-step-instrumentacion .orden-inst-acuerdo-sticky { position: sticky; top: 0; z-index: 6; background: #f5f5f5; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
     .orden-beneficio-acuerdo { color: #0066cc !important; font-weight: 700 !important; background: #f0f0f0 !important; }
@@ -1614,6 +1630,10 @@
       .form-actions { gap: 0.5rem; }
       .modal-backdrop { padding: 0.5rem; padding-left: max(0.5rem, env(safe-area-inset-left)); padding-right: max(0.5rem, env(safe-area-inset-right)); padding-top: max(0.5rem, env(safe-area-inset-top)); align-items: flex-start; }
       .modal { max-height: min(90dvh, 92vh); width: 96%; max-width: min(96vw, 1280px); }
+      .modal.modal-orden.modal-orden-con-instrumentacion { max-height: min(94dvh, calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 0.75rem)); }
+      #orden-step-instrumentacion .orden-inst-contenido-scroll {
+        max-height: min(86dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 10rem));
+      }
       .modal-body input, .modal-body select { font-size: 16px; }
       .modal-close { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
       .resumen-cajas { flex-direction: column; gap: 0.75rem; }
@@ -1749,9 +1769,9 @@
         gap: 0.35rem 0.5rem;
       }
       .inicio-card-ordenes-fila .inicio-card-ordenes-badge { min-width: 0; }
-      /* Instrumentación: más área útil en pantallas bajas */
+      /* Instrumentación: mismo criterio que tablet — máximo alto útil (evita tope 380px) */
       #orden-step-instrumentacion .orden-inst-contenido-scroll {
-        max-height: min(58dvh, 380px);
+        max-height: min(84dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 9.5rem));
       }
     }
     .transaccion-acuerdo-datos .transaccion-acuerdo-fila + .transaccion-acuerdo-fila { margin-top: 0.35rem; }
@@ -1805,7 +1825,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.94</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.95</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>

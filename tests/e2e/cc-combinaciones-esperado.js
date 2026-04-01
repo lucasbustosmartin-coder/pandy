@@ -1,4 +1,6 @@
 // @ts-check
+const { withSeedCajaCheque } = require('./e2e-caja-seed-saldos');
+
 /**
  * Datos fijos y expectativas por combinación de estados (Tx1, Tx2, Tx3, Tx4)
  * para CHEQUE-ARS con intermediario (mismo flujo que ARS-ARS). Mismo acuerdo: 200k, 195k, 197k, 5k, 3k.
@@ -30,7 +32,7 @@ const DATOS_FIJOS = {
  *
  * detalleInt: montos persistidos en CC intermediario (+cheque, −comisión; −197k en Tx4 al cerrar). saldoIntARS sigue en convención E2E (saldoResumenANumero con intermediario).
  */
-const COMBINACIONES_ESPERADO = [
+const COMBINACIONES_ESPERADO_RAW = [
   // 1. P,P,P,P
   { id: 'P,P,P,P', tx1: 'P', tx2: 'P', tx3: 'P', tx4: 'P', saldoClienteARS: 0, saldoIntARS: 0, detalleCliente: [], detalleInt: [], saldoCajaEfectivoARS: 0, saldoCajaChequeARS: 0 },
   // 2. P,P,P,E
@@ -56,6 +58,8 @@ const COMBINACIONES_ESPERADO = [
   // 12. E,E,E,E — Tx2 -195k + Tx4 +197k efectivo = 2000
   { id: 'E,E,E,E', tx1: 'E', tx2: 'E', tx3: 'E', tx4: 'E', saldoClienteARS: 0, saldoIntARS: 0, detalleCliente: [-200000, 195000, 5000], detalleInt: [200000, -197000, -3000], saldoCajaEfectivoARS: 2000, saldoCajaChequeARS: 0 },
 ];
+
+const COMBINACIONES_ESPERADO = COMBINACIONES_ESPERADO_RAW.map(withSeedCajaCheque);
 
 module.exports = {
   DATOS_FIJOS,

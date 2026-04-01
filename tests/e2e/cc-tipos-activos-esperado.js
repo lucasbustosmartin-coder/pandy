@@ -1,4 +1,6 @@
 // @ts-check
+const { E2E_CAJA_SEED, withSeedCajaTipo2tx } = require('./e2e-caja-seed-saldos');
+
 /**
  * Expectativas por combinación (Tx1, Tx2) para tipos de operación con 2 transacciones (sin intermediario y USD-USD con intermediario).
  * Montos fijos enteros para control manual y Excel.
@@ -42,7 +44,7 @@ const USD_USD_FIJOS = {
 /**
  * @type {Array<{ id: string, tx1: string, tx2: string, saldoUSD: number, saldoARS: number, detalleCliente: number[], cajaUSD: number, cajaARS: number }>}
  */
-const COMBINACIONES_ARS_USD = [
+const COMBINACIONES_ARS_USD_RAW = [
   { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
   { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -5000, saldoARS: 0, detalleCliente: [-5000000, -5000, 5000000], cajaUSD: 0, cajaARS: 5000000 },
   {
@@ -68,7 +70,7 @@ const COMBINACIONES_ARS_USD = [
   },
 ];
 
-const COMBINACIONES_USD_ARS = [
+const COMBINACIONES_USD_ARS_RAW = [
   { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
   { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: 0, saldoARS: -5000000, detalleCliente: [-5000000, -5000, 5000], cajaUSD: 5000, cajaARS: 0 },
   {
@@ -95,7 +97,7 @@ const COMBINACIONES_USD_ARS = [
   },
 ];
 
-const COMBINACIONES_USD_USD = [
+const COMBINACIONES_USD_USD_RAW = [
   { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
   // E,P: cobro −10.000; egreso pendiente +mr y −mr (no −me) cuando hay comisión E,P en catálogo, + comisión pendiente +300 → saldo neto −9.700.
   { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -9700, saldoARS: 0, detalleCliente: [-10000, -10000, 300, 10000], cajaUSD: 10000, cajaARS: 0 },
@@ -122,6 +124,10 @@ const COMBINACIONES_USD_USD = [
   },
 ];
 
+const COMBINACIONES_ARS_USD = COMBINACIONES_ARS_USD_RAW.map(withSeedCajaTipo2tx);
+const COMBINACIONES_USD_ARS = COMBINACIONES_USD_ARS_RAW.map(withSeedCajaTipo2tx);
+const COMBINACIONES_USD_USD = COMBINACIONES_USD_USD_RAW.map(withSeedCajaTipo2tx);
+
 /**
  * USD-USD con intermediario: mismas expectativas **cliente** / detalle que sin int (`reglas_de_negocio` cliente + mr_menos_me).
  * **Caja:** con patrón cp_ic (Tx2 = Intermediario→Cliente), el egreso del intermediario **no** mueve la caja de Pandy; solo cuenta el ingreso Cliente→Pandy cuando está ejecutado (E,E → +mr; P,E → 0; E,P → +mr).
@@ -135,8 +141,9 @@ const COMBINACIONES_USD_USD_INT = COMBINACIONES_USD_USD.map((c) => {
     ...c,
     saldoIntermediarioUSD: c.id === 'E,E' || c.id === 'P,E' ? SALDO_INT_USD_USD_EE : 0,
   };
-  if (c.id === 'E,E') return { ...base, cajaUSD: USD_USD_FIJOS.mr };
-  if (c.id === 'P,E') return { ...base, cajaUSD: 0 };
+  const seedUsd = E2E_CAJA_SEED.efectivoUSD;
+  if (c.id === 'E,E') return { ...base, cajaUSD: USD_USD_FIJOS.mr + seedUsd };
+  if (c.id === 'P,E') return { ...base, cajaUSD: seedUsd };
   return base;
 });
 
@@ -183,7 +190,8 @@ function comboEurUsdDesdeArsUsd(c) {
     saldoEUR: c.saldoARS,
     saldoARS: 0,
     cajaEUR: c.cajaARS,
-    cajaARS: 0,
+    // Columna ARS en Cajas sigue mostrando la semilla E2E aunque este tipo no opere en ARS.
+    cajaARS: E2E_CAJA_SEED.efectivoARS,
     detalleCliente: [...(c.detalleCliente || [])],
   };
 }
@@ -195,7 +203,7 @@ function comboUsdEurDesdeUsdArs(c) {
     saldoEUR: c.saldoARS,
     saldoARS: 0,
     cajaEUR: c.cajaARS,
-    cajaARS: 0,
+    cajaARS: E2E_CAJA_SEED.efectivoARS,
     detalleCliente: [...(c.detalleCliente || [])],
   };
 }
@@ -207,7 +215,7 @@ function comboEurArsDesdeUsdArs(c) {
     saldoEUR: c.saldoUSD,
     saldoUSD: 0,
     cajaEUR: c.cajaUSD,
-    cajaUSD: 0,
+    cajaUSD: E2E_CAJA_SEED.efectivoUSD,
     detalleCliente: [...(c.detalleCliente || [])],
   };
 }
@@ -219,7 +227,7 @@ function comboArsEurDesdeArsUsd(c) {
     saldoEUR: c.saldoUSD,
     saldoUSD: 0,
     cajaEUR: c.cajaUSD,
-    cajaUSD: 0,
+    cajaUSD: E2E_CAJA_SEED.efectivoUSD,
     detalleCliente: [...(c.detalleCliente || [])],
   };
 }
