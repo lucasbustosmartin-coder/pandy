@@ -13767,6 +13767,10 @@ function openModalOrden(registro) {
           }
         }, 150);
       }
+      const codReadapt = optTipo?.getAttribute('data-codigo') || '';
+      if (codReadapt && selTipoEl) {
+        adaptarFormularioOrden(codReadapt, tipos, selTipoEl.value || '');
+      }
     };
     if (btnBack) btnBack.onclick = () => showOrdenWizardStep('participantes');
     if (btnBackDetalles) btnBackDetalles.onclick = () => showOrdenWizardStep('detalles');
@@ -13904,6 +13908,9 @@ function openModalOrden(registro) {
         syncPatronDesdeTransaccionesOrdenInt(registroActual.id).then(() => {
           if (modalLoadSeq !== ordenModalLoadSeq) return;
           syncOrdenIntPatronInstrumentacionWrap();
+          const optP = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+          const codP = optP ? (optP.getAttribute('data-codigo') || '') : '';
+          if (codP && selTipoEl) adaptarFormularioOrden(codP, tipos, selTipoEl.value || '');
         });
       } else {
         syncOrdenIntPatronInstrumentacionWrap();
@@ -14010,7 +14017,18 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
   const entNorm = monedaCatalogoParaOrden(entregadaDesdeTipo);
   const isUsdUsd = codigo === 'USD-USD';
   const isArsArs = esTipoOperacionChequeArs(codigo, tipo?.moneda_in, tipo?.moneda_out);
-  const patronTcForm = patronTipoCambioOrden(recNorm, entNorm);
+  let patronTcForm = patronTipoCambioOrden(recNorm, entNorm);
+  // Si no hubo patrón desde tipo/código, el <option> del select suele traer data-moneda-in/out fiable.
+  if (!patronTcForm) {
+    const selOptPat = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+    const miOpt = (selOptPat?.getAttribute('data-moneda-in') || '').trim().toUpperCase();
+    const moOpt = (selOptPat?.getAttribute('data-moneda-out') || '').trim().toUpperCase();
+    if (miOpt && moOpt) {
+      const rAlt = monedaCatalogoParaOrden(miOpt);
+      const eAlt = monedaCatalogoParaOrden(moOpt);
+      if (rAlt && eAlt && rAlt !== eAlt) patronTcForm = patronTipoCambioOrden(rAlt, eAlt);
+    }
+  }
   const isTcCompraUsd = esPatronCompraFiatConTc(patronTcForm);
   const isTcVendeUsd = esPatronVendeFiatConTc(patronTcForm);
   const isTipoConTc = !!patronTcForm;
@@ -14076,6 +14094,19 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     if (inputCotizacion) inputCotizacion.required = !!isTipoConTc;
   }
   if (isTipoDosMonedas) {
+    // Limpiar restos del tipo anterior (p. ej. ARS-USD dejó recibido gris; al pasar a USD-EUR vende hay que desbloquear recibido).
+    const mrReset = document.getElementById('orden-monto-recibido');
+    const meReset = document.getElementById('orden-monto-entregado');
+    if (mrReset) {
+      mrReset.readOnly = false;
+      mrReset.style.background = '';
+      mrReset.style.color = '';
+    }
+    if (meReset) {
+      meReset.readOnly = false;
+      meReset.style.background = '';
+      meReset.style.color = '';
+    }
     const formResto = document.getElementById('orden-form-resto');
     const wrapCotizacionEl = document.getElementById('orden-wrap-cotizacion');
     const rowEntregado = document.getElementById('orden-monto-entregado')?.closest('.form-row');
@@ -14459,12 +14490,60 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
       if (montoEntregadoEl) montoEntregadoEl.readOnly = false;
     }
   }
-  if (isTipoPrimerosDatos) actualizarPrimerosDatos();
   const lblIntTxt = document.getElementById('orden-label-intermediario-texto');
   if (lblIntTxt) lblIntTxt.textContent = usaIntermediario ? 'Intermediario *' : 'Intermediario (opcional)';
+  // Visibilidad patrón USD+int y wrap «tras patrón» ANTES de actualizarPrimerosDatos: si no,
+  // wrapTrasPat puede seguir con display:none del flujo anterior y setRestoOrdenEditable(false)
+  // deja el campo operativo grisado hasta recargar la página.
   syncOrdenIntPatronInstrumentacionWrap();
   applyOrdenUsdIntPostPatronVisibility();
   syncOrdenWizardUsdUsdIntComisionUi();
+  if (isTipoPrimerosDatos) actualizarPrimerosDatos();
+
+  // Cierre por tipo: cruces con TC (USD/EUR/ARS en cualquier par soportado por patronTipoCambioOrden) — un solo monto operativo + TC siempre editables.
+  if (isTipoDosMonedas && isTipoConTc && montoRecibidoEl && montoEntregadoEl) {
+    if (isTcVendeUsd) {
+      montoRecibidoEl.readOnly = false;
+      montoRecibidoEl.style.background = '';
+      montoRecibidoEl.style.color = '';
+      montoEntregadoEl.readOnly = true;
+      montoEntregadoEl.style.background = '#eee';
+      montoEntregadoEl.style.color = '#555';
+    } else if (isTcCompraUsd) {
+      montoEntregadoEl.readOnly = false;
+      montoEntregadoEl.style.background = '';
+      montoEntregadoEl.style.color = '';
+      montoRecibidoEl.readOnly = true;
+      montoRecibidoEl.style.background = '#eee';
+      montoRecibidoEl.style.color = '#555';
+    }
+    if (inputCotizacion) {
+      inputCotizacion.readOnly = false;
+      inputCotizacion.disabled = false;
+    }
+  }
+  // Dos monedas sin patrón TC: solo desbloquear montos y TC (fecha/estado siguen como setRestoOrdenEditable para este flujo).
+  if (isTipoDosMonedas && !isTipoConTc && montoRecibidoEl && montoEntregadoEl) {
+    montoRecibidoEl.readOnly = false;
+    montoRecibidoEl.style.background = '';
+    montoRecibidoEl.style.color = '';
+    montoEntregadoEl.readOnly = false;
+    montoEntregadoEl.style.background = '';
+    montoEntregadoEl.style.color = '';
+    if (inputCotizacion) {
+      inputCotizacion.readOnly = false;
+      inputCotizacion.disabled = false;
+    }
+  }
+  // Bloque azul «Datos del acuerdo»: nunca dejar importe/tasa cliente bloqueados por el navegador o restos de sesión.
+  if (importeChequeEl) {
+    importeChequeEl.readOnly = false;
+    importeChequeEl.disabled = false;
+  }
+  if (tasaDescuentoClienteEl) {
+    tasaDescuentoClienteEl.readOnly = false;
+    tasaDescuentoClienteEl.disabled = false;
+  }
 }
 
 /** Cierra el modal de orden (sin validar instrumentación). Usar solicitarCierreModalOrden desde la UI del wizard. */
