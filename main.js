@@ -7386,8 +7386,16 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     montoEfectivoInt,
     /** CHEQUE-ARS + int.: importe de la fila sintética «comisión» en CC cliente = mr−me (docs/CHEQUE_ARS_INTERMEDIARIO.md). `comisionPandyMonto` sigue siendo el reparto Pandy (caja / trx ganancia / skip ingreso chico). */
     comisionSpreadAcuerdoClienteCheque = 0,
+    /** Varias filas `comisiones_orden` intermediario (p. ej. spread USD + extra tasa transferencia en ARS). Si viene vacío, se usa comisionIntMonto/Mon. */
+    filasComisionIntermediario = null,
   } = opts;
   if (!reglasDeNegocio || !reglasDeNegocio.length) return;
+  const filasIntParaComision =
+    Array.isArray(filasComisionIntermediario) && filasComisionIntermediario.length
+      ? filasComisionIntermediario.filter((f) => (Number(f.monto) || 0) >= 1e-6)
+      : Number(comisionIntMonto) >= 1e-6
+        ? [{ moneda: String(comisionIntMon || 'USD').toUpperCase(), monto: Number(comisionIntMonto) || 0 }]
+        : [];
   const mr = Number(orden.monto_recibido) || 0;
   const me = Number(orden.monto_entregado) || 0;
   const comM = Number(comisionPandyMonto) || 0;
@@ -7611,7 +7619,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     !!parTcComInt;
   let feComCruceTcInt = null;
   let nroTransComisionCruceTcInt = null;
-  if (crucesTcComisionInt && intermediarioId && Number(comisionIntMonto) >= 1e-6) {
+  if (crucesTcComisionInt && intermediarioId && filasIntParaComision.length) {
     const trEgList = (transacciones || [])
       .filter((t) =>
         (t.estado || '').toLowerCase() === 'ejecutada' &&
@@ -7627,7 +7635,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
   }
   // Par cerrado: ingreso C→P/I + entrega al cliente ejecutados. cp_ic P,E: comisión con contrapartida_ejecutada false (misma tabla que USD-USD).
-  if ((esUsdUsd || crucesTcComisionInt) && intermediarioId && Number(comisionIntMonto) >= 1e-6) {
+  if ((esUsdUsd || crucesTcComisionInt) && intermediarioId && filasIntParaComision.length) {
     const parClienteCerradoUsdInt =
       ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
       egresoEntregaAClienteEjecutado(transacciones);
@@ -7653,33 +7661,37 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       contrapartidaComIntLookup
     )[0];
     if (reglaComIntUsd && coercePgBooleanStrict(reglaComIntUsd.incluir_en_detalle)) {
-      const baseInt = montoBaseReglaNegocio(reglaComIntUsd.monto_origen, {
-        mr, me, montoT: 0,
-        comisionIntMonto: Number(comisionIntMonto) || 0,
-      });
-      const rawComInt = Number(reglaComIntUsd.signo) * baseInt;
-      const montoCcInt = rawComInt;
-      if (Math.abs(montoCcInt) >= 1e-12) {
-        const monedaInt = String(comisionIntMon || reglaComIntUsd.moneda || 'USD').toUpperCase();
-        const cerradoInt = parClienteCerradoUsdInt;
-        const feComInt = esUsdUsd ? feComUsd : feComCruceTcInt;
-        const nroTransComInt = esUsdUsd ? nroTransComisionConceptoUsd : nroTransComisionCruceTcInt;
-        if (feComInt) {
-        rowsCcInt.push({
-          intermediario_id: intermediarioId,
-          orden_id: ordenId,
-          transaccion_id: null,
-          transaccion_numero: null,
-          concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComInt),
-          fecha: feComInt.fecha,
-          usuario_id: currentUserId,
-          moneda: monedaInt,
-          monto: montoCcInt,
-          estado: cerradoInt ? 'cerrado' : 'pendiente',
-          estado_fecha: feComInt.estado_fecha,
-          incluir_en_detalle: coercePgBooleanStrict(reglaComIntUsd.incluir_en_detalle),
-          ...montosCcPorMoneda(monedaInt, montoCcInt),
+      const cerradoInt = parClienteCerradoUsdInt;
+      const feComInt = esUsdUsd ? feComUsd : feComCruceTcInt;
+      const nroTransComInt = esUsdUsd ? nroTransComisionConceptoUsd : nroTransComisionCruceTcInt;
+      for (const filaInt of filasIntParaComision) {
+        const montoIntFila = Number(filaInt.monto) || 0;
+        if (montoIntFila < 1e-6) continue;
+        const baseInt = montoBaseReglaNegocio(reglaComIntUsd.monto_origen, {
+          mr, me, montoT: 0,
+          comisionIntMonto: montoIntFila,
         });
+        const rawComInt = Number(reglaComIntUsd.signo) * baseInt;
+        const montoCcInt = rawComInt;
+        if (Math.abs(montoCcInt) >= 1e-12) {
+          const monedaInt = String(filaInt.moneda || reglaComIntUsd.moneda || 'USD').toUpperCase();
+          if (feComInt) {
+            rowsCcInt.push({
+              intermediario_id: intermediarioId,
+              orden_id: ordenId,
+              transaccion_id: null,
+              transaccion_numero: null,
+              concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComInt),
+              fecha: feComInt.fecha,
+              usuario_id: currentUserId,
+              moneda: monedaInt,
+              monto: montoCcInt,
+              estado: cerradoInt ? 'cerrado' : 'pendiente',
+              estado_fecha: feComInt.estado_fecha,
+              incluir_en_detalle: coercePgBooleanStrict(reglaComIntUsd.incluir_en_detalle),
+              ...montosCcPorMoneda(monedaInt, montoCcInt),
+            });
+          }
         }
       }
     }
@@ -7748,7 +7760,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       });
     }
   }
-  if (codOpCh === 'CHEQUE-ARS' && intermediarioId && Number(comisionIntMonto) >= 1e-6) {
+  if (codOpCh === 'CHEQUE-ARS' && intermediarioId && filasIntParaComision.length) {
     const condicion = getCondicionComisionReglasNegocio(reglasDeNegocio, tipoOperacionCodigo, 'pandy', 'intermediario', 'egreso');
     const estadoEf = condicion
       ? estadoEfectivoComision(transacciones, condicion)
@@ -7767,23 +7779,26 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     // Comisión intermediario en CC solo cuando Tx3 o Tx4 ejecutada (par_pandy_int efectivo); no fila con todo pendiente (E2E P,P,P,P).
     if (estadoEf === 'ejecutada' && reglaComInt && coercePgBooleanStrict(reglaComInt.incluir_en_detalle)) {
       const signo = Number(reglaComInt.signo) != null ? Number(reglaComInt.signo) : 1;
-      const comInt = Number(comisionIntMonto) || 0;
-      const monCom = String(comisionIntMon || 'ARS').toUpperCase();
-      rowsCcInt.push({
-        intermediario_id: intermediarioId,
-        orden_id: ordenId,
-        transaccion_id: null,
-        transaccion_numero: null,
-        concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConceptoChequeArs),
-        fecha: feComChequeArs.fecha,
-        usuario_id: currentUserId,
-        moneda: monCom,
-        monto: signo * comInt,
-        estado: parIntCerrado ? 'cerrado' : 'pendiente',
-        estado_fecha: feComChequeArs.estado_fecha,
-        incluir_en_detalle: coercePgBooleanStrict(reglaComInt.incluir_en_detalle),
-        ...montosCcPorMoneda(monCom, signo * comInt)
-      });
+      for (const filaInt of filasIntParaComision) {
+        const comInt = Number(filaInt.monto) || 0;
+        if (comInt < 1e-6) continue;
+        const monCom = String(filaInt.moneda || 'ARS').toUpperCase();
+        rowsCcInt.push({
+          intermediario_id: intermediarioId,
+          orden_id: ordenId,
+          transaccion_id: null,
+          transaccion_numero: null,
+          concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConceptoChequeArs),
+          fecha: feComChequeArs.fecha,
+          usuario_id: currentUserId,
+          moneda: monCom,
+          monto: signo * comInt,
+          estado: parIntCerrado ? 'cerrado' : 'pendiente',
+          estado_fecha: feComChequeArs.estado_fecha,
+          incluir_en_detalle: coercePgBooleanStrict(reglaComInt.incluir_en_detalle),
+          ...montosCcPorMoneda(monCom, signo * comInt)
+        });
+      }
     }
   }
 }
@@ -14861,13 +14876,15 @@ function pandiBuildComisionesOrdenOutboxRows(ctx) {
   } = ctx;
   const comisionUsdN = comisionUsd != null && !isNaN(Number(comisionUsd)) ? Math.max(0, Number(comisionUsd)) : 0;
   const comisionMoneda = esChequeArsOrden ? 'ARS' : 'USD';
+  const patOut = ctx.patronInstrumentacionInt || 'cp_ic';
+  const legMonOut = montoLegIntermediarioPatronInstrumentacion2tx(ctx.ordenSnap || {}, patOut).moneda;
   let extraTfOut = 0;
   if (ctx.intermediarioPagoTransferencia === true && ctx.intermediarioTransferenciaCobraTasa === true && typeof ctx.intermediarioTransferenciaTasaFrac === 'number' && !isNaN(ctx.intermediarioTransferenciaTasaFrac) && ctx.intermediarioTransferenciaTasaFrac > 0) {
     extraTfOut = montoExtraTasaTransferenciaInterEnMonedaComision(
       ctx.ordenSnap || {},
-      ctx.patronInstrumentacionInt || 'cp_ic',
+      patOut,
       ctx.intermediarioTransferenciaTasaFrac,
-      comisionMoneda,
+      legMonOut,
     );
   }
   const persistirSpread =
@@ -14915,6 +14932,17 @@ function pandiBuildComisionesOrdenOutboxRows(ctx) {
   if (intermediarioId && montoInter > 0) {
     rows.push({ moneda: comisionMoneda, monto: montoInter, concepto: conceptoComision, beneficiario: 'intermediario', intermediario_id: intermediarioId });
   }
+  (repTr.filasTransferOtraMoneda || []).forEach((fx) => {
+    if (intermediarioId && fx.montoInter >= 1e-6) {
+      rows.push({
+        moneda: fx.moneda,
+        monto: fx.montoInter,
+        concepto: conceptoComision,
+        beneficiario: 'intermediario',
+        intermediario_id: intermediarioId,
+      });
+    }
+  });
   return rows;
 }
 
@@ -15349,7 +15377,7 @@ function guardarOrdenDesdeWizard() {
       const conceptoComision = tipoCodigo === 'USD-ARS' ? 'Comisión USD-ARS' : (esChequeArsOrden ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
       const comisionMoneda = esChequeArsOrden ? 'ARS' : 'USD';
       const comisionUsdNum = comisionUsd != null && !isNaN(Number(comisionUsd)) ? Math.max(0, Number(comisionUsd)) : 0;
-      const extraTrEst = wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion, comisionMoneda);
+      const extraTrEst = wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion);
       if (!((tipoCodigoU === 'USD-USD' || esChequeArsOrden || patronTcGuardar) && (comisionUsdNum > 1e-12 || extraTrEst >= 1e-6))) return Promise.resolve();
       return client.from('comisiones_orden').delete().eq('orden_id', ordenId).then(() => {
         let montoPandy;
@@ -15407,6 +15435,18 @@ function guardarOrdenDesdeWizard() {
           { orden_id: ordenId, moneda: comisionMoneda, monto: montoPandy, concepto: conceptoComision, beneficiario: 'pandy', intermediario_id: null },
         ];
         if (intermediarioId && montoInter > 0) rows.push({ orden_id: ordenId, moneda: comisionMoneda, monto: montoInter, concepto: conceptoComision, beneficiario: 'intermediario', intermediario_id: intermediarioId });
+        (repTr.filasTransferOtraMoneda || []).forEach((fx) => {
+          if (intermediarioId && fx.montoInter >= 1e-6) {
+            rows.push({
+              orden_id: ordenId,
+              moneda: fx.moneda,
+              monto: fx.montoInter,
+              concepto: conceptoComision,
+              beneficiario: 'intermediario',
+              intermediario_id: intermediarioId,
+            });
+          }
+        });
         return client.from('comisiones_orden').insert(rows).then(() => {});
       });
     }
@@ -15976,7 +16016,7 @@ function saveOrden() {
     function guardarComisionYContinuar(continuar) {
       const comisionMonedaSave = esChequeArsSave ? 'ARS' : 'USD';
       const comisionUsdNumSave = comisionUsd != null && !isNaN(Number(comisionUsd)) ? Math.max(0, Number(comisionUsd)) : 0;
-      const extraTrEstSave = wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion, comisionMonedaSave);
+      const extraTrEstSave = wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion);
       if ((tipoCodigoU === 'USD-USD' || esChequeArsSave || patronTcSaveOrd) && (comisionUsdNumSave > 1e-12 || extraTrEstSave >= 1e-6)) {
         client.from('comisiones_orden').delete().eq('orden_id', ordenId).then(() => {
           let montoPandy;
@@ -16036,6 +16076,18 @@ function saveOrden() {
           if (intermediarioId && montoInter > 0) {
             rows.push({ orden_id: ordenId, moneda: comisionMoneda, monto: montoInter, concepto: conceptoComision, beneficiario: 'intermediario', intermediario_id: intermediarioId });
           }
+          (repTrS.filasTransferOtraMoneda || []).forEach((fx) => {
+            if (intermediarioId && fx.montoInter >= 1e-6) {
+              rows.push({
+                orden_id: ordenId,
+                moneda: fx.moneda,
+                monto: fx.montoInter,
+                concepto: conceptoComision,
+                beneficiario: 'intermediario',
+                intermediario_id: intermediarioId,
+              });
+            }
+          });
           client.from('comisiones_orden').insert(rows).then((rCom) => {
             if (rCom.error) console.warn('Comisión no guardada:', rCom.error.message);
             continuar();
@@ -16854,20 +16906,16 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
         }))
         .then(() => {
           if (!instrumentacionId) return Promise.resolve();
-          return client.from('comisiones_orden').select('moneda, monto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario').maybeSingle()
-            .then((rCom) => {
-              const comMonto = rCom.data && (Number(rCom.data.monto) || 0);
-              if (comMonto >= 1e-6) {
-                const monCom = (rCom.data.moneda || 'ARS').toUpperCase();
-                // Según Excel: comisión intermediario en CC con signo invertido (-3000).
-                return client.from('movimientos_cuenta_corriente_intermediario').insert({
-                  intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero, moneda: monCom, monto: -comMonto,
-                  concepto: conceptoCcLeyenda('comision_acuerdo', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
-                  ...montosCcPorMoneda(monCom, -comMonto),
-                }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, ordenNumero, transNumero));
-              }
-              return Promise.resolve();
-            });
+          return insertarFilasComisionIntermediarioCcPorTransaccion({
+            ordenId,
+            intermediarioId,
+            transaccionId,
+            transaccionNumero: transNumero,
+            ordenNumero: ordenNumero,
+            fecha,
+            ahora,
+            instrumentacionId,
+          });
         })
     );
   }
@@ -17029,14 +17077,26 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             const extraTfSync = montoExtraInferidoTasaTransferenciaInterDesdeOrdenRegistro(orden, patronIntUsdSync, codigoOrdenRaw, toJoin);
             if (extraTfSync >= 1e-6) {
               comisionIntMonto = extraTfSync;
-              comisionIntMon = esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) ? 'ARS' : 'USD';
+              comisionIntMon = String(
+                montoLegIntermediarioPatronInstrumentacion2tx(orden, patronIntUsdSync || 'cp_ic').moneda || 'USD',
+              ).toUpperCase();
             }
           }
-          // Tras inferir comisión int. por tasa o por fija cp_ic: si Pandy tenía todo el spread en comisiones_orden y suma > mr−me, ajustar parte Pandy.
+          const filasComisionIntermediarioMotorRaw = comisiones
+            .filter((c) => String(c.beneficiario || '').toLowerCase() === 'intermediario')
+            .map((c) => ({ moneda: String(c.moneda || 'USD').toUpperCase().trim(), monto: Number(c.monto) || 0 }))
+            .filter((f) => f.monto >= 1e-6);
+          const filasComisionIntermediarioMotor = filasComisionIntermediarioMotorRaw.length > 0
+            ? filasComisionIntermediarioMotorRaw.slice()
+            : (comisionIntMonto >= 1e-6 ? [{ moneda: String(comisionIntMon || 'USD').toUpperCase(), monto: Number(comisionIntMonto) || 0 }] : []);
+          // Tras inferir: si la suma de comisiones int. en USD supera el spread mr−me, ajustar parte Pandy (varias filas int. posibles).
           if (codNorm === 'USD-USD' && intermediarioId && mr > me + 1e-6) {
             const spUsd = mr - me;
-            if (comisionIntMonto >= 1e-6 && comisionPandyMonto + comisionIntMonto > spUsd + 0.02) {
-              comisionPandyMonto = Math.max(0, spUsd - comisionIntMonto);
+            const sumIntUsd = filasComisionIntermediarioMotor
+              .filter((f) => f.moneda === 'USD')
+              .reduce((s, f) => s + f.monto, 0);
+            if (sumIntUsd >= 1e-6 && comisionPandyMonto + sumIntUsd > spUsd + 0.02) {
+              comisionPandyMonto = Math.max(0, spUsd - sumIntUsd);
             }
           }
           const spreadAcuerdoChequeInt =
@@ -17251,6 +17311,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               comisionIntMon,
               montoEfectivoInt,
               comisionSpreadAcuerdoClienteCheque: spreadAcuerdoChequeInt,
+              filasComisionIntermediario: filasComisionIntermediarioMotor,
             });
           } else if (esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id) {
             const nroTransComisionChequeFb = nroTransIngresoClientePandyPrincipalParaComisionConcepto(transacciones, comisionPandyMonto);
@@ -17267,22 +17328,31 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             }
             const hayTx3Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && (t.estado || '').toLowerCase() === 'ejecutada');
             const hayTx4Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'intermediario' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
-            if (intermediarioId && comisionIntMonto >= 1e-6 && (hayTx3Ejecutada || hayTx4Ejecutada || parClienteCerradoFb)) {
-              rowsCcInt.push({ intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: currentUserId, moneda: comisionIntMon, monto: -comisionIntMonto, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(comisionIntMon, -comisionIntMonto) });
+            if (intermediarioId && filasComisionIntermediarioMotor.length && (hayTx3Ejecutada || hayTx4Ejecutada || parClienteCerradoFb)) {
+              filasComisionIntermediarioMotor.forEach((filaIntFb) => {
+                const mIfb = Number(filaIntFb.monto) || 0;
+                if (mIfb < 1e-6) return;
+                const monIfb = String(filaIntFb.moneda || 'ARS').toUpperCase();
+                rowsCcInt.push({ intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: currentUserId, moneda: monIfb, monto: -mIfb, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(monIfb, -mIfb) });
+              });
             }
-            if (intermediarioId && comisionIntMonto >= 1e-6 && parClienteCerradoFb) {
-              const monComCajaFb = (comisionIntMon || 'ARS').toUpperCase();
-              rowsCaja.push({
-                orden_id: ordenId,
-                transaccion_id: null,
-                moneda: monComCajaFb,
-                monto: -comisionIntMonto,
-                caja_tipo: 'efectivo',
-                orden_numero: orden.numero != null ? orden.numero : null,
-                transaccion_numero: nroTransComisionChequeFb,
-                concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaFb, comisionIntMonto, orden.numero, nroTransComisionChequeFb),
-                fecha: feSynthChequeFb.fecha,
-                usuario_id: currentUserId,
+            if (intermediarioId && filasComisionIntermediarioMotor.length && parClienteCerradoFb) {
+              filasComisionIntermediarioMotor.forEach((filaIntFb) => {
+                const mIfb = Number(filaIntFb.monto) || 0;
+                if (mIfb < 1e-6) return;
+                const monComCajaFb = String(filaIntFb.moneda || 'ARS').toUpperCase();
+                rowsCaja.push({
+                  orden_id: ordenId,
+                  transaccion_id: null,
+                  moneda: monComCajaFb,
+                  monto: -mIfb,
+                  caja_tipo: 'efectivo',
+                  orden_numero: orden.numero != null ? orden.numero : null,
+                  transaccion_numero: nroTransComisionChequeFb,
+                  concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaFb, mIfb, orden.numero, nroTransComisionChequeFb),
+                  fecha: feSynthChequeFb.fecha,
+                  usuario_id: currentUserId,
+                });
               });
             }
           }
@@ -17567,6 +17637,52 @@ function revertirGananciaPandy(ordenId, orden, clienteId, comisionPandyMonto) {
         .then(() => client.from('movimientos_caja').delete().eq('transaccion_id', trId))
         .then(() => client.from('transacciones').delete().eq('id', trId))
         .then(() => client.from('orden_comisiones_generadas').delete().eq('orden_id', ordenId).eq('tipo', 'ganancia_pandy'));
+    });
+}
+
+/**
+ * Tras ejecutar una trx Pandy↔Intermediario: inserta en CC int. una línea «Comisión del acuerdo» por cada fila `comisiones_orden` con beneficiario intermediario.
+ * `asegurarComisionIntermediario` (caja) solo se invoca para la **primera** fila: la tabla `orden_comisiones_generadas` sigue siendo una fila por orden y tipo.
+ */
+function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
+  const {
+    ordenId,
+    intermediarioId,
+    transaccionId,
+    transaccionNumero,
+    ordenNumero,
+    fecha,
+    ahora,
+    instrumentacionId,
+  } = opts;
+  if (!ordenId || !intermediarioId) return Promise.resolve();
+  return client.from('comisiones_orden').select('moneda, monto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario')
+    .then((rCom) => {
+      const filas = (rCom.data || []).filter((row) => (Number(row.monto) || 0) >= 1e-6);
+      if (!filas.length) return Promise.resolve();
+      return filas.reduce(
+        (p, row, idx) => p.then(() => {
+          const comMonto = Number(row.monto) || 0;
+          const monCom = (row.moneda || 'ARS').toUpperCase();
+          return client.from('movimientos_cuenta_corriente_intermediario').insert({
+            intermediario_id: intermediarioId,
+            orden_id: ordenId,
+            transaccion_id: transaccionId,
+            transaccion_numero: transaccionNumero != null ? transaccionNumero : null,
+            moneda: monCom,
+            monto: -comMonto,
+            concepto: conceptoCcLeyenda('comision_acuerdo', ordenNumero, transaccionNumero),
+            fecha,
+            usuario_id: currentUserId,
+            estado: 'cerrado',
+            estado_fecha: ahora,
+            ...montosCcPorMoneda(monCom, -comMonto),
+          }).then(() => (idx === 0 && instrumentacionId
+            ? asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, ordenNumero, transaccionNumero)
+            : Promise.resolve()));
+        }),
+        Promise.resolve(),
+      );
     });
 }
 
@@ -18011,26 +18127,24 @@ function montoExtraTasaTransferenciaInterEnMonedaComision(ordenSnap, patronInt, 
 }
 
 /**
- * Extra por tasa transferencia intermediario (wizard / payloads), en la moneda de la fila comisiones_orden.
- * `aplicarExtraComisionTasaTransferenciaIntermediario` suma esto al intermediario y reduce la parte Pandy del spread total `comisionTotal`.
+ * Extra por tasa transferencia intermediario (wizard / payloads), en la **moneda de la pata** del intermediario (misma base que `montoLegIntermediarioPatronInstrumentacion2tx`).
+ * `aplicarExtraComisionTasaTransferenciaIntermediario` suma al intermediario en esa moneda (o fila aparte si el spread va en otra moneda) y ajusta la parte Pandy del spread total `comisionTotal` cuando ambas coinciden.
  */
-function wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion, comisionMoneda) {
+function wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion) {
   if (!ordenIntermediarioPagoTransferenciaDesdeDom()) return 0;
   if (!ordenIntermediarioTransferenciaCobraTasaDesdeDom()) return 0;
   const frac = ordenIntermediarioTransferenciaTasaFracDesdeDom();
   if (!(typeof frac === 'number' && !isNaN(frac) && frac > 0)) return 0;
-  return montoExtraTasaTransferenciaInterEnMonedaComision(
-    {
-      moneda_recibida: monedaRecibida,
-      moneda_entregada: monedaEntregada,
-      monto_recibido: montoRecibido,
-      monto_entregado: montoEntregado,
-      cotizacion,
-    },
-    getOrdenPatronInstrumentacionInt(),
-    frac,
-    comisionMoneda,
-  );
+  const snap = {
+    moneda_recibida: monedaRecibida,
+    moneda_entregada: monedaEntregada,
+    monto_recibido: montoRecibido,
+    monto_entregado: montoEntregado,
+    cotizacion,
+  };
+  const pat = getOrdenPatronInstrumentacionInt();
+  const legMon = montoLegIntermediarioPatronInstrumentacion2tx(snap, pat).moneda;
+  return montoExtraTasaTransferenciaInterEnMonedaComision(snap, pat, frac, legMon);
 }
 
 /** Sync CC: si no hay fila `comisiones_orden` para intermediario, inferir solo el extra por tasa transferencia desde columnas de `ordenes`. */
@@ -18040,13 +18154,9 @@ function montoExtraInferidoTasaTransferenciaInterDesdeOrdenRegistro(orden, patro
   if (!coercePgBooleanStrict(orden.intermediario_transferencia_cobra_tasa)) return 0;
   const tFrac = Number(orden.intermediario_transferencia_tasa) || 0;
   if (!(tFrac > 0)) return 0;
-  const comMon = esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) ? 'ARS' : 'USD';
-  return montoExtraTasaTransferenciaInterEnMonedaComision(
-    orden,
-    patronIntInstrumentacion || 'cp_ic',
-    tFrac,
-    comMon,
-  );
+  const patInf = patronIntInstrumentacion || 'cp_ic';
+  const legMonInf = montoLegIntermediarioPatronInstrumentacion2tx(orden, patInf).moneda;
+  return montoExtraTasaTransferenciaInterEnMonedaComision(orden, patInf, tFrac, legMonInf);
 }
 
 function aplicarExtraComisionTasaTransferenciaIntermediario({
@@ -18068,13 +18178,23 @@ function aplicarExtraComisionTasaTransferenciaIntermediario({
     cobraTasaTransferencia !== true ||
     !(typeof tasaFracTransferencia === 'number' && !isNaN(tasaFracTransferencia) && tasaFracTransferencia > 0)
   ) {
-    return { montoInter: mi, montoPandy: mp };
+    return { montoInter: mi, montoPandy: mp, filasTransferOtraMoneda: [] };
   }
-  const extra = montoExtraTasaTransferenciaInterEnMonedaComision(ordenSnap, patronInt || 'cp_ic', tasaFracTransferencia, comisionMoneda);
-  if (!(extra > 0)) return { montoInter: mi, montoPandy: mp };
-  mi += extra;
-  mp = Math.max(0, total - mi);
-  return { montoInter: mi, montoPandy: mp };
+  const pat = patronInt || 'cp_ic';
+  const legMon = montoLegIntermediarioPatronInstrumentacion2tx(ordenSnap, pat).moneda;
+  const extraLeg = montoExtraTasaTransferenciaInterEnMonedaComision(ordenSnap, pat, tasaFracTransferencia, legMon);
+  if (!(extraLeg > 0)) return { montoInter: mi, montoPandy: mp, filasTransferOtraMoneda: [] };
+  const comM = String(comisionMoneda || 'USD').toUpperCase().trim();
+  if (legMon === comM) {
+    mi += extraLeg;
+    mp = Math.max(0, total - mi);
+    return { montoInter: mi, montoPandy: mp, filasTransferOtraMoneda: [] };
+  }
+  return {
+    montoInter: mi,
+    montoPandy: mp,
+    filasTransferOtraMoneda: [{ moneda: legMon, montoInter: extraLeg }],
+  };
 }
 
 function ordenIntermediarioTransferenciaCobraTasaDesdeDom() {
@@ -18163,12 +18283,11 @@ function setupOrdenTransferenciaTasaRadiosOnce() {
   }
 }
 
-/** Bloque HTML en panel/listado de orden: tasa transferencia intermediario (% , moneda del spread, monto estimado a cargo de Pandy). */
+/** Bloque HTML en panel/listado de orden: tasa transferencia intermediario (%, moneda de la pata del intermediario, monto estimado a cargo de Pandy). */
 function htmlOrdenResumenTasaTransferenciaIntermediario(ordenRow, listaTrxOpt) {
   if (!ordenRow || !coercePgBooleanStrict(ordenRow.intermediario_transferencia_cobra_tasa)) return '';
   const pctRaw = ordenRow.intermediario_transferencia_tasa;
   const pct = pctRaw != null && Number(pctRaw) > 0 ? formatImporteDisplay(Number(pctRaw) * 100) : '–';
-  const monedaCom = esOrdenChequeArsDesdeOrden(ordenRow) ? 'ARS' : 'USD';
   const tasaFrac = Number(pctRaw) || 0;
   const snap = {
     moneda_recibida: ordenRow.moneda_recibida,
@@ -18181,15 +18300,16 @@ function htmlOrdenResumenTasaTransferenciaIntermediario(ordenRow, listaTrxOpt) {
     Array.isArray(listaTrxOpt) && listaTrxOpt.length
       ? patronInstrumentacionIntDesdeTransacciones(listaTrxOpt)
       : 'cp_ic';
+  const monedaPataInt = montoLegIntermediarioPatronInstrumentacion2tx(snap, pat).moneda;
   const extra =
-    tasaFrac > 0 ? montoExtraTasaTransferenciaInterEnMonedaComision(snap, pat, tasaFrac, monedaCom) : 0;
-  const montoTxt = extra > 0 ? `${formatImporteDisplay(extra)} ${monedaCom}` : '–';
+    tasaFrac > 0 ? montoExtraTasaTransferenciaInterEnMonedaComision(snap, pat, tasaFrac, monedaPataInt) : 0;
+  const montoTxt = extra > 0 ? `${formatImporteDisplay(extra)} ${monedaPataInt}` : '–';
   return (
     '<div class="orden-detalle-tasa-transf-int" style="margin-top:0.4rem;padding:0.35rem 0.5rem;background:#f0fdf4;border-radius:6px;font-size:0.88rem;color:#14532d;line-height:1.45;border:1px solid #bbf7d0;">' +
     '<strong>Tasa por transferencia al intermediario:</strong> ' +
     pct +
-    '% · <strong>Moneda del cargo (spread):</strong> ' +
-    monedaCom +
+    '% · <strong>Moneda de la pata del intermediario:</strong> ' +
+    monedaPataInt +
     ' · <strong>Monto estimado (a cargo de Pandy):</strong> ' +
     montoTxt +
     '</div>'
@@ -19920,20 +20040,16 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                                 moneda: monInt, monto: montoEfectivoInt,
                                 concepto: conceptoCcLeyenda('cobro_realizado', orden && orden.numero != null ? orden.numero : null, item.numero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                                 ...montosCcPorMoneda(monInt, montoEfectivoInt),
-                              })).then(() => client.from('comisiones_orden').select('moneda, monto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario').maybeSingle())
-                                .then((rCom) => {
-                                  const comMonto = rCom.data && (Number(rCom.data.monto) || 0);
-                                  if (comMonto >= 1e-6) {
-                                    const monCom = (rCom.data.moneda || 'ARS').toUpperCase();
-                                    return client.from('movimientos_cuenta_corriente_intermediario').insert({
-                                      intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: item.id, transaccion_numero: item.numero != null ? item.numero : null,
-                                      moneda: monCom, monto: -comMonto,
-                                      concepto: conceptoCcLeyenda('comision_acuerdo', orden && orden.numero != null ? orden.numero : null, item.numero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
-                                      ...montosCcPorMoneda(monCom, -comMonto),
-                                    }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, orden && orden.numero != null ? orden.numero : null, item.numero != null ? item.numero : null));
-                                  }
-                                  return Promise.resolve();
-                                });
+                              })).then(() => insertarFilasComisionIntermediarioCcPorTransaccion({
+                                ordenId,
+                                intermediarioId,
+                                transaccionId: item.id,
+                                transaccionNumero: item.numero != null ? item.numero : null,
+                                ordenNumero: orden && orden.numero != null ? orden.numero : null,
+                                fecha,
+                                ahora,
+                                instrumentacionId,
+                              }));
                             })
                           );
                         }
@@ -20651,20 +20767,16 @@ function saveTransaccion() {
                   concepto: conceptoCcLeyenda('compromiso_cobrar', orden && orden.numero != null ? orden.numero : null, transaccionNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
                   ...montosCcPorMoneda(monInt, -montoEfectivoInt),
                 }))
-                .then(() => client.from('comisiones_orden').select('moneda, monto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario').maybeSingle())
-                .then((rCom) => {
-                  const comMonto = rCom.data && (Number(rCom.data.monto) || 0);
-                  if (comMonto >= 1e-6) {
-                    const monCom = (rCom.data.moneda || 'ARS').toUpperCase();
-                    return client.from('movimientos_cuenta_corriente_intermediario').insert({
-                      intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transaccionNumero != null ? transaccionNumero : null,
-                      moneda: monCom, monto: -comMonto,
-                      concepto: conceptoCcLeyenda('comision_acuerdo', orden && orden.numero != null ? orden.numero : null, transaccionNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
-                      ...montosCcPorMoneda(monCom, -comMonto),
-                    }).then(() => asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, orden && orden.numero != null ? orden.numero : null, transaccionNumero != null ? transaccionNumero : null));
-                  }
-                  return Promise.resolve();
-                })
+                .then(() => insertarFilasComisionIntermediarioCcPorTransaccion({
+                  ordenId,
+                  intermediarioId,
+                  transaccionId,
+                  transaccionNumero: transaccionNumero != null ? transaccionNumero : null,
+                  ordenNumero: orden && orden.numero != null ? orden.numero : null,
+                  fecha,
+                  ahora,
+                  instrumentacionId,
+                }))
             );
           }
           const promUpdatesCc = (updatesCc && updatesCc.length > 0) ? Promise.all(updatesCc) : Promise.resolve();
