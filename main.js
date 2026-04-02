@@ -2477,7 +2477,7 @@ const MENSAJE_AL_DESACTIVAR_PERMISO = {
   abm_tipos_movimiento_caja: 'Los usuarios no podrán crear ni editar tipos de movimiento de caja.',
   abm_reglas_negocio: 'Sin este permiso no podrán abrir el menú crítico de reglas de cuenta corriente (riesgo de romper el modelo CC).',
   abm_configuracion_empresa: 'Sin este permiso no podrán abrir Empresa / marca ni editar nombre legal, nombre visible ni URL del logo.',
-  registrar_movimiento_cc_manual: 'Sin este permiso no podrán registrar movimientos de cuenta corriente sin orden desde la vista CC (sigue aplicando editar transacciones si el rol lo tiene).',
+  registrar_movimiento_cc_manual: 'Sin este permiso no podrán registrar movimientos de cuenta corriente sin orden desde la vista CC ni quitar ítems pendientes de esa cola offline. Es independiente de «editar transacciones» (órdenes).',
   editar_movimiento_cc_manual: 'Sin este permiso no podrán editar movimientos de CC marcados como manual (sin orden) desde la lista de Movimientos.',
   eliminar_movimiento_cc_manual: 'Sin este permiso no podrán anular movimientos de CC manuales desde la lista de Movimientos.',
   ver_auditoria: 'Sin este permiso no podrán consultar la tabla de auditoría (registro de acciones sensibles) en Supabase o futuras pantallas de log.',
@@ -3377,7 +3377,7 @@ function montoCuentaCorrienteManualSigno(leg, montoAbs, nomCliPorId, nomIntPorId
 }
 
 function puedeRegistrarMovCcManual() {
-  return userPermissions.includes('registrar_movimiento_cc_manual') || userPermissions.includes('editar_transacciones');
+  return userPermissions.includes('registrar_movimiento_cc_manual');
 }
 
 function puedeEditarMovimientoCcManual() {
