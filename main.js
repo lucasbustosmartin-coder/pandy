@@ -6263,9 +6263,73 @@ function ccAbsorberMetaTransaccionesEnMaps(trPagadorById, trCobradorById, trTipo
   });
 }
 
+/**
+ * Fila mínima de transacción para display: preferir snapshot Supabase (trRowById); si no, armar desde mapas de CC.
+ */
+function ccTrxRowParaDisplay(transaccionId, trRowById, trPagadorById, trCobradorById, trTipoById, trParticipanteIdsByTrx, trMonedaById) {
+  const k = ccTrxMapKey(transaccionId);
+  if (!k) return null;
+  trRowById = trRowById || {};
+  if (trRowById[k]) return trRowById[k];
+  trPagadorById = trPagadorById || {};
+  trCobradorById = trCobradorById || {};
+  trTipoById = trTipoById || {};
+  trParticipanteIdsByTrx = trParticipanteIdsByTrx || {};
+  trMonedaById = trMonedaById || {};
+  const pagCliTrx = trParticipanteIdsByTrx.pagadorClienteIdByTrx || {};
+  const cobCliTrx = trParticipanteIdsByTrx.cobradorClienteIdByTrx || {};
+  const pagIntTrx = trParticipanteIdsByTrx.pagadorIntermediarioIdByTrx || {};
+  const cobIntTrx = trParticipanteIdsByTrx.cobradorIntermediarioIdByTrx || {};
+  const hasMeta =
+    (trPagadorById[k] != null && String(trPagadorById[k]).trim() !== '')
+    || (trCobradorById[k] != null && String(trCobradorById[k]).trim() !== '')
+    || (trTipoById[k] != null && String(trTipoById[k]).trim() !== '')
+    || pagCliTrx[k]
+    || cobCliTrx[k]
+    || pagIntTrx[k]
+    || cobIntTrx[k];
+  if (!hasMeta) return null;
+  return {
+    pagador: trPagadorById[k],
+    cobrador: trCobradorById[k],
+    tipo: trTipoById[k],
+    pagador_cliente_id: pagCliTrx[k],
+    cobrador_cliente_id: cobCliTrx[k],
+    pagador_intermediario_id: pagIntTrx[k],
+    cobrador_intermediario_id: cobIntTrx[k],
+    owner: undefined,
+    moneda: trMonedaById[k] != null ? trMonedaById[k] : undefined,
+  };
+}
+
+/**
+ * La fila CC solo debe mostrar Pagador/Cobrador de la transacción si refleja la moneda de esa transacción.
+ * Evita que un espejo en USD muestre «Ale → Madero» cuando la trx es ingreso solo ARS (y viceversa en cruces).
+ */
+function ccMovimientoReflejaMonedaTransaccion(mov, tRow) {
+  if (!tRow) return false;
+  const monTrx = String(tRow.moneda || '').toUpperCase().trim();
+  if (!monTrx || (monTrx !== 'USD' && monTrx !== 'ARS' && monTrx !== 'EUR')) return true;
+  const eps = 1e-9;
+  const nz = (v) => v != null && Math.abs(Number(v)) > eps;
+  const legs = [];
+  if (nz(mov.monto_usd)) legs.push('USD');
+  if (nz(mov.monto_ars)) legs.push('ARS');
+  if (nz(mov.monto_eur)) legs.push('EUR');
+  const monCol = (mov.moneda != null && String(mov.moneda).trim() !== '')
+    ? String(mov.moneda).toUpperCase().trim()
+    : '';
+  if (monCol === 'USD' || monCol === 'ARS' || monCol === 'EUR') {
+    return monCol === monTrx;
+  }
+  if (legs.length === 1) return legs[0] === monTrx;
+  if (legs.length === 0) return false;
+  return false;
+}
+
 /** Enriquece movimientos CC (modal detalle / refresh) con código y metadatos de icono del tipo de la orden. */
-/** Nombres resueltos de Pagador/Cobrador de la transacción para filas de detalle CC (vista detalle y modal). */
-function ccNombresPagadorCobradorMovimiento(mov, tipoEntidad, ordenById, clientesById, intermediariosById, trTipoById, trPagadorById, trCobradorById, trParticipanteIdsByTrx) {
+/** Nombres Pagador/Cobrador: mismo criterio que listados de transacciones (transaccionParticipanteTextoPlano); sin sustituir por concepto CC. */
+function ccNombresPagadorCobradorMovimiento(mov, tipoEntidad, ordenById, clientesById, intermediariosById, trTipoById, trPagadorById, trCobradorById, trParticipanteIdsByTrx, trRowById) {
   ordenById = ordenById || {};
   clientesById = clientesById || {};
   intermediariosById = intermediariosById || {};
@@ -6273,6 +6337,13 @@ function ccNombresPagadorCobradorMovimiento(mov, tipoEntidad, ordenById, cliente
   trPagadorById = trPagadorById || {};
   trCobradorById = trCobradorById || {};
   trParticipanteIdsByTrx = trParticipanteIdsByTrx || {};
+  trRowById = trRowById || {};
+  const trMonedaById = {};
+  Object.keys(trRowById).forEach((kid) => {
+    const row = trRowById[kid];
+    if (row && row.moneda != null && String(row.moneda).trim() !== '') trMonedaById[kid] = row.moneda;
+  });
+  const maps = { clientesById, intermediariosById };
   const pagCliTrx = trParticipanteIdsByTrx.pagadorClienteIdByTrx || {};
   const cobCliTrx = trParticipanteIdsByTrx.cobradorClienteIdByTrx || {};
   const pagIntTrx = trParticipanteIdsByTrx.pagadorIntermediarioIdByTrx || {};
@@ -6325,32 +6396,6 @@ function ccNombresPagadorCobradorMovimiento(mov, tipoEntidad, ordenById, cliente
     } else cob = String(cob).toLowerCase();
     return cob;
   }
-  const conceptoM = (mov.concepto || '').toString();
-  /** Compromiso con la empresa; en UI el cobrador es quien recibe la derivación (UUID en trx aunque el rol venga genérico). */
-  if (conceptoM.startsWith('Instrumentación pendiente')) {
-    const orden = ordenById[mov.orden_id];
-    const cidAcuerdo = orden && orden.cliente_id;
-    const tid = ccTrxMapKey(mov.transaccion_id);
-    if (cobCliTrx[tid]) {
-      return { ccPagador: nombreClienteId(cidAcuerdo), ccCobrador: nombreClienteId(cobCliTrx[tid]) };
-    }
-    if (tid && cobIntTrx[tid]) {
-      const iid = String(cobIntTrx[tid]);
-      const row = intermediariosById[iid] || intermediariosById[cobIntTrx[tid]];
-      const nom = row && row.nombre != null ? String(row.nombre) : '';
-      return { ccPagador: nombreClienteId(cidAcuerdo), ccCobrador: nom.trim() ? nom.trim() : etiquetaRolParticipanteUi('intermediario') };
-    }
-    const cob = rolCobradorTransaccion(mov);
-    return {
-      ccPagador: nombreClienteId(cidAcuerdo),
-      ccCobrador: nombreEntidadPagCobValor(cob, mov, tipoEntidad, 'cobrador'),
-    };
-  }
-  if (conceptoM.startsWith('Entrega ') && conceptoM.includes(' pendiente')) {
-    const orden = ordenById[mov.orden_id];
-    const cid = orden && orden.cliente_id;
-    return { ccPagador: etiquetaRolParticipanteUi('pandy'), ccCobrador: nombreClienteId(cid) };
-  }
   if (mov.es_movimiento_manual && mov.manual_pagador_rol && mov.manual_cobrador_rol) {
     return {
       ccPagador: ccManualNombreDisplayRol(mov.manual_pagador_rol, mov.manual_pagador_cliente_id, mov.manual_pagador_intermediario_id, clientesById, intermediariosById),
@@ -6386,6 +6431,17 @@ function ccNombresPagadorCobradorMovimiento(mov, tipoEntidad, ordenById, cliente
       return { ccPagador: nomCli, ccCobrador: emp };
     }
     return { ccPagador: emp, ccCobrador: nomInt };
+  }
+  const tRow = ccTrxRowParaDisplay(mov.transaccion_id, trRowById, trPagadorById, trCobradorById, trTipoById, trParticipanteIdsByTrx, trMonedaById);
+  if (tRow) {
+    if (!ccMovimientoReflejaMonedaTransaccion(mov, tRow)) {
+      return { ccPagador: '–', ccCobrador: '–' };
+    }
+    const orden = ordenById[mov.orden_id];
+    return {
+      ccPagador: transaccionParticipanteTextoPlano(tRow, orden, 'pagador', maps),
+      ccCobrador: transaccionParticipanteTextoPlano(tRow, orden, 'cobrador', maps),
+    };
   }
   return {
     ccPagador: nombreEntidadPagCobValor(rolPagadorTransaccion(mov), mov, tipoEntidad, 'pagador'),
@@ -6481,6 +6537,29 @@ function fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, 
   if (nro == null || nro === '') return { fecha: fechaFallbackDia, estado_fecha: ahoraFallbackIso };
   const t = (transacciones || []).find((x) => Number(x.numero) === Number(nro));
   return fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fechaFallbackDia, ahoraFallbackIso);
+}
+
+/**
+ * Cada fila CC debe referenciar la transacción de la **misma moneda** que el movimiento.
+ * En cruces (p. ej. ARS-USD), una regla matcheada sobre el egreso USD puede emitir líneas en ARS;
+ * sin reasignar, quedaría `transaccion_id` de la trx USD y el concepto «Trans 2» en un movimiento ARS de la trx 1.
+ */
+function ccTransaccionRefParaMovimientoMoneda(transacciones, tIterada, monedaMovCc) {
+  if (!tIterada || typeof tIterada !== 'object') return tIterada;
+  const monObjetivo = String(monedaMovCc || '').toUpperCase().trim();
+  if (!monObjetivo) return tIterada;
+  const monT = String(tIterada.moneda != null ? tIterada.moneda : '').toUpperCase().trim();
+  if (monT === monObjetivo) return tIterada;
+  const lista = (transacciones || []).filter((x) => {
+    if (!x || typeof x !== 'object') return false;
+    if (String(x.concepto || '').includes('Ganancia del acuerdo')) return false;
+    const mx = String(x.moneda != null ? x.moneda : '').toUpperCase().trim();
+    return mx === monObjetivo;
+  });
+  if (lista.length === 1) return lista[0];
+  if (!lista.length) return tIterada;
+  lista.sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0));
+  return lista[0];
 }
 
 /** Filas sintéticas (comisión / cierre sin trx propia): referencia temporal por última transacción ejecutada de la orden. */
@@ -7445,7 +7524,6 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     const contrapartida = contrapartidaEjecutada(transacciones, t.pagador, t.cobrador, t.tipo);
     const reglasTx = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, false, estado, contrapartida);
     if (!reglasTx.length) return;
-    const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
     const estadoMov = (estado === 'ejecutada' ? 'cerrado' : 'pendiente');
     const codOp = String(tipoOperacionCodigo || '').toUpperCase();
     for (const regla of reglasTx) {
@@ -7482,12 +7560,15 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       const montoCc = Number(regla.signo) * base;
       if (Math.abs(montoCc) < 1e-12) continue;
       const moneda = String(regla.moneda || 'USD').toUpperCase();
+      const tRef = ccTransaccionRefParaMovimientoMoneda(transacciones, t, moneda);
+      const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(tRef, fecha, ahora);
+      const nroRef = tRef && tRef.numero != null ? tRef.numero : null;
       const ley = regla.concepto_leyenda || 'cobro_realizado';
       const rowBase = {
         orden_id: ordenId,
-        transaccion_id: t.id,
-        transaccion_numero: t.numero != null ? t.numero : null,
-        concepto: conceptoCcLeyenda(ley, orden.numero, t.numero != null ? t.numero : null),
+        transaccion_id: tRef.id,
+        transaccion_numero: nroRef,
+        concepto: conceptoCcLeyenda(ley, orden.numero, nroRef),
         fecha: feT.fecha,
         usuario_id: currentUserId,
         moneda,
@@ -7964,7 +8045,7 @@ function loadCuentaCorriente(opts) {
     })
       .catch(() => ({ pendienteClienteAjusteByCli: {}, pendientePandyDebeIntByInt: {} }));
     return Promise.all([
-      transaccionIds.length > 0 ? client.from('transacciones').select('id, estado, tipo, pagador, cobrador, monto, moneda, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
+      transaccionIds.length > 0 ? client.from('transacciones').select('id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
       ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
       ordenIds.length > 0 ? client.from('ordenes').select('id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario), monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tasa_descuento_intermediario').in('id', ordenIds) : Promise.resolve({ data: [] }),
       promPendientesCcGlobal,
@@ -7973,7 +8054,7 @@ function loadCuentaCorriente(opts) {
       const trPagadorById = {};
       const trCobradorById = {};
       const trTipoById = {};
-      const trMontoById = {};
+      const trRowById = {};
       (rTr.data || []).forEach((t) => {
         if (t.id == null || t.id === '') return;
         const id = String(t.id);
@@ -7981,7 +8062,7 @@ function loadCuentaCorriente(opts) {
         trPagadorById[id] = (t.pagador || '').toString().toLowerCase();
         if (t.cobrador != null) trCobradorById[id] = String(t.cobrador).toLowerCase();
         if (t.tipo != null) trTipoById[id] = String(t.tipo).toLowerCase();
-        trMontoById[id] = { monto: t.monto, moneda: t.moneda };
+        trRowById[id] = t;
       });
       const instByOrden = {};
       (rInst.data || []).forEach((i) => { instByOrden[i.orden_id] = i.id; });
@@ -7989,7 +8070,7 @@ function loadCuentaCorriente(opts) {
       const ordenById = Object.fromEntries((rOrdenes.data || []).map((o) => [o.id, o]));
       const instIds = (rInst.data || []).map((i) => i.id).filter(Boolean);
       const promTrInst = instIds.length > 0
-        ? client.from('transacciones').select('id, instrumentacion_id, estado, tipo, pagador, cobrador, monto, moneda, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('instrumentacion_id', instIds)
+        ? client.from('transacciones').select('id, instrumentacion_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('instrumentacion_id', instIds)
         : Promise.resolve({ data: [] });
       return promTrInst.then((rTrInst) => ({
         rTrInst,
@@ -8003,9 +8084,9 @@ function loadCuentaCorriente(opts) {
         trCobradorById,
         trTipoById,
         ordenById,
-        trMontoById,
+        trRowById,
       }));
-    }).then(({ rTrInst, rTrMovsRaw, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, trById, instByOrden, ordenNumeroById, trPagadorById, trCobradorById, trTipoById, ordenById, trMontoById }) => {
+    }).then(({ rTrInst, rTrMovsRaw, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, trById, instByOrden, ordenNumeroById, trPagadorById, trCobradorById, trTipoById, ordenById, trRowById }) => {
       const pagadorClienteIdByTrx = {};
       const cobradorClienteIdByTrx = {};
       const pagadorIntermediarioIdByTrx = {};
@@ -8020,6 +8101,10 @@ function loadCuentaCorriente(opts) {
       }
       (rTrMovsRaw || []).forEach(ingestTrxParticipanteIds);
       (rTrInst.data || []).forEach(ingestTrxParticipanteIds);
+      (rTrInst.data || []).forEach((t) => {
+        if (t.id == null || t.id === '') return;
+        trRowById[String(t.id)] = t;
+      });
       ccAbsorberMetaTransaccionesEnMaps(trPagadorById, trCobradorById, trTipoById, rTrInst.data || []);
       const trParticipanteIdsByTrx = {
         pagadorClienteIdByTrx,
@@ -8032,8 +8117,8 @@ function loadCuentaCorriente(opts) {
         const ordenId = Object.keys(instByOrden || {}).find((oid) => instByOrden[oid] === t.instrumentacion_id);
         if (ordenId && t.estado === 'ejecutada') orderHasEjecutada[ordenId] = true;
       });
-      return { rTrInst, instByOrden, trById, orderHasEjecutada, ordenNumeroById, trPagadorById, trCobradorById, trTipoById, ordenById, trMontoById, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, trParticipanteIdsByTrx };
-    }).then(({ rTrInst, instByOrden, trById, orderHasEjecutada, ordenNumeroById, trPagadorById, trCobradorById, trTipoById, ordenById, trMontoById, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, trParticipanteIdsByTrx }) => {
+      return { rTrInst, instByOrden, trById, orderHasEjecutada, ordenNumeroById, trPagadorById, trCobradorById, trTipoById, ordenById, trRowById, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, trParticipanteIdsByTrx };
+    }).then(({ rTrInst, instByOrden, trById, orderHasEjecutada, ordenNumeroById, trPagadorById, trCobradorById, trTipoById, ordenById, trRowById, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, trParticipanteIdsByTrx }) => {
       // Incluir en saldo: compromisos (Compromiso de Pago / Compromiso a Cobrar o legacy "Compromiso") y realizados (Cobro/Pago Realizado o legacy "Compromiso Saldado").
       function incluirEnSaldo(m, trEstados, ordEjecutada) {
         if (m.estado === 'anulado') return false;
@@ -8046,24 +8131,6 @@ function loadCuentaCorriente(opts) {
       }
       const movCli = movCliRaw.filter((m) => incluirEnSaldo(m, trById, orderHasEjecutada));
       const movInt = movIntRaw.filter((m) => incluirEnSaldo(m, trById, orderHasEjecutada));
-      // Para intermediario: usar monto real de la transacción en "Compromiso a Cobrar" pendiente (Int→Pandy), así el resumen refleja lo que el intermediario aún debe.
-      const movIntEnriched = (movInt || []).map((m) => {
-        if (m.estado === 'pendiente' && (m.concepto || '').includes('Compromiso a Cobrar')) {
-          const t = trMontoById[ccTrxMapKey(m.transaccion_id)];
-          if (t != null && t.monto != null) {
-            const mon = ((t.moneda || m.moneda || 'ARS') || '').toString().toUpperCase();
-            const val = Number(t.monto) || 0;
-            return {
-              ...m,
-              monto: val,
-              monto_usd: mon === 'USD' ? val : 0,
-              monto_ars: mon === 'ARS' ? val : 0,
-              monto_eur: mon === 'EUR' ? val : 0,
-            };
-          }
-        }
-        return m;
-      });
       // Saldos por modelo CC (docs/CC_MODELO_REFERENCIA.md): por orden, modelo ARS-ARS+int o suma de movimientos; responde a cualquier cambio y orden.
       // Saldo por orden (precomp): suma de **todos** los movimientos no anulados (coherente con lo que se ve en Movimientos).
       function sumMovsPorMoneda(movs) {
@@ -8100,7 +8167,7 @@ function loadCuentaCorriente(opts) {
         movsCliByOrdenCliente[oid][cid].push(m);
       });
       const movsIntByOrdenInt = {};
-      (movIntEnriched || []).forEach((m) => {
+      (movInt || []).forEach((m) => {
         const oid = m.orden_id;
         const iid = m.intermediario_id;
         if (!oid || !iid) return;
@@ -8144,7 +8211,7 @@ function loadCuentaCorriente(opts) {
       const usdUsdIntCliEgresoPandyClientePendienteByCli = ccMapClienteUsdUsdIntEgresoPandyClientePendiente(ordenById || {}, transaccionesByOrdenId);
       return delayMinLoadingSiNoEsBackground(loadingShownAtCc).then(() => {
         if (miTicket !== ccCargaSerial) return;
-        buildCcResumenRows(clientes, intermediarios, movCli, movIntEnriched, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById || {}, trTipoById || {}, trCobradorById || {}, ordenById || {}, pendientePandyDebeIntByInt || {}, pendienteClienteAjusteByCli || {}, saldoClienteByCliPrecomp, saldoIntByIdPrecomp, chequeCliIngChequePendienteByCli, chequeCliEgresoPandyClientePendienteByCli, chequeIntIngresoIntPandyPendienteByInt, chequeIntEgresoPandyIntPendienteByInt, usdUsdIntCliIngPendienteByCli, usdUsdIntCliEgresoPandyClientePendienteByCli, trParticipanteIdsByTrx || {});
+        buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById || {}, trTipoById || {}, trCobradorById || {}, ordenById || {}, pendientePandyDebeIntByInt || {}, pendienteClienteAjusteByCli || {}, saldoClienteByCliPrecomp, saldoIntByIdPrecomp, chequeCliIngChequePendienteByCli, chequeCliEgresoPandyClientePendienteByCli, chequeIntIngresoIntPandyPendienteByInt, chequeIntEgresoPandyIntPendienteByInt, usdUsdIntCliIngPendienteByCli, usdUsdIntCliEgresoPandyClientePendienteByCli, trParticipanteIdsByTrx || {}, transaccionesByOrdenId || {}, trRowById || {});
       });
     });
   }).catch(async (err) => {
@@ -8196,7 +8263,7 @@ function loadCuentaCorriente(opts) {
   });
 }
 
-function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById, trTipoById, trCobradorById, ordenById, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, saldoClienteByCliPrecomp, saldoIntByIdPrecomp, chequeCliIngChequePendienteByCli, chequeCliEgresoPandyClientePendienteByCli, chequeIntIngresoIntPandyPendienteByInt, chequeIntEgresoPandyIntPendienteByInt, usdUsdIntCliIngPendienteByCli, usdUsdIntCliEgresoPandyClientePendienteByCli, trParticipanteIdsByTrx) {
+function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById, trTipoById, trCobradorById, ordenById, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, saldoClienteByCliPrecomp, saldoIntByIdPrecomp, chequeCliIngChequePendienteByCli, chequeCliEgresoPandyClientePendienteByCli, chequeIntIngresoIntPandyPendienteByInt, chequeIntEgresoPandyIntPendienteByInt, usdUsdIntCliIngPendienteByCli, usdUsdIntCliEgresoPandyClientePendienteByCli, trParticipanteIdsByTrx, transaccionesByOrdenId, trRowById) {
   if (loadingEl) loadingEl.style.display = 'none';
   ordenNumeroById = ordenNumeroById || {};
   trPagadorById = trPagadorById || {};
@@ -8204,6 +8271,8 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
   trCobradorById = trCobradorById || {};
   ordenById = ordenById || {};
   trParticipanteIdsByTrx = trParticipanteIdsByTrx || {};
+  transaccionesByOrdenId = transaccionesByOrdenId || {};
+  trRowById = trRowById || {};
   pendientePandyDebeIntByInt = pendientePandyDebeIntByInt || {};
   pendienteClienteAjusteByCli = pendienteClienteAjusteByCli || {};
   saldoClienteByCliPrecomp = saldoClienteByCliPrecomp || null;
@@ -8423,7 +8492,7 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
       ...m,
       tipo: 'cliente',
       nombre: (clientesById[m.cliente_id] && clientesById[m.cliente_id].nombre) || '–',
-      ...ccNombresPagadorCobradorMovimiento(m, 'cliente', ordenById, clientesById, intermediariosById, trTipoById, trPagadorById, trCobradorById, trParticipanteIdsByTrx),
+      ...ccNombresPagadorCobradorMovimiento(m, 'cliente', ordenById, clientesById, intermediariosById, trTipoById, trPagadorById, trCobradorById, trParticipanteIdsByTrx, trRowById),
       orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : (m.orden_numero != null ? m.orden_numero : null),
       tipo_operacion: metaC ? metaC.codigo : '–',
       tipo_op_nombre: metaC ? metaC.nombre : '',
@@ -8439,7 +8508,7 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
       ...m,
       tipo: 'intermediario',
       nombre: (intermediariosById[m.intermediario_id] && intermediariosById[m.intermediario_id].nombre) || '–',
-      ...ccNombresPagadorCobradorMovimiento(m, 'intermediario', ordenById, clientesById, intermediariosById, trTipoById, trPagadorById, trCobradorById, trParticipanteIdsByTrx),
+      ...ccNombresPagadorCobradorMovimiento(m, 'intermediario', ordenById, clientesById, intermediariosById, trTipoById, trPagadorById, trCobradorById, trParticipanteIdsByTrx, trRowById),
       orden_numero: ordenNumeroById[m.orden_id] != null ? ordenNumeroById[m.orden_id] : (m.orden_numero != null ? m.orden_numero : null),
       tipo_operacion: metaI ? metaI.codigo : '–',
       tipo_op_nombre: metaI ? metaI.nombre : '',
@@ -8905,13 +8974,14 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
     const transaccionIds = [...new Set((movimientos.map((m) => m.transaccion_id)).filter(Boolean))];
     const ordenIds = [...new Set((movimientos.map((m) => m.orden_id)).filter(Boolean))];
     return Promise.all([
-      transaccionIds.length > 0 ? client.from('transacciones').select('id, estado, tipo, pagador, cobrador, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
+      transaccionIds.length > 0 ? client.from('transacciones').select('id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
       ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
     ]).then(([rTr, rInst]) => {
       const trById = {};
       const trTipoById = {};
       const trPagadorById = {};
       const trCobradorById = {};
+      const trRowById = {};
       (rTr.data || []).forEach((t) => {
         if (t.id == null || t.id === '') return;
         const id = String(t.id);
@@ -8919,15 +8989,16 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
         if (t.tipo != null) trTipoById[id] = String(t.tipo).toLowerCase();
         trPagadorById[id] = (t.pagador || '').toString().toLowerCase();
         if (t.cobrador != null) trCobradorById[id] = String(t.cobrador).toLowerCase();
+        trRowById[id] = t;
       });
       const instByOrden = {};
       (rInst.data || []).forEach((i) => { instByOrden[i.orden_id] = i.id; });
       const instIds = (rInst.data || []).map((i) => i.id).filter(Boolean);
       const promTrInst = instIds.length > 0
-        ? client.from('transacciones').select('id, instrumentacion_id, estado, tipo, pagador, cobrador, monto, moneda, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('instrumentacion_id', instIds)
+        ? client.from('transacciones').select('id, instrumentacion_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('instrumentacion_id', instIds)
         : Promise.resolve({ data: [] });
-      return promTrInst.then((rTrInst) => ({ rTrInst, rTrMovsRaw: rTr.data || [], trById, instByOrden, trTipoById, trPagadorById, trCobradorById }));
-    }).then(({ rTrInst, rTrMovsRaw, trById, instByOrden, trTipoById, trPagadorById, trCobradorById }) => {
+      return promTrInst.then((rTrInst) => ({ rTrInst, rTrMovsRaw: rTr.data || [], trById, instByOrden, trTipoById, trPagadorById, trCobradorById, trRowById }));
+    }).then(({ rTrInst, rTrMovsRaw, trById, instByOrden, trTipoById, trPagadorById, trCobradorById, trRowById }) => {
       const pagadorClienteIdByTrx = {};
       const cobradorClienteIdByTrx = {};
       const pagadorIntermediarioIdByTrx = {};
@@ -8942,6 +9013,10 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
       }
       (rTrMovsRaw || []).forEach(ingestTrxParticipanteIdsModal);
       (rTrInst.data || []).forEach(ingestTrxParticipanteIdsModal);
+      (rTrInst.data || []).forEach((t) => {
+        if (t.id == null || t.id === '') return;
+        trRowById[String(t.id)] = t;
+      });
       ccAbsorberMetaTransaccionesEnMaps(trPagadorById, trCobradorById, trTipoById, rTrInst.data || []);
       const trParticipanteIdsByTrx = {
         pagadorClienteIdByTrx,
@@ -8958,8 +9033,8 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
         transaccionesByOrdenId[ordenId].push(t);
         if (t.estado === 'ejecutada') orderHasEjecutada[ordenId] = true;
       });
-      return { trById, orderHasEjecutada, trTipoById, trPagadorById, trCobradorById, transaccionesByOrdenId, trParticipanteIdsByTrx };
-    }).then(({ trById, orderHasEjecutada, trTipoById, trPagadorById, trCobradorById, transaccionesByOrdenId, trParticipanteIdsByTrx }) => {
+      return { trById, orderHasEjecutada, trTipoById, trPagadorById, trCobradorById, transaccionesByOrdenId, trParticipanteIdsByTrx, trRowById };
+    }).then(({ trById, orderHasEjecutada, trTipoById, trPagadorById, trCobradorById, transaccionesByOrdenId, trParticipanteIdsByTrx, trRowById }) => {
       // Saldo modal detalle: suma de todos los movimientos no anulados (misma lógica que resumen CC).
       function incluirEnSaldo(m) {
         if ((m.estado || '').toString().toLowerCase() === 'anulado') return false;
@@ -9054,7 +9129,7 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
         const intermediariosByIdDet = Object.fromEntries((rIntDet.data || []).map((i) => [i.id, i]));
         const enriched = movimientosParaDetalle.map((m) => ({
           ...m,
-          ...ccNombresPagadorCobradorMovimiento(m, tipo, ordenByIdFetch, clientesByIdDet, intermediariosByIdDet, trTipoById, trPagadorById, trCobradorById, trParticipanteIdsByTrx),
+          ...ccNombresPagadorCobradorMovimiento(m, tipo, ordenByIdFetch, clientesByIdDet, intermediariosByIdDet, trTipoById, trPagadorById, trCobradorById, trParticipanteIdsByTrx, trRowById || {}),
         }));
         return { movimientos: enriched, saldos, ordenes, pendienteEnMoneda: pendMonFull, pendienteClasePorMoneda };
       });
@@ -11380,6 +11455,69 @@ function transaccionParticipanteCeldaHtml(t, orden, lado, maps) {
     return participantLabelHtml('intermediario');
   }
   return participantLabelHtml(roleRaw);
+}
+
+/** Nombre desde mapa de clientes: string (como en fetchMapsNombresParticipantesTransacciones) o fila { nombre } (como en buildCcResumenRows). */
+function mapNombreClienteDesdeMapa(clientesById, id) {
+  if (id == null || id === '') return '';
+  const v = clientesById[id] ?? clientesById[String(id)];
+  if (v == null || v === '') return '';
+  if (typeof v === 'string') return String(v).trim();
+  if (typeof v === 'object' && v.nombre != null) return String(v.nombre).trim();
+  return '';
+}
+
+/** Nombre desde mapa de intermediarios: string o fila { nombre }. */
+function mapNombreIntermediarioDesdeMapa(intermediariosById, id) {
+  if (id == null || id === '') return '';
+  const v = intermediariosById[id] ?? intermediariosById[String(id)];
+  if (v == null || v === '') return '';
+  if (typeof v === 'string') return String(v).trim();
+  if (typeof v === 'object' && v.nombre != null) return String(v.nombre).trim();
+  return '';
+}
+
+/**
+ * Mismo criterio que transaccionParticipanteCeldaHtml pero texto plano (CC detalle / modal / export).
+ * Garantiza que Pagador/Cobrador coincidan con la fila de transacción en instrumentación y demás listados.
+ */
+function transaccionParticipanteTextoPlano(t, orden, lado, maps) {
+  const m = maps || {};
+  const clientesById = m.clientesById || {};
+  const intermediariosById = m.intermediariosById || {};
+  const roleRaw = lado === 'pagador'
+    ? (t.pagador || (t.tipo === 'egreso' ? t.owner : 'pandy'))
+    : (t.cobrador || (t.tipo === 'ingreso' ? t.owner : 'pandy'));
+  const r = String(roleRaw || '').toLowerCase();
+  const o = orden || null;
+  if (r === 'pandy') return etiquetaRolParticipanteUi('pandy');
+  if (r === 'cliente') {
+    const id = lado === 'pagador'
+      ? (t.pagador_cliente_id || o?.cliente_id)
+      : (t.cobrador_cliente_id || o?.cliente_id);
+    let nombre = mapNombreClienteDesdeMapa(clientesById, id);
+    if (!nombre && o && o.cliente_id && id && String(o.cliente_id) === String(id)) {
+      const nested = o.clientes;
+      nombre = (nested && !Array.isArray(nested) ? nested.nombre : (Array.isArray(nested) ? nested[0]?.nombre : '')) || '';
+      nombre = String(nombre).trim();
+    }
+    if (nombre) return nombre;
+    return etiquetaRolParticipanteUi('cliente');
+  }
+  if (r === 'intermediario') {
+    const id = lado === 'pagador'
+      ? (t.pagador_intermediario_id || o?.intermediario_id)
+      : (t.cobrador_intermediario_id || o?.intermediario_id);
+    let nombre = mapNombreIntermediarioDesdeMapa(intermediariosById, id);
+    if (!nombre && o && o.intermediario_id && id && String(o.intermediario_id) === String(id)) {
+      const nested = o.intermediarios;
+      nombre = (nested && !Array.isArray(nested) ? nested.nombre : (Array.isArray(nested) ? nested[0]?.nombre : '')) || '';
+      nombre = String(nombre).trim();
+    }
+    if (nombre) return nombre;
+    return etiquetaRolParticipanteUi('intermediario');
+  }
+  return etiquetaRolParticipanteUi(roleRaw);
 }
 
 /** Devuelve HTML para tipo de transacción: Ingreso verde negrita, Egreso rojo negrita. */
