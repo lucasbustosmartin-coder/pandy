@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * E2E: combinaciones Tx1/Tx2 (P/E) para tipos de operación con **2 transacciones**:
- * ARS-USD, USD-ARS, EUR-USD, USD-EUR, EUR-ARS, ARS-EUR, USD-USD (sin intermediario), USD-USD (con intermediario: patrón + tasas cliente/intermediario sobre importe).
+ * ARS-USD, USD-ARS, EUR-USD, USD-EUR, EUR-ARS, ARS-EUR, USD-USD (sin intermediario), USD-USD (con intermediario: patrón + tasa cliente sobre importe, tasa intermediario sobre monto entregado me).
  *
  * CHEQUE-ARS (4 tx + intermediario) no está aquí: usar `tests/e2e/01-cc-combinaciones.spec.js`.
  * Todos los tipos activos sin duplicar: `npm run test:e2e-cc-activos-completo` (01 CHEQUE + este 02 + 03 inversa int.; no incluye 91).
@@ -659,7 +659,7 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
                 else if (appSorted.length === esperadoSorted.length && esperadoSorted.every((v, i) => Math.abs((appSorted[i] || 0) - v) <= 1))
                   resDet = 'PASS';
 
-                /** CC intermediario (USD): solo tipos con `usaIntermediario`; E,E → −(me + mitad comisión total) en convención app. */
+                /** CC intermediario (USD): solo tipos con `usaIntermediario`; E,E → −(me + comisión int. % sobre me) en convención app. */
                 let expIntCell = '';
                 let saldoIntCell = '';
                 let rdoInt = '';

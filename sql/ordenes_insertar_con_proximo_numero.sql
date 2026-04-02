@@ -1,6 +1,12 @@
 -- Asignación atómica de numero de orden (MAX+1) con lock, sin huecos ni colisiones por concurrencia.
 -- Ejecutar en Supabase SQL Editor. Requiere que la tabla ordenes tenga la columna numero (integer UNIQUE NOT NULL).
 -- La app llama a esta función vía RPC en lugar de INSERT directo al crear una orden nueva.
+--
+-- Al cambiar la firma, ejecutá el DROP de la versión anterior para evitar ERROR 42725 (nombre de función no único).
+
+DROP FUNCTION IF EXISTS public.ordenes_insertar_con_proximo_numero(
+  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, text, uuid, timestamptz
+);
 
 CREATE OR REPLACE FUNCTION public.ordenes_insertar_con_proximo_numero(
   p_cliente_id uuid,
@@ -15,6 +21,9 @@ CREATE OR REPLACE FUNCTION public.ordenes_insertar_con_proximo_numero(
   p_monto_entregado numeric,
   p_cotizacion numeric,
   p_tasa_descuento_intermediario numeric,
+  p_intermediario_pago_transferencia boolean,
+  p_intermediario_transferencia_cobra_tasa boolean,
+  p_intermediario_transferencia_tasa numeric,
   p_observaciones text,
   p_usuario_id uuid,
   p_updated_at timestamptz
@@ -27,7 +36,6 @@ AS $$
 DECLARE
   next_num integer;
 BEGIN
-  -- Lock transaccional: serializa la asignación de numero entre todas las sesiones.
   PERFORM pg_advisory_xact_lock(hashtext('ordenes_proximo_numero'));
 
   SELECT COALESCE(MAX(o.numero), 0) + 1 INTO next_num FROM public.ordenes o;
@@ -47,6 +55,9 @@ BEGIN
     monto_entregado,
     cotizacion,
     tasa_descuento_intermediario,
+    intermediario_pago_transferencia,
+    intermediario_transferencia_cobra_tasa,
+    intermediario_transferencia_tasa,
     observaciones,
     usuario_id,
     updated_at
@@ -64,6 +75,9 @@ BEGIN
     p_monto_entregado,
     p_cotizacion,
     p_tasa_descuento_intermediario,
+    COALESCE(p_intermediario_pago_transferencia, false),
+    COALESCE(p_intermediario_transferencia_cobra_tasa, false),
+    p_intermediario_transferencia_tasa,
     p_observaciones,
     p_usuario_id,
     p_updated_at
@@ -72,8 +86,13 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.ordenes_insertar_con_proximo_numero IS 'Inserta una orden con numero = MAX(numero)+1 bajo lock; evita huecos y colisiones por concurrencia.';
+COMMENT ON FUNCTION public.ordenes_insertar_con_proximo_numero(
+  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, boolean, numeric, text, uuid, timestamptz
+) IS 'Inserta una orden con numero = MAX(numero)+1 bajo lock. Incluye flags transferencia y tasa opcional sobre pata intermediario.';
 
--- Permiso para roles que pueden crear órdenes (ajustar si usás anon/authenticated/service_role).
-GRANT EXECUTE ON FUNCTION public.ordenes_insertar_con_proximo_numero TO authenticated;
-GRANT EXECUTE ON FUNCTION public.ordenes_insertar_con_proximo_numero TO service_role;
+GRANT EXECUTE ON FUNCTION public.ordenes_insertar_con_proximo_numero(
+  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, boolean, numeric, text, uuid, timestamptz
+) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.ordenes_insertar_con_proximo_numero(
+  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, boolean, numeric, text, uuid, timestamptz
+) TO service_role;

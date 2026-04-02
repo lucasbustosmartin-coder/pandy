@@ -695,6 +695,30 @@ function pandiModosPagoEfectivoChequeDesdeCache(cache) {
   return { efectivo: by.efectivo || null, cheque: by.cheque || null };
 }
 
+/** Ids efectivo y transferencia desde caché (plantilla 2 tx con intermediario en cola v2). */
+function pandiModosPagoEfectivoTransferenciaDesdeCache(cache) {
+  const rows = cache && cache.modos_pago;
+  if (!Array.isArray(rows)) return { efectivo: null, transferencia: null };
+  const by = {};
+  rows.forEach((m) => {
+    const c = String(m.codigo || '').toLowerCase().trim();
+    if (c) by[c] = m.id;
+  });
+  return { efectivo: by.efectivo || null, transferencia: by.transferencia || null };
+}
+
+/** Flag persistido en orden: parte del intermediario por transferencia (no CHEQUE-ARS; requiere intermediario). */
+function ordenIntermediarioPagoTransferenciaDesdeDom() {
+  const selTipo = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+  if (!selTipo || selTipo.getAttribute('data-usa-intermediario') !== 'true') return false;
+  const codigo = selTipo.getAttribute('data-codigo') || '';
+  const mi = selTipo.getAttribute('data-moneda-in') || '';
+  const mo = selTipo.getAttribute('data-moneda-out') || '';
+  if (esTipoOperacionChequeArs(codigo, mi, mo)) return false;
+  if (!document.getElementById('orden-intermediario')?.value?.trim()) return false;
+  return document.getElementById('orden-intermediario-pago-transferencia')?.checked === true;
+}
+
 /** Catálogo completo en localStorage para contingencia (clientes, intermediarios, tipos con iconos, modos_pago). Sin sesión no hace nada. */
 function pandiRefreshOfflineCatalogosCache() {
   if (!currentUserId) return Promise.resolve();
@@ -4206,6 +4230,29 @@ function patronTipoCambioOrden(recNorm, entNorm) {
   return '';
 }
 
+/**
+ * Par de monedas del acuerdo/tipo para comisión intermediario en cruces TC: `'ars_usd'` | `'eur_usd'` | null.
+ * ARS↔EUR sin USD no usa `patronTipoCambioOrden` en el front hoy.
+ */
+function parMonedasComisionInterCruceTcDesdeOrden(orden, toJoin) {
+  const s = new Set();
+  [orden?.moneda_recibida, orden?.moneda_entregada, toJoin?.moneda_in, toJoin?.moneda_out].forEach((m) => {
+    const u = (m || '').toString().toUpperCase().trim();
+    if (u) s.add(u);
+  });
+  if (s.has('ARS') && s.has('USD')) return 'ars_usd';
+  if (s.has('EUR') && s.has('USD')) return 'eur_usd';
+  return null;
+}
+
+/** Para lookup multi-tipo en el motor (comisión int. cruces TC). */
+function tiposReglaComisionIntermediarioCruceTc(codOpMotorComInt, parTc) {
+  const c = String(codOpMotorComInt || '').toUpperCase();
+  if (parTc === 'eur_usd') return [c, 'EUR-USD', 'USD-EUR'];
+  if (parTc === 'ars_usd') return [c, 'ARS-USD', 'USD-ARS'];
+  return [c];
+}
+
 /** compra_usd o compra_eur: TC × monto entregado → monto recibido. */
 function esPatronCompraFiatConTc(p) {
   return p === 'compra_usd' || p === 'compra_eur';
@@ -4213,6 +4260,28 @@ function esPatronCompraFiatConTc(p) {
 /** vende_usd o vende_eur: monto recibido × TC → monto entregado. */
 function esPatronVendeFiatConTc(p) {
   return p === 'vende_usd' || p === 'vende_eur';
+}
+
+/**
+ * USD-USD — bloque «Datos del acuerdo»: el cliente recibe `importe` (mr); la tasa al cliente es un recargo inclusivo sobre lo entregado:
+ * monto_entregado = importe / (1 + tasa%/100). Comisión implícita = importe − monto_entregado.
+ */
+function ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct) {
+  const I = Number(importe);
+  const p = Number(tasaPct);
+  if (!(typeof I === 'number' && !isNaN(I) && I > 0)) return null;
+  if (!(typeof p === 'number' && !isNaN(p) && p > 0 && p < 100)) return null;
+  return I / (1 + p / 100);
+}
+
+/** Inversa: tasa % tal que mr / (1 + t/100) = me → t = 100 × (mr/me − 1). */
+function ordenUsdUsdTasaClientePctDesdeMrMe(mr, me) {
+  const r = Number(mr);
+  const e = Number(me);
+  if (!(typeof r === 'number' && !isNaN(r) && r > 0)) return null;
+  if (!(typeof e === 'number' && !isNaN(e) && e > 0)) return null;
+  if (r <= e) return null;
+  return 100 * (r / e - 1);
 }
 
 function reaplicarVisibilidadMonedasCuentaCorrienteDom() {
@@ -5802,7 +5871,7 @@ function renderOrdenesPendientesTabla() {
     const badgeClass = estadoBadgeClass(estado);
     const estadoHtml = badgeClass ? `<span class="${badgeClass}">${estadoLabel(estado)}</span>` : estadoLabel(estado);
     return `<tr data-id="${o.id}">
-      <td>${(o.fecha || '').toString().slice(0, 10)}</td>
+      <td class="td-orden-fecha">${(o.fecha || '').toString().slice(0, 10)}</td>
       <td class="td-tipo-op-iconos">${o.tipo_operacion_id ? htmlCeldaTipoOperacionDesdeMap(o.tipo_operacion_id, tiposOpMap) : htmlTipoOperacionIconos('')}</td>
       <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
       <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
@@ -7240,16 +7309,19 @@ function getReglasDeNegocio(codigoTipoOperacion, usaIntermediario) {
     .catch(() => []);
 }
 
-function lookupReglasDeNegocio(reglas, tipoOperacionCodigo, pagador, cobrador, tipoTransaccion, esComision, estadoTransaccion, contrapartidaEjecutada) {
+function lookupReglasDeNegocioTipos(reglas, tiposOperacionCodigo, pagador, cobrador, tipoTransaccion, esComision, estadoTransaccion, contrapartidaEjecutada) {
   if (!reglas || !reglas.length) return [];
-  const cod = String(tipoOperacionCodigo || '').toUpperCase();
+  const cods = (Array.isArray(tiposOperacionCodigo) ? tiposOperacionCodigo : [tiposOperacionCodigo])
+    .map((c) => String(c || '').toUpperCase())
+    .filter(Boolean);
+  if (!cods.length) return [];
   const pag = String(pagador || '').toLowerCase();
   const cob = String(cobrador || '').toLowerCase();
   const tipo = String(tipoTransaccion || '').toLowerCase();
   const est = String(estadoTransaccion || '').toLowerCase();
   const cont = !!contrapartidaEjecutada;
   const out = reglas.filter((r) =>
-    String(r.tipo_operacion_codigo || '').toUpperCase() === cod &&
+    cods.includes(String(r.tipo_operacion_codigo || '').toUpperCase()) &&
     (r.pagador || '').toLowerCase() === pag &&
     (r.cobrador || '').toLowerCase() === cob &&
     (r.tipo_transaccion || '').toLowerCase() === tipo &&
@@ -7259,6 +7331,10 @@ function lookupReglasDeNegocio(reglas, tipoOperacionCodigo, pagador, cobrador, t
   );
   out.sort((a, b) => (Number(a.linea) || 0) - (Number(b.linea) || 0));
   return out;
+}
+
+function lookupReglasDeNegocio(reglas, tipoOperacionCodigo, pagador, cobrador, tipoTransaccion, esComision, estadoTransaccion, contrapartidaEjecutada) {
+  return lookupReglasDeNegocioTipos(reglas, tipoOperacionCodigo, pagador, cobrador, tipoTransaccion, esComision, estadoTransaccion, contrapartidaEjecutada);
 }
 
 /**
@@ -7526,9 +7602,32 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       }
     }
   }
-  // Comisión intermediario USD-USD (comisiones_orden). Par cerrado: ingreso C→P/I + entrega al cliente ejecutados.
-  // cp_ic P,E: ya entregó Int→Cliente pero el cobro C→P sigue pendiente → devengar comisión int. (regla contrapartida_ejecutada false en tabla).
-  if (esUsdUsd && intermediarioId && Number(comisionIntMonto) >= 1e-6) {
+  // Comisión intermediario desde comisiones_orden: USD-USD y cruces TC (ARS↔USD, EUR↔USD) + int (reglas sintéticas Pandy→Intermediario es_comision).
+  const codOpMotorComInt = String(tipoOperacionCodigo || '').toUpperCase();
+  const parTcComInt = parMonedasComisionInterCruceTcDesdeOrden(orden, null);
+  const crucesTcComisionInt =
+    !esUsdUsd &&
+    !!patronTipoCambioOrden(orden.moneda_recibida, orden.moneda_entregada) &&
+    !!parTcComInt;
+  let feComCruceTcInt = null;
+  let nroTransComisionCruceTcInt = null;
+  if (crucesTcComisionInt && intermediarioId && Number(comisionIntMonto) >= 1e-6) {
+    const trEgList = (transacciones || [])
+      .filter((t) =>
+        (t.estado || '').toLowerCase() === 'ejecutada' &&
+        (t.tipo || '').toLowerCase() === 'egreso' &&
+        String(t.cobrador || '').toLowerCase() === 'cliente' &&
+        (String(t.pagador || '').toLowerCase() === 'intermediario' || String(t.pagador || '').toLowerCase() === 'pandy')
+      )
+      .sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0));
+    const trPick = trEgList.length ? trEgList[trEgList.length - 1] : null;
+    nroTransComisionCruceTcInt = trPick && trPick.numero != null ? trPick.numero : null;
+    feComCruceTcInt = nroTransComisionCruceTcInt != null
+      ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionCruceTcInt, fecha, ahora)
+      : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
+  }
+  // Par cerrado: ingreso C→P/I + entrega al cliente ejecutados. cp_ic P,E: comisión con contrapartida_ejecutada false (misma tabla que USD-USD).
+  if ((esUsdUsd || crucesTcComisionInt) && intermediarioId && Number(comisionIntMonto) >= 1e-6) {
     const parClienteCerradoUsdInt =
       ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
       egresoEntregaAClienteEjecutado(transacciones);
@@ -7540,9 +7639,12 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     const estadoComIntLookup =
       parClienteCerradoUsdInt || comisionIntCpIcParcial ? 'ejecutada' : 'pendiente';
     const contrapartidaComIntLookup = comisionIntCpIcParcial ? false : parClienteCerradoUsdInt;
-    const reglaComIntUsd = lookupReglasDeNegocio(
+    const tiposReglaComIntCruce = crucesTcComisionInt
+      ? tiposReglaComisionIntermediarioCruceTc(codOpMotorComInt, parTcComInt)
+      : [codOpMotorComInt];
+    const reglaComIntUsd = lookupReglasDeNegocioTipos(
       reglasDeNegocio,
-      tipoOperacionCodigo,
+      tiposReglaComIntCruce,
       'pandy',
       'intermediario',
       'egreso',
@@ -7556,26 +7658,29 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         comisionIntMonto: Number(comisionIntMonto) || 0,
       });
       const rawComInt = Number(reglaComIntUsd.signo) * baseInt;
-      // Misma convención que cp_ic: signo de la tabla (Pandy → intermediario) = deuda de Pandy hacia el int. en la suma algebraica.
       const montoCcInt = rawComInt;
       if (Math.abs(montoCcInt) >= 1e-12) {
         const monedaInt = String(comisionIntMon || reglaComIntUsd.moneda || 'USD').toUpperCase();
         const cerradoInt = parClienteCerradoUsdInt;
+        const feComInt = esUsdUsd ? feComUsd : feComCruceTcInt;
+        const nroTransComInt = esUsdUsd ? nroTransComisionConceptoUsd : nroTransComisionCruceTcInt;
+        if (feComInt) {
         rowsCcInt.push({
           intermediario_id: intermediarioId,
           orden_id: ordenId,
           transaccion_id: null,
           transaccion_numero: null,
-          concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConceptoUsd),
-          fecha: feComUsd.fecha,
+          concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComInt),
+          fecha: feComInt.fecha,
           usuario_id: currentUserId,
           moneda: monedaInt,
           monto: montoCcInt,
           estado: cerradoInt ? 'cerrado' : 'pendiente',
-          estado_fecha: feComUsd.estado_fecha,
+          estado_fecha: feComInt.estado_fecha,
           incluir_en_detalle: coercePgBooleanStrict(reglaComIntUsd.incluir_en_detalle),
           ...montosCcPorMoneda(monedaInt, montoCcInt),
         });
+        }
       }
     }
   }
@@ -12170,7 +12275,7 @@ function renderOrdenesTabla(list) {
           : (canVerAccionesOrden ? `${puedeEditarEstaOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar orden" aria-label="Editar orden"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${btnAnularTabla}` : '');
         return `<tr data-id="${o.id}"${esColaLocal ? ' class="tr-orden-cola-local"' : ''}>
           <td>${o.numero != null ? o.numero : '–'}</td>
-          <td>${(o.fecha || '').toString().slice(0, 10)}</td>
+          <td class="td-orden-fecha">${(o.fecha || '').toString().slice(0, 10)}</td>
           <td class="td-tipo-op-iconos">${o.tipo_operacion_id ? htmlCeldaTipoOperacionDesdeMap(o.tipo_operacion_id, tiposOpMap) : htmlTipoOperacionIconos('')}</td>
           <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
           <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
@@ -12582,7 +12687,7 @@ function pandiPintarOrdenPanelTransaccionesDesdeSnapshot(panel, orden, snap, ctx
     }
     totalesEl.innerHTML =
       strip +
-      `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}`;
+      `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}${htmlOrdenResumenTasaTransferenciaIntermediario(ordenTotales || ordenRef, lista)}`;
   }
   const estadoTexto = (t) => (String(t.estado || '').toLowerCase() === 'anulada' ? 'Anulada' : (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente'));
   const cobradorL = (t) => transaccionParticipanteCeldaHtml(t, ordenTotales, 'cobrador', maps);
@@ -13182,8 +13287,8 @@ function loadOrdenes() {
     tbody.innerHTML = '';
   }
 
-  const selectBase = 'id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, observaciones';
-  const selectConNumero = 'id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, observaciones';
+  const selectBase = 'id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, observaciones';
+  const selectConNumero = 'id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, observaciones';
 
   function runLoadOrdenes(selectCols) {
     return client
@@ -13194,6 +13299,19 @@ function loadOrdenes() {
       .then((res) => {
         if (res.error) {
           const msg = String(res.error.message || '');
+          if ((msg.includes('intermediario_pago_transferencia') || msg.includes('intermediario pago transferencia')) && selectCols.includes('intermediario_pago_transferencia')) {
+            const sinCol = selectCols.replace(', intermediario_pago_transferencia', '');
+            return runLoadOrdenes(sinCol);
+          }
+          if (
+            (msg.includes('intermediario_transferencia_cobra_tasa') || msg.includes('intermediario_transferencia_tasa')) &&
+            selectCols.includes('intermediario_transferencia_cobra_tasa')
+          ) {
+            const sinCol = selectCols
+              .replace(', intermediario_transferencia_cobra_tasa', '')
+              .replace(', intermediario_transferencia_tasa', '');
+            return runLoadOrdenes(sinCol);
+          }
           if ((msg.includes('numero') || msg.includes('does not exist')) && selectCols === selectConNumero) {
             ordenesTieneNumeroColumn = false;
             return runLoadOrdenes(selectBase);
@@ -13354,9 +13472,30 @@ function crearOrdenBorrador() {
 
 function syncOrdenIntPatronInstrumentacionWrap() {
   const wrap = document.getElementById('orden-wrap-int-patron-instrumentacion');
-  if (!wrap) return;
   const opt = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
-  if (!opt) return;
+  if (wrap && opt) {
+    const codigo = opt.getAttribute('data-codigo') || '';
+    const mi = opt.getAttribute('data-moneda-in') || '';
+    const mo = opt.getAttribute('data-moneda-out') || '';
+    const usaInt = opt.getAttribute('data-usa-intermediario') === 'true';
+    const intVal = document.getElementById('orden-intermediario')?.value?.trim();
+    const esCheque = esTipoOperacionChequeArs(codigo, mi, mo);
+    const show = usaInt && !!intVal && !esCheque;
+    wrap.style.display = show ? 'block' : 'none';
+    applyOrdenUsdIntPostPatronVisibility();
+  }
+  syncOrdenIntermediarioPagoTransferenciaWrap();
+}
+
+function syncOrdenIntermediarioPagoTransferenciaWrap() {
+  const wrap = document.getElementById('orden-wrap-intermediario-pago-transferencia');
+  const chk = document.getElementById('orden-intermediario-pago-transferencia');
+  if (!wrap || !chk) return;
+  const opt = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+  if (!opt) {
+    wrap.style.display = 'none';
+    return;
+  }
   const codigo = opt.getAttribute('data-codigo') || '';
   const mi = opt.getAttribute('data-moneda-in') || '';
   const mo = opt.getAttribute('data-moneda-out') || '';
@@ -13365,7 +13504,8 @@ function syncOrdenIntPatronInstrumentacionWrap() {
   const esCheque = esTipoOperacionChequeArs(codigo, mi, mo);
   const show = usaInt && !!intVal && !esCheque;
   wrap.style.display = show ? 'block' : 'none';
-  applyOrdenUsdIntPostPatronVisibility();
+  if (!usaInt || esCheque || !intVal) chk.checked = false;
+  syncOrdenIntermediarioTransferenciaTasaWrap();
 }
 
 function setupOrdenIntPatronRadiosOnce() {
@@ -13833,11 +13973,20 @@ function openModalOrden(registro) {
         const importeChequeEl = document.getElementById('orden-importe-cheque');
         const tasaClienteEl = document.getElementById('orden-tasa-descuento-cliente');
         if (importeChequeEl) importeChequeEl.value = formatImporteDisplay(mr);
-        if (tasaClienteEl) tasaClienteEl.value = formatImporteDisplay((1 - me / mr) * 100);
+        if (tasaClienteEl) {
+          if (esChequeArsReg) tasaClienteEl.value = formatImporteDisplay((1 - me / mr) * 100);
+          else if (tipoCodigoReg === 'USD-USD') {
+            const tUsd = ordenUsdUsdTasaClientePctDesdeMrMe(mr, me);
+            if (tUsd != null) tasaClienteEl.value = formatImporteDisplay(tUsd);
+          }
+        }
       }
       document.getElementById('orden-estado').value = (registroActual.estado && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada'].includes(registroActual.estado)) ? registroActual.estado : 'pendiente_instrumentar';
       document.getElementById('orden-observaciones').value = registroActual.observaciones || '';
       onTipoChange();
+      const chkIntPagoTr = document.getElementById('orden-intermediario-pago-transferencia');
+      if (chkIntPagoTr) chkIntPagoTr.checked = registroActual.intermediario_pago_transferencia === true;
+      syncOrdenIntermediarioPagoTransferenciaWrap();
       ordenWizardOrdenIdActual = registroActual.id;
       const btnAnular = document.getElementById('orden-btn-anular');
       if (btnAnular) {
@@ -13902,6 +14051,7 @@ function openModalOrden(registro) {
     promContinuar.then(() => {
       if (modalLoadSeq !== ordenModalLoadSeq) return;
       setupOrdenIntPatronRadiosOnce();
+      setupOrdenTransferenciaTasaRadiosOnce();
       setupOrdenNachoComisionRadiosOnce();
       resetOrdenIntPatronUi();
       if (registroActual && registroActual.id) {
@@ -13911,6 +14061,7 @@ function openModalOrden(registro) {
           const optP = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
           const codP = optP ? (optP.getAttribute('data-codigo') || '') : '';
           if (codP && selTipoEl) adaptarFormularioOrden(codP, tipos, selTipoEl.value || '');
+          aplicarOrdenRegistroIntermediarioTransferenciaYTasa(registroActual);
         });
       } else {
         syncOrdenIntPatronInstrumentacionWrap();
@@ -13929,6 +14080,7 @@ function openModalOrden(registro) {
       setupInputImporte(document.getElementById('orden-monto-recibido'));
       setupInputImporte(document.getElementById('orden-monto-entregado'));
       setupInputImporte(document.getElementById('orden-tasa-descuento-intermediario'), 2, true);
+      setupInputImporte(document.getElementById('orden-intermediario-transferencia-tasa-pct'), 2, true);
       setupInputImporte(document.getElementById('orden-importe-cheque'));
       setupInputImporte(document.getElementById('orden-tasa-descuento-cliente'), 2, true);
     })
@@ -14405,16 +14557,20 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     let montoEntregar;
     if (isUsdUsd && esWizardUsdUsdConIntermediario() && tasaIntVisible) {
       const tasaIntPct = parseImporteInput(tasaIntEl?.value);
-      // La tasa del intermediario es acuerdo Pandy–intermediario (reparto de comisiones_orden), no descuenta otra vez sobre lo que el cliente entrega.
+      // La tasa del intermediario es acuerdo Pandy–intermediario: % sobre me (monto a entregar al cliente), reparto en comisiones_orden con tope al spread mr−me.
       if (!(typeof tasaIntPct === 'number' && !isNaN(tasaIntPct) && tasaIntPct > 0 && tasaIntPct < 100)) {
         setRestoOrdenEditable(false);
         if (wrapMontosCalculados) wrapMontosCalculados.style.display = 'none';
         if (montoRecibidoEl) montoRecibidoEl.value = '';
         if (montoEntregadoEl) montoEntregadoEl.value = '';
-        if (comisionDisplay) comisionDisplay.value = formatImporteDisplay(importe * (tasaPct / 100));
+        {
+          const mePrev = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct);
+          const spreadPrev = mePrev != null ? importe - mePrev : null;
+          if (comisionDisplay) comisionDisplay.value = spreadPrev != null ? formatImporteDisplay(spreadPrev) : '';
+        }
         return;
       }
-      montoEntregar = importe * (1 - tasaPct / 100);
+      montoEntregar = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct);
     } else if (isUsdUsd && ordenUsdIntMostrarComisionFijaNacho()) {
       const nachoInp = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
       if (!nachoInp) {
@@ -14422,11 +14578,14 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
         if (wrapMontosCalculados) wrapMontosCalculados.style.display = 'none';
         if (montoRecibidoEl) montoRecibidoEl.value = '';
         if (montoEntregadoEl) montoEntregadoEl.value = '';
-        // Spread total = importe × tasa cliente % (mismo que mr−me al elegir 50/75); evita valor viejo en pantalla.
-        if (comisionDisplay) comisionDisplay.value = formatImporteDisplay(importe * (tasaPct / 100));
+        {
+          const mePrev = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct);
+          const spreadPrev = mePrev != null ? importe - mePrev : null;
+          if (comisionDisplay) comisionDisplay.value = spreadPrev != null ? formatImporteDisplay(spreadPrev) : '';
+        }
         return;
       }
-      montoEntregar = importe * (1 - tasaPct / 100);
+      montoEntregar = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct);
       const comSpread = importe - montoEntregar;
       const fija = Number(nachoInp.value) || 0;
       if (fija > comSpread + 1e-6) {
@@ -14438,7 +14597,17 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
         return;
       }
     } else {
-      montoEntregar = importe * (1 - tasaPct / 100);
+      montoEntregar = isUsdUsd
+        ? ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct)
+        : importe * (1 - tasaPct / 100);
+    }
+    if (montoEntregar == null || (typeof montoEntregar === 'number' && (isNaN(montoEntregar) || montoEntregar <= 0))) {
+      setRestoOrdenEditable(false);
+      if (wrapMontosCalculados) wrapMontosCalculados.style.display = 'none';
+      if (montoRecibidoEl) montoRecibidoEl.value = '';
+      if (montoEntregadoEl) montoEntregadoEl.value = '';
+      if (comisionDisplay) comisionDisplay.value = '';
+      return;
     }
     if (montoRecibidoEl) { montoRecibidoEl.value = formatImporteDisplay(montoRecibir); montoRecibidoEl.readOnly = true; }
     if (montoEntregadoEl) { montoEntregadoEl.value = formatImporteDisplay(montoEntregar); montoEntregadoEl.readOnly = true; }
@@ -14638,6 +14807,9 @@ function insertOrdenConProximoNumero(payload) {
     p_monto_entregado: payload.monto_entregado,
     p_cotizacion: payload.cotizacion,
     p_tasa_descuento_intermediario: payload.tasa_descuento_intermediario,
+    p_intermediario_pago_transferencia: payload.intermediario_pago_transferencia === true,
+    p_intermediario_transferencia_cobra_tasa: payload.intermediario_transferencia_cobra_tasa === true,
+    p_intermediario_transferencia_tasa: payload.intermediario_transferencia_tasa != null ? payload.intermediario_transferencia_tasa : null,
     p_observaciones: payload.observaciones,
     p_usuario_id: payload.usuario_id,
     p_updated_at: payload.updated_at,
@@ -14670,40 +14842,61 @@ function pandiBuildComisionesOrdenOutboxRows(ctx) {
     intermediarioId,
     comisionUsd,
     patronTcGuardar,
-    importeChequeWizard,
     nachoComisionFija,
     nachoComisionFijaRadio,
     usdIntMostrarTasa,
     tasaIntermediarioPct,
+    montoEntregadoUsd,
   } = ctx;
+  const comisionUsdN = comisionUsd != null && !isNaN(Number(comisionUsd)) ? Math.max(0, Number(comisionUsd)) : 0;
+  const comisionMoneda = esChequeArsOrden ? 'ARS' : 'USD';
+  let extraTfOut = 0;
+  if (ctx.intermediarioPagoTransferencia === true && ctx.intermediarioTransferenciaCobraTasa === true && typeof ctx.intermediarioTransferenciaTasaFrac === 'number' && !isNaN(ctx.intermediarioTransferenciaTasaFrac) && ctx.intermediarioTransferenciaTasaFrac > 0) {
+    extraTfOut = montoExtraTasaTransferenciaInterEnMonedaComision(
+      ctx.ordenSnap || {},
+      ctx.patronInstrumentacionInt || 'cp_ic',
+      ctx.intermediarioTransferenciaTasaFrac,
+      comisionMoneda,
+    );
+  }
   const persistirSpread =
     (tipoCodigoU === 'USD-USD' || esChequeArsOrden || !!patronTcGuardar) &&
-    comisionUsd != null &&
-    comisionUsd > 0;
+    (comisionUsdN > 1e-12 || extraTfOut >= 1e-6);
   if (!persistirSpread) return null;
   const conceptoComision = String(tipoCodigo || '').trim() === 'USD-ARS' ? 'Comisión USD-ARS' : (esChequeArsOrden ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
-  const comisionMoneda = esChequeArsOrden ? 'ARS' : 'USD';
   let montoPandy;
   let montoInter;
   if (tipoCodigoU === 'USD-USD' && intermediarioId) {
-    const importeAc = importeChequeWizard;
     if (nachoComisionFija && nachoComisionFijaRadio != null) {
       const fija = Number(nachoComisionFijaRadio) || 0;
       montoInter = fija;
-      montoPandy = comisionUsd - fija;
-    } else if (usdIntMostrarTasa && typeof importeAc === 'number' && !isNaN(importeAc) && importeAc > 0 && tasaIntermediarioPct != null && typeof tasaIntermediarioPct === 'number' && !isNaN(tasaIntermediarioPct)) {
-      const totalCom = comisionUsd;
-      const brutoInter = importeAc * (tasaIntermediarioPct / 100);
+      montoPandy = comisionUsdN - fija;
+    } else if (usdIntMostrarTasa && typeof montoEntregadoUsd === 'number' && !isNaN(montoEntregadoUsd) && montoEntregadoUsd > 0 && tasaIntermediarioPct != null && typeof tasaIntermediarioPct === 'number' && !isNaN(tasaIntermediarioPct)) {
+      const totalCom = comisionUsdN;
+      const brutoInter = montoEntregadoUsd * (tasaIntermediarioPct / 100);
       montoInter = Math.min(Math.max(0, brutoInter), Math.max(0, totalCom));
       montoPandy = Math.max(0, totalCom - montoInter);
     } else {
-      montoPandy = comisionUsd;
+      montoPandy = comisionUsdN;
       montoInter = 0;
     }
   } else {
-    montoPandy = comisionUsd;
+    montoPandy = comisionUsdN;
     montoInter = 0;
   }
+  const repTr = aplicarExtraComisionTasaTransferenciaIntermediario({
+    intermediarioPagoTransferencia: ctx.intermediarioPagoTransferencia === true,
+    cobraTasaTransferencia: ctx.intermediarioTransferenciaCobraTasa === true,
+    tasaFracTransferencia: ctx.intermediarioTransferenciaTasaFrac,
+    patronInt: ctx.patronInstrumentacionInt || 'cp_ic',
+    ordenSnap: ctx.ordenSnap || {},
+    comisionMoneda,
+    comisionTotal: comisionUsdN,
+    montoInter,
+    montoPandy,
+  });
+  montoInter = repTr.montoInter;
+  montoPandy = repTr.montoPandy;
   if (montoPandy < -1e-6) return null;
   const rows = [
     { moneda: comisionMoneda, monto: montoPandy, concepto: conceptoComision, beneficiario: 'pandy', intermediario_id: null },
@@ -14790,9 +14983,11 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
     const rawUsdT = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
     const tUsdInt = rawUsdT ? parseImporteInput(rawUsdT) : null;
     if (typeof tUsdInt !== 'number' || isNaN(tUsdInt) || tUsdInt <= 0 || tUsdInt >= 100) {
-      return { error: 'En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe).' };
+      return { error: 'En USD-USD con intermediario completá la tasa del intermediario (%, sobre el monto a entregar al cliente).' };
     }
   }
+  const errTrTCola = ordenValidarTasaTransferenciaIntermediarioSegunDom();
+  if (errTrTCola) return { error: errTrTCola };
   const comisionUsd = tipoCodigoU === 'USD-USD' ? montoRecibido - montoEntregado
     : (esChequeArsOrden ? montoRecibido - montoEntregado
       : (esPatronCompraFiatConTc(patronTcGuardar) && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado
@@ -14825,6 +15020,8 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
     monto_entregado: montoEntregado,
     cotizacion: cotizacion,
     tasa_descuento_intermediario: tasaDescuentoIntermediario,
+    intermediario_pago_transferencia: ordenIntermediarioPagoTransferenciaDesdeDom(),
+    ...ordenPayloadCamposTransferenciaTasa(),
     observaciones,
     usuario_id: currentUserId,
     updated_at: new Date().toISOString(),
@@ -14843,6 +15040,18 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
     nachoComisionFijaRadio: nNach ? Number(nNach.value) : null,
     usdIntMostrarTasa: !!(tipoCodigoU === 'USD-USD' && intermediarioId && ordenUsdIntMostrarTasaIntermediarioEnWizard()),
     tasaIntermediarioPct: tasaDescuentoIntPct ? parseImporteInput(tasaDescuentoIntPct) : null,
+    montoEntregadoUsd: montoEntregado,
+    patronInstrumentacionInt: getOrdenPatronInstrumentacionInt(),
+    ordenSnap: {
+      moneda_recibida: monedaRecibida,
+      moneda_entregada: monedaEntregada,
+      monto_recibido: montoRecibido,
+      monto_entregado: montoEntregado,
+      cotizacion,
+    },
+    intermediarioPagoTransferencia: ordenIntermediarioPagoTransferenciaDesdeDom(),
+    intermediarioTransferenciaCobraTasa: ordenIntermediarioTransferenciaCobraTasaDesdeDom(),
+    intermediarioTransferenciaTasaFrac: ordenIntermediarioTransferenciaTasaFracDesdeDom(),
   };
 
   return { error: null, payload, comisionCtx };
@@ -14889,13 +15098,18 @@ async function pandiWizardGuardarEnColaLocalConPlantillaInstrumentacion() {
         plant = buildPlantillaRowsTransaccionesChequeConIntermediario(ordenLike, null, midEf, midCh);
         colaV2Plantilla = 'cheque4';
       } else {
-        const modoId = pandiModoPagoEfectivoIdDesdeCache(cache);
-        if (!modoId) {
+        const { efectivo: midEf, transferencia: midTr } = pandiModosPagoEfectivoTransferenciaDesdeCache(cache);
+        if (!midEf) {
           showToast('Falta el modo de pago «efectivo» en caché. Conectate para refrescar el catálogo.', 'error');
           return;
         }
+        if (ordenLike.intermediario_pago_transferencia === true && !midTr) {
+          showToast('Falta el modo de pago «transferencia» en caché. Conectate para refrescar el catálogo.', 'error');
+          return;
+        }
         const patronInt = getOrdenPatronInstrumentacionInt();
-        plant = buildPlantillaRowsTransaccionesConIntermediario(ordenLike, null, tipoRow, modoId, patronInt);
+        const modoInt = ordenLike.intermediario_pago_transferencia === true && midTr ? midTr : midEf;
+        plant = buildPlantillaRowsTransaccionesConIntermediario(ordenLike, null, tipoRow, midEf, patronInt, modoInt);
         colaV2Plantilla = 'int2';
       }
     } else {
@@ -15030,9 +15244,14 @@ function guardarOrdenDesdeWizard() {
     const rawUsdT = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
     const tUsdInt = rawUsdT ? parseImporteInput(rawUsdT) : null;
     if (typeof tUsdInt !== 'number' || isNaN(tUsdInt) || tUsdInt <= 0 || tUsdInt >= 100) {
-      showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe).', 'error');
+      showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el monto a entregar al cliente).', 'error');
       return Promise.resolve(null);
     }
+  }
+  const errTrT = ordenValidarTasaTransferenciaIntermediarioSegunDom();
+  if (errTrT) {
+    showToast(errTrT, 'error');
+    return Promise.resolve(null);
   }
   const comisionUsd = tipoCodigoU === 'USD-USD' ? montoRecibido - montoEntregado
     : (esChequeArsOrden ? montoRecibido - montoEntregado
@@ -15067,6 +15286,8 @@ function guardarOrdenDesdeWizard() {
     monto_entregado: montoEntregado,
     cotizacion: cotizacion,
     tasa_descuento_intermediario: tasaDescuentoIntermediario,
+    intermediario_pago_transferencia: ordenIntermediarioPagoTransferenciaDesdeDom(),
+    ...ordenPayloadCamposTransferenciaTasa(),
     observaciones,
     usuario_id: currentUserId,
     updated_at: new Date().toISOString(),
@@ -15116,39 +15337,59 @@ function guardarOrdenDesdeWizard() {
     function guardarComision() {
       const conceptoComision = tipoCodigo === 'USD-ARS' ? 'Comisión USD-ARS' : (esChequeArsOrden ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
       const comisionMoneda = esChequeArsOrden ? 'ARS' : 'USD';
-      if (!((tipoCodigoU === 'USD-USD' || esChequeArsOrden || patronTcGuardar) && comisionUsd != null && comisionUsd > 0)) return Promise.resolve();
+      const comisionUsdNum = comisionUsd != null && !isNaN(Number(comisionUsd)) ? Math.max(0, Number(comisionUsd)) : 0;
+      const extraTrEst = wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion, comisionMoneda);
+      if (!((tipoCodigoU === 'USD-USD' || esChequeArsOrden || patronTcGuardar) && (comisionUsdNum > 1e-12 || extraTrEst >= 1e-6))) return Promise.resolve();
       return client.from('comisiones_orden').delete().eq('orden_id', ordenId).then(() => {
         let montoPandy;
         let montoInter;
         if (tipoCodigoU === 'USD-USD' && intermediarioId) {
-          const importeAc = parseImporteInput(document.getElementById('orden-importe-cheque')?.value);
           if (ordenComisionFijaNachoUsdParaPersistir(tipoCodigo, intermediarioId)) {
             const n = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
             const fija = n ? Number(n.value) || 0 : 0;
             montoInter = fija;
-            montoPandy = comisionUsd - fija;
+            montoPandy = comisionUsdNum - fija;
             persistirPreferenciaComisionFijaInterUsd(fija);
-          } else if (ordenUsdIntMostrarTasaIntermediarioEnWizard() && typeof importeAc === 'number' && !isNaN(importeAc) && importeAc > 0) {
+          } else if (ordenUsdIntMostrarTasaIntermediarioEnWizard() && typeof montoEntregado === 'number' && !isNaN(montoEntregado) && montoEntregado > 0) {
             const tI = parseImporteInput(document.getElementById('orden-tasa-descuento-intermediario')?.value);
             if (typeof tI === 'number' && !isNaN(tI)) {
-              const totalCom = comisionUsd;
-              const brutoInter = importeAc * (tI / 100);
+              const totalCom = comisionUsdNum;
+              const brutoInter = montoEntregado * (tI / 100);
               montoInter = Math.min(Math.max(0, brutoInter), Math.max(0, totalCom));
               montoPandy = Math.max(0, totalCom - montoInter);
             } else {
-              montoPandy = comisionUsd;
+              montoPandy = comisionUsdNum;
               montoInter = 0;
             }
           } else {
-            montoPandy = comisionUsd;
+            montoPandy = comisionUsdNum;
             montoInter = 0;
           }
         } else {
-          montoPandy = comisionUsd;
+          montoPandy = comisionUsdNum;
           montoInter = 0;
         }
+        const repTr = aplicarExtraComisionTasaTransferenciaIntermediario({
+          intermediarioPagoTransferencia: ordenIntermediarioPagoTransferenciaDesdeDom(),
+          cobraTasaTransferencia: ordenIntermediarioTransferenciaCobraTasaDesdeDom(),
+          tasaFracTransferencia: ordenIntermediarioTransferenciaTasaFracDesdeDom(),
+          patronInt: getOrdenPatronInstrumentacionInt(),
+          ordenSnap: {
+            moneda_recibida: monedaRecibida,
+            moneda_entregada: monedaEntregada,
+            monto_recibido: montoRecibido,
+            monto_entregado: montoEntregado,
+            cotizacion,
+          },
+          comisionMoneda,
+          comisionTotal: comisionUsdNum,
+          montoInter,
+          montoPandy,
+        });
+        montoInter = repTr.montoInter;
+        montoPandy = repTr.montoPandy;
         if (montoPandy < -1e-6) {
-          showToast('La comisión fija del intermediario no puede superar el beneficio del acuerdo.', 'error');
+          showToast('La parte de Pandy del acuerdo no puede quedar negativa (revisá comisión fija, tasa del intermediario o tasa por transferencia).', 'error');
           return Promise.reject(new Error('comision_invalida'));
         }
         const rows = [
@@ -15209,6 +15450,11 @@ function renderOrdenWizardInstrumentacion(instId) {
   if (acuerdoTexto) acuerdoTexto.textContent = '…';
   if (instrumentadoTexto) instrumentadoTexto.textContent = '…';
   if (acuerdoAviso) acuerdoAviso.textContent = '';
+  const tasaWrapWizInit = document.getElementById('orden-inst-tasa-transf-int-wrap');
+  if (tasaWrapWizInit) {
+    tasaWrapWizInit.innerHTML = '';
+    tasaWrapWizInit.style.display = 'none';
+  }
 
   client.from('instrumentacion').select('orden_id, multicontraparte_manual').eq('id', instId).single().then((rInst) => {
     const multicontraparteManualInst = !!(rInst.data && rInst.data.multicontraparte_manual);
@@ -15220,7 +15466,7 @@ function renderOrdenWizardInstrumentacion(instId) {
       return;
     }
     Promise.all([
-      client.from('ordenes').select('id, cliente_id, tipo_operacion_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, estado, clientes(nombre), intermediarios(nombre), tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single(),
+      client.from('ordenes').select('id, cliente_id, tipo_operacion_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, estado, clientes(nombre), intermediarios(nombre), tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single(),
       client.from('transacciones').select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instId).order('created_at', { ascending: true }),
       client.from('modos_pago').select('id, codigo, nombre'),
     ]).then(([rOrd, resTr, rModos]) => {
@@ -15363,6 +15609,17 @@ function renderOrdenWizardInstrumentacion(instId) {
         if (acuerdoAviso && orden) {
           const avisoInst = textoAvisoFaltaOExcesoInstrumentacion(orden, lista, totalesOptsWizard);
           acuerdoAviso.textContent = avisoInst ? ` (${avisoInst})` : '';
+        }
+        const tasaWrapWiz = document.getElementById('orden-inst-tasa-transf-int-wrap');
+        if (tasaWrapWiz && orden) {
+          const htmlTasaInst = htmlOrdenResumenTasaTransferenciaIntermediario(orden, lista);
+          if (htmlTasaInst) {
+            tasaWrapWiz.innerHTML = htmlTasaInst;
+            tasaWrapWiz.style.display = '';
+          } else {
+            tasaWrapWiz.innerHTML = '';
+            tasaWrapWiz.style.display = 'none';
+          }
         }
         const modosMap = {};
         (rModos.data || []).forEach((m) => { modosMap[m.id] = m; });
@@ -15599,9 +15856,14 @@ function saveOrden() {
     const rawUsdTs = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
     const tUsdInts = rawUsdTs ? parseImporteInput(rawUsdTs) : null;
     if (typeof tUsdInts !== 'number' || isNaN(tUsdInts) || tUsdInts <= 0 || tUsdInts >= 100) {
-      showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe).', 'error');
+      showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el monto a entregar al cliente).', 'error');
       return;
     }
+  }
+  const errTrTSave = ordenValidarTasaTransferenciaIntermediarioSegunDom();
+  if (errTrTSave) {
+    showToast(errTrTSave, 'error');
+    return;
   }
   const comisionUsd = tipoCodigoU === 'USD-USD' ? montoRecibido - montoEntregado : (esChequeArsSave ? montoRecibido - montoEntregado : (esPatronCompraFiatConTc(patronTcSaveOrd) && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado : (esPatronVendeFiatConTc(patronTcSaveOrd) && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
   if (tipoCodigoU === 'USD-USD' && intermediarioId && ordenComisionFijaNachoUsdParaPersistir(tipoCodigo, intermediarioId) && comisionUsd != null) {
@@ -15634,6 +15896,8 @@ function saveOrden() {
     monto_entregado: montoEntregado,
     cotizacion: cotizacion,
     tasa_descuento_intermediario: tasaDescuentoIntermediarioSave,
+    intermediario_pago_transferencia: ordenIntermediarioPagoTransferenciaDesdeDom(),
+    ...ordenPayloadCamposTransferenciaTasa(),
     observaciones,
     usuario_id: currentUserId,
     updated_at: new Date().toISOString(),
@@ -15699,39 +15963,60 @@ function saveOrden() {
     const conceptoComision = tipoCodigo === 'USD-ARS' ? 'Comisión USD-ARS' : (esChequeArsSave ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
     const comisionMoneda = esChequeArsSave ? 'ARS' : 'USD';
     function guardarComisionYContinuar(continuar) {
-      if ((tipoCodigoU === 'USD-USD' || esChequeArsSave) && comisionUsd != null && comisionUsd > 0) {
+      const comisionMonedaSave = esChequeArsSave ? 'ARS' : 'USD';
+      const comisionUsdNumSave = comisionUsd != null && !isNaN(Number(comisionUsd)) ? Math.max(0, Number(comisionUsd)) : 0;
+      const extraTrEstSave = wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion, comisionMonedaSave);
+      if ((tipoCodigoU === 'USD-USD' || esChequeArsSave || patronTcSaveOrd) && (comisionUsdNumSave > 1e-12 || extraTrEstSave >= 1e-6)) {
         client.from('comisiones_orden').delete().eq('orden_id', ordenId).then(() => {
           let montoPandy;
           let montoInter;
           if (tipoCodigoU === 'USD-USD' && intermediarioId) {
-            const importeAc = parseImporteInput(document.getElementById('orden-importe-cheque')?.value);
             if (ordenComisionFijaNachoUsdParaPersistir(tipoCodigo, intermediarioId)) {
               const n = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
               const fija = n ? Number(n.value) || 0 : 0;
               montoInter = fija;
-              montoPandy = comisionUsd - fija;
+              montoPandy = comisionUsdNumSave - fija;
               persistirPreferenciaComisionFijaInterUsd(fija);
-            } else if (ordenUsdIntMostrarTasaIntermediarioEnWizard() && typeof importeAc === 'number' && !isNaN(importeAc) && importeAc > 0) {
+            } else if (ordenUsdIntMostrarTasaIntermediarioEnWizard() && typeof montoEntregado === 'number' && !isNaN(montoEntregado) && montoEntregado > 0) {
               const tI = parseImporteInput(document.getElementById('orden-tasa-descuento-intermediario')?.value);
               if (typeof tI === 'number' && !isNaN(tI)) {
-                const totalCom = comisionUsd;
-                const brutoInter = importeAc * (tI / 100);
+                const totalCom = comisionUsdNumSave;
+                const brutoInter = montoEntregado * (tI / 100);
                 montoInter = Math.min(Math.max(0, brutoInter), Math.max(0, totalCom));
                 montoPandy = Math.max(0, totalCom - montoInter);
               } else {
-                montoPandy = comisionUsd;
+                montoPandy = comisionUsdNumSave;
                 montoInter = 0;
               }
             } else {
-              montoPandy = comisionUsd;
+              montoPandy = comisionUsdNumSave;
               montoInter = 0;
             }
           } else {
-            montoPandy = comisionUsd;
+            montoPandy = comisionUsdNumSave;
             montoInter = 0;
           }
+          const repTrS = aplicarExtraComisionTasaTransferenciaIntermediario({
+            intermediarioPagoTransferencia: ordenIntermediarioPagoTransferenciaDesdeDom(),
+            cobraTasaTransferencia: ordenIntermediarioTransferenciaCobraTasaDesdeDom(),
+            tasaFracTransferencia: ordenIntermediarioTransferenciaTasaFracDesdeDom(),
+            patronInt: getOrdenPatronInstrumentacionInt(),
+            ordenSnap: {
+              moneda_recibida: monedaRecibida,
+              moneda_entregada: monedaEntregada,
+              monto_recibido: montoRecibido,
+              monto_entregado: montoEntregado,
+              cotizacion,
+            },
+            comisionMoneda: comisionMonedaSave,
+            comisionTotal: comisionUsdNumSave,
+            montoInter,
+            montoPandy,
+          });
+          montoInter = repTrS.montoInter;
+          montoPandy = repTrS.montoPandy;
           if (montoPandy < -1e-6) {
-            showToast('La comisión fija del intermediario no puede superar el beneficio del acuerdo.', 'error');
+            showToast('La parte de Pandy del acuerdo no puede quedar negativa (revisá comisión fija, tasa del intermediario o tasa por transferencia).', 'error');
             return;
           }
           const rows = [
@@ -16607,7 +16892,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
   const fecha = fechaHoyYYYYMMDDArgentina();
   const ahora = new Date().toISOString();
 
-  return client.from('ordenes').select('id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, tasa_descuento_intermediario, intermediarios(nombre)').eq('id', ordenId).single()
+  return client.from('ordenes').select('id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, intermediarios(nombre)').eq('id', ordenId).single()
     .then((rOrd) => {
       if (rOrd.error || !rOrd.data) return Promise.resolve();
       const orden = rOrd.data;
@@ -16621,11 +16906,32 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
       const miOrd = (toJoin && toJoin.moneda_in || '').toString().toUpperCase().trim();
       const moOrd = (toJoin && toJoin.moneda_out || '').toString().toUpperCase().trim();
       const patronCajaCruceUsd = patronTipoCambioOrden(miOrd, moOrd);
-      return getReglasDeNegocio(codigoOrden, usaIntermediario).then((reglasDeNegocio) => {
-        const tieneReglasNeg = Array.isArray(reglasDeNegocio) && reglasDeNegocio.length > 0;
-        /** Una sola regla: si hay filas para este tipo + intermediario, el motor CC es solo `reglas_de_negocio` (sin cc_modelo_reglas). */
-        const usarMotorReglasNegocio = tieneReglasNeg;
-        return client.from('instrumentacion').select('id, multicontraparte_manual').eq('orden_id', ordenId).maybeSingle().then((rInst) => {
+      return getReglasDeNegocio(codigoOrden, usaIntermediario).then((reglasBase) => {
+        const parTcAux = parMonedasComisionInterCruceTcDesdeOrden(orden, toJoin);
+        const yaTieneReglasCanonComInt =
+          (parTcAux === 'ars_usd' && (codNorm === 'ARS-USD' || codNorm === 'USD-ARS')) ||
+          (parTcAux === 'eur_usd' && (codNorm === 'EUR-USD' || codNorm === 'USD-EUR'));
+        const necesitaReglasAuxComInt =
+          !!orden.intermediario_id &&
+          !!patronCajaCruceUsd &&
+          codNorm !== 'USD-USD' &&
+          !!parTcAux &&
+          !yaTieneReglasCanonComInt &&
+          !esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out);
+        const pAux = !necesitaReglasAuxComInt
+          ? Promise.resolve([])
+          : parTcAux === 'eur_usd'
+            ? Promise.all([
+                getReglasDeNegocio('EUR-USD', true),
+                getReglasDeNegocio('USD-EUR', true),
+              ]).then(([a, b]) => (a || []).concat(b || []))
+            : getReglasDeNegocio('ARS-USD', true);
+        return pAux.then((reglasAux) => {
+          const reglasDeNegocio = reglasAux.length ? reglasBase.concat(reglasAux) : reglasBase;
+          const tieneReglasNeg = Array.isArray(reglasDeNegocio) && reglasDeNegocio.length > 0;
+          /** Una sola regla: si hay filas para este tipo + intermediario, el motor CC es solo `reglas_de_negocio` (sin cc_modelo_reglas). */
+          const usarMotorReglasNegocio = tieneReglasNeg;
+          return client.from('instrumentacion').select('id, multicontraparte_manual').eq('orden_id', ordenId).maybeSingle().then((rInst) => {
         if (!rInst.data || !rInst.data.id) return Promise.resolve();
         const instId = rInst.data.id;
         const multicontraparteManual = !!(rInst.data && rInst.data.multicontraparte_manual);
@@ -16662,10 +16968,16 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           const comisionInt = comisiones.find((c) => String(c.beneficiario || '').toLowerCase() === 'intermediario');
           let comisionIntMonto = comisionInt ? Number(comisionInt.monto) || 0 : 0;
           let comisionIntMon = (comisionInt && comisionInt.moneda) ? comisionInt.moneda.toUpperCase() : 'ARS';
-          // Si no hay comisión en comisiones_orden pero la orden tiene tasa_descuento_intermediario, derivar: mr * tasa (ej. 50.000 * 0,015 = 750).
-          // Con comisión fija parametrizada **solo en cp_ic** (esUsdUsdInterComisionFijaSync) no usar mr×tasa ni duplicar con inferencia 50/75; en **ci_pc** siempre se permite mr×tasa aunque el intermediario esté en Seguridad para fija en cp_ic.
+          // Sin fila en comisiones_orden pero hay tasa_descuento_intermediario: derivar comisión int. — USD-USD = % sobre me (monto entregado al cliente), tope spread mr−me; resto de tipos (p. ej. CHEQUE) = mr * tasa.
+          // Con comisión fija parametrizada **solo en cp_ic** (esUsdUsdInterComisionFijaSync) no usar tasa ni duplicar con inferencia 50/75; en **ci_pc** siempre se permite inferencia por tasa aunque el intermediario esté en Seguridad para fija en cp_ic.
           if (intermediarioId && comisionIntMonto < 1e-6 && !esUsdUsdInterComisionFijaSync && typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1 && tasa > 1e-12 && mr >= 1e-6) {
-            comisionIntMonto = mr * tasa;
+            if (codNorm === 'USD-USD' && me >= 1e-6) {
+              const spInf = mr - me;
+              const brutoInf = me * tasa;
+              comisionIntMonto = Math.min(Math.max(0, brutoInf), Math.max(0, spInf));
+            } else {
+              comisionIntMonto = mr * tasa;
+            }
             comisionIntMon = monR;
           }
           const comisionPandy = comisiones.find((c) => (c.beneficiario || '').toString().toLowerCase() === 'pandy');
@@ -16699,6 +17011,14 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 comisionIntMon = monR;
                 comisionPandyMonto = Math.max(0, spreadUsdAc - intInf);
               }
+            }
+          }
+          const tieneFilaComisionesIntermediario = comisiones.some((c) => String(c.beneficiario || '').toLowerCase() === 'intermediario');
+          if (!tieneFilaComisionesIntermediario && intermediarioId && comisionIntMonto < 1e-6) {
+            const extraTfSync = montoExtraInferidoTasaTransferenciaInterDesdeOrdenRegistro(orden, patronIntUsdSync, codigoOrdenRaw, toJoin);
+            if (extraTfSync >= 1e-6) {
+              comisionIntMonto = extraTfSync;
+              comisionIntMon = esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) ? 'ARS' : 'USD';
             }
           }
           // Tras inferir comisión int. por tasa o por fija cp_ic: si Pandy tenía todo el spread en comisiones_orden y suma > mr−me, ajustar parte Pandy.
@@ -17069,6 +17389,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           });
         });
       });
+        });
     });
     })
     .catch((err) => {
@@ -17561,8 +17882,9 @@ function buildPlantillaRowsTransaccionesChequeConIntermediario(orden, instrument
 
 /**
  * USD-USD o cruce fiat+USD + intermediario: 2 filas (`cp_ic` | `ci_pc`).
+ * @param {string} [modoPagoIntermediarioIdOpt] Modo de pago en la pata Cliente↔Intermediario; si null/undefined, se usa `modoPagoEfectivoId` en ambas patas.
  */
-function buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionId, tipoRow, modoPagoEfectivoId, patronInt) {
+function buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionId, tipoRow, modoPagoEfectivoId, patronInt, modoPagoIntermediarioIdOpt) {
   if (!orden || !orden.intermediario_id || !tipoRow || !modoPagoEfectivoId) return [];
   const codigoTipo = tipoRow.codigo || '';
   if (esTipoOperacionChequeArs(codigoTipo, tipoRow.moneda_in, tipoRow.moneda_out)) return [];
@@ -17588,16 +17910,17 @@ function buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionI
     if (instrumentacionId != null && instrumentacionId !== '') o.instrumentacion_id = instrumentacionId;
     return o;
   }
-  const E = modoPagoEfectivoId;
+  const Ecli = modoPagoEfectivoId;
+  const Eint = modoPagoIntermediarioIdOpt != null ? modoPagoIntermediarioIdOpt : modoPagoEfectivoId;
   if (pat === 'ci_pc') {
     return [
-      fila({ tipo: 'ingreso', modo_pago_id: E, moneda: monR, monto: mr, cobrador: 'intermediario', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcIngreso }),
-      fila({ tipo: 'egreso', modo_pago_id: E, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcEgreso }),
+      fila({ tipo: 'ingreso', modo_pago_id: Eint, moneda: monR, monto: mr, cobrador: 'intermediario', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcIngreso }),
+      fila({ tipo: 'egreso', modo_pago_id: Ecli, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'pandy', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcEgreso }),
     ];
   }
   return [
-    fila({ tipo: 'ingreso', modo_pago_id: E, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcIngreso }),
-    fila({ tipo: 'egreso', modo_pago_id: E, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcEgreso }),
+    fila({ tipo: 'ingreso', modo_pago_id: Ecli, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcIngreso }),
+    fila({ tipo: 'egreso', modo_pago_id: Eint, moneda: monE, monto: me, cobrador: 'cliente', pagador: 'intermediario', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: tcEgreso }),
   ];
 }
 
@@ -17643,6 +17966,225 @@ function getOrdenPatronInstrumentacionInt() {
   return v === 'ci_pc' ? 'ci_pc' : 'cp_ic';
 }
 
+/** Monto nominal de la pata del intermediario en plantilla 2 tx: ci_pc = C→I (mr); cp_ic = I→C (me). */
+function montoLegIntermediarioPatronInstrumentacion2tx(ordenSnap, patronInt) {
+  const pat = patronInt === 'ci_pc' ? 'ci_pc' : 'cp_ic';
+  const mr = Number(ordenSnap.monto_recibido) || 0;
+  const me = Number(ordenSnap.monto_entregado) || 0;
+  if (pat === 'ci_pc') return { monto: mr, moneda: String(ordenSnap.moneda_recibida || 'USD').toUpperCase().trim() };
+  return { monto: me, moneda: String(ordenSnap.moneda_entregada || 'USD').toUpperCase().trim() };
+}
+
+/**
+ * Importe extra para comisiones_orden del intermediario: % sobre monto de la pata transferencia, en monedaComision.
+ */
+function montoExtraTasaTransferenciaInterEnMonedaComision(ordenSnap, patronInt, tasaFrac, monedaComision) {
+  if (!(tasaFrac > 0)) return 0;
+  const { monto: base, moneda: monBase } = montoLegIntermediarioPatronInstrumentacion2tx(ordenSnap, patronInt);
+  if (!(base > 0)) return 0;
+  const raw = base * tasaFrac;
+  const mCom = String(monedaComision || 'USD').toUpperCase().trim();
+  if (monBase === mCom) return raw;
+  const cot = Number(ordenSnap.cotizacion) || 0;
+  if (!(cot > 0)) return 0;
+  const mi = String(ordenSnap.moneda_recibida || '').toUpperCase().trim();
+  const mo = String(ordenSnap.moneda_entregada || '').toUpperCase().trim();
+  const pTc = patronTipoCambioOrden(mi, mo);
+  if (esPatronCompraFiatConTc(pTc) || esPatronVendeFiatConTc(pTc)) {
+    if (monBase === 'ARS' && mCom === 'USD') return raw / cot;
+    if (monBase === 'USD' && mCom === 'ARS') return raw * cot;
+    if (monBase === 'EUR' && mCom === 'USD') return raw / cot;
+    if (monBase === 'USD' && mCom === 'EUR') return raw * cot;
+  }
+  return raw;
+}
+
+/**
+ * Extra por tasa transferencia intermediario (wizard / payloads), en la moneda de la fila comisiones_orden.
+ * `aplicarExtraComisionTasaTransferenciaIntermediario` suma esto al intermediario y reduce la parte Pandy del spread total `comisionTotal`.
+ */
+function wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion, comisionMoneda) {
+  if (!ordenIntermediarioPagoTransferenciaDesdeDom()) return 0;
+  if (!ordenIntermediarioTransferenciaCobraTasaDesdeDom()) return 0;
+  const frac = ordenIntermediarioTransferenciaTasaFracDesdeDom();
+  if (!(typeof frac === 'number' && !isNaN(frac) && frac > 0)) return 0;
+  return montoExtraTasaTransferenciaInterEnMonedaComision(
+    {
+      moneda_recibida: monedaRecibida,
+      moneda_entregada: monedaEntregada,
+      monto_recibido: montoRecibido,
+      monto_entregado: montoEntregado,
+      cotizacion,
+    },
+    getOrdenPatronInstrumentacionInt(),
+    frac,
+    comisionMoneda,
+  );
+}
+
+/** Sync CC: si no hay fila `comisiones_orden` para intermediario, inferir solo el extra por tasa transferencia desde columnas de `ordenes`. */
+function montoExtraInferidoTasaTransferenciaInterDesdeOrdenRegistro(orden, patronIntInstrumentacion, codigoOrdenRaw, toJoin) {
+  if (!orden || !orden.intermediario_id) return 0;
+  if (orden.intermediario_pago_transferencia !== true) return 0;
+  if (!coercePgBooleanStrict(orden.intermediario_transferencia_cobra_tasa)) return 0;
+  const tFrac = Number(orden.intermediario_transferencia_tasa) || 0;
+  if (!(tFrac > 0)) return 0;
+  const comMon = esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) ? 'ARS' : 'USD';
+  return montoExtraTasaTransferenciaInterEnMonedaComision(
+    orden,
+    patronIntInstrumentacion || 'cp_ic',
+    tFrac,
+    comMon,
+  );
+}
+
+function aplicarExtraComisionTasaTransferenciaIntermediario({
+  intermediarioPagoTransferencia,
+  cobraTasaTransferencia,
+  tasaFracTransferencia,
+  patronInt,
+  ordenSnap,
+  comisionMoneda,
+  comisionTotal,
+  montoInter,
+  montoPandy,
+}) {
+  let mi = Number(montoInter) || 0;
+  let mp = Number(montoPandy) || 0;
+  const total = Number(comisionTotal) || 0;
+  if (
+    intermediarioPagoTransferencia !== true ||
+    cobraTasaTransferencia !== true ||
+    !(typeof tasaFracTransferencia === 'number' && !isNaN(tasaFracTransferencia) && tasaFracTransferencia > 0)
+  ) {
+    return { montoInter: mi, montoPandy: mp };
+  }
+  const extra = montoExtraTasaTransferenciaInterEnMonedaComision(ordenSnap, patronInt || 'cp_ic', tasaFracTransferencia, comisionMoneda);
+  if (!(extra > 0)) return { montoInter: mi, montoPandy: mp };
+  mi += extra;
+  mp = Math.max(0, total - mi);
+  return { montoInter: mi, montoPandy: mp };
+}
+
+function ordenIntermediarioTransferenciaCobraTasaDesdeDom() {
+  const r = document.querySelector('input[name="orden-int-transf-cobra-tasa"]:checked');
+  return r && String(r.value) === 'si';
+}
+
+/** Fracción 0–1 como tasa_descuento_intermediario; null si no aplica. */
+function ordenIntermediarioTransferenciaTasaFracDesdeDom() {
+  if (!ordenIntermediarioTransferenciaCobraTasaDesdeDom()) return null;
+  const raw = document.getElementById('orden-intermediario-transferencia-tasa-pct')?.value?.trim() || '';
+  if (!raw) return null;
+  const pct = parseImporteInput(raw);
+  if (typeof pct !== 'number' || isNaN(pct) || pct <= 0 || pct >= 100) return null;
+  return pct / 100;
+}
+
+function syncOrdenIntermediarioTransferenciaTasaWrap() {
+  const wrap = document.getElementById('orden-wrap-intermediario-transferencia-tasa');
+  const wrapPct = document.getElementById('orden-wrap-intermediario-transferencia-tasa-pct');
+  const chkTr = document.getElementById('orden-intermediario-pago-transferencia');
+  if (!wrap || !wrapPct || !chkTr) return;
+  const show = chkTr.checked === true;
+  wrap.style.display = show ? 'block' : 'none';
+  if (!show) {
+    const rNo = document.querySelector('input[name="orden-int-transf-cobra-tasa"][value="no"]');
+    if (rNo) rNo.checked = true;
+    const inp = document.getElementById('orden-intermediario-transferencia-tasa-pct');
+    if (inp) inp.value = '';
+    wrapPct.style.display = 'none';
+    return;
+  }
+  const rSi = document.querySelector('input[name="orden-int-transf-cobra-tasa"][value="si"]');
+  wrapPct.style.display = rSi && rSi.checked ? 'block' : 'none';
+}
+
+function ordenPayloadCamposTransferenciaTasa() {
+  if (!ordenIntermediarioPagoTransferenciaDesdeDom()) {
+    return { intermediario_transferencia_cobra_tasa: false, intermediario_transferencia_tasa: null };
+  }
+  if (!ordenIntermediarioTransferenciaCobraTasaDesdeDom()) {
+    return { intermediario_transferencia_cobra_tasa: false, intermediario_transferencia_tasa: null };
+  }
+  const frac = ordenIntermediarioTransferenciaTasaFracDesdeDom();
+  return { intermediario_transferencia_cobra_tasa: true, intermediario_transferencia_tasa: frac };
+}
+
+/** Si transferencia + «cobra tasa»: el % debe ser válido. Devuelve mensaje de error o null. */
+function ordenValidarTasaTransferenciaIntermediarioSegunDom() {
+  if (!ordenIntermediarioPagoTransferenciaDesdeDom()) return null;
+  if (!ordenIntermediarioTransferenciaCobraTasaDesdeDom()) return null;
+  const frac = ordenIntermediarioTransferenciaTasaFracDesdeDom();
+  if (frac == null) return 'Si el intermediario cobra tasa por la transferencia, completá el porcentaje (mayor a 0 y menor a 100).';
+  return null;
+}
+
+/** Tras `adaptarFormularioOrden` al abrir orden en edición: rehidrata transferencia + tasa (evita que el sync del tipo pise radios/input). */
+function aplicarOrdenRegistroIntermediarioTransferenciaYTasa(reg) {
+  if (!reg || !reg.id) return;
+  const chkTr = document.getElementById('orden-intermediario-pago-transferencia');
+  if (chkTr) chkTr.checked = reg.intermediario_pago_transferencia === true;
+  const rSiT = document.querySelector('input[name="orden-int-transf-cobra-tasa"][value="si"]');
+  const rNoT = document.querySelector('input[name="orden-int-transf-cobra-tasa"][value="no"]');
+  if (reg.intermediario_transferencia_cobra_tasa === true) {
+    if (rSiT) rSiT.checked = true;
+  } else if (rNoT) rNoT.checked = true;
+  const inpTasaTr = document.getElementById('orden-intermediario-transferencia-tasa-pct');
+  if (inpTasaTr) {
+    if (reg.intermediario_transferencia_tasa != null && Number(reg.intermediario_transferencia_tasa) > 0) {
+      inpTasaTr.value = formatImporteDisplay(Number(reg.intermediario_transferencia_tasa) * 100);
+    } else inpTasaTr.value = '';
+  }
+  syncOrdenIntermediarioPagoTransferenciaWrap();
+}
+
+function setupOrdenTransferenciaTasaRadiosOnce() {
+  if (typeof document === 'undefined' || document.body.dataset.ordenTransfTasaRadiosBound === '1') return;
+  document.body.dataset.ordenTransfTasaRadiosBound = '1';
+  document.querySelectorAll('input[name="orden-int-transf-cobra-tasa"]').forEach((radio) => {
+    radio.addEventListener('change', () => { syncOrdenIntermediarioTransferenciaTasaWrap(); });
+  });
+  const chkTr = document.getElementById('orden-intermediario-pago-transferencia');
+  if (chkTr && !chkTr.dataset.pandiTransfTasaChkBound) {
+    chkTr.dataset.pandiTransfTasaChkBound = '1';
+    chkTr.addEventListener('change', () => { syncOrdenIntermediarioTransferenciaTasaWrap(); });
+  }
+}
+
+/** Bloque HTML en panel/listado de orden: tasa transferencia intermediario (% , moneda del spread, monto estimado a cargo de Pandy). */
+function htmlOrdenResumenTasaTransferenciaIntermediario(ordenRow, listaTrxOpt) {
+  if (!ordenRow || !coercePgBooleanStrict(ordenRow.intermediario_transferencia_cobra_tasa)) return '';
+  const pctRaw = ordenRow.intermediario_transferencia_tasa;
+  const pct = pctRaw != null && Number(pctRaw) > 0 ? formatImporteDisplay(Number(pctRaw) * 100) : '–';
+  const monedaCom = esOrdenChequeArsDesdeOrden(ordenRow) ? 'ARS' : 'USD';
+  const tasaFrac = Number(pctRaw) || 0;
+  const snap = {
+    moneda_recibida: ordenRow.moneda_recibida,
+    moneda_entregada: ordenRow.moneda_entregada,
+    monto_recibido: ordenRow.monto_recibido,
+    monto_entregado: ordenRow.monto_entregado,
+    cotizacion: ordenRow.cotizacion,
+  };
+  const pat =
+    Array.isArray(listaTrxOpt) && listaTrxOpt.length
+      ? patronInstrumentacionIntDesdeTransacciones(listaTrxOpt)
+      : 'cp_ic';
+  const extra =
+    tasaFrac > 0 ? montoExtraTasaTransferenciaInterEnMonedaComision(snap, pat, tasaFrac, monedaCom) : 0;
+  const montoTxt = extra > 0 ? `${formatImporteDisplay(extra)} ${monedaCom}` : '–';
+  return (
+    '<div class="orden-detalle-tasa-transf-int" style="margin-top:0.4rem;padding:0.35rem 0.5rem;background:#f0fdf4;border-radius:6px;font-size:0.88rem;color:#14532d;line-height:1.45;border:1px solid #bbf7d0;">' +
+    '<strong>Tasa por transferencia al intermediario:</strong> ' +
+    pct +
+    '% · <strong>Moneda del cargo (spread):</strong> ' +
+    monedaCom +
+    ' · <strong>Monto estimado (a cargo de Pandy):</strong> ' +
+    montoTxt +
+    '</div>'
+  );
+}
+
 /**
  * Par cliente con intermediario: 2 transacciones (mismo patrón que USD-USD+int) para USD-USD o cualquier cruce fiat+USD según moneda_in/out.
  * - `cp_ic` (defecto): ingreso Cliente→Pandy (mr), egreso Intermediario→Cliente (me).
@@ -17664,10 +18206,20 @@ function autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instrumenta
     if (!esUsdUsd && !patronTc) return Promise.resolve();
     const cotizacion = Number(orden.cotizacion) || null;
     if (patronTc && !(cotizacion > 0)) return Promise.resolve();
-    return client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle().then((rModo) => {
-      const modoPagoEfectivoId = (rModo.data && rModo.data.id) || null;
+    return client.from('modos_pago').select('id, codigo').in('codigo', ['efectivo', 'transferencia']).then((rModos) => {
+      if (rModos.error) return Promise.resolve();
+      const listM = rModos.data || [];
+      let modoPagoEfectivoId = null;
+      let modoPagoTransferenciaId = null;
+      listM.forEach((m) => {
+        const c = String(m.codigo || '').toLowerCase().trim();
+        if (c === 'efectivo') modoPagoEfectivoId = m.id;
+        if (c === 'transferencia') modoPagoTransferenciaId = m.id;
+      });
       if (!modoPagoEfectivoId) return Promise.resolve();
-      const rows = buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionId, rowTipo, modoPagoEfectivoId, pat);
+      const usarTr = orden.intermediario_pago_transferencia === true && modoPagoTransferenciaId;
+      const modoInt = usarTr ? modoPagoTransferenciaId : modoPagoEfectivoId;
+      const rows = buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionId, rowTipo, modoPagoEfectivoId, pat, modoInt);
       if (!rows.length) return Promise.resolve();
       return rows.reduce((prom, row) => prom.then(() => client.from('transacciones').insert(row).select('id').single()), Promise.resolve()).then(() => actualizarEstadoOrden(ordenId));
     });
@@ -17757,7 +18309,7 @@ function expandOrdenTransacciones(ordenId, orden) {
       panel.dataset.instrumentacionId = instrumentacionId;
 
       Promise.all([
-        client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, estado, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single(),
+        client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, estado, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single(),
         client
           .from('transacciones')
           .select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id')
@@ -17802,7 +18354,12 @@ function expandOrdenTransacciones(ordenId, orden) {
               const textoInst = ejecutada
                 ? `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`
                 : `Instrumentación: A recibir ${formatImporteDisplay(mr)} ${monR} - A entregar ${formatImporteDisplay(me)} ${monE}.`;
-              totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}`;
+              const tasaHtmlOrd = htmlOrdenResumenTasaTransferenciaIntermediario(ordenTotales, lista);
+              totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}${tasaHtmlOrd}`;
+              const encHdr = panel.querySelector('.orden-detalle-encabezado');
+              if (encHdr && ordenTotales) {
+                encHdr.innerHTML = `<div class="orden-detalle-resumen"><strong>Orden ${ordenTotales.numero != null ? '#' + ordenTotales.numero : ''}</strong> ${(ordenTotales.fecha || '').toString().slice(0, 10)} · Estado: ${estadoBadgeOrd(ordenTotales.estado)} · ${ordenTotales.moneda_recibida} ${formatImporteDisplay(ordenTotales.monto_recibido)} → ${ordenTotales.moneda_entregada} ${formatImporteDisplay(ordenTotales.monto_entregado)}</div>`;
+              }
             }
             return Promise.all([
               client.from('modos_pago').select('id, codigo, nombre'),
@@ -17958,7 +18515,7 @@ function refreshTransaccionesPanel(ordenId) {
   tbody.innerHTML = '';
   Promise.all([
     client.from('transacciones').select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true }),
-    client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, estado, tipo_operacion_id, cotizacion, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single(),
+    client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, estado, tipo_operacion_id, cotizacion, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single(),
     client.from('instrumentacion').select('multicontraparte_manual').eq('id', instrumentacionId).maybeSingle(),
   ]).then(([resTr, resOrd, rInstMc]) => {
     const orden = resOrd?.data || null;
@@ -17984,7 +18541,7 @@ function refreshTransaccionesPanel(ordenId) {
       const textoInst = ejecutada
         ? `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`
         : `Instrumentación: A recibir ${formatImporteDisplay(mr)} ${monR} - A entregar ${formatImporteDisplay(me)} ${monE}.`;
-      totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}`;
+      totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}${htmlOrdenResumenTasaTransferenciaIntermediario(orden, list)}`;
     }
     const btnNuevaRf = panel.querySelector('.btn-nueva-transaccion-panel');
     if (btnNuevaRf) btnNuevaRf.style.display = (userPermissions.includes('ingresar_transacciones') && !ordenAnuladaRf) ? '' : 'none';

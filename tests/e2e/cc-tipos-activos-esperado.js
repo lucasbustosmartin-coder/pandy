@@ -11,7 +11,7 @@ const { E2E_CAJA_SEED, withSeedCajaTipo2tx } = require('./e2e-caja-seed-saldos')
  * cajaEfectivoUSD / cajaEfectivoARS: vista Cajas efectivo tras la combinación.
  *
  * Fuente de verdad: sync. USD-ARS, ARS-USD y USD-USD sin int → `reglas_de_negocio` (comisión implícita mr−me en USD-USD; ver docs/USD_USD_SIN_INTERMEDIARIO.md). Saldo = suma simple por moneda de movimientos persistidos (no anulados).
- * P,E (USD-USD): solo Tx1 ingreso pendiente (+10.000); Tx2 egreso ejecutado −9.700/+9.700 anula el pago en CC; saldo +10.000 (deuda cliente a favor Pandy).
+ * P,E (USD-USD): solo Tx1 ingreso pendiente (+mr); Tx2 egreso ejecutado −me/+me anula el pago en CC; saldo +mr (deuda cliente a favor Pandy).
  */
 
 /** ARS-USD: TC 1000, recibir 5.000.000 ARS, entregar 5.000 USD */
@@ -32,12 +32,12 @@ const USD_ARS_FIJOS = {
   me: 5000000,
 };
 
-/** USD-USD: importe 10.000 USD, tasa cliente 3% → entregar 9.700, comisión 300 */
+/** USD-USD: importe 5.300 USD, tasa cliente 6% → me = 5300/1,06 = 5000, comisión 300 */
 const USD_USD_FIJOS = {
-  importe: '10000',
-  tasaCliente: '3',
-  mr: 10000,
-  me: 9700,
+  importe: '5300',
+  tasaCliente: '6',
+  mr: 5300,
+  me: 5000,
   comision: 300,
 };
 
@@ -99,17 +99,17 @@ const COMBINACIONES_USD_ARS_RAW = [
 
 const COMBINACIONES_USD_USD_RAW = [
   { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
-  // E,P: cobro −10.000; egreso pendiente +mr y −mr (no −me) cuando hay comisión E,P en catálogo, + comisión pendiente +300 → saldo neto −9.700.
-  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -9700, saldoARS: 0, detalleCliente: [-10000, -10000, 300, 10000], cajaUSD: 10000, cajaARS: 0 },
-  // P,E: compromiso cobrar +10.000; pago Pandy anulado en CC (−9.700/+9.700); saldo +10.000 (convención positivo = cliente nos debe).
+  // E,P: cobro −mr; egreso pendiente +mr y −mr (no −me) cuando hay comisión E,P en catálogo, + comisión pendiente +300 → saldo neto −me.
+  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -5000, saldoARS: 0, detalleCliente: [-5300, -5300, 300, 5300], cajaUSD: 5300, cajaARS: 0 },
+  // P,E: compromiso cobrar +mr; pago Pandy anulado en CC (−me/+me); saldo +mr.
   {
     id: 'P,E',
     tx1: 'P',
     tx2: 'E',
-    saldoUSD: 10000,
+    saldoUSD: 5300,
     saldoARS: 0,
-    detalleCliente: [-9700, 9700, 10000],
-    cajaUSD: -9700,
+    detalleCliente: [-5000, 5000, 5300],
+    cajaUSD: -5000,
     cajaARS: 0,
   },
   {
@@ -118,7 +118,7 @@ const COMBINACIONES_USD_USD_RAW = [
     tx2: 'E',
     saldoUSD: 0,
     saldoARS: 0,
-    detalleCliente: [-10000, 300, 9700],
+    detalleCliente: [-5300, 300, 5000],
     cajaUSD: 300,
     cajaARS: 0,
   },
@@ -131,9 +131,9 @@ const COMBINACIONES_USD_USD = COMBINACIONES_USD_USD_RAW.map(withSeedCajaTipo2tx)
 /**
  * USD-USD con intermediario: mismas expectativas **cliente** / detalle que sin int (`reglas_de_negocio` cliente + mr_menos_me).
  * **Caja:** con patrón cp_ic (Tx2 = Intermediario→Cliente), el egreso del intermediario **no** mueve la caja de Pandy; solo cuenta el ingreso Cliente→Pandy cuando está ejecutado (E,E → +mr; P,E → 0; E,P → +mr).
- * CC intermediario (**cp_ic**): saldo USD = −(me + parte comisión int.) con **E,E** o **P,E** (Int→Cliente ejecutado aunque C→P pendiente). E2E: tasas 1,5% + 1,5% → comisión int. = mitad de (mr−me).
+ * CC intermediario (**cp_ic**): saldo USD = −(me + parte comisión int.) con **E,E** o **P,E** (Int→Cliente ejecutado aunque C→P pendiente). E2E: tasa intermediario 1,5% **sobre me** (5000) → comisión int. = 75.
  */
-const COMISION_USD_USD_INT_INTERMEDIARIO = Math.round(USD_USD_FIJOS.comision / 2);
+const COMISION_USD_USD_INT_INTERMEDIARIO = Math.round(USD_USD_FIJOS.me * 0.015);
 /** Negativo en resumen = Pandy debe al intermediario (suma movimientos CC int). */
 const SALDO_INT_USD_USD_EE = -(USD_USD_FIJOS.me + COMISION_USD_USD_INT_INTERMEDIARIO);
 const COMBINACIONES_USD_USD_INT = COMBINACIONES_USD_USD.map((c) => {

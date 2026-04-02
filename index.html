@@ -384,6 +384,31 @@
     #tabla-ordenes th:nth-child(3) { text-align: left; padding-left: 0.5rem; }
     #tabla-ordenes .td-tipo-op-iconos { text-align: left; padding-left: 0.5rem; vertical-align: middle; }
     #tabla-ordenes .td-tipo-op-iconos .tipo-op-iconos { justify-content: flex-start; }
+    /* Órdenes (vista principal + modal pendientes): sin crecer altura de fila por wrap; scroll horizontal */
+    #vista-ordenes.card { min-width: 0; }
+    #ordenes-tabla-wrap,
+    #ordenes-pendientes-tabla-wrap { min-width: 0; max-width: 100%; }
+    #tabla-ordenes,
+    #ordenes-pendientes-tabla-wrap table.tabla-listado-ordenes {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: collapse;
+    }
+    #tabla-ordenes thead th,
+    #tabla-ordenes tbody > tr:not(.orden-detalle-tr) > td,
+    #ordenes-pendientes-tabla-wrap table.tabla-listado-ordenes thead th,
+    #ordenes-pendientes-tabla-wrap table.tabla-listado-ordenes tbody > tr > td {
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    #tabla-ordenes tbody tr.orden-detalle-tr > td.orden-detalle-cell {
+      white-space: normal;
+    }
+    .th-orden-fecha,
+    .td-orden-fecha {
+      font-variant-numeric: tabular-nums;
+      min-width: 7rem;
+    }
     /* Órdenes (y modal pendientes): importe a la derecha; moneda en columna angosta y discreta */
     .th-orden-importe { text-align: right; }
     .th-orden-moneda-col {
@@ -656,6 +681,25 @@
     label.orden-int-patron-opcion > input[type="radio"] {
       grid-column: 1;
       justify-self: start;
+    }
+    label.orden-int-patron-opcion > input[type="checkbox"] {
+      grid-column: 1;
+      justify-self: start;
+      width: 1.125rem;
+      height: 1.125rem;
+      min-width: 1.125rem;
+      min-height: 1.125rem;
+      margin: 0.2rem 0 0 0;
+      flex-shrink: 0;
+      accent-color: #2563eb;
+    }
+    @media (max-width: 768px) {
+      label.orden-intermediario-pago-tr-label > input[type="checkbox"] {
+        width: 1.25rem;
+        height: 1.25rem;
+        min-width: 44px;
+        min-height: 44px;
+      }
     }
     .orden-int-patron-opcion-text {
       grid-column: 2;
@@ -1666,7 +1710,7 @@
       .inicio-caja-card-cheque-compact { justify-self: stretch; width: 100%; max-width: 100%; min-width: 0; }
       .inicio-caja-tabla { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
       .tabla-clientes-wrap, .tabla-movimientos-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
-      #seguridad-tabla-wrap, #orden-inst-tabla-wrap, #transacciones-tabla-wrap, #ordenes-pendientes-tabla-wrap, #transacciones-pendientes-tabla-wrap, #cajas-tabla-wrap, #reglas-negocio-tabla-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; max-width: 100%; }
+      #seguridad-tabla-wrap, #orden-inst-tabla-wrap, #transacciones-tabla-wrap, #ordenes-tabla-wrap, #ordenes-pendientes-tabla-wrap, #transacciones-pendientes-tabla-wrap, #cajas-tabla-wrap, #reglas-negocio-tabla-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; max-width: 100%; }
       .modal.modal-ordenes-pendientes { margin-left: 0 !important; }
       .select-filtro { min-height: 44px; font-size: 16px; }
       #cajas-panel-movimientos .cajas-mov-toolbar-fila-primera {
@@ -1844,7 +1888,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.98</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v1.99</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2076,8 +2120,8 @@
         </div>
         <div id="ordenes-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
-          <table id="tabla-ordenes">
-            <thead><tr><th>Nº</th><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
+          <table id="tabla-ordenes" class="tabla-listado-ordenes">
+            <thead><tr><th>Nº</th><th class="th-orden-fecha">Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
             <tbody id="ordenes-tbody"></tbody>
           </table>
         </div>
@@ -3064,6 +3108,22 @@
                 <label for="orden-intermediario" id="orden-label-intermediario"><span id="orden-label-intermediario-texto">Intermediario (opcional)</span> <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Si el tipo de operación lleva intermediario, es obligatorio elegir uno antes de continuar. Puede haber operaciones <span class="js-marca-sistema-nombre">Pandi</span> ↔ Intermediario sin cliente en otros tipos.</span></span></label>
                 <select id="orden-intermediario"><option value="">Sin asignar</option></select>
               </div>
+              <div class="form-group" id="orden-wrap-intermediario-pago-transferencia" style="display:none;">
+                <label class="orden-int-patron-opcion orden-intermediario-pago-tr-label" for="orden-intermediario-pago-transferencia" style="align-items:flex-start;">
+                  <input type="checkbox" id="orden-intermediario-pago-transferencia" autocomplete="off" />
+                  <span class="orden-int-patron-opcion-text">La parte del <strong>intermediario</strong> es por <strong>transferencia bancaria</strong> (si no marcás, en la instrumentación esa pata queda en <strong>efectivo</strong>).</span>
+                </label>
+              </div>
+              <div class="form-group orden-int-patron-bloque" id="orden-wrap-intermediario-transferencia-tasa" style="display:none; margin-bottom:0.75rem; padding:0.75rem 1rem; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;">
+                <p style="margin:0 0 0.5rem 0; font-size:0.9rem; font-weight:600;">Tasa por transferencia (intermediario)</p>
+                <p style="margin:0 0 0.65rem 0; font-size:0.85rem; color:#475569; line-height:1.45;">Si el intermediario cobra un <strong>porcentaje</strong> sobre el monto de <strong>su pata</strong> en la instrumentación, es una comisión que <strong>afronta la empresa</strong> (se descuenta del beneficio <span class="js-marca-sistema-nombre">Pandi</span> del acuerdo, no del cliente).</p>
+                <label class="orden-int-patron-opcion" style="margin-bottom:0.45rem;"><input type="radio" name="orden-int-transf-cobra-tasa" value="no" checked autocomplete="off" /><span class="orden-int-patron-opcion-text">No cobra tasa adicional por esa transferencia</span></label>
+                <label class="orden-int-patron-opcion" style="margin-bottom:0.55rem;"><input type="radio" name="orden-int-transf-cobra-tasa" value="si" autocomplete="off" /><span class="orden-int-patron-opcion-text">Sí, cobra un % sobre el monto de su pata</span></label>
+                <div id="orden-wrap-intermediario-transferencia-tasa-pct" class="form-group" style="display:none; margin-bottom:0;">
+                  <label for="orden-intermediario-transferencia-tasa-pct">Tasa (%) *</label>
+                  <input type="text" id="orden-intermediario-transferencia-tasa-pct" inputmode="decimal" class="input-importe" placeholder="0,50" autocomplete="off" aria-label="Tasa porcentual sobre monto pata intermediario transferencia" />
+                </div>
+              </div>
               <div class="form-actions" style="justify-content:flex-end;">
                 <button type="button" class="btn-primary" id="orden-btn-next"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span>Continuar</button>
               </div>
@@ -3090,7 +3150,7 @@
                   <label for="orden-importe-cheque" id="orden-label-importe-cheque" class="orden-primeros-datos-label">Importe en Cheque (ARS) *</label>
                   <label for="orden-tasa-descuento-cliente" class="orden-primeros-datos-label">Tasa al Cliente (%) *</label>
                   <div id="orden-wrap-tasa-descuento-intermediario" class="orden-primeros-datos-col3" style="display:none;">
-                    <label for="orden-tasa-descuento-intermediario" class="orden-primeros-datos-label">Tasa del Intermediario (%) * <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Ej. 1,50 = 1,5%. Acepta hasta dos decimales. Con 10.000.000 nominal y 1%, <span class="js-marca-sistema-nombre">Pandi</span> recibe 9.900.000 en efectivo del intermediario.</span></span></label>
+                    <label for="orden-tasa-descuento-intermediario" class="orden-primeros-datos-label">Tasa del Intermediario (%) * <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Ej. 1,50 = 1,5%. Acepta hasta dos decimales. En <strong>USD-USD con intermediario</strong>, el % se aplica sobre el <strong>monto a entregar al cliente</strong> (me); la parte del intermediario no puede superar el spread del acuerdo (mr − me). En CHEQUE-ARS, la tasa descontada del intermediario sigue el criterio del acuerdo en ARS (nominal del cheque).</span></span></label>
                     <input type="text" id="orden-tasa-descuento-intermediario" inputmode="decimal" class="input-importe orden-primeros-datos-input" placeholder="1,50" autocomplete="off" />
                   </div>
                   <input type="text" id="orden-importe-cheque" inputmode="decimal" class="input-importe orden-primeros-datos-input" placeholder="0" autocomplete="off" />
@@ -3197,6 +3257,7 @@
                   <strong>Acuerdo:</strong>
                   <span id="orden-inst-acuerdo-texto">–</span>
                 </div>
+                <div id="orden-inst-tasa-transf-int-wrap" style="display:none; margin-top:0.45rem;"></div>
                 <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:0.5rem 1rem; margin-top:0.35rem;">
                   <strong id="orden-inst-instrumentado-label">Instrumentado:</strong>
                   <span id="orden-inst-instrumentado-texto">–</span>
@@ -3528,8 +3589,8 @@
         <div id="ordenes-pendientes-loading" class="clientes-loading vista-loading-spinner">Cargando…</div>
         <div id="ordenes-pendientes-tabla-wrap" style="display:none;">
           <div class="tabla-clientes-wrap tabla-wrap-con-scroll">
-            <table class="tabla-clientes">
-              <thead><tr><th>Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
+            <table class="tabla-clientes tabla-listado-ordenes">
+              <thead><tr><th class="th-orden-fecha">Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
               <tbody id="ordenes-pendientes-tbody"></tbody>
             </table>
           </div>
