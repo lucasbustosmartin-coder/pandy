@@ -13503,8 +13503,14 @@ function syncOrdenIntermediarioPagoTransferenciaWrap() {
   const intVal = document.getElementById('orden-intermediario')?.value?.trim();
   const esCheque = esTipoOperacionChequeArs(codigo, mi, mo);
   const show = usaInt && !!intVal && !esCheque;
-  wrap.style.display = show ? 'block' : 'none';
-  if (!usaInt || esCheque || !intVal) chk.checked = false;
+  const nombreIntTr = intVal ? ordenWizardIntermediarioNombreVisible() : '';
+  const ocultarCheckTransferNachoUsdInt =
+    ordenWizardEsAltaNuevaSinId() &&
+    codigo === 'USD-USD' &&
+    !!intVal &&
+    intermediarioTieneComisionFijaUsdAcordada(intVal, nombreIntTr);
+  wrap.style.display = show && !ocultarCheckTransferNachoUsdInt ? 'block' : 'none';
+  if (!usaInt || esCheque || !intVal || ocultarCheckTransferNachoUsdInt) chk.checked = false;
   syncOrdenIntermediarioTransferenciaTasaWrap();
 }
 
@@ -13619,6 +13625,11 @@ function resetOrdenIntPatronRequiereEleccionUsdInt() {
   if (hid) hid.value = '';
   document.querySelectorAll('input[name="orden-usd-nacho-comision-usd"]').forEach((r) => { r.checked = false; });
   applyOrdenUsdIntPostPatronVisibility();
+}
+
+/** Alta nueva de orden (sin id persistido en el formulario). Solo para reglas de UI p. ej. ocultar checkbox transferencia con Nacho. */
+function ordenWizardEsAltaNuevaSinId() {
+  return !document.getElementById('orden-id')?.value?.trim();
 }
 
 function syncOrdenWizardUsdUsdIntComisionUi() {
