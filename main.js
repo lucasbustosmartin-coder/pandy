@@ -8573,7 +8573,12 @@ function aplicarFiltroCcResumen() {
       });
     }
     actualizarRangoDetalleDefaults();
-    renderCcVistaDetalle(filtrados);
+    // Tras recarga de datos (Refrescar, tick ~30 s en segundo plano, sync post-orden): mantener el orden elegido por columna.
+    let filasVista = filtrados;
+    if (ccDetalleSortCol) {
+      filasVista = [...filtrados].sort((a, b) => compareCcDetalleRow(a, b, ccDetalleSortCol, ccDetalleSortDir));
+    }
+    renderCcVistaDetalle(filasVista);
     return;
   }
   syncCcPestañasYPaneles();
@@ -8791,6 +8796,9 @@ function exportarCcResumenExcel() {
         if (hasta && f > hasta) return false;
         return true;
       });
+    }
+    if (ccDetalleSortCol) {
+      filtrados = [...filtrados].sort((a, b) => compareCcDetalleRow(a, b, ccDetalleSortCol, ccDetalleSortDir));
     }
     if (filtrados.length === 0) {
       showToast('No hay movimientos para exportar.', 'info');
@@ -9146,7 +9154,10 @@ function renderCcDetalleTable() {
   const tfoot = document.getElementById('cc-detalle-tfoot');
   if (!tbody) return;
 
-  const filtrados = ccDetalleMovimientosList;
+  let filtrados = ccDetalleMovimientosList;
+  if (ccDetalleModalSortCol) {
+    filtrados = [...ccDetalleMovimientosList].sort((a, b) => compareCcDetalleRow(a, b, ccDetalleModalSortCol, ccDetalleModalSortDir));
+  }
   tbody.innerHTML = filtrados
     .map((m) => {
       // Un movimiento = una moneda (la de la transacción). Mostrar solo esa columna; el resto "–".
@@ -9201,7 +9212,6 @@ function setupCcDetalleModalSortHeaders() {
       if (ccDetalleMovimientosList.length === 0) return;
       if (ccDetalleModalSortCol === col) ccDetalleModalSortDir *= -1;
       else { ccDetalleModalSortCol = col; ccDetalleModalSortDir = 1; }
-      ccDetalleMovimientosList = [...ccDetalleMovimientosList].sort((a, b) => compareCcDetalleRow(a, b, col, ccDetalleModalSortDir));
       renderCcDetalleTable();
     };
   });
