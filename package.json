@@ -42,7 +42,8 @@
     "test:e2e-cc-activos-completo": "playwright test tests/e2e/01-cc-combinaciones.spec.js tests/e2e/02-cc-tipos-activos-combinaciones.spec.js tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1",
     "playwright:install": "playwright install chromium",
     "lighthouse": "node scripts/lighthouse-pandi.js",
-    "lighthouse:mobile": "node scripts/lighthouse-pandi.js --mobile"
+    "lighthouse:mobile": "node scripts/lighthouse-pandi.js --mobile",
+    "docs:pdf:instalar-movil": "node scripts/generar-pdf-instalacion-movil.js"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

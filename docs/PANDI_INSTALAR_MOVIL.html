@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pandi — Instalar en teléfono o tablet</title>
+  <style>
+    :root {
+      --navy: #0d2137;
+      --green: #0d7d3d;
+      --muted: #4b5563;
+      --line: #e5e7eb;
+      --bg-soft: #f8fafc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #111;
+      line-height: 1.55;
+      font-size: 11pt;
+      margin: 0;
+      padding: 0 0 2rem;
+      background: #fff;
+    }
+    .cover {
+      background: linear-gradient(160deg, var(--navy) 0%, #1e3a5f 100%);
+      color: #fff;
+      padding: 2.5rem 2rem 2rem;
+      margin-bottom: 2rem;
+    }
+    .cover h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.85rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .cover .sub {
+      opacity: 0.92;
+      font-size: 1.05rem;
+      max-width: 36rem;
+    }
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+    h2 {
+      color: var(--navy);
+      font-size: 1.25rem;
+      margin: 2rem 0 0.75rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 3px solid var(--green);
+      page-break-after: avoid;
+    }
+    h3 {
+      color: var(--navy);
+      font-size: 1.05rem;
+      margin: 1.25rem 0 0.5rem;
+      page-break-after: avoid;
+    }
+    p { margin: 0.5rem 0; color: #1f2937; }
+    ul, ol { margin: 0.4rem 0 0.6rem; padding-left: 1.25rem; color: #1f2937; }
+    li { margin: 0.35rem 0; }
+    .muted { color: var(--muted); font-size: 0.95rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.65rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-right: 0.35rem;
+      vertical-align: middle;
+    }
+    .badge-prod { background: #ecfdf5; color: var(--green); border: 1px solid #a7f3d0; }
+    .badge-dev { background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; }
+    .env-box {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1rem 1.15rem;
+      margin: 1rem 0;
+      background: var(--bg-soft);
+      page-break-inside: avoid;
+    }
+    .env-box h3 { margin-top: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    .url-line {
+      font-family: ui-monospace, monospace;
+      font-size: 0.95rem;
+      background: #fff;
+      border: 1px solid var(--line);
+      padding: 0.45rem 0.65rem;
+      border-radius: 8px;
+      word-break: break-all;
+      margin: 0.5rem 0 0;
+    }
+    .icon-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin: 0.75rem 0;
+    }
+    .icon-row img {
+      width: 72px;
+      height: 72px;
+      border-radius: 16px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+      border: 1px solid var(--line);
+    }
+    .icon-row .cap { font-size: 0.85rem; color: var(--muted); max-width: 280px; }
+    .steps { counter-reset: step; list-style: none; padding-left: 0; }
+    .steps li {
+      position: relative;
+      padding-left: 2.5rem;
+      margin: 0.65rem 0;
+      min-height: 1.5rem;
+    }
+    .steps li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1.65rem;
+      height: 1.65rem;
+      background: var(--navy);
+      color: #fff;
+      border-radius: 50%;
+      font-size: 0.8rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .hint {
+      border-left: 4px solid var(--green);
+      padding: 0.5rem 0.85rem;
+      background: #f0fdf4;
+      margin: 0.75rem 0;
+      font-size: 0.95rem;
+      page-break-inside: avoid;
+    }
+    .warn {
+      border-left: 4px solid #d97706;
+      padding: 0.5rem 0.85rem;
+      background: #fffbeb;
+      margin: 0.75rem 0;
+      font-size: 0.95rem;
+    }
+    .svg-inline {
+      display: inline-flex;
+      vertical-align: middle;
+      margin: 0 0.15rem;
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+    @media print {
+      body { padding-bottom: 0; }
+      .cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      h2 { page-break-before: auto; }
+      .page-break { page-break-before: always; }
+      a { color: #000; text-decoration: none; }
+    }
+    footer {
+      margin-top: 2.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header class="cover">
+    <div class="wrap">
+      <h1>Instalar Pandi en tu teléfono o tablet</h1>
+      <p class="sub">Guía para usuarios: agregá la aplicación web (PWA) a la pantalla de inicio en <strong>iPhone</strong>, <strong>iPad</strong> y <strong>Android</strong>, con <strong>Safari</strong> o <strong>Chrome</strong>. Incluye entornos de <strong>producción</strong> y <strong>desarrollo</strong>.</p>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <h2>Qué vas a obtener</h2>
+    <p>Pandi funciona en el navegador. Al <strong>instalarla</strong> (añadir a inicio), se abre como una app a pantalla casi completa, con icono propio en el escritorio del dispositivo. Necesitás <strong>internet</strong> para iniciar sesión y trabajar con datos en vivo.</p>
+
+    <h2>1. Elegí el entorno</h2>
+
+    <div class="env-box">
+      <h3><span class="badge badge-prod">Producción</span> Uso real del negocio</h3>
+      <p class="muted">Datos productivos. Icono del panda con <strong>fondo blanco</strong> en el acceso directo.</p>
+      <p class="url-line">https://pandi.company</p>
+      <div class="icon-row">
+        <img src="../assets/favicon-192x192.png" width="72" height="72" alt="Icono producción Pandi" />
+        <span class="cap">Así debería verse el icono al agregar <strong>producción</strong> al inicio.</span>
+      </div>
+    </div>
+
+    <div class="env-box">
+      <h3><span class="badge badge-dev">Desarrollo</span> Pruebas (preview)</h3>
+      <p class="muted">Base de datos de prueba. Mismo programa, otro servidor. Icono del panda con <strong>fondo celeste</strong> para distinguirlo de producción.</p>
+      <p class="url-line">https://preview.pandi.company</p>
+      <div class="icon-row">
+        <img src="../assets/favicon-192x192-dev.png" width="72" height="72" alt="Icono preview Pandi" />
+        <span class="cap">Así debería verse el icono al agregar <strong>preview</strong> al inicio.</span>
+      </div>
+    </div>
+
+    <div class="warn">
+      <strong>Importante:</strong> no mezcles los dos entornos en tareas críticas: en preview los cambios no son los de producción.
+    </div>
+
+    <h2 class="page-break">2. iPhone o iPad — Safari (recomendado en iOS)</h2>
+    <p>Apple integra mejor la instalación con <strong>Safari</strong>. Chrome en iPhone usa el mismo motor, pero los menús pueden variar.</p>
+
+    <h3>Pasos en Safari</h3>
+    <ol class="steps">
+      <li>Abrí Safari y entrá a la dirección de <strong>producción</strong> o <strong>preview</strong> (arriba).</li>
+      <li>Iniciá sesión con tu usuario y contraseña si te lo pide.</li>
+      <li>Tocá el botón <strong>Compartir</strong>
+        <span class="svg-inline" aria-hidden="true" title="Compartir">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0d2137" stroke-width="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        </span>
+        (cuadrado con flecha hacia arriba), en la barra inferior.</li>
+      <li>Desplazá el menú y elegí <strong>Agregar a inicio</strong> o <strong>Add to Home Screen</strong>.</li>
+      <li>Podés editar el nombre (por defecto suele ser «Pandi»). Si aparece <strong>Abrir como app web</strong>, dejalo <strong>activado</strong> para que abra como aplicación.</li>
+      <li>Tocá <strong>Agregar</strong> (arriba a la derecha). El icono quedará en tu pantalla de inicio.</li>
+    </ol>
+
+    <div class="hint">
+      <strong>Si ves una letra «P»</strong> en lugar del panda, iOS no pudo usar el icono (usa la primera letra del nombre «Pandi»). Probá en este orden:
+      <ol style="margin:0.5rem 0 0; padding-left:1.25rem;">
+        <li>En Safari, abrí directamente <span class="url-line" style="display:inline-block;margin:0.25rem 0;">https://pandi.company/apple-touch-icon.png</span> (producción) o el mismo path en preview. Tenés que <strong>ver el PNG del panda</strong>. Si ves error o página de login (preview con protección Vercel), el acceso al icono falla hasta estar autenticado o usar <strong>producción</strong> para instalar la app.</li>
+        <li>Borrá el icono de la pantalla de inicio. En <strong>Ajustes → Safari → Avanzado → Datos de sitios web</strong> eliminá datos del sitio, cerrá Safari por completo y volvé a abrir la URL.</li>
+        <li>Repetí <strong>Añadir a la pantalla de inicio</strong> desde Safari (no desde un navegador dentro de otra app).</li>
+      </ol>
+    </div>
+
+    <h3>iPhone o iPad — Google Chrome</h3>
+    <ol class="steps">
+      <li>Abrí Chrome y cargá la misma URL (producción o preview).</li>
+      <li>Iniciá sesión.</li>
+      <li>Tocá los tres puntos <span class="svg-inline"><svg width="22" height="22" viewBox="0 0 24 24" fill="#0d2137"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></span> (menú) abajo o arriba según el modelo.</li>
+      <li>Buscá <strong>Agregar a la pantalla de inicio</strong> o <strong>Add to Home Screen</strong> y confirmá.</li>
+    </ol>
+    <p class="muted">En iOS, Chrome puede comportarse distinto según la versión; si no aparece la opción, usá <strong>Safari</strong>.</p>
+
+    <h2 class="page-break">3. Android — Google Chrome</h2>
+    <ol class="steps">
+      <li>Abrí Chrome y entrá a <strong>https://pandi.company</strong> o <strong>https://preview.pandi.company</strong>.</li>
+      <li>Iniciá sesión.</li>
+      <li>Tocá el menú <strong>⋮</strong> (tres puntos verticales arriba a la derecha).</li>
+      <li>Elegí <strong>Instalar aplicación</strong>, <strong>Agregar a la pantalla principal</strong> o <strong>Instalar app</strong> (el texto exacto depende del idioma y la versión).</li>
+      <li>Confirmá en el cuadro que aparece. El icono se agrega al inicio o al cajón de aplicaciones.</li>
+    </ol>
+    <div class="hint">
+      A veces Chrome muestra un <strong>banner</strong> «Instalar app» al entrar al sitio: también podés usarlo para instalar en un solo toque.
+    </div>
+
+    <h3>Android — Samsung Internet u otros navegadores</h3>
+    <p>Menú principal (tres líneas o tres puntos) → opción similar a <strong>Agregar página a</strong> o <strong>Instalar aplicación</strong>. Si no figura, abrí el sitio con <strong>Chrome</strong>.</p>
+
+    <h2 class="page-break">4. Tablets</h2>
+    <p>Los pasos son los mismos que en el teléfono: <strong>iPad</strong> con Safari (o Chrome) como arriba; <strong>tablets Android</strong> con Chrome como en la sección Android.</p>
+
+    <h2>5. Actualizar la app cuando hay una versión nueva</h2>
+    <ul>
+      <li>Al abrir Pandi, si el sistema lo ofrece, aceptá <strong>actualizar</strong> o <strong>recargar</strong> cuando aparezca el aviso del servicio de trabajo en segundo plano.</li>
+      <li>Si algo se ve raro, cerrá la app por completo (deslizá desde el multitarea) y volvé a abrirla desde el icono.</li>
+      <li>En último caso, eliminá el acceso directo y volvé a <strong>instalar</strong> siguiendo esta guía (no perdés tu usuario: es solo un acceso al sitio).</li>
+    </ul>
+
+    <h2>6. Quitar el icono del inicio</h2>
+    <ul>
+      <li><strong>iPhone/iPad:</strong> mantené pulsado el icono → <strong>Eliminar app</strong> → <strong>Eliminar de la pantalla de inicio</strong> (no borra tu cuenta en el servidor).</li>
+      <li><strong>Android:</strong> mantené pulsado el icono → <strong>Eliminar</strong> o arrastrá a «Eliminar».</li>
+    </ul>
+
+    <footer>
+      <p><strong>Pandi</strong> — Órdenes, cuenta corriente y caja. Documento orientado a usuarios finales. Para diseño comercial (p. ej. importar en Gamma, Canva o exportar PDF), conservá los iconos y la división Producción / Desarrollo.</p>
+      <p class="muted">Generado desde el repositorio del producto. Impresión o PDF: menú del navegador «Imprimir» → Guardar como PDF, o <code>npm run docs:pdf:instalar-movil</code> desde la raíz del proyecto.</p>
+    </footer>
+  </div>
+</body>
+</html>

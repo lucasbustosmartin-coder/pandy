@@ -122,12 +122,18 @@ export default defineConfig({
     {
       name: 'pandi-apple-touch-static',
       transformIndexHtml(html) {
-        const link = `<link rel="apple-touch-icon" sizes="180x180" href="${appleTouchRootHref}" />`;
+        // Varias entradas: iOS a veces ignora solo `sizes` o solo la ruta canónica; la «P» es el fallback
+        // cuando ningún PNG válido llega (caché vieja, preview con protección Vercel 401, etc.).
+        const links = [
+          `  <link rel="apple-touch-icon" href="${appleTouchRootHref}" />`,
+          `  <link rel="apple-touch-icon" sizes="180x180" href="${appleTouchRootHref}" />`,
+          `  <link rel="apple-touch-icon" sizes="192x192" href="${pwaIcon192Src}" />`,
+        ].join('\n');
         if (!html.includes('<!--pandi-apple-touch-icon-->')) {
           console.warn('[pandi-apple-touch-static] placeholder faltante en index.html');
           return html;
         }
-        return html.replace('<!--pandi-apple-touch-icon-->', link);
+        return html.replace('<!--pandi-apple-touch-icon-->', links);
       },
     },
     {

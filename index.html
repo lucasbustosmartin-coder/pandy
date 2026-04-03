@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0d2137" />
   <meta name="description" content="Órdenes, cuenta corriente y caja" />
-  <!-- Reemplazado en vite build: apple-touch 180×180 en HTML + copia a /apple-touch-icon.png (raíz, sin ?v=); iOS suele ignorar query en touch o pedir la ruta clásica. -->
+  <!-- Reemplazado en vite build: varios link apple-touch-icon (sin sizes, 180×180 en raíz, 192 en assets) + copia a /apple-touch-icon.png; iOS suele ignorar ?v= en touch. -->
   <!--pandi-apple-touch-icon-->
   <!-- Favicon: config.js aquí en head (síncrono) y luego script que inserta link rel=icon; antes estaban links estáticos de prod y el cambio ocurría al final del body — Chrome ya había pedido 32x32 prod y cacheaba blanco en Preview. -->
   <script src="/config.js"></script>
@@ -1902,7 +1902,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v2.7</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v2.8</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
