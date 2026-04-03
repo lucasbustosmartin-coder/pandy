@@ -13,7 +13,8 @@ const isDevIconPwa =
   process.env.VERCEL_ENV === 'preview' || String(process.env.PANDI_DEV_ICON || '').trim() === '1';
 const pwaIcon192Src = isDevIconPwa ? '/assets/favicon-192x192-dev.png' : '/assets/favicon-192x192.png';
 const pwaIcon512Src = isDevIconPwa ? '/assets/pwa-icon-512-dev.png' : '/assets/pwa-icon-512.png';
-const appleTouchHref = `${pwaIcon192Src}?v=5`;
+/** Raíz sin query string: iOS/Safari a veces no aplica ?v= en apple-touch y probá /apple-touch-icon.png antes que el HTML. */
+const appleTouchRootHref = '/apple-touch-icon.png';
 
 function copyDirSync(src, dest) {
   if (!fs.existsSync(src)) return;
@@ -58,6 +59,8 @@ export default defineConfig({
         'assets/favicon-192x192-dev.png',
         'assets/pwa-icon-512.png',
         'assets/pwa-icon-512-dev.png',
+        'assets/apple-touch-icon-180.png',
+        'assets/apple-touch-icon-180-dev.png',
       ],
       manifest: {
         name: 'Pandi',
@@ -70,6 +73,12 @@ export default defineConfig({
         start_url: '/',
         lang: 'es',
         icons: [
+          {
+            src: appleTouchRootHref,
+            sizes: '180x180',
+            type: 'image/png',
+            purpose: 'any',
+          },
           {
             src: pwaIcon192Src,
             sizes: '192x192',
@@ -113,7 +122,7 @@ export default defineConfig({
     {
       name: 'pandi-apple-touch-static',
       transformIndexHtml(html) {
-        const link = `<link rel="apple-touch-icon" sizes="192x192" href="${appleTouchHref}" />`;
+        const link = `<link rel="apple-touch-icon" sizes="180x180" href="${appleTouchRootHref}" />`;
         if (!html.includes('<!--pandi-apple-touch-icon-->')) {
           console.warn('[pandi-apple-touch-static] placeholder faltante en index.html');
           return html;
@@ -129,6 +138,17 @@ export default defineConfig({
         const cfg = path.join(__dirname, 'config.js');
         if (fs.existsSync(cfg)) {
           fs.copyFileSync(cfg, path.join(dist, 'config.js'));
+        }
+        const touchSrc = path.join(
+          __dirname,
+          'assets',
+          isDevIconPwa ? 'apple-touch-icon-180-dev.png' : 'apple-touch-icon-180.png',
+        );
+        const touchDest = path.join(dist, 'apple-touch-icon.png');
+        if (fs.existsSync(touchSrc)) {
+          fs.copyFileSync(touchSrc, touchDest);
+        } else {
+          console.warn('[copy-assets] Falta', touchSrc, '— ejecutá npm run assets:dev-favicon');
         }
       },
     },

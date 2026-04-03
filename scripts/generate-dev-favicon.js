@@ -5,7 +5,7 @@
  * composite no muestra el celeste. Se hace flood-fill desde los bordes: píxeles
  * blancos conectados al borde → transparente; la cara blanca del panda queda
  * rodeada por trazo oscuro y no se pierde.
- * Salidas: 192/32/16 dev + pwa-icon-512-dev.png (manifiesto PWA en Preview vs prod).
+ * Salidas: 192/32/16 dev + pwa-icon-512-dev.png + apple-touch-icon-180-dev.png (y prod apple-touch-icon-180.png desde el PNG base).
  */
 const path = require('path');
 const sharp = require('sharp');
@@ -100,13 +100,25 @@ async function main() {
   const out32 = path.join(root, 'assets', 'favicon-32x32-dev.png');
   const out16 = path.join(root, 'assets', 'favicon-16x16-dev.png');
   const out512 = path.join(root, 'assets', 'pwa-icon-512-dev.png');
+  const out180Dev = path.join(root, 'assets', 'apple-touch-icon-180-dev.png');
+  const out180Prod = path.join(root, 'assets', 'apple-touch-icon-180.png');
 
   await sharp(composed192).png().toFile(out192);
   await sharp(composed192).resize(32, 32).png().toFile(out32);
   await sharp(composed192).resize(16, 16).png().toFile(out16);
   await sharp(composed192).resize(512, 512).png().toFile(out512);
+  await sharp(composed192).resize(180, 180).png().toFile(out180Dev);
+  await sharp(srcPng).resize(180, 180).png().toFile(out180Prod);
 
-  console.log('OK:', path.relative(root, out192), path.relative(root, out32), path.relative(root, out16), path.relative(root, out512));
+  console.log(
+    'OK:',
+    path.relative(root, out192),
+    path.relative(root, out32),
+    path.relative(root, out16),
+    path.relative(root, out512),
+    path.relative(root, out180Dev),
+    path.relative(root, out180Prod),
+  );
 }
 
 main().catch((e) => {
