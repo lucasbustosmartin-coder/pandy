@@ -12,6 +12,8 @@ dotenv.config({ path: path.join(__dirname, '.env.local'), override: true });
 const isDevIconPwa =
   process.env.VERCEL_ENV === 'preview' || String(process.env.PANDI_DEV_ICON || '').trim() === '1';
 const pwaIcon192Src = isDevIconPwa ? '/assets/favicon-192x192-dev.png' : '/assets/favicon-192x192.png';
+const pwaIcon512Src = isDevIconPwa ? '/assets/pwa-icon-512-dev.png' : '/assets/pwa-icon-512.png';
+const appleTouchHref = `${pwaIcon192Src}?v=5`;
 
 function copyDirSync(src, dest) {
   if (!fs.existsSync(src)) return;
@@ -55,6 +57,7 @@ export default defineConfig({
         'assets/favicon-192x192.png',
         'assets/favicon-192x192-dev.png',
         'assets/pwa-icon-512.png',
+        'assets/pwa-icon-512-dev.png',
       ],
       manifest: {
         name: 'Pandi',
@@ -74,13 +77,13 @@ export default defineConfig({
             purpose: 'any',
           },
           {
-            src: '/assets/pwa-icon-512.png',
+            src: pwaIcon512Src,
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: '/assets/pwa-icon-512.png',
+            src: pwaIcon512Src,
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
@@ -107,6 +110,17 @@ export default defineConfig({
         enabled: false,
       },
     }),
+    {
+      name: 'pandi-apple-touch-static',
+      transformIndexHtml(html) {
+        const link = `<link rel="apple-touch-icon" sizes="192x192" href="${appleTouchHref}" />`;
+        if (!html.includes('<!--pandi-apple-touch-icon-->')) {
+          console.warn('[pandi-apple-touch-static] placeholder faltante en index.html');
+          return html;
+        }
+        return html.replace('<!--pandi-apple-touch-icon-->', link);
+      },
+    },
     {
       name: 'copy-assets-and-config',
       closeBundle() {

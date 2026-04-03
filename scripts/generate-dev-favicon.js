@@ -5,6 +5,7 @@
  * composite no muestra el celeste. Se hace flood-fill desde los bordes: píxeles
  * blancos conectados al borde → transparente; la cara blanca del panda queda
  * rodeada por trazo oscuro y no se pierde.
+ * Salidas: 192/32/16 dev + pwa-icon-512-dev.png (manifiesto PWA en Preview vs prod).
  */
 const path = require('path');
 const sharp = require('sharp');
@@ -98,12 +99,14 @@ async function main() {
   const out192 = path.join(root, 'assets', 'favicon-192x192-dev.png');
   const out32 = path.join(root, 'assets', 'favicon-32x32-dev.png');
   const out16 = path.join(root, 'assets', 'favicon-16x16-dev.png');
+  const out512 = path.join(root, 'assets', 'pwa-icon-512-dev.png');
 
   await sharp(composed192).png().toFile(out192);
   await sharp(composed192).resize(32, 32).png().toFile(out32);
   await sharp(composed192).resize(16, 16).png().toFile(out16);
+  await sharp(composed192).resize(512, 512).png().toFile(out512);
 
-  console.log('OK:', path.relative(root, out192), path.relative(root, out32), path.relative(root, out16));
+  console.log('OK:', path.relative(root, out192), path.relative(root, out32), path.relative(root, out16), path.relative(root, out512));
 }
 
 main().catch((e) => {

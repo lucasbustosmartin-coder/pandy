@@ -5,12 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0d2137" />
   <meta name="description" content="Órdenes, cuenta corriente y caja" />
+  <!-- Reemplazado en vite build: iOS/Safari exige apple-touch-icon en HTML estático; si solo lo agrega JS, “Añadir a inicio” muestra la P generada. -->
+  <!--pandi-apple-touch-icon-->
   <!-- Favicon: config.js aquí en head (síncrono) y luego script que inserta link rel=icon; antes estaban links estáticos de prod y el cambio ocurría al final del body — Chrome ya había pedido 32x32 prod y cacheaba blanco en Preview. -->
   <script src="/config.js"></script>
   <script>
     (function () {
       function hrefWithV(u) {
-        return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'v=4';
+        return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'v=5';
       }
       var u = (typeof window.PANDI_ICON_192_DEFAULT === 'string' && window.PANDI_ICON_192_DEFAULT.trim())
         ? window.PANDI_ICON_192_DEFAULT.trim()
@@ -30,10 +32,7 @@
         l.href = hrefWithV(attrs.href);
         document.head.appendChild(l);
       }
-      var a = document.createElement('link');
-      a.rel = 'apple-touch-icon';
-      a.href = hrefWithV(u);
-      document.head.appendChild(a);
+      /* apple-touch-icon: en HTML estático (vite transform); no duplicar aquí (iOS). */
       appendIcon('icon', { sizes: '32x32', id: 'pandi-favicon-32', href: u32 });
       appendIcon('icon', { sizes: '16x16', id: 'pandi-favicon-16', href: u16 });
       var alt = document.createElement('link');
@@ -1903,7 +1902,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v2.5</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v2.6</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
