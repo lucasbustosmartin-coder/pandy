@@ -1126,6 +1126,21 @@
     .tabla-cc-resumen th, .tabla-cc-resumen td { padding: 0.5rem 0.75rem; text-align: center; border: 1px solid #d1d5db; }
     .tabla-cc-resumen th { font-weight: 600; background: #f9fafb; white-space: nowrap; }
     .tabla-cc-resumen th.th-nombre { border-right: 2px solid #9ca3af; }
+    .tabla-cc-resumen thead tr.cc-resumen-totales-row th {
+      font-size: 0.82rem;
+      font-weight: 600;
+      background: #eef2f7;
+      border-bottom: 1px solid #c4cad4;
+      vertical-align: middle;
+      padding-top: 0.4rem;
+      padding-bottom: 0.4rem;
+    }
+    .tabla-cc-resumen thead tr.cc-resumen-totales-row th.th-nombre { color: #374151; }
+    .tabla-cc-resumen thead tr.cc-resumen-totales-row .cc-resumen-total-valor {
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
     .tabla-cc-resumen th.th-moneda { vertical-align: bottom; border-right: 2px solid #9ca3af; }
     .tabla-cc-resumen th.th-moneda:last-of-type { border-right: 2px solid #9ca3af; }
     .tabla-cc-resumen th.th-sub { border-right: 1px solid #d1d5db; }
@@ -1888,7 +1903,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v2.4</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v2.5</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2348,6 +2363,13 @@
                 <col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/><col class="cc-col"/>
               </colgroup>
               <thead>
+                <tr class="cc-resumen-totales-row" aria-label="Totales por moneda en la grilla actual">
+                  <th class="th-nombre" scope="row">Total</th>
+                  <th class="th-moneda" data-cc-moneda-col="USD" scope="col"><span class="cc-resumen-total-valor" id="cc-resumen-total-usd">–</span></th>
+                  <th class="th-moneda" data-cc-moneda-col="EUR" scope="col"><span class="cc-resumen-total-valor" id="cc-resumen-total-eur">–</span></th>
+                  <th class="th-moneda" data-cc-moneda-col="ARS" scope="col"><span class="cc-resumen-total-valor" id="cc-resumen-total-ars">–</span></th>
+                  <th class="th-ver" aria-hidden="true"></th>
+                </tr>
                 <tr>
                   <th class="th-nombre">Nombre</th>
                   <th class="th-moneda" data-cc-moneda-col="USD"><span class="th-moneda-icon"><img src="/assets/Icono_Dolar.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span><span class="sr-only">USD</span></th>

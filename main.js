@@ -6233,12 +6233,18 @@ function ordenTipoOpMetaMapFromOrdenes(ordenes) {
   return out;
 }
 
-/** Nombre UI para rol en movimiento CC manual (persistido en fila). */
+/** Nombre UI para rol en movimiento CC manual (persistido en fila). Misma resolución de ID que CC/transacciones (string vs número en mapas). */
 function ccManualNombreDisplayRol(rol, clienteId, intermediarioId, clientesById, intermediariosById) {
   const r = String(rol || '').toLowerCase();
   if (r === 'pandy') return etiquetaRolParticipanteUi('pandy');
-  if (r === 'cliente') return (clientesById[clienteId] && clientesById[clienteId].nombre) || '–';
-  if (r === 'intermediario') return (intermediariosById[intermediarioId] && intermediariosById[intermediarioId].nombre) || '–';
+  if (r === 'cliente') {
+    const nom = mapNombreClienteDesdeMapa(clientesById || {}, clienteId);
+    return nom || etiquetaRolParticipanteUi('cliente');
+  }
+  if (r === 'intermediario') {
+    const nom = mapNombreIntermediarioDesdeMapa(intermediariosById || {}, intermediarioId);
+    return nom || etiquetaRolParticipanteUi('intermediario');
+  }
   return '–';
 }
 
@@ -8662,6 +8668,32 @@ function aplicarFiltroCcResumen() {
   renderCcResumenTable(filtrados);
 }
 
+/** Suma algebraica de saldos por moneda en la grilla Saldos (mismas filas que el tbody; respeta Cliente/Intermediario). */
+function actualizarCcResumenTotalesThead(rows) {
+  const eps = 1e-6;
+  const ids = { USD: 'cc-resumen-total-usd', EUR: 'cc-resumen-total-eur', ARS: 'cc-resumen-total-ars' };
+  MONEDAS_CC_UI.forEach((mon) => {
+    const el = document.getElementById(ids[mon]);
+    if (!el) return;
+    if (!rows || rows.length === 0) {
+      el.textContent = '–';
+      el.className = 'cc-resumen-total-valor';
+      return;
+    }
+    let sum = 0;
+    rows.forEach((row) => {
+      sum += Number(row.saldos && row.saldos[mon]) || 0;
+    });
+    if (Math.abs(sum) < eps) {
+      el.textContent = '–';
+      el.className = 'cc-resumen-total-valor';
+    } else {
+      el.textContent = formatMonto(sum, mon);
+      el.className = 'cc-resumen-total-valor ' + (sum > 0 ? 'valor-positivo' : 'valor-negativo');
+    }
+  });
+}
+
 function renderCcResumenTable(rows) {
   const tbody = document.getElementById('cc-resumen-tbody');
   if (!tbody) return;
@@ -8690,6 +8722,7 @@ function renderCcResumenTable(rows) {
     const tipoLabel = ccFiltroTipo === 'cliente' ? 'clientes' : 'intermediarios';
     const colspan = ccColspanResumenSaldosVacio();
     tbody.innerHTML = '<tr><td colspan="' + colspan + '">No hay ' + tipoLabel + ' con saldo distinto de cero.</td></tr>';
+    actualizarCcResumenTotalesThead([]);
   } else {
     tbody.querySelectorAll('.btn-ver-detalle').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -8699,6 +8732,7 @@ function renderCcResumenTable(rows) {
         if (tipo && id) openModalCcDetalle(tipo, id, nombre);
       });
     });
+    actualizarCcResumenTotalesThead(rows);
   }
   reaplicarVisibilidadMonedasCuentaCorrienteDom();
 }
@@ -8930,6 +8964,19 @@ function exportarCcResumenExcel() {
     });
     return cels;
   });
+  const totPorMon = {};
+  monedasExp.forEach((m) => { totPorMon[m] = 0; });
+  filtrados.forEach((r) => {
+    monedasExp.forEach((m) => {
+      totPorMon[m] += Number(r.saldos[m]) || 0;
+    });
+  });
+  const totalFila = ['Total', ''];
+  monedasExp.forEach((m) => {
+    const t = totPorMon[m];
+    totalFila.push(Math.abs(t) < EPSILON_SALDO ? null : t);
+  });
+  rows.push(totalFila);
   const aoa = aoaExcelConMetaExportacion(header, rows);
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();

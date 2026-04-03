@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "bitacora": "node scripts/crear-bitacora-excel.js",
+    "sql:vuelco-inicial": "node scripts/generar-sql-vuelco-inicial.js",
     "dev:supabase:volcar": "node scripts/volcar-pandy-dev-supabase.js",
     "sql:bootstrap:dev": "node scripts/concat-bootstrap-dev-sql.js",
     "sql:seed:reglas-de-negocio": "node scripts/reglas-de-negocio-csv-a-seed-sql.js",
