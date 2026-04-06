@@ -16,6 +16,38 @@ export function formatImporteDisplay(num) {
 }
 
 /**
+ * Número con coma decimal y miles con punto; usado en blur de inputs `soloComaDecimal` (tasas %, etc.).
+ * Si `maxDecimales` > 2, recorta ceros finales tras la coma (p. ej. 1,2500 → 1,25).
+ * @param {number} num
+ * @param {number} [maxDecimales=2]
+ * @returns {string}
+ */
+export function formatNumeroComaHastaDecimales(num, maxDecimales) {
+  if (num == null || isNaN(num)) return '';
+  const d = typeof maxDecimales === 'number' && maxDecimales >= 0 ? maxDecimales : 2;
+  const n = Number(num);
+  if (!isFinite(n)) return '';
+  let s = n.toFixed(d);
+  if (d > 2) s = s.replace(/\.?0+$/, '');
+  if (s === '' || s === '-') s = '0';
+  if (s === '-0') s = '0';
+  const parts = s.split('.');
+  const intRaw = parts[0];
+  const decPart = parts.length > 1 && parts[1] !== undefined ? parts[1] : '';
+  const entera = intRaw.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return decPart !== '' ? entera + ',' + decPart : entera;
+}
+
+/**
+ * Porcentaje de tasa para inputs del wizard (hasta 4 decimales, coma decimal, miles con punto).
+ * @param {number} num - Valor en % (ej. 1.5 para 1,5%).
+ * @returns {string}
+ */
+export function formatTasaPorcentajeDisplay(num) {
+  return formatNumeroComaHastaDecimales(num, 4);
+}
+
+/**
  * Para inputs de importe: vacío si no hay valor, "0" si es cero (no "0,00"), sino formatImporteDisplay.
  * @param {number|string} num
  * @returns {string}

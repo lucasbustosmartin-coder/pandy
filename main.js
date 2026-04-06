@@ -1,4 +1,4 @@
-import { formatMonto, formatImporteDisplay, formatImporteParaInput, formatearCeldaMoneda, formatearCeldaMonedaConSigno, htmlTipoOperacionIconos, htmlIconoMonedaTipoOp, isHttpsUrlSegura } from './utils.js';
+import { formatMonto, formatImporteDisplay, formatTasaPorcentajeDisplay, formatNumeroComaHastaDecimales, formatImporteParaInput, formatearCeldaMoneda, formatearCeldaMonedaConSigno, htmlTipoOperacionIconos, htmlIconoMonedaTipoOp, isHttpsUrlSegura } from './utils.js';
 import {
   openPandiOfflineDb,
   idbOrdenesQueueGetAll,
@@ -1323,6 +1323,7 @@ function setupModalOrdenOffline() {
   setupBackdropCloseOnlyOnRealClick(backdrop, pandiOrdenOfflineCloseModal);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); void pandiOrdenOfflineGuardarEnCola(); });
   if (selTipo) selTipo.addEventListener('change', pandiOrdenOfflineSyncTipoAMonedas);
+  setupInputImporte(document.getElementById('orden-offline-tasa-cheque-pct'), PANDI_TASA_PCT_DECIMALES, true);
   const comboUi = backdrop.querySelector('.orden-tipo-operacion-combo-ui');
   const comboBtn = document.getElementById('orden-offline-tipo-combo-btn');
   const comboList = document.getElementById('orden-offline-tipo-listbox');
@@ -2165,6 +2166,10 @@ let lastActivityTime = 0;
 let sessionTimeoutMinutes = 60;
 /** USD-USD + cp_ic: intermediario con comisión fija en USD (`app_config` key `usd_usd_comision_fija_config`, editable en Seguridad). */
 let usdUsdComisionFijaConfig = { intermediario_id: '', opcion_a: 50, opcion_b: 75 };
+/** En esta sesión del wizard el usuario eligió comisión variable (%) en lugar de la fija para USD-USD+cp_ic con intermediario parametrizado. */
+let ordenWizardUsdUsdCpIcIgnorarComisionFija = false;
+/** Decimales permitidos en campos de tasa (%) del wizard. */
+const PANDI_TASA_PCT_DECIMALES = 4;
 const PANDI_LS_USD_COMISION_FIJA_PREF = 'pandi_usd_comision_fija_pref';
 
 function parseUsdUsdComisionFijaConfigJson(raw) {
@@ -11986,6 +11991,7 @@ function formatImporteInputOnType(inputEl, maxDecimales, soloComaDecimal) {
 
 function setupInputImporte(inputEl, maxDecimales, soloComaDecimal) {
   if (!inputEl) return;
+  const maxDec = (typeof maxDecimales === 'number' && maxDecimales >= 0) ? maxDecimales : 2;
   // Evita acumular listeners si el mismo input se configura en cada apertura de modal (p. ej. transaccion-monto).
   if (inputEl.dataset.importeInputBound === '1') {
     inputEl._importeValorPrevio = inputEl.value;
@@ -11997,7 +12003,7 @@ function setupInputImporte(inputEl, maxDecimales, soloComaDecimal) {
   });
   // Capture: corre antes que otros listeners en bubble (p. ej. actualizarMontoCalculado en transaccion-monto)
   // para que miles/decimales queden aplicados antes de parsear el valor.
-  inputEl.addEventListener('input', () => formatImporteInputOnType(inputEl, maxDecimales, soloComaDecimal), true);
+  inputEl.addEventListener('input', () => formatImporteInputOnType(inputEl, maxDec, soloComaDecimal), true);
   inputEl.addEventListener('blur', () => {
     const val = inputEl.value.trim();
     const n = parseImporteInput(val);
@@ -12010,7 +12016,8 @@ function setupInputImporte(inputEl, maxDecimales, soloComaDecimal) {
     // No agregar ",00" si el usuario no escribió coma: solo parte entera con miles
     const usuarioEscribioComa = val.indexOf(',') >= 0;
     if (soloComaDecimal) {
-      inputEl.value = Number(n).toFixed(2).replace('.', ',');
+      // Antes forzaba toFixed(2) y recortaba tasas a 2 decimales al salir del campo.
+      inputEl.value = formatNumeroComaHastaDecimales(n, maxDec);
     } else if (!usuarioEscribioComa && Number.isInteger(n)) {
       const entera = String(Math.floor(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
       inputEl.value = entera;
@@ -13718,7 +13725,8 @@ function syncOrdenIntermediarioPagoTransferenciaWrap() {
     ordenWizardEsAltaNuevaSinId() &&
     codigo === 'USD-USD' &&
     !!intVal &&
-    intermediarioTieneComisionFijaUsdAcordada(intVal, nombreIntTr);
+    intermediarioTieneComisionFijaUsdAcordada(intVal, nombreIntTr) &&
+    !ordenWizardUsdUsdCpIcIgnorarComisionFija;
   wrap.style.display = show && !ocultarCheckTransferNachoUsdInt ? 'block' : 'none';
   if (!usaInt || esCheque || !intVal || ocultarCheckTransferNachoUsdInt) chk.checked = false;
   syncOrdenIntermediarioTransferenciaTasaWrap();
@@ -13742,9 +13750,35 @@ function setupOrdenNachoComisionRadiosOnce() {
   document.body.dataset.ordenNachoComisionRadiosBound = '1';
   document.querySelectorAll('input[name="orden-usd-nacho-comision-usd"]').forEach((radio) => {
     radio.addEventListener('change', () => {
-      if (radio.checked) persistirPreferenciaComisionFijaInterUsd(radio.value);
+      if (radio.checked) {
+        ordenWizardUsdUsdCpIcIgnorarComisionFija = false;
+        persistirPreferenciaComisionFijaInterUsd(radio.value);
+        syncOrdenWizardUsdUsdIntComisionUi();
+        syncOrdenIntermediarioPagoTransferenciaWrap();
+      }
       document.getElementById('orden-importe-cheque')?.dispatchEvent(new Event('input', { bubbles: true }));
     });
+  });
+}
+
+function setupOrdenUsdComisionFijaATasaVariableOnce() {
+  if (typeof document === 'undefined' || document.body.dataset.ordenUsdComisionVariableBtnBound === '1') return;
+  document.body.dataset.ordenUsdComisionVariableBtnBound = '1';
+  const btn = document.getElementById('orden-btn-usd-comision-fija-a-tasa-variable');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    ordenWizardUsdUsdCpIcIgnorarComisionFija = true;
+    document.querySelectorAll('input[name="orden-usd-nacho-comision-usd"]').forEach((r) => { r.checked = false; });
+    syncOrdenWizardUsdUsdIntComisionUi();
+    syncOrdenIntermediarioPagoTransferenciaWrap();
+    document.getElementById('orden-importe-cheque')?.dispatchEvent(new Event('input', { bubbles: true }));
+    const tIn = document.getElementById('orden-tasa-descuento-intermediario');
+    if (tIn && (tIn.offsetParent !== null || (typeof window !== 'undefined' && window.getComputedStyle(tIn).display !== 'none'))) {
+      try {
+        tIn.focus();
+      } catch (_) { /* noop */ }
+    }
+    showToast('Completá la tasa del intermediario (%). Esta orden usará comisión variable en lugar de la fija.', 'info');
   });
 }
 
@@ -13767,6 +13801,7 @@ function ordenWizardIntermediarioNombreVisible() {
  * USD-USD + int + cp_ic + intermediario con comisión fija (Seguridad o nombre «nacho» legacy): persiste split sin depender de esWizardUsdUsdConIntermediario.
  */
 function ordenComisionFijaNachoUsdParaPersistir(tipoCodigoRaw, intermediarioId) {
+  if (ordenWizardUsdUsdCpIcIgnorarComisionFija) return false;
   if (!intermediarioId) return false;
   if (String(tipoCodigoRaw || '').trim().toUpperCase() !== 'USD-USD') return false;
   const pat = String(document.getElementById('orden-int-patron')?.value || '').trim().toLowerCase();
@@ -13789,11 +13824,12 @@ function ordenUsdIntMostrarTasaIntermediarioEnWizard() {
   if (pat === 'ci_pc') return true;
   const intId = document.getElementById('orden-intermediario')?.value?.trim();
   const nom = ordenWizardIntermediarioNombreVisible();
-  if (pat === 'cp_ic' && !intermediarioTieneComisionFijaUsdAcordada(intId, nom)) return true;
+  if (pat === 'cp_ic' && (!intermediarioTieneComisionFijaUsdAcordada(intId, nom) || ordenWizardUsdUsdCpIcIgnorarComisionFija)) return true;
   return false;
 }
 
 function ordenUsdIntMostrarComisionFijaNacho() {
+  if (ordenWizardUsdUsdCpIcIgnorarComisionFija) return false;
   if (!esWizardUsdUsdConIntermediario()) return false;
   const pat = String(document.getElementById('orden-int-patron')?.value || '').trim().toLowerCase();
   const intId = document.getElementById('orden-intermediario')?.value?.trim();
@@ -13920,6 +13956,7 @@ function openModalOrden(registro) {
   ordenModalLoadSeq += 1;
   const modalLoadSeq = ordenModalLoadSeq;
   if (registro == null) {
+    ordenWizardUsdUsdCpIcIgnorarComisionFija = false;
     idEl.value = '';
     ordenWizardOrdenIdActual = null;
     ordenWizardInstrumentacionIdActual = null;
@@ -14072,6 +14109,11 @@ function openModalOrden(registro) {
     if (selTipoEl) selTipoEl.onchange = onTipoChange;
     if (selIntEl) {
       selIntEl.addEventListener('change', () => {
+        const intId = selIntEl.value?.trim();
+        const nom = ordenWizardIntermediarioNombreVisible();
+        if (!intermediarioTieneComisionFijaUsdAcordada(intId, nom)) {
+          ordenWizardUsdUsdCpIcIgnorarComisionFija = false;
+        }
         syncOrdenIntPatronInstrumentacionWrap();
         syncOrdenWizardUsdUsdIntComisionUi();
       });
@@ -14184,7 +14226,7 @@ function openModalOrden(registro) {
       document.getElementById('orden-monto-entregado').value = formatImporteParaInput(registroActual.monto_entregado);
       document.getElementById('orden-cotizacion').value = formatImporteParaInput(registroActual.cotizacion);
       const tasaIntEl = document.getElementById('orden-tasa-descuento-intermediario');
-      if (tasaIntEl) tasaIntEl.value = (registroActual.tasa_descuento_intermediario != null && Number(registroActual.tasa_descuento_intermediario) > 0) ? formatImporteDisplay(Number(registroActual.tasa_descuento_intermediario) * 100) : '';
+      if (tasaIntEl) tasaIntEl.value = (registroActual.tasa_descuento_intermediario != null && Number(registroActual.tasa_descuento_intermediario) > 0) ? formatTasaPorcentajeDisplay(Number(registroActual.tasa_descuento_intermediario) * 100) : '';
       const mr = registroActual.monto_recibido != null ? Number(registroActual.monto_recibido) : null;
       const me = registroActual.monto_entregado != null ? Number(registroActual.monto_entregado) : null;
       const tipoRowReg = tipos.find((t) => t.id === registroActual.tipo_operacion_id);
@@ -14195,11 +14237,28 @@ function openModalOrden(registro) {
         const tasaClienteEl = document.getElementById('orden-tasa-descuento-cliente');
         if (importeChequeEl) importeChequeEl.value = formatImporteDisplay(mr);
         if (tasaClienteEl) {
-          if (esChequeArsReg) tasaClienteEl.value = formatImporteDisplay((1 - me / mr) * 100);
+          if (esChequeArsReg) tasaClienteEl.value = formatTasaPorcentajeDisplay((1 - me / mr) * 100);
           else if (tipoCodigoReg === 'USD-USD') {
             const tUsd = ordenUsdUsdTasaClientePctDesdeMrMe(mr, me);
-            if (tUsd != null) tasaClienteEl.value = formatImporteDisplay(tUsd);
+            if (tUsd != null) tasaClienteEl.value = formatTasaPorcentajeDisplay(tUsd);
           }
+        }
+      }
+      {
+        const tipoRowEd = tipos.find((t) => t.id === registroActual.tipo_operacion_id);
+        const codEd = tipoRowEd?.codigo || '';
+        const tasaFracEd = Number(registroActual.tasa_descuento_intermediario);
+        const tieneTasaVar =
+          typeof tasaFracEd === 'number' && !isNaN(tasaFracEd) && tasaFracEd > 1e-12 && tasaFracEd < 1;
+        if (
+          codEd === 'USD-USD' &&
+          registroActual.intermediario_id &&
+          tieneTasaVar &&
+          intermediarioTieneComisionFijaUsdAcordada(registroActual.intermediario_id, ordenWizardIntermediarioNombreVisible())
+        ) {
+          ordenWizardUsdUsdCpIcIgnorarComisionFija = true;
+        } else {
+          ordenWizardUsdUsdCpIcIgnorarComisionFija = false;
         }
       }
       document.getElementById('orden-estado').value = (registroActual.estado && ['pendiente_instrumentar', 'instrumentacion_parcial', 'instrumentacion_cerrada_ejecucion', 'orden_ejecutada', 'anulada'].includes(registroActual.estado)) ? registroActual.estado : 'pendiente_instrumentar';
@@ -14241,10 +14300,14 @@ function openModalOrden(registro) {
         const tipoRowCom = tipos.find((t) => t.id === registroActual.tipo_operacion_id);
         const codCom = tipoRowCom?.codigo || '';
         if (codCom === 'USD-USD' && registroActual.intermediario_id && interMonto > 1e-6) {
-          marcarRadioComisionFijaUsdSegunMontoGuardado(interMonto);
+          const tasaFracCom = Number(registroActual.tasa_descuento_intermediario);
+          const usoTasaVariable =
+            typeof tasaFracCom === 'number' && !isNaN(tasaFracCom) && tasaFracCom > 1e-12 && tasaFracCom < 1;
+          if (!usoTasaVariable) marcarRadioComisionFijaUsdSegunMontoGuardado(interMonto);
         }
       });
     } else {
+      if (!(registroActual && registroActual.id)) ordenWizardUsdUsdCpIcIgnorarComisionFija = false;
       titulo.textContent = registroActual && registroActual.numero != null ? 'Orden #' + registroActual.numero : 'Nueva orden';
       idEl.value = (registroActual && registroActual.id) ? registroActual.id : '';
       // Sin id = alta nueva: el stub siempre es truthy; hacía que nunca se ejecutara reset y quedaran datos de la orden anterior.
@@ -14274,6 +14337,7 @@ function openModalOrden(registro) {
       setupOrdenIntPatronRadiosOnce();
       setupOrdenTransferenciaTasaRadiosOnce();
       setupOrdenNachoComisionRadiosOnce();
+      setupOrdenUsdComisionFijaATasaVariableOnce();
       resetOrdenIntPatronUi();
       if (registroActual && registroActual.id) {
         syncPatronDesdeTransaccionesOrdenInt(registroActual.id).then(() => {
@@ -14300,10 +14364,10 @@ function openModalOrden(registro) {
       syncOrdenTipoOperacionIconosPreview();
       setupInputImporte(document.getElementById('orden-monto-recibido'));
       setupInputImporte(document.getElementById('orden-monto-entregado'));
-      setupInputImporte(document.getElementById('orden-tasa-descuento-intermediario'), 2, true);
-      setupInputImporte(document.getElementById('orden-intermediario-transferencia-tasa-pct'), 2, true);
+      setupInputImporte(document.getElementById('orden-tasa-descuento-intermediario'), PANDI_TASA_PCT_DECIMALES, true);
+      setupInputImporte(document.getElementById('orden-intermediario-transferencia-tasa-pct'), PANDI_TASA_PCT_DECIMALES, true);
       setupInputImporte(document.getElementById('orden-importe-cheque'));
-      setupInputImporte(document.getElementById('orden-tasa-descuento-cliente'), 2, true);
+      setupInputImporte(document.getElementById('orden-tasa-descuento-cliente'), PANDI_TASA_PCT_DECIMALES, true);
     })
       .catch((err) => {
         if (modalLoadSeq !== ordenModalLoadSeq) return;
@@ -17208,17 +17272,20 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             nombreInterSync = String(rIntNom.data.nombre).trim();
           }
           const patronIntUsdSync = patronInstrumentacionIntDesdeTransacciones(transacciones);
-          // Comisión fija 50/75 (Seguridad / «nacho») solo aplica a **cp_ic**; en **ci_pc** siempre tasas % sobre el acuerdo (ver ordenComisionFijaNachoUsdParaPersistir). Si acá fuera true en ci_pc, se bloqueaba mr×tasa y quedaba comisionInt=0 sin fila en CC int.
+          const tasa = Number(orden.tasa_descuento_intermediario);
+          const ordenUsdUsdCpIcUsaTasaVariablePersistida =
+            typeof tasa === 'number' && !isNaN(tasa) && tasa >= 1e-12 && tasa < 1;
+          // Comisión fija 50/75 (Seguridad / «nacho») solo aplica a **cp_ic**; en **ci_pc** siempre tasas % sobre el acuerdo (ver ordenComisionFijaNachoUsdParaPersistir). Si acá fuera true en ci_pc, se bloqueaba mr×tasa y quedaba comisionInt=0 sin fila en CC int. Si la orden guardó `tasa_descuento_intermediario`, fue comisión variable aunque el intermediario admita fija.
           const esUsdUsdInterComisionFijaSync =
             codNorm === 'USD-USD' &&
             intermediarioId &&
             patronIntUsdSync === 'cp_ic' &&
-            intermediarioTieneComisionFijaUsdAcordada(intermediarioId, nombreInterSync);
+            intermediarioTieneComisionFijaUsdAcordada(intermediarioId, nombreInterSync) &&
+            !ordenUsdUsdCpIcUsaTasaVariablePersistida;
           const monR = (orden.moneda_recibida || 'USD').toUpperCase();
           const monE = (orden.moneda_entregada || 'USD').toUpperCase();
           const mr = Number(orden.monto_recibido) || 0;
           const me = Number(orden.monto_entregado) || 0;
-          const tasa = Number(orden.tasa_descuento_intermediario);
           const comisionInt = comisiones.find((c) => String(c.beneficiario || '').toLowerCase() === 'intermediario');
           let comisionIntMonto = comisionInt ? Number(comisionInt.monto) || 0 : 0;
           let comisionIntMon = (comisionInt && comisionInt.moneda) ? comisionInt.moneda.toUpperCase() : 'ARS';
@@ -17248,7 +17315,11 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
             const oaCfg = Number(usdUsdComisionFijaConfig.opcion_a) || 50;
             const obCfg = Number(usdUsdComisionFijaConfig.opcion_b) || 75;
             const minFijaUsd = Math.min(oaCfg, obCfg);
-            if (spreadUsdAc >= minFijaUsd - 1e-6 && intermediarioTieneComisionFijaUsdAcordada(intermediarioId, nombreInterSync)) {
+            if (
+              spreadUsdAc >= minFijaUsd - 1e-6 &&
+              intermediarioTieneComisionFijaUsdAcordada(intermediarioId, nombreInterSync) &&
+              !ordenUsdUsdCpIcUsaTasaVariablePersistida
+            ) {
               let pandyEff = comisionPandyMonto;
               if (pandyEff < 1e-6 && spreadUsdAc > 1e-6) pandyEff = spreadUsdAc;
               const gapIntUsd = spreadUsdAc - pandyEff;
@@ -18459,7 +18530,7 @@ function aplicarOrdenRegistroIntermediarioTransferenciaYTasa(reg) {
   const inpTasaTr = document.getElementById('orden-intermediario-transferencia-tasa-pct');
   if (inpTasaTr) {
     if (reg.intermediario_transferencia_tasa != null && Number(reg.intermediario_transferencia_tasa) > 0) {
-      inpTasaTr.value = formatImporteDisplay(Number(reg.intermediario_transferencia_tasa) * 100);
+      inpTasaTr.value = formatTasaPorcentajeDisplay(Number(reg.intermediario_transferencia_tasa) * 100);
     } else inpTasaTr.value = '';
   }
   syncOrdenIntermediarioPagoTransferenciaWrap();
@@ -23331,17 +23402,50 @@ client.auth.onAuthStateChange((event, session) => {
 try {
   import('virtual:pwa-register')
     .then(({ registerSW }) => {
+      let pwaPromptActive = false;
+      let pwaReg = null;
+      let pwaCheckDebounceTimer = null;
+      const pwaNuevaVersionMsg =
+        'Hay una nueva versión de Pandi. ¿Recargar ahora para actualizar?';
+
+      function showPwaUpdateConfirm() {
+        if (pwaPromptActive) return;
+        pwaPromptActive = true;
+        showConfirm(
+          pwaNuevaVersionMsg,
+          'Recargar',
+          () => {
+            pwaPromptActive = false;
+            void applyPwaUpdate(true);
+          },
+          () => {
+            pwaPromptActive = false;
+          },
+          'Después',
+        );
+      }
+
+      async function checkPwaUpdateFromServer() {
+        if (document.visibilityState !== 'visible' || !pwaReg) return;
+        try {
+          await pwaReg.update();
+        } catch (_) {
+          /* sin red o SW no disponible */
+        }
+        if (pwaReg.waiting) showPwaUpdateConfirm();
+      }
+
+      function schedulePwaUpdateCheck() {
+        if (pwaCheckDebounceTimer != null) clearTimeout(pwaCheckDebounceTimer);
+        pwaCheckDebounceTimer = setTimeout(() => {
+          pwaCheckDebounceTimer = null;
+          void checkPwaUpdateFromServer();
+        }, 400);
+      }
+
       const applyPwaUpdate = registerSW({
         onNeedRefresh() {
-          showConfirm(
-            'Hay una nueva versión de Pandi. ¿Recargar ahora para actualizar?',
-            'Recargar',
-            () => {
-              void applyPwaUpdate(true);
-            },
-            () => {},
-            'Después',
-          );
+          showPwaUpdateConfirm();
         },
         onOfflineReady() {
           showToast(
@@ -23349,6 +23453,18 @@ try {
             'info',
             6000,
           );
+        },
+        onRegistered(reg) {
+          if (!reg) return;
+          pwaReg = reg;
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') schedulePwaUpdateCheck();
+          });
+          window.addEventListener('focus', () => schedulePwaUpdateCheck());
+          setInterval(() => {
+            if (document.visibilityState === 'visible') void checkPwaUpdateFromServer();
+          }, 60 * 60 * 1000);
+          void checkPwaUpdateFromServer();
         },
       });
     })
