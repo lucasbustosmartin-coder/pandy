@@ -469,6 +469,11 @@
     .btn-icon-only .btn-icon { width: 18px; height: 18px; }
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
     .modal-backdrop.activo { display: flex; }
+    /* Cuenta corriente: Ver detalle y modales manual / editar fila — por encima del drawer en ≤768px (sidebar z-index 250). Si no, el modal queda “atrás” y parece que no se puede tocar nada. */
+    #modal-cc-detalle-backdrop.activo { z-index: 260; }
+    #modal-cc-manual-editar-backdrop.activo,
+    #modal-cc-movimiento-manual-backdrop.activo,
+    #modal-movimiento-cc-backdrop.activo { z-index: 270; }
     /* Modal orden abierto: el contenido de fondo no recibe clics ni foco (evita que "quede atrás" el modal) */
     body.modal-orden-abierto #app-content { pointer-events: none; }
     #modal-orden-backdrop.activo { z-index: 1000; }
@@ -1359,7 +1364,9 @@
     .cc-manual-resumen-dinamico { font-size: 0.88rem; color: #475569; line-height: 1.45; margin: 0.5rem 0 0.75rem; padding: 0.65rem 0.75rem; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
     @media (max-width: 768px) {
       .cc-manual-fieldset label { display: block; margin-bottom: 0.35rem; }
-      #form-cc-movimiento-manual .form-group { margin-bottom: 0.85rem; }
+      #form-cc-movimiento-manual .form-group,
+      #form-cc-manual-editar .form-group { margin-bottom: 0.85rem; }
+      .cc-manual-edit-input { font-size: 16px; max-width: 100%; box-sizing: border-box; min-height: 44px; }
     }
     /* Movimientos CC: una fila — primero todos los filtros (flex wrap), acciones al final (margin-left: auto) */
     .cc-toolbar-mov-filtros-grid {
@@ -1902,7 +1909,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.1</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.2</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2983,7 +2990,7 @@
         <form id="form-movimiento-caja">
           <input type="hidden" id="mov-caja-id" value="" />
           <input type="hidden" id="mov-caja-orden-id" value="" />
-          <p id="mov-caja-hint-orden" style="display:none;" class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Movimiento generado por una orden; solo podés editar concepto y fecha.</span></span></p>
+          <p id="mov-caja-hint-orden" style="display:none;" class="help-inline-block"><span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Los movimientos de caja que vienen de una orden o transacción no se editan desde Cajas; gestionalos desde la orden o desde Cuenta corriente para mantener coherencia con el acuerdo.</span></span></p>
           <div class="form-group">
             <label for="mov-caja-moneda">Moneda *</label>
             <select id="mov-caja-moneda" required>
@@ -3815,22 +3822,94 @@
   </div>
 
   <div id="modal-cc-manual-editar-backdrop" class="modal-backdrop">
-    <div class="modal">
+    <div class="modal" style="max-width: min(95vw, 720px);">
       <div class="modal-header">
         <h2>Editar movimiento manual (CC)</h2>
         <button type="button" class="modal-close" id="modal-cc-manual-editar-close" aria-label="Cerrar">×</button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" style="min-width:0; max-width:100%; overflow-x:hidden;">
         <p id="cc-manual-editar-resumen-grupo" class="text-muted" style="margin:0 0 0.75rem 0; font-size:0.9rem; display:none;"></p>
-        <p id="cc-manual-editar-aviso-caja" class="pandi-form-hint" style="margin:0 0 0.75rem 0; padding:0.5rem 0.65rem; background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; display:none;">Este registro vinculó <strong>caja efectivo</strong>. Al guardar también se actualizarán fecha y concepto del movimiento de caja. La acción quedará en el <strong>log de auditoría</strong>.</p>
+        <p id="cc-manual-editar-aviso-caja" class="pandi-form-hint" style="margin:0 0 0.75rem 0; padding:0.5rem 0.65rem; background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; display:none;">Este registro vinculó <strong>caja efectivo</strong>. Si seguís con efectivo y empresa en el flujo, el movimiento de caja se <strong>actualiza</strong>; si pasás a Banco/Cheque o quitás a la empresa del flujo, puede <strong>anularse</strong> el movimiento de caja (según permisos). Todo queda en el <strong>log de auditoría</strong>.</p>
+        <p class="cc-manual-resumen-dinamico" id="cc-manual-edit-resumen-dinamico" aria-live="polite"></p>
         <form id="form-cc-manual-editar">
+          <p style="margin:0 0 0.75rem; font-size:0.88rem; color:#475569;">Podés corregir <strong>pagador</strong>, <strong>cobrador</strong>, <strong>importe</strong>, <strong>moneda</strong>, <strong>modalidad</strong>, <strong>fecha</strong> y <strong>concepto</strong>. Al guardar se <strong>reemplazan</strong> las líneas en cuenta corriente (y la caja asociada si aplica).</p>
+          <fieldset class="cc-manual-fieldset" style="border:none; padding:0; margin:0 0 1rem;">
+            <legend class="sr-only">Pagador</legend>
+            <div class="form-group">
+              <span>Pagador *</span>
+              <div class="cc-manual-rol-row" role="radiogroup" aria-label="Pagador (editar)" style="display:flex; flex-wrap:wrap; gap:0.65rem; margin-top:0.35rem;">
+                <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-weight:normal;"><input type="radio" name="cc-manual-edit-pagador-rol" value="cliente" checked /> Cliente</label>
+                <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-weight:normal;"><input type="radio" name="cc-manual-edit-pagador-rol" value="intermediario" /> Intermediario</label>
+                <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-weight:normal;"><input type="radio" name="cc-manual-edit-pagador-rol" value="pandy" /> <span class="js-marca-sistema-nombre">Empresa</span></label>
+              </div>
+            </div>
+            <div class="form-group" id="cc-manual-edit-wrap-pag-cliente" style="display:block;">
+              <label for="cc-manual-edit-pagador-cliente">Cliente pagador *</label>
+              <select id="cc-manual-edit-pagador-cliente" class="select-filtro cc-manual-edit-input" style="width:100%; max-width:100%; font-size:16px;">
+                <option value="">Elegir…</option>
+              </select>
+            </div>
+            <div class="form-group" id="cc-manual-edit-wrap-pag-inter" style="display:none;">
+              <label for="cc-manual-edit-pagador-intermediario">Intermediario pagador *</label>
+              <select id="cc-manual-edit-pagador-intermediario" class="select-filtro cc-manual-edit-input" style="width:100%; max-width:100%; font-size:16px;">
+                <option value="">Elegir…</option>
+              </select>
+            </div>
+          </fieldset>
+          <fieldset class="cc-manual-fieldset" style="border:none; padding:0; margin:0 0 1rem;">
+            <legend class="sr-only">Cobrador</legend>
+            <div class="form-group">
+              <span>Cobrador *</span>
+              <div class="cc-manual-rol-row" role="radiogroup" aria-label="Cobrador (editar)" style="display:flex; flex-wrap:wrap; gap:0.65rem; margin-top:0.35rem;">
+                <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-weight:normal;"><input type="radio" name="cc-manual-edit-cobrador-rol" value="cliente" /> Cliente</label>
+                <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-weight:normal;"><input type="radio" name="cc-manual-edit-cobrador-rol" value="intermediario" /> Intermediario</label>
+                <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-weight:normal;"><input type="radio" name="cc-manual-edit-cobrador-rol" value="pandy" checked /> <span class="js-marca-sistema-nombre">Empresa</span></label>
+              </div>
+            </div>
+            <div class="form-group" id="cc-manual-edit-wrap-cob-cliente" style="display:none;">
+              <label for="cc-manual-edit-cobrador-cliente">Cliente cobrador *</label>
+              <select id="cc-manual-edit-cobrador-cliente" class="select-filtro cc-manual-edit-input" style="width:100%; max-width:100%; font-size:16px;">
+                <option value="">Elegir…</option>
+              </select>
+            </div>
+            <div class="form-group" id="cc-manual-edit-wrap-cob-inter" style="display:none;">
+              <label for="cc-manual-edit-cobrador-intermediario">Intermediario cobrador *</label>
+              <select id="cc-manual-edit-cobrador-intermediario" class="select-filtro cc-manual-edit-input" style="width:100%; max-width:100%; font-size:16px;">
+                <option value="">Elegir…</option>
+              </select>
+            </div>
+          </fieldset>
           <div class="form-group">
-            <label for="cc-manual-edit-concepto">Concepto</label>
-            <input type="text" id="cc-manual-edit-concepto" maxlength="500" />
+            <label for="cc-manual-edit-moneda">Moneda *</label>
+            <select id="cc-manual-edit-moneda" class="select-filtro cc-manual-edit-input" required style="width:100%; max-width:100%; font-size:16px;">
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="ARS">ARS</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="cc-manual-edit-monto">Importe * (valor absoluto, sin signo)</label>
+            <input type="text" id="cc-manual-edit-monto" class="cc-manual-edit-input" inputmode="decimal" autocomplete="off" required placeholder="0,00" style="width:100%; max-width:100%; font-size:16px;" />
+          </div>
+          <div class="form-group">
+            <label for="cc-manual-edit-modo-pago">Modo de pago *</label>
+            <select id="cc-manual-edit-modo-pago" class="select-filtro cc-manual-edit-input" required style="width:100%; max-width:100%; font-size:16px;">
+              <option value="efectivo">Efectivo</option>
+              <option value="banco">Banco / transferencia</option>
+              <option value="cheque">Cheque</option>
+            </select>
+            <p style="margin:0.35rem 0 0; font-size:0.85rem; color:#64748b;">La <strong>caja</strong> solo se mantiene/actualiza si participa la empresa <strong>y</strong> el modo es <strong>efectivo</strong>.</p>
+          </div>
+          <div id="cc-manual-edit-wrap-caja" style="display:none;">
+            <p id="cc-manual-edit-caja-tipo-fijo-info" style="margin:0 0 0.25rem; font-size:0.88rem; color:#475569;" aria-live="polite"></p>
           </div>
           <div class="form-group">
             <label for="cc-manual-edit-fecha">Fecha *</label>
-            <input type="date" id="cc-manual-edit-fecha" required />
+            <input type="date" id="cc-manual-edit-fecha" class="cc-manual-edit-input" required style="width:100%; max-width:100%; font-size:16px;" />
+          </div>
+          <div class="form-group">
+            <label for="cc-manual-edit-concepto">Concepto (opcional)</label>
+            <input type="text" id="cc-manual-edit-concepto" class="cc-manual-edit-input" maxlength="500" placeholder="Si lo dejás vacío se arma desde pagador → cobrador" style="width:100%; max-width:100%; font-size:16px;" />
           </div>
           <div class="form-actions">
             <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>

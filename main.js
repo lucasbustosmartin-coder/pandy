@@ -3410,6 +3410,59 @@ function tienePermisoAnularMovimientoCaja() {
   return userPermissions.includes('anular_movimiento_caja') || tienePermisoLegacyAbmMovimientosCaja();
 }
 
+const MSG_CAJA_VINCULADA_CC_MANUAL =
+  'Este movimiento de caja viene de un registro manual en Cuenta corriente (efectivo). Para mantener CC y caja alineados, usá Cuenta corriente → Movimientos → lápiz en la fila manual (o anulá desde ahí). No se puede editar ni anular solo desde Cajas.';
+
+const MSG_CAJA_VINCULADA_ORDEN_O_TRANSACCION =
+  'Este movimiento de caja viene de una orden o de una transacción del acuerdo. Para no desalinear caja con la cuenta corriente, no se edita desde Cajas: hacelo desde la orden o desde los movimientos de Cuenta corriente vinculados a esa operación.';
+
+/** Movimientos dados de alta solo como manual en Cajas (sin orden ni transacción ni vínculo a fila CC manual). */
+function esMovimientoCajaSoloAltaIndependienteEnCajas(m) {
+  if (!m) return false;
+  if (m.orden_id || m.transaccion_id) return false;
+  if (m.caja_vinculo_cc_manual) return false;
+  return true;
+}
+
+/** Ids de movimientos_caja referenciados por filas CC con es_movimiento_manual (una o dos patas). */
+function fetchMovimientoCajaIdsConVinculoCcManual(cajaIds) {
+  const uuids = [...new Set((cajaIds || []).filter((id) => id != null).map((id) => String(id)))];
+  if (!uuids.length) return Promise.resolve(new Set());
+  return Promise.all([
+    client.from('movimientos_cuenta_corriente').select('movimiento_caja_id').in('movimiento_caja_id', uuids).eq('es_movimiento_manual', true),
+    client.from('movimientos_cuenta_corriente_intermediario').select('movimiento_caja_id').in('movimiento_caja_id', uuids).eq('es_movimiento_manual', true),
+  ]).then(([r1, r2]) => {
+    const s = new Set();
+    (r1.data || []).forEach((row) => {
+      if (row && row.movimiento_caja_id != null) s.add(String(row.movimiento_caja_id));
+    });
+    (r2.data || []).forEach((row) => {
+      if (row && row.movimiento_caja_id != null) s.add(String(row.movimiento_caja_id));
+    });
+    return s;
+  });
+}
+
+function movimientoCajaTieneVinculoCcManual(cajaId) {
+  if (cajaId == null) return Promise.resolve(false);
+  return fetchMovimientoCajaIdsConVinculoCcManual([cajaId]).then((s) => s.has(String(cajaId)));
+}
+
+/** Marca cada fila con caja_vinculo_cc_manual (true/false) para la grilla de Cajas. */
+async function marcarListaMovimientosCajaVinculoCcManual(list) {
+  const arr = list || [];
+  if (!arr.length) return;
+  if (!pandiCcManualGuardadoEnServidorOk()) {
+    arr.forEach((m) => { m.caja_vinculo_cc_manual = false; });
+    return;
+  }
+  const ids = arr.map((m) => m.id).filter((id) => id != null);
+  const s = await fetchMovimientoCajaIdsConVinculoCcManual(ids);
+  arr.forEach((m) => {
+    m.caja_vinculo_cc_manual = m.id != null && s.has(String(m.id));
+  });
+}
+
 /** Registro de auditoría (tabla auditoria_app tras migración). Falla silenciosa si la tabla no existe aún. */
 function registrarAuditoriaApp(categoria, accion, detalle, metadata) {
   if (!currentUserId) return Promise.resolve();
@@ -3608,51 +3661,129 @@ function ccTablaMovCcPorTipoEntidad(tipo) {
   return tipo === 'cliente' ? 'movimientos_cuenta_corriente' : 'movimientos_cuenta_corriente_intermediario';
 }
 
+const CC_MANUAL_EDIT_ROW_COLS_CLI =
+  'id, cliente_id, concepto, fecha, movimiento_caja_id, manual_grupo_id, moneda, monto, manual_pagador_rol, manual_cobrador_rol, manual_pagador_cliente_id, manual_pagador_intermediario_id, manual_cobrador_cliente_id, manual_cobrador_intermediario_id, manual_tip_movimiento';
+const CC_MANUAL_EDIT_ROW_COLS_INT =
+  'id, intermediario_id, concepto, fecha, movimiento_caja_id, manual_grupo_id, moneda, monto, manual_pagador_rol, manual_cobrador_rol, manual_pagador_cliente_id, manual_pagador_intermediario_id, manual_cobrador_cliente_id, manual_cobrador_intermediario_id, manual_tip_movimiento';
+
+function ccManualParseModoDesdeConcepto(concepto) {
+  const c = String(concepto || '');
+  if (/\s\[Cheque\]\s*$/i.test(c)) return 'cheque';
+  if (/\s\[Banco\]\s*$/i.test(c)) return 'banco';
+  return 'efectivo';
+}
+
+function ccManualConceptoSinSufijoModo(concepto) {
+  return String(concepto || '').replace(/\s\[(Banco|Cheque)\]\s*$/i, '').trim();
+}
+
+/** Fila antigua sin manual_pagador_rol (pre migración): infiere roles desde manual_tip y entidad de la fila. */
+function ccManualInferirRolesMetaDesdeFila(row, tipoEntidadTabla) {
+  if (row.manual_pagador_rol && row.manual_cobrador_rol) return null;
+  const tip = row.manual_tip_movimiento;
+  const cid = row.cliente_id != null ? String(row.cliente_id) : '';
+  const iid = row.intermediario_id != null ? String(row.intermediario_id) : '';
+  if (tip === 'cobro_entidad_pandy') {
+    if (tipoEntidadTabla === 'cliente' && cid) {
+      return { pagRol: 'cliente', cobRol: 'pandy', pagCli: cid, pagInt: '', cobCli: '', cobInt: '' };
+    }
+    if (tipoEntidadTabla === 'intermediario' && iid) {
+      return { pagRol: 'intermediario', cobRol: 'pandy', pagInt: iid, pagCli: '', cobCli: '', cobInt: '' };
+    }
+  }
+  if (tip === 'pago_pandy_entidad') {
+    if (tipoEntidadTabla === 'cliente' && cid) {
+      return { pagRol: 'pandy', cobRol: 'cliente', cobCli: cid, pagCli: '', pagInt: '', cobInt: '' };
+    }
+    if (tipoEntidadTabla === 'intermediario' && iid) {
+      return { pagRol: 'pandy', cobRol: 'intermediario', cobInt: iid, pagCli: '', pagInt: '', cobCli: '' };
+    }
+  }
+  return null;
+}
+
+function ccManualCtxOperacionDesdeRowRef(row, tipoEntidad, filas, grupoId) {
+  const concepto0 = row.concepto || '';
+  const fecha0 = (row.fecha || '').toString().slice(0, 10);
+  const montoAbs = Math.abs(Number(row.monto)) || 0;
+  const modoPago = ccManualParseModoDesdeConcepto(concepto0);
+  let pagRol = row.manual_pagador_rol;
+  let cobRol = row.manual_cobrador_rol;
+  let pagCli = row.manual_pagador_cliente_id != null ? String(row.manual_pagador_cliente_id) : '';
+  let pagInt = row.manual_pagador_intermediario_id != null ? String(row.manual_pagador_intermediario_id) : '';
+  let cobCli = row.manual_cobrador_cliente_id != null ? String(row.manual_cobrador_cliente_id) : '';
+  let cobInt = row.manual_cobrador_intermediario_id != null ? String(row.manual_cobrador_intermediario_id) : '';
+  if (!pagRol || !cobRol) {
+    const inf = ccManualInferirRolesMetaDesdeFila(row, tipoEntidad);
+    if (inf) {
+      pagRol = inf.pagRol;
+      cobRol = inf.cobRol;
+      pagCli = inf.pagCli || '';
+      pagInt = inf.pagInt || '';
+      cobCli = inf.cobCli || '';
+      cobInt = inf.cobInt || '';
+    } else {
+      pagRol = 'cliente';
+      cobRol = 'pandy';
+    }
+  }
+  const cajaId = filas.map((f) => f.movimiento_caja_id).find(Boolean) || null;
+  return {
+    filas,
+    concepto: concepto0,
+    fecha: fecha0,
+    moneda: (row.moneda || 'USD').toUpperCase(),
+    montoAbs,
+    modoPago,
+    conceptoUsuario: ccManualConceptoSinSufijoModo(concepto0),
+    pagRol,
+    cobRol,
+    pagCli,
+    pagInt,
+    cobCli,
+    cobInt,
+    tocaCaja: !!cajaId,
+    cajaId,
+    grupoId: grupoId != null ? grupoId : null,
+  };
+}
+
 /**
  * Carga filas CC a editar/anular: una fila o todo el manual_grupo_id (dos patas cliente↔cliente, etc.).
+ * Incluye metadatos para reeditar pagador/cobrador, moneda, importe y modalidad de pago.
  */
 function ccManualFetchContextOperacion(m) {
   const gid = m.manual_grupo_id;
   if (gid) {
     return Promise.all([
-      client.from('movimientos_cuenta_corriente').select('id, concepto, fecha, movimiento_caja_id, manual_grupo_id').eq('manual_grupo_id', gid),
-      client.from('movimientos_cuenta_corriente_intermediario').select('id, concepto, fecha, movimiento_caja_id, manual_grupo_id').eq('manual_grupo_id', gid),
+      client.from('movimientos_cuenta_corriente').select(CC_MANUAL_EDIT_ROW_COLS_CLI).eq('manual_grupo_id', gid),
+      client.from('movimientos_cuenta_corriente_intermediario').select(CC_MANUAL_EDIT_ROW_COLS_INT).eq('manual_grupo_id', gid),
     ]).then(([r1, r2]) => {
       if (r1.error) return Promise.reject(r1.error);
       if (r2.error) return Promise.reject(r2.error);
       const filas = [];
+      const metaRows = [];
       (r1.data || []).forEach((row) => {
-        filas.push({ tabla: 'movimientos_cuenta_corriente', id: row.id, movimiento_caja_id: row.movimiento_caja_id || null, concepto: row.concepto, fecha: row.fecha });
+        filas.push({ tabla: 'movimientos_cuenta_corriente', id: row.id, movimiento_caja_id: row.movimiento_caja_id || null });
+        metaRows.push({ row, tipoEntidad: 'cliente' });
       });
       (r2.data || []).forEach((row) => {
-        filas.push({ tabla: 'movimientos_cuenta_corriente_intermediario', id: row.id, movimiento_caja_id: row.movimiento_caja_id || null, concepto: row.concepto, fecha: row.fecha });
+        filas.push({ tabla: 'movimientos_cuenta_corriente_intermediario', id: row.id, movimiento_caja_id: row.movimiento_caja_id || null });
+        metaRows.push({ row, tipoEntidad: 'intermediario' });
       });
       if (filas.length === 0) return Promise.reject(new Error('No se encontraron líneas del grupo manual.'));
-      const cajaId = filas.map((f) => f.movimiento_caja_id).find(Boolean) || null;
-      const concepto0 = filas[0].concepto || '';
-      const fecha0 = (filas[0].fecha || '').toString().slice(0, 10);
-      return {
-        filas: filas.map((f) => ({ tabla: f.tabla, id: f.id, movimiento_caja_id: f.movimiento_caja_id })),
-        concepto: concepto0,
-        fecha: fecha0,
-        tocaCaja: !!cajaId,
-        cajaId,
-        grupoId: gid,
-      };
+      const ref = metaRows[0];
+      return ccManualCtxOperacionDesdeRowRef(ref.row, ref.tipoEntidad, filas, gid);
     });
   }
   const tabla = ccTablaMovCcPorTipoEntidad(m.tipo);
-  return client.from(tabla).select('id, concepto, fecha, movimiento_caja_id').eq('id', m.id).single().then((r) => {
+  const tipoEntidad = m.tipo === 'intermediario' ? 'intermediario' : 'cliente';
+  const colsOne = tabla === 'movimientos_cuenta_corriente' ? CC_MANUAL_EDIT_ROW_COLS_CLI : CC_MANUAL_EDIT_ROW_COLS_INT;
+  return client.from(tabla).select(colsOne).eq('id', m.id).single().then((r) => {
     if (r.error || !r.data) return Promise.reject(r.error || new Error('Movimiento no encontrado'));
     const row = r.data;
-    return {
-      filas: [{ tabla, id: row.id, movimiento_caja_id: row.movimiento_caja_id || null }],
-      concepto: row.concepto || '',
-      fecha: (row.fecha || '').toString().slice(0, 10),
-      tocaCaja: !!row.movimiento_caja_id,
-      cajaId: row.movimiento_caja_id || null,
-      grupoId: null,
-    };
+    const filas = [{ tabla, id: row.id, movimiento_caja_id: row.movimiento_caja_id || null }];
+    return ccManualCtxOperacionDesdeRowRef(row, tipoEntidad, filas, row.manual_grupo_id || null);
   });
 }
 
@@ -3666,6 +3797,10 @@ function closeModalCcManualEditar() {
 
 function openModalCcManualEditarDesdeFila(m) {
   if (!m || !m.es_movimiento_manual || !puedeEditarMovimientoCcManual()) return;
+  if (m.pandi_cc_offline_pending) {
+    showToast('Este movimiento está en cola offline: esperá la sincronización o quitálo de la cola y volvé a cargarlo.', 'info');
+    return;
+  }
   ccManualFetchContextOperacion(m).then((ctx) => {
     ccManualEditContext = ctx;
     const backdrop = document.getElementById('modal-cc-manual-editar-backdrop');
@@ -3674,19 +3809,83 @@ function openModalCcManualEditarDesdeFila(m) {
     const avisoCaja = document.getElementById('cc-manual-editar-aviso-caja');
     const resGrupo = document.getElementById('cc-manual-editar-resumen-grupo');
     if (!backdrop || !conceptoEl || !fechaEl) return;
-    conceptoEl.value = ctx.concepto || '';
-    fechaEl.value = ctx.fecha || '';
-    if (avisoCaja) avisoCaja.style.display = ctx.tocaCaja ? 'block' : 'none';
-    if (resGrupo) {
-      if (ctx.filas.length > 1) {
-        resGrupo.style.display = 'block';
-        resGrupo.textContent = 'Operación con ' + String(ctx.filas.length) + ' líneas en cuenta corriente (mismo grupo). Los cambios se aplican a todas.';
-      } else {
-        resGrupo.style.display = 'none';
-        resGrupo.textContent = '';
+
+    const aplicarFormulario = () => {
+      document.querySelectorAll('input[name="cc-manual-edit-pagador-rol"]').forEach((inp) => {
+        inp.checked = inp.value === ctx.pagRol;
+      });
+      document.querySelectorAll('input[name="cc-manual-edit-cobrador-rol"]').forEach((inp) => {
+        inp.checked = inp.value === ctx.cobRol;
+      });
+      ccManualSyncVisibilidadRolesEdit();
+      const spc = document.getElementById('cc-manual-edit-pagador-cliente');
+      if (spc) spc.value = ctx.pagCli || '';
+      const spi = document.getElementById('cc-manual-edit-pagador-intermediario');
+      if (spi) spi.value = ctx.pagInt || '';
+      const scc = document.getElementById('cc-manual-edit-cobrador-cliente');
+      if (scc) scc.value = ctx.cobCli || '';
+      const sci = document.getElementById('cc-manual-edit-cobrador-intermediario');
+      if (sci) sci.value = ctx.cobInt || '';
+      const monEl = document.getElementById('cc-manual-edit-moneda');
+      if (monEl) monEl.value = ctx.moneda || 'USD';
+      const montoEl = document.getElementById('cc-manual-edit-monto');
+      if (montoEl) {
+        montoEl.value = formatImporteParaInput(ctx.montoAbs);
+        setupInputImporte(montoEl);
       }
-    }
-    backdrop.classList.add('activo');
+      const modoEl = document.getElementById('cc-manual-edit-modo-pago');
+      if (modoEl) modoEl.value = ctx.modoPago || 'efectivo';
+      conceptoEl.value = ctx.conceptoUsuario != null ? ctx.conceptoUsuario : '';
+      fechaEl.value = ctx.fecha || '';
+      if (avisoCaja) avisoCaja.style.display = ctx.tocaCaja ? 'block' : 'none';
+      if (resGrupo) {
+        if (ctx.filas.length > 1) {
+          resGrupo.style.display = 'block';
+          resGrupo.textContent = 'Operación con ' + String(ctx.filas.length) + ' líneas en cuenta corriente (mismo grupo). Al guardar se reemplazan todas las patas con los datos del formulario.';
+        } else {
+          resGrupo.style.display = 'none';
+          resGrupo.textContent = '';
+        }
+      }
+      actualizarCcManualEditResumenDinamico();
+      backdrop.classList.add('activo');
+      requestAnimationFrame(() => {
+        try {
+          (montoEl || fechaEl).focus({ preventScroll: true });
+        } catch (_) {
+          try {
+            (montoEl || fechaEl).focus();
+          } catch (_) {}
+        }
+      });
+    };
+
+    const promCliInt = pandiCcManualGuardadoEnServidorOk()
+      ? Promise.all([
+          client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
+          client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
+        ])
+      : Promise.resolve(null);
+
+    promCliInt.then((pair) => {
+      if (pair) {
+        const [rCli, rInt] = pair;
+        if (rCli.error || rInt.error) {
+          showToast('Error al cargar clientes/intermediarios.', 'error');
+          return;
+        }
+        ccManualPoblarTodosLosSelectsEdit(rCli.data || [], rInt.data || []);
+      } else {
+        const cache = pandiOfflineCatalogosRead();
+        const dc = cache && cache.clientes ? cache.clientes : [];
+        const di = cache && cache.intermediarios ? cache.intermediarios : [];
+        ccManualPoblarTodosLosSelectsEdit(dc, di);
+        if (!dc.length && !di.length) {
+          showToast('Sin catálogo local. Conectate para editar con combos completos.', 'info');
+        }
+      }
+      aplicarFormulario();
+    });
   }).catch((err) => {
     showToast('No se pudo cargar el movimiento: ' + (err && err.message ? err.message : 'error'), 'error');
   });
@@ -3814,6 +4013,10 @@ function esMovimientoCajaSoloManualAnulable(m) {
 
 function confirmarYAnularMovimientoCajaManualDesdeTabla(m) {
   if (!m || !esMovimientoCajaSoloManualAnulable(m)) return;
+  if (m.caja_vinculo_cc_manual) {
+    showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'info');
+    return;
+  }
   if (!tienePermisoAnularMovimientoCaja()) return;
   if (pandiAvisoSiSinServidorParaEscritura('Anular este movimiento en el servidor')) return;
   const concepto = (m.concepto || '(sin concepto)').toString().slice(0, 120);
@@ -3836,36 +4039,53 @@ function ejecutarAnularMovimientoCajaManualPorId(movId, mRef) {
   if (pandiAvisoSiSinServidorParaEscritura('Anular este movimiento en el servidor')) return;
   const id = movId != null ? String(movId) : '';
   if (!id) return;
-  const ahora = new Date().toISOString();
-  client
-    .from('movimientos_caja')
-    .update({ estado: 'anulado', estado_fecha: ahora })
-    .eq('id', id)
-    .then((r) => {
-      if (r.error) {
-        showToast('No se pudo anular: ' + (r.error.message || 'revisá permisos.'), 'error');
-        return;
-      }
-      const m = mRef || {};
-      const detalle =
-        'Movimiento caja manual id=' +
-        id +
-        ', ' +
-        (m.moneda || '') +
-        ' ' +
-        (m.monto != null ? String(m.monto) : '') +
-        ', caja_tipo=' +
-        (m.caja_tipo || '') +
-        (m.concepto ? ', concepto=' + String(m.concepto).slice(0, 200) : '');
-      registrarAuditoriaApp('caja_manual', 'anular', detalle, {
-        movimiento_caja_id: id,
-        moneda: m.moneda,
-        monto: m.monto,
-        caja_tipo: m.caja_tipo,
+  const aplicarAnular = () => {
+    const ahora = new Date().toISOString();
+    client
+      .from('movimientos_caja')
+      .update({ estado: 'anulado', estado_fecha: ahora })
+      .eq('id', id)
+      .then((r) => {
+        if (r.error) {
+          showToast('No se pudo anular: ' + (r.error.message || 'revisá permisos.'), 'error');
+          return;
+        }
+        const m = mRef || {};
+        const detalle =
+          'Movimiento caja manual id=' +
+          id +
+          ', ' +
+          (m.moneda || '') +
+          ' ' +
+          (m.monto != null ? String(m.monto) : '') +
+          ', caja_tipo=' +
+          (m.caja_tipo || '') +
+          (m.concepto ? ', concepto=' + String(m.concepto).slice(0, 200) : '');
+        registrarAuditoriaApp('caja_manual', 'anular', detalle, {
+          movimiento_caja_id: id,
+          moneda: m.moneda,
+          monto: m.monto,
+          caja_tipo: m.caja_tipo,
+        });
+        showToast('Movimiento de caja anulado.', 'success');
+        loadCajas();
       });
-      showToast('Movimiento de caja anulado.', 'success');
-      loadCajas();
-    });
+  };
+  if (mRef && mRef.caja_vinculo_cc_manual === true) {
+    showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'error');
+    return;
+  }
+  if (!pandiCcManualGuardadoEnServidorOk() || (mRef && mRef.caja_vinculo_cc_manual === false)) {
+    aplicarAnular();
+    return;
+  }
+  movimientoCajaTieneVinculoCcManual(id).then((v) => {
+    if (v) {
+      showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'error');
+      return;
+    }
+    aplicarAnular();
+  });
 }
 
 function ejecutarAnularCcManualContexto(ctx) {
@@ -3913,72 +4133,217 @@ function ejecutarAnularCcManualContexto(ctx) {
   });
 }
 
-function ejecutarGuardarCcManualEditar(concepto, fecha) {
-  const ctx = ccManualEditContext;
-  if (!ctx || !ctx.filas || ctx.filas.length === 0) return;
-  const ahora = new Date().toISOString();
-  const promesas = ctx.filas.map((f) => client.from(f.tabla).update({ concepto, fecha }).eq('id', f.id));
-  const fin = (opts) => {
-    const detalle = 'CC manual editado (concepto/fecha). Líneas: ' + ctx.filas.map((f) => f.tabla + ':' + f.id).join(', ')
-      + (ctx.cajaId ? '. Caja: ' + ctx.cajaId : '');
-    registrarAuditoriaApp('cc_manual', 'editar', detalle, { grupo_id: ctx.grupoId, caja_id: ctx.cajaId, concepto, fecha });
-    closeModalCcManualEditar();
-    if (!opts || !opts.skipOkToast) showToast('Cambios guardados.', 'success');
-    loadCuentaCorriente();
-    if (typeof loadCajas === 'function') loadCajas();
-    if (ccDetalleTipo && ccDetalleId) {
-      fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos, saldos, ordenes, pendienteEnMoneda, pendienteClasePorMoneda }) => {
-        ccDetalleMovimientosList = ccDetalleRowsConTipoOpDesdeOrdenes(movimientos, ordenes);
-        ccDetalleOrdenesList = ordenes || [];
-        renderCcDetalleTable();
-        const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
-        if (saldosWrap && saldos) {
-          const pendMonModal = pendienteEnMoneda || ccPendientePorMonedaDesdeMovs(movimientos);
-          saldosWrap.innerHTML = htmlCcModalSaldosCards(saldos, pendMonModal, pendienteClasePorMoneda);
-          reaplicarVisibilidadMonedasCuentaCorrienteDom();
-        }
-        renderCcDetalleOperaciones();
-      }).catch(() => {});
-    }
+/** Reemplaza en servidor las líneas CC manuales (y caja asociada) con los datos del formulario de edición. */
+function ejecutarReemplazoCompletoCcManualEditar() {
+  const oldCtx = ccManualEditContext;
+  if (!oldCtx || !oldCtx.filas || oldCtx.filas.length === 0) return;
+  const pagRol = ccManualLeerRolRadioEdit('pag');
+  const cobRol = ccManualLeerRolRadioEdit('cob');
+  const pagCli = (document.getElementById('cc-manual-edit-pagador-cliente') || {}).value || '';
+  const pagInt = (document.getElementById('cc-manual-edit-pagador-intermediario') || {}).value || '';
+  const cobCli = (document.getElementById('cc-manual-edit-cobrador-cliente') || {}).value || '';
+  const cobInt = (document.getElementById('cc-manual-edit-cobrador-intermediario') || {}).value || '';
+  const moneda = ((document.getElementById('cc-manual-edit-moneda') || {}).value || 'USD').toUpperCase();
+  const fecha = (document.getElementById('cc-manual-edit-fecha') || {}).value;
+  const montoAbs = parseImporteInput((document.getElementById('cc-manual-edit-monto') || {}).value || '');
+  const modoPago = ((document.getElementById('cc-manual-edit-modo-pago') || {}).value || 'efectivo').toLowerCase();
+  const conceptoUsuario = ((document.getElementById('cc-manual-edit-concepto') || {}).value || '').trim();
+
+  if (!fecha) {
+    showToast('Indicá la fecha.', 'error');
+    return;
+  }
+  if (isNaN(montoAbs) || montoAbs <= 0) {
+    showToast('El importe debe ser un número mayor que cero.', 'error');
+    return;
+  }
+  const legsRes = ccManualConstruirLegs(pagRol, cobRol, pagCli, pagInt, cobCli, cobInt);
+  if (legsRes.error) {
+    showToast(legsRes.error, 'error');
+    return;
+  }
+  const legs = legsRes.legs;
+
+  const sufijoModo = modoPago === 'efectivo' ? '' : (modoPago === 'banco' ? ' [Banco]' : ' [Cheque]');
+  const conceptoBase = conceptoUsuario || ('CC manual sin orden · ' + ccManualTextoLugarRol(pagRol, 'pag', true) + ' → ' + ccManualTextoLugarRol(cobRol, 'cob', true));
+  const conceptoCc = conceptoBase + sufijoModo;
+
+  const grupoId = legs.length > 1 ? (oldCtx.grupoId || ccManualNuevoGrupoId()) : null;
+  const metaManual = {
+    manual_grupo_id: grupoId,
+    manual_pagador_rol: pagRol,
+    manual_cobrador_rol: cobRol,
+    manual_pagador_cliente_id: pagRol === 'cliente' ? pagCli : null,
+    manual_pagador_intermediario_id: pagRol === 'intermediario' ? pagInt : null,
+    manual_cobrador_cliente_id: cobRol === 'cliente' ? cobCli : null,
+    manual_cobrador_intermediario_id: cobRol === 'intermediario' ? cobInt : null,
   };
-  Promise.all(promesas).then((results) => {
-    const err = results.find((r) => r && r.error);
-    if (err && err.error) {
-      showToast('Error al guardar CC: ' + (err.error.message || ''), 'error');
+
+  const participaEmp = ccManualParticipaEmpresa(pagRol, cobRol);
+  const requiereCaja = participaEmp && modoPago === 'efectivo';
+
+  if (requiereCaja) {
+    if (!oldCtx.tocaCaja && !tienePermisoAltaMovimientoCaja()) {
+      showToast('Para registrar efectivo en caja necesitás permiso alta_movimiento_caja.', 'error');
       return;
     }
-    if (ctx.cajaId) {
-      const conceptoCaja = concepto && concepto.indexOf('CC manual') >= 0 ? concepto : ('CC manual efectivo · ' + (concepto || ''));
-      client.from('movimientos_caja').update({ concepto: conceptoCaja, fecha }).eq('id', ctx.cajaId).then((rC) => {
-        if (rC.error) showToast('CC actualizada; no se pudo actualizar caja: ' + (rC.error.message || 'revisá permisos.'), 'error');
-        fin({ skipOkToast: !!rC.error });
-      });
-    } else {
-      fin();
+    if (oldCtx.tocaCaja && !tienePermisoEditarMovimientoCaja()) {
+      showToast('Para actualizar el movimiento de caja vinculado necesitás permiso editar_movimiento_caja.', 'error');
+      return;
     }
-  }).catch((e) => {
-    showToast('Error: ' + (e && e.message ? e.message : ''), 'error');
+  }
+  if (!requiereCaja && oldCtx.tocaCaja && !tienePermisoAnularMovimientoCaja()) {
+    showToast('Para pasar de efectivo a otro modo hay que anular el movimiento de caja vinculado. Necesitás permiso anular_movimiento_caja.', 'error');
+    return;
+  }
+
+  const idsCliLeg = [...new Set(legs.filter((l) => l.kind === 'cliente' && l.cliente_id).map((l) => l.cliente_id))];
+  const idsIntLeg = [...new Set(legs.filter((l) => l.kind === 'intermediario' && l.intermediario_id).map((l) => l.intermediario_id))];
+
+  const promCliNombres = idsCliLeg.length
+    ? client.from('clientes').select('id, nombre').in('id', idsCliLeg)
+    : Promise.resolve({ data: [], error: null });
+  const promIntNombres = idsIntLeg.length
+    ? client.from('intermediarios').select('id, nombre').in('id', idsIntLeg)
+    : Promise.resolve({ data: [], error: null });
+
+  Promise.all([promCliNombres, promIntNombres]).then(([rCli, rInt]) => {
+    if (rCli.error || rInt.error) {
+      showToast('Error al resolver nombres para el signo en cuenta corriente.', 'error');
+      return;
+    }
+    const nomCliPorId = {};
+    (rCli.data || []).forEach((r) => { nomCliPorId[String(r.id)] = r.nombre; });
+    const nomIntPorId = {};
+    (rInt.data || []).forEach((r) => { nomIntPorId[String(r.id)] = r.nombre; });
+
+    const ahoraIso = new Date().toISOString();
+
+    const finOk = (opts) => {
+      const detalle = 'CC manual reemplazado (pagador/cobrador/monto/moneda/modalidad/concepto/fecha). Líneas previas: '
+        + oldCtx.filas.map((f) => f.tabla + ':' + f.id).join(', ')
+        + (oldCtx.cajaId ? '. Caja previa: ' + oldCtx.cajaId : '');
+      registrarAuditoriaApp('cc_manual', 'editar', detalle, {
+        grupo_id: oldCtx.grupoId,
+        caja_id: oldCtx.cajaId,
+        concepto: conceptoCc,
+        fecha,
+        moneda,
+        montoAbs,
+        modoPago,
+      });
+      closeModalCcManualEditar();
+      if (!opts || !opts.skipOkToast) showToast('Movimiento manual actualizado.', 'success');
+      loadCuentaCorriente();
+      if (typeof loadCajas === 'function') loadCajas();
+      if (ccDetalleTipo && ccDetalleId) {
+        fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos, saldos, ordenes, pendienteEnMoneda, pendienteClasePorMoneda }) => {
+          ccDetalleMovimientosList = ccDetalleRowsConTipoOpDesdeOrdenes(movimientos, ordenes);
+          ccDetalleOrdenesList = ordenes || [];
+          renderCcDetalleTable();
+          const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
+          if (saldosWrap && saldos) {
+            const pendMonModal = pendienteEnMoneda || ccPendientePorMonedaDesdeMovs(movimientos);
+            saldosWrap.innerHTML = htmlCcModalSaldosCards(saldos, pendMonModal, pendienteClasePorMoneda);
+            reaplicarVisibilidadMonedasCuentaCorrienteDom();
+          }
+          renderCcDetalleOperaciones();
+        }).catch(() => {});
+      }
+    };
+
+    const ejecutarTrasBorrado = (tipoMovCajaIdFinal) => {
+      const dels = oldCtx.filas.map((f) => client.from(f.tabla).delete().eq('id', f.id));
+      return Promise.all(dels).then((results) => {
+        const badDel = results.find((r) => r && r.error);
+        if (badDel && badDel.error) {
+          showToast(
+            'No se pudieron eliminar las líneas anteriores: ' + (badDel.error.message || '')
+              + ' En Supabase ejecutá sql/migracion_cc_manual_editar_delete_reemplazo.sql (permiso de edición permite reemplazo).',
+            'error',
+          );
+          return;
+        }
+        return ccManualEjecutarCadenaInsertsServidor({
+          legs,
+          moneda,
+          fecha,
+          montoAbs,
+          conceptoCc,
+          conceptoUsuario,
+          metaManual,
+          requiereCaja,
+          tipoMovCajaIdFinal: tipoMovCajaIdFinal || null,
+          ahora: ahoraIso,
+          nomCliPorId,
+          nomIntPorId,
+          existingCajaId: oldCtx.cajaId || null,
+        })
+          .then(() => finOk())
+          .catch((err) => {
+            showToast('Error al registrar el movimiento nuevo: ' + (err && err.message ? err.message : 'error'), 'error');
+          });
+      });
+    };
+
+    if (!requiereCaja) {
+      void ejecutarTrasBorrado(null);
+      return;
+    }
+
+    const dirCaja = ccManualDireccionCajaDesdeFlujo(pagRol, cobRol);
+    if (!dirCaja) {
+      showToast('No se pudo determinar la dirección de caja para este flujo.', 'error');
+      return;
+    }
+
+    loadTiposMovimientoCaja().then(() => {
+      const tipoId = ccManualTipoMovimientoCajaIdPorDireccion(dirCaja);
+      if (!tipoId) {
+        const nom = ccManualNombreTipoCajaFijoPorDireccion(dirCaja);
+        showToast('No existe el tipo de caja «' + nom + '». Ejecutá sql/migracion_tipos_caja_cc_manual.sql en Supabase.', 'error');
+        return;
+      }
+      if (dirCaja === 'egreso') {
+        fetchMovimientosCajaCerradosSinSync().then((list) => {
+          const v = validarSaldoCajaParaEgresoLista(list, { cajaTipo: 'efectivo', moneda, montoAbs });
+          if (!v.ok) {
+            showToast(v.mensaje, 'error');
+            return;
+          }
+          void ejecutarTrasBorrado(tipoId);
+        });
+        return;
+      }
+      void ejecutarTrasBorrado(tipoId);
+    });
   });
 }
 
 function submitGuardarCcManualEditar() {
-  const ctx = ccManualEditContext;
-  if (!ctx) return;
+  const oldCtx = ccManualEditContext;
+  if (!oldCtx) return;
   if (pandiAvisoSiSinServidorParaEscritura('Guardar cambios de movimiento manual en cuenta corriente')) return;
-  const concepto = (document.getElementById('cc-manual-edit-concepto') || {}).value.trim() || null;
   const fecha = (document.getElementById('cc-manual-edit-fecha') || {}).value;
   if (!fecha) {
     showToast('Indicá la fecha.', 'error');
     return;
   }
-  if (ctx.tocaCaja) {
-    const msg = 'Este movimiento vinculó caja (efectivo). Al guardar también se actualizarán la fecha y el concepto del movimiento de caja. La acción quedará registrada en el log de auditoría. ¿Continuar?';
-    showConfirm(msg, 'Guardar', () => {
-      ejecutarGuardarCcManualEditar(concepto, fecha);
-    }, null, 'Cancelar', 'Confirmar edición');
+  const modoPago = ((document.getElementById('cc-manual-edit-modo-pago') || {}).value || 'efectivo').toLowerCase();
+  const pagRol = ccManualLeerRolRadioEdit('pag');
+  const cobRol = ccManualLeerRolRadioEdit('cob');
+  const participaEmp = ccManualParticipaEmpresa(pagRol, cobRol);
+  const requiereCaja = participaEmp && modoPago === 'efectivo';
+  const needConfirm = oldCtx.tocaCaja || requiereCaja;
+  const msg =
+    'Se reemplazarán las líneas de cuenta corriente con los datos del formulario (pagador, cobrador, importe, moneda, modalidad y concepto). '
+    + 'Si corresponde, el movimiento de caja se actualizará, anulará o creará. La acción quedará en el log de auditoría. ¿Continuar?';
+  const run = () => ejecutarReemplazoCompletoCcManualEditar();
+  if (needConfirm) {
+    showConfirm(msg, 'Guardar', run, null, 'Cancelar', 'Confirmar edición');
     return;
   }
-  ejecutarGuardarCcManualEditar(concepto, fecha);
+  run();
 }
 
 function setupModalCcManualEditar() {
@@ -3992,6 +4357,19 @@ function setupModalCcManualEditar() {
   if (btnCancel) btnCancel.addEventListener('click', closeModalCcManualEditar);
   setupBackdropCloseOnlyOnRealClick(backdrop, closeModalCcManualEditar);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); submitGuardarCcManualEditar(); });
+
+  document.querySelectorAll('input[name="cc-manual-edit-pagador-rol"]').forEach((inp) => {
+    inp.addEventListener('change', () => { ccManualSyncWrapCajaEdit(); actualizarCcManualEditResumenDinamico(); });
+  });
+  document.querySelectorAll('input[name="cc-manual-edit-cobrador-rol"]').forEach((inp) => {
+    inp.addEventListener('change', () => { ccManualSyncWrapCajaEdit(); actualizarCcManualEditResumenDinamico(); });
+  });
+  ['cc-manual-edit-pagador-cliente', 'cc-manual-edit-pagador-intermediario', 'cc-manual-edit-cobrador-cliente', 'cc-manual-edit-cobrador-intermediario', 'cc-manual-edit-moneda', 'cc-manual-edit-modo-pago'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => actualizarCcManualEditResumenDinamico());
+  });
+  const montoEd = document.getElementById('cc-manual-edit-monto');
+  if (montoEd) montoEd.addEventListener('input', () => actualizarCcManualEditResumenDinamico());
 }
 
 function updateCcBotonesMovimientoManual() {
@@ -5046,16 +5424,24 @@ function pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, ctx) {
             );
           }
           if (!canEditarCaja && !canAnularCaja) return '';
-          const btnEditar = canEditarCaja
+          const vinculoCcMan = !!m.caja_vinculo_cc_manual;
+          const soloCajaIndependiente = esMovimientoCajaSoloAltaIndependienteEnCajas(m);
+          const btnEditar = canEditarCaja && soloCajaIndependiente
             ? `<button type="button" class="btn-editar btn-editar-mov-caja" data-id="${escapeHtml(String(m.id))}"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Editar</button>`
             : '';
-          const btnAnular = canAnularCaja && esMovimientoCajaSoloManualAnulable(m)
+          const hintCc = vinculoCcMan
+            ? '<span class="caja-vinculo-cc-manual-hint" title="Vinculado a Cuenta corriente (manual). Editá o anulá desde CC → Movimientos." style="font-size:0.8rem;color:#64748b;max-width:9rem;line-height:1.2;">Solo desde CC</span>'
+            : !soloCajaIndependiente && (m.orden_id || m.transaccion_id)
+              ? '<span class="caja-vinculo-orden-hint" title="Viene del acuerdo (orden o transacción). No se edita desde Cajas; usá la orden o Cuenta corriente." style="font-size:0.8rem;color:#64748b;max-width:9rem;line-height:1.2;">Solo desde orden</span>'
+              : '';
+          const btnAnular = canAnularCaja && esMovimientoCajaSoloManualAnulable(m) && !vinculoCcMan
             ? `<button type="button" class="btn-secondary btn-anular-mov-caja-manual" data-id="${escapeHtml(String(m.id))}" title="Anular movimiento manual de caja" aria-label="Anular movimiento manual de caja"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span>Anular</button>`
             : '';
           return (
             '<div class="caja-acciones-mov-wrap" style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;">' +
             btnEditar +
             btnAnular +
+            hintCc +
             '</div>'
           );
         })();
@@ -5150,6 +5536,7 @@ function refrescarVistaCajasTrasSyncGlobal() {
       const dataOk = cajaRes && cajaRes.ok && tiposOk;
       if (!dataOk) return Promise.resolve();
       const list = cajaRes.list || [];
+      await marcarListaMovimientosCajaVinculoCcManual(list);
       cajasMovimientosFullCache = { list, resTipos, monUsd, monArs, monEur };
       await pandiCajaMovPendingReconciliarCache();
       void pandiPersistCajasVistaSnapshot(cajasMovimientosFullCache);
@@ -5237,6 +5624,7 @@ function loadCajas(opts) {
       const dataOk = cajaRes && cajaRes.ok && tiposOk;
       if (dataOk) {
         const list = cajaRes.list || [];
+        await marcarListaMovimientosCajaVinculoCcManual(list);
         cajasMovimientosFullCache = { list, resTipos, monUsd, monArs, monEur };
         pandiCajasVistaDesdeCache = false;
         pandiCajasVistaSnapshotSavedAtIso = null;
@@ -9607,19 +9995,142 @@ function ccManualNuevoGrupoId() {
   });
 }
 
-/** Texto plano para concepto (nombre de marca o opción del combo). */
-function ccManualTextoLugarRol(rol, lado) {
+/** Texto plano para concepto (nombre de marca o opción del combo). Si editForm=true, lee selects del modal Editar. */
+function ccManualTextoLugarRol(rol, lado, editForm) {
   if (rol === 'pandy') {
     const sp = document.querySelector('.js-marca-sistema-nombre');
     const t = sp && sp.textContent && sp.textContent.trim();
     return t || 'Empresa';
   }
+  const pfx = editForm ? 'cc-manual-edit-' : 'cc-manual-';
   const selId = lado === 'pag'
-    ? (rol === 'cliente' ? 'cc-manual-pagador-cliente' : 'cc-manual-pagador-intermediario')
-    : (rol === 'cliente' ? 'cc-manual-cobrador-cliente' : 'cc-manual-cobrador-intermediario');
+    ? (rol === 'cliente' ? pfx + 'pagador-cliente' : pfx + 'pagador-intermediario')
+    : (rol === 'cliente' ? pfx + 'cobrador-cliente' : pfx + 'cobrador-intermediario');
   const s = document.getElementById(selId);
   if (!s || !s.value || !s.options[s.selectedIndex]) return rol === 'cliente' ? 'Cliente' : 'Intermediario';
   return (s.options[s.selectedIndex].text || '').trim() || '–';
+}
+
+function ccManualLeerRolRadioEdit(which) {
+  const name = which === 'pag' ? 'cc-manual-edit-pagador-rol' : 'cc-manual-edit-cobrador-rol';
+  const inp = document.querySelector('input[name="' + name + '"]:checked');
+  const v = inp && inp.value;
+  if (v === 'cliente' || v === 'intermediario' || v === 'pandy') return v;
+  return 'cliente';
+}
+
+function ccManualPoblarTodosLosSelectsEdit(clientes, intermediarios) {
+  ccManualPoblarSelectEntidades(document.getElementById('cc-manual-edit-pagador-cliente'), clientes);
+  ccManualPoblarSelectEntidades(document.getElementById('cc-manual-edit-pagador-intermediario'), intermediarios);
+  ccManualPoblarSelectEntidades(document.getElementById('cc-manual-edit-cobrador-cliente'), clientes);
+  ccManualPoblarSelectEntidades(document.getElementById('cc-manual-edit-cobrador-intermediario'), intermediarios);
+}
+
+function ccManualSyncVisibilidadRolesEdit() {
+  const pagRol = ccManualLeerRolRadioEdit('pag');
+  const cobRol = ccManualLeerRolRadioEdit('cob');
+  const wpc = document.getElementById('cc-manual-edit-wrap-pag-cliente');
+  const wpi = document.getElementById('cc-manual-edit-wrap-pag-inter');
+  const wcc = document.getElementById('cc-manual-edit-wrap-cob-cliente');
+  const wci = document.getElementById('cc-manual-edit-wrap-cob-inter');
+  if (wpc) wpc.style.display = pagRol === 'cliente' ? 'block' : 'none';
+  if (wpi) wpi.style.display = pagRol === 'intermediario' ? 'block' : 'none';
+  if (wcc) wcc.style.display = cobRol === 'cliente' ? 'block' : 'none';
+  if (wci) wci.style.display = cobRol === 'intermediario' ? 'block' : 'none';
+}
+
+function ccManualActualizarTextoCajaTipoFijoEdit() {
+  const p = document.getElementById('cc-manual-edit-caja-tipo-fijo-info');
+  if (!p) return;
+  const pagRol = ccManualLeerRolRadioEdit('pag');
+  const cobRol = ccManualLeerRolRadioEdit('cob');
+  const dir = ccManualDireccionCajaDesdeFlujo(pagRol, cobRol);
+  if (!dir) {
+    p.textContent = '';
+    return;
+  }
+  const nombre = ccManualNombreTipoCajaFijoPorDireccion(dir);
+  p.innerHTML = 'En caja (efectivo) se registrará como tipo <strong>' + escapeHtml(nombre) + '</strong>.';
+}
+
+function ccManualSyncWrapCajaEdit() {
+  const wrap = document.getElementById('cc-manual-edit-wrap-caja');
+  if (!wrap) return;
+  const pagRol = ccManualLeerRolRadioEdit('pag');
+  const cobRol = ccManualLeerRolRadioEdit('cob');
+  const modoEl = document.getElementById('cc-manual-edit-modo-pago');
+  const modo = modoEl ? modoEl.value : 'efectivo';
+  const on = ccManualParticipaEmpresa(pagRol, cobRol) && modo === 'efectivo';
+  wrap.style.display = on ? 'block' : 'none';
+  if (on) ccManualActualizarTextoCajaTipoFijoEdit();
+}
+
+function actualizarCcManualEditResumenDinamico() {
+  const el = document.getElementById('cc-manual-edit-resumen-dinamico');
+  if (!el) return;
+  ccManualSyncVisibilidadRolesEdit();
+  const pagRol = ccManualLeerRolRadioEdit('pag');
+  const cobRol = ccManualLeerRolRadioEdit('cob');
+  const pagCli = (document.getElementById('cc-manual-edit-pagador-cliente') || {}).value || '';
+  const pagInt = (document.getElementById('cc-manual-edit-pagador-intermediario') || {}).value || '';
+  const cobCli = (document.getElementById('cc-manual-edit-cobrador-cliente') || {}).value || '';
+  const cobInt = (document.getElementById('cc-manual-edit-cobrador-intermediario') || {}).value || '';
+  const tmpCli = {};
+  const tmpInt = {};
+  ['cc-manual-edit-pagador-cliente', 'cc-manual-edit-cobrador-cliente'].forEach((id) => {
+    const s = document.getElementById(id);
+    if (s && s.value && s.options[s.selectedIndex]) tmpCli[s.value] = { nombre: s.options[s.selectedIndex].text };
+  });
+  ['cc-manual-edit-pagador-intermediario', 'cc-manual-edit-cobrador-intermediario'].forEach((id) => {
+    const s = document.getElementById(id);
+    if (s && s.value && s.options[s.selectedIndex]) tmpInt[s.value] = { nombre: s.options[s.selectedIndex].text };
+  });
+  const nomCliPorIdRes = {};
+  Object.keys(tmpCli).forEach((k) => { nomCliPorIdRes[k] = (tmpCli[k] && tmpCli[k].nombre) || ''; });
+  const nomIntPorIdRes = {};
+  Object.keys(tmpInt).forEach((k) => { nomIntPorIdRes[k] = (tmpInt[k] && tmpInt[k].nombre) || ''; });
+  const nomPag = ccManualNombreDisplayRol(pagRol, pagCli, pagInt, tmpCli, tmpInt);
+  const nomCob = ccManualNombreDisplayRol(cobRol, cobCli, cobInt, tmpCli, tmpInt);
+  const moneda = (document.getElementById('cc-manual-edit-moneda') && document.getElementById('cc-manual-edit-moneda').value) || 'USD';
+  const montoAbs = parseImporteInput((document.getElementById('cc-manual-edit-monto') && document.getElementById('cc-manual-edit-monto').value) || '');
+  const modoPago = (document.getElementById('cc-manual-edit-modo-pago') && document.getElementById('cc-manual-edit-modo-pago').value) || 'efectivo';
+  const legsRes = ccManualConstruirLegs(pagRol, cobRol, pagCli, pagInt, cobCli, cobInt);
+  ccManualSyncWrapCajaEdit();
+
+  let html = '<strong>Resumen</strong><br/>';
+  html += 'Flujo: <strong>' + nomPag + '</strong> paga → <strong>' + nomCob + '</strong> cobra. Monto referencia: <strong>' + escapeHtml(moneda) + '</strong>';
+  if (montoAbs > 0) html += ' <strong>' + formatImporteDisplay(montoAbs) + '</strong>';
+  html += '. Modo: <strong>' + escapeHtml(modoPago === 'banco' ? 'Banco/transferencia' : (modoPago === 'cheque' ? 'Cheque' : 'Efectivo')) + '</strong>.<br/>';
+
+  if (legsRes.error) {
+    html += '<span style="color:#b45309;">' + escapeHtml(legsRes.error) + '</span><br/>';
+  } else if (legsRes.legs && montoAbs > 0) {
+    html += 'En CC se registrará:<br/><ul style="margin:0.35rem 0 0.5rem 1.1rem;">';
+    legsRes.legs.forEach((leg) => {
+      const ent = leg.kind === 'cliente' ? 'Cliente' : 'Intermediario';
+      const signed = montoCuentaCorrienteManualSigno(leg, montoAbs, nomCliPorIdRes, nomIntPorIdRes);
+      html += '<li>' + ent + ': <strong>' + formatImporteDisplay(signed) + ' ' + escapeHtml(moneda) + '</strong> (' + escapeHtml(leg.tip === 'cobro_entidad_pandy' ? 'entrega del tercero hacia la empresa (CC)' : 'entrega de la empresa hacia el tercero (CC)') + ')</li>';
+    });
+    html += '</ul>';
+  } else if (legsRes.legs) {
+    html += 'Completá importe para ver el desglose con signo por cuenta.<br/>';
+  }
+
+  const emp = ccManualParticipaEmpresa(pagRol, cobRol);
+  if (emp && modoPago === 'efectivo') {
+    if (!tienePermisoAltaMovimientoCaja()) {
+      html += '<span style="color:#b45309;">Caja (efectivo): falta permiso <em>alta_movimiento_caja</em> para registrar caja en un movimiento nuevo.</span>';
+    } else {
+      const dir = ccManualDireccionCajaDesdeFlujo(pagRol, cobRol);
+      const nombreTipo = dir ? ccManualNombreTipoCajaFijoPorDireccion(dir) : '–';
+      html += '<br/>Caja: <strong>efectivo</strong>, <strong>' + escapeHtml(nombreTipo) + '</strong>, <strong>' + formatImporteDisplay(montoAbs) + ' ' + escapeHtml(moneda) + '</strong>.';
+    }
+  } else if (emp && modoPago !== 'efectivo') {
+    html += '<br/>Caja: <strong>no</strong> (solo se registra efectivo cuando participa la empresa). El modo elegido queda en concepto.';
+  } else {
+    html += '<br/>Caja: <strong>no</strong> (sin movimiento de efectivo de la empresa en este registro).';
+  }
+  el.innerHTML = html;
 }
 
 /**
@@ -10043,19 +10554,72 @@ function ccManualEjecutarCadenaInsertsServidor(ctx) {
     ahora,
     nomCliPorId,
     nomIntPorId,
+    existingCajaId,
   } = ctx;
   const idsCli = [];
   const idsInt = [];
 
   function insertNextLeg(idx) {
     if (idx >= legs.length) {
+      const enlazarMovimientoCajaId = (cajaNuevoId) => {
+        if (!cajaNuevoId) {
+          return Promise.resolve();
+        }
+        const ps = [];
+        idsCli.forEach((cid) => {
+          ps.push(client.from('movimientos_cuenta_corriente').update({ movimiento_caja_id: cajaNuevoId }).eq('id', cid));
+        });
+        idsInt.forEach((iid) => {
+          ps.push(client.from('movimientos_cuenta_corriente_intermediario').update({ movimiento_caja_id: cajaNuevoId }).eq('id', iid));
+        });
+        return Promise.all(ps).then((updRes) => {
+          const bad = (updRes || []).find((r) => r && r.error);
+          if (bad && bad.error) {
+            showToast('Caja registrada; no se pudo enlazar el id en CC: ' + (bad.error.message || 'ejecutá la migración movimiento_caja_id.'), 'error');
+          }
+        });
+      };
+
       if (!requiereCaja) {
+        if (existingCajaId) {
+          return client
+            .from('movimientos_caja')
+            .update({ estado: 'anulado', estado_fecha: ahora })
+            .eq('id', existingCajaId)
+            .then((rAn) => {
+              if (rAn.error) return Promise.reject(new Error(rAn.error.message || 'No se pudo anular el movimiento de caja vinculado.'));
+              return Promise.resolve();
+            });
+        }
         return Promise.resolve();
       }
+
       const tipoRow = (tiposMovimientoCaja || []).find((t) => String(t.id) === String(tipoMovCajaIdFinal));
       const signoCaja = tipoRow && String(tipoRow.direccion || '').toLowerCase() === 'egreso' ? -1 : 1;
       const montoCaja = montoAbs * signoCaja;
       const conceptoCaja = conceptoUsuario || ('CC manual efectivo · ' + conceptoCc);
+
+      if (existingCajaId) {
+        return client
+          .from('movimientos_caja')
+          .update({
+            moneda,
+            monto: montoCaja,
+            tipo_movimiento_id: tipoMovCajaIdFinal,
+            concepto: conceptoCaja,
+            fecha,
+            estado: 'cerrado',
+            estado_fecha: ahora,
+          })
+          .eq('id', existingCajaId)
+          .then((rUp) => {
+            if (rUp.error) {
+              return ccManualRollbackCcIds(idsCli, idsInt).then(() => Promise.reject(new Error(rUp.error.message || 'caja')));
+            }
+            return enlazarMovimientoCajaId(existingCajaId);
+          });
+      }
+
       return client
         .from('movimientos_caja')
         .insert({
@@ -10078,25 +10642,7 @@ function ccManualEjecutarCadenaInsertsServidor(ctx) {
             return ccManualRollbackCcIds(idsCli, idsInt).then(() => Promise.reject(new Error(rCaja.error.message || 'caja')));
           }
           const cajaNuevoId = rCaja.data && rCaja.data.id;
-          const enlazarCaja = () => {
-            if (!cajaNuevoId) {
-              return Promise.resolve();
-            }
-            const ps = [];
-            idsCli.forEach((cid) => {
-              ps.push(client.from('movimientos_cuenta_corriente').update({ movimiento_caja_id: cajaNuevoId }).eq('id', cid));
-            });
-            idsInt.forEach((iid) => {
-              ps.push(client.from('movimientos_cuenta_corriente_intermediario').update({ movimiento_caja_id: cajaNuevoId }).eq('id', iid));
-            });
-            return Promise.all(ps).then((updRes) => {
-              const bad = (updRes || []).find((r) => r && r.error);
-              if (bad && bad.error) {
-                showToast('Caja registrada; no se pudo enlazar el id en CC: ' + (bad.error.message || 'ejecutá la migración movimiento_caja_id.'), 'error');
-              }
-            });
-          };
-          return enlazarCaja();
+          return enlazarMovimientoCajaId(cajaNuevoId);
         });
     }
     const leg = legs[idx];
@@ -11206,22 +11752,33 @@ function openModalMovimientoCaja(registro) {
     ? loadTiposMovimientoCaja()
     : Promise.resolve(null);
 
-  promTipos.then((tiposFetched) => {
+  promTipos.then(async (tiposFetched) => {
     if (registro == null) {
       if (!tienePermisoAltaMovimientoCaja()) {
         showToast('No tenés permiso para dar de alta movimientos de caja.', 'info');
         return;
       }
     } else {
-      const esOrdenRow = !!registro.orden_id;
       if (!tienePermisoEditarMovimientoCaja()) {
-        showToast(
-          esOrdenRow
-            ? 'No tenés permiso para editar movimientos de caja vinculados a órdenes.'
-            : 'No tenés permiso para editar movimientos de caja.',
-          'info',
-        );
+        showToast('No tenés permiso para editar movimientos de caja.', 'info');
         return;
+      }
+      if (registro.orden_id || registro.transaccion_id) {
+        showToast(MSG_CAJA_VINCULADA_ORDEN_O_TRANSACCION, 'info');
+        return;
+      }
+    }
+    if (registro && registro.id && !registro.orden_id) {
+      if (registro.caja_vinculo_cc_manual === true) {
+        showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'info');
+        return;
+      }
+      if (registro.caja_vinculo_cc_manual !== false && pandiCcManualGuardadoEnServidorOk()) {
+        const v = await movimientoCajaTieneVinculoCcManual(registro.id);
+        if (v) {
+          showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'info');
+          return;
+        }
       }
     }
     if (tiposFetched != null) {
@@ -11300,24 +11857,7 @@ function saveMovimientoCaja() {
   const fecha = document.getElementById('mov-caja-fecha').value;
 
   if (id && esDeOrden) {
-    if (!tienePermisoEditarMovimientoCaja()) {
-      showToast('No tenés permiso para editar movimientos de caja vinculados a órdenes.', 'error');
-      return;
-    }
-    if (pandiAvisoSiSinServidorParaEscritura('Guardar cambios en un movimiento de caja vinculado a una orden')) return;
-    const payload = { concepto, fecha: fecha || fechaHoyYYYYMMDDArgentina() };
-    client
-      .from('movimientos_caja')
-      .update(payload)
-      .eq('id', id)
-      .then((res) => {
-        if (res.error) {
-          showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-          return;
-        }
-        closeModalMovimientoCaja();
-        loadCajas();
-      });
+    showToast(MSG_CAJA_VINCULADA_ORDEN_O_TRANSACCION, 'info');
     return;
   }
 
@@ -11375,18 +11915,47 @@ function saveMovimientoCaja() {
       }
       if (id) {
         if (pandiAvisoSiSinServidorParaEscritura('Guardar cambios en este movimiento de caja en el servidor')) return;
-        client
-          .from('movimientos_caja')
-          .update(payloadBase)
-          .eq('id', id)
-          .then((res) => {
-            if (res.error) {
-              showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-              return;
-            }
-            closeModalMovimientoCaja();
-            loadCajas();
-          });
+        const aplicarUpdateCajaManual = () => {
+          client
+            .from('movimientos_caja')
+            .select('id, orden_id, transaccion_id')
+            .eq('id', id)
+            .maybeSingle()
+            .then((r0) => {
+              if (r0 && r0.error) {
+                showToast('Error: ' + (r0.error.message || 'No se pudo verificar el movimiento.'), 'error');
+                return;
+              }
+              const row0 = r0 && r0.data;
+              if (row0 && (row0.orden_id || row0.transaccion_id)) {
+                showToast(MSG_CAJA_VINCULADA_ORDEN_O_TRANSACCION, 'error');
+                return;
+              }
+              client
+                .from('movimientos_caja')
+                .update(payloadBase)
+                .eq('id', id)
+                .then((res) => {
+                  if (res.error) {
+                    showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+                    return;
+                  }
+                  closeModalMovimientoCaja();
+                  loadCajas();
+                });
+            });
+        };
+        if (!pandiCcManualGuardadoEnServidorOk()) {
+          aplicarUpdateCajaManual();
+          return;
+        }
+        movimientoCajaTieneVinculoCcManual(id).then((v) => {
+          if (v) {
+            showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'error');
+            return;
+          }
+          aplicarUpdateCajaManual();
+        });
       } else {
         if (pandiSinConexionServidorViva()) {
           showToast(

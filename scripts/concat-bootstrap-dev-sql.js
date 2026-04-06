@@ -66,6 +66,7 @@ const BOOTSTRAP_FILES = [
   'migracion_cc_movimiento_manual.sql',
   'migracion_cc_manual_pagador_cobrador.sql',
   'migracion_cc_manual_editar_eliminar_auditoria.sql',
+  'migracion_cc_manual_editar_delete_reemplazo.sql',
   'migracion_rls_anular_orden_cc_caja.sql',
   'migracion_permisos_movimientos_caja_granular.sql',
   'migracion_tipos_operacion_usa_intermediario.sql',

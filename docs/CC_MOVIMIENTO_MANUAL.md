@@ -48,19 +48,22 @@ La caja (efectivo) sigue la dirección física: egreso si paga la empresa, ingre
   - **Egreso de Dinero (Mov Manual en CC)** (`direccion = egreso`) si **paga la empresa**.
 - Script: `sql/migracion_tipos_caja_cc_manual.sql`. El movimiento en `movimientos_caja` lleva `caja_tipo = efectivo`.
 - **Banco/transferencia** y **cheque** no generan movimiento en caja; el modo queda reflejado en el **concepto** (`[Banco]` / `[Cheque]`).
+- En la vista **Cajas → Movimientos**, los movimientos de caja que son el par de un **CC manual con efectivo** no se pueden **editar ni anular** desde ahí (la app muestra «Solo desde CC»): hay que usar **Cuenta corriente → Movimientos → lápiz** (o anular el manual desde CC) para no desalinear CC y caja.
+- Los movimientos de caja que vienen de una **orden** o **transacción** del acuerdo tampoco se **editan** desde Cajas (hint «Solo desde orden»): hay que gestionarlos desde la **orden** o desde **Cuenta corriente** vinculada a esa operación, para no desalinear caja con el acuerdo.
 
 Requiere permiso **`alta_movimiento_caja`** cuando aplica caja (insert del movimiento en `movimientos_caja`). La edición de filas de caja vinculadas a CC manual sigue **`editar_movimiento_cc_manual`**; en RLS también entra **`editar_movimiento_caja`** para otros casos.
 
 ## Permisos CC
 
 - `registrar_movimiento_cc_manual` o `editar_transacciones` para insertar en tablas CC.
-- `editar_movimiento_cc_manual` — editar desde la solapa **Movimientos** (concepto/fecha; si hay grupo, todas las líneas del mismo `manual_grupo_id`).
+- `editar_movimiento_cc_manual` — editar desde la solapa **Movimientos** el **movimiento completo** (pagador, cobrador, moneda, importe, modalidad de pago, fecha y concepto). Si hay grupo (`manual_grupo_id`), se reemplazan **todas** las patas. En Supabase hace falta además la política de **DELETE** para manuales con este permiso: `sql/migracion_cc_manual_editar_delete_reemplazo.sql` (incluida en el bootstrap dev concatenado).
 - `eliminar_movimiento_cc_manual` — anular esas líneas (`estado = anulado`); si había movimiento de caja vinculado, también se anula en caja.
 - `ver_auditoria` — ver filas en `auditoria_app` (consulta SQL o futura pantalla).
 
 ## Edición, anulación y caja
 
 - En **Movimientos**, las filas **Manual** muestran acciones lápiz / papelera según permisos.
+- **Editar (lápiz):** el modal equivale al de alta: mismos campos; al guardar se **borran** las líneas CC anteriores y se **insertan** las nuevas (misma semántica que un alta). La caja vinculada se **actualiza** si sigue habiendo efectivo con empresa; se **anula** si pasás a banco/cheque o sacás a la empresa del flujo (requiere `anular_movimiento_caja` cuando corresponda anular). Si creás caja nueva donde antes no había, hace falta `alta_movimiento_caja`.
 - Si el registro **vinculó caja** (`movimiento_caja_id` en la línea CC, rellenado al guardar manual con efectivo tras `sql/migracion_cc_manual_editar_eliminar_auditoria.sql`), al **editar** o **anular** la app pide **confirmación** advirtiendo caja y **auditoría**.
 - Cada edición/anulación registra un evento en **`auditoria_app`** (categoría `cc_manual`, acción `editar` / `anular`, texto y metadata con ids).
 - Los movimientos generados por **órdenes/transacciones** (`es_movimiento_manual = false`) siguen editándose solo con `editar_transacciones` (no con los permisos de manual).
@@ -71,6 +74,7 @@ Requiere permiso **`alta_movimiento_caja`** cuando aplica caja (insert del movim
 2. `sql/migracion_cc_manual_pagador_cobrador.sql` — `manual_grupo_id`, `manual_pagador_rol`, `manual_cobrador_rol`, FKs a cliente/intermediario por lado, CHECK de roles.
 3. `sql/migracion_tipos_caja_cc_manual.sql` — tipos fijos ingreso/egreso para caja desde CC manual.
 4. `sql/migracion_cc_manual_editar_eliminar_auditoria.sql` — `movimiento_caja_id` en CC cliente/intermediario, tabla `auditoria_app`, permisos y RLS (manual vs orden en UPDATE; caja actualizable si está vinculada a CC manual).
+5. `sql/migracion_cc_manual_editar_delete_reemplazo.sql` — DELETE en CC manual también con `editar_movimiento_cc_manual` (reemplazo al editar pagador/cobrador/monto, etc.).
 
 Si la base tenía `orden_id` NOT NULL en CC (error *«null value in column orden_id»* al guardar manual), ejecutá también **`sql/migracion_cc_movimientos_orden_id_nullable.sql`** (o volvé a correr el bloque §4 de `migracion_cc_movimiento_manual.sql`).
 
