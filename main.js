@@ -4268,25 +4268,25 @@ function esPatronVendeFiatConTc(p) {
 }
 
 /**
- * USD-USD — bloque «Datos del acuerdo»: el cliente recibe `importe` (mr); la tasa al cliente es un recargo inclusivo sobre lo entregado:
- * monto_entregado = importe / (1 + tasa%/100). Comisión implícita = importe − monto_entregado.
+ * USD-USD — bloque «Datos del acuerdo»: el cliente recibe `importe` (mr); la tasa al cliente es un descuento lineal sobre lo recibido:
+ * monto_entregado = importe × (1 − tasa%/100). Comisión implícita = importe − monto_entregado = importe × tasa%/100.
  */
 function ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct) {
   const I = Number(importe);
   const p = Number(tasaPct);
   if (!(typeof I === 'number' && !isNaN(I) && I > 0)) return null;
   if (!(typeof p === 'number' && !isNaN(p) && p > 0 && p < 100)) return null;
-  return I / (1 + p / 100);
+  return I * (1 - p / 100);
 }
 
-/** Inversa: tasa % tal que mr / (1 + t/100) = me → t = 100 × (mr/me − 1). */
+/** Inversa: tasa % tal que mr × (1 − t/100) = me → t = 100 × (1 − me/mr). */
 function ordenUsdUsdTasaClientePctDesdeMrMe(mr, me) {
   const r = Number(mr);
   const e = Number(me);
   if (!(typeof r === 'number' && !isNaN(r) && r > 0)) return null;
   if (!(typeof e === 'number' && !isNaN(e) && e > 0)) return null;
-  if (r <= e) return null;
-  return 100 * (r / e - 1);
+  if (e >= r) return null;
+  return 100 * (1 - e / r);
 }
 
 function reaplicarVisibilidadMonedasCuentaCorrienteDom() {
