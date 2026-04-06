@@ -3,6 +3,8 @@
 -- Ejecutar en Supabase SQL Editor.
 -- Nota: transaccion_numero / orden_numero se leen con ->> (texto) y luego ::integer para que JSON null
 -- no rompa el INSERT (evita "cannot cast jsonb null to type integer" en filas de comisión con transaccion_numero null).
+-- Caja: movimientos_caja.usuario_id sale solo del JSON de cada fila (quien ejecutó la transacción en el front);
+-- no se rellena con p_usuario_id para no atribuir resync del admin al operador real.
 
 CREATE OR REPLACE FUNCTION public.sync_cc_caja_orden(
   p_orden_id uuid,
@@ -107,7 +109,7 @@ BEGIN
       (r->>'transaccion_numero')::integer,
       r->>'concepto',
       COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina()),
-      COALESCE((r->>'usuario_id')::uuid, p_usuario_id)
+      (NULLIF(TRIM(COALESCE(r->>'usuario_id', '')), ''))::uuid
     );
   END LOOP;
 END;

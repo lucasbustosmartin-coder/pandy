@@ -6544,6 +6544,41 @@ function fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fechaFallbackDia, 
   return { fecha: dia, estado_fecha: estadoFecha };
 }
 
+/**
+ * Usuario de registro en movimientos_caja al sincronizar desde orden: debe reflejar quien ejecutó la transacción
+ * (`transacciones.usuario_id`), no quien dispara el resync en el navegador.
+ */
+function usuarioIdRegistroCajaDesdeTransaccionEjecutada(t) {
+  if (!t || typeof t !== 'object') return null;
+  if ((t.estado || '').toLowerCase() !== 'ejecutada') return null;
+  const u = t.usuario_id;
+  if (u != null && String(u).trim() !== '') return String(u).trim();
+  return null;
+}
+
+/** Última transacción ejecutada de la orden que tenga `usuario_id` (legacy o filas sin actor). */
+function usuarioIdRegistroCajaFallbackUltimaEjecutadaConUsuario(transacciones) {
+  const ej = (transacciones || []).filter(
+    (x) =>
+      (x.estado || '').toLowerCase() === 'ejecutada' &&
+      x.usuario_id != null &&
+      String(x.usuario_id).trim() !== '',
+  );
+  if (!ej.length) return null;
+  ej.sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0));
+  return String(ej[0].usuario_id).trim();
+}
+
+/**
+ * Solo datos de la orden (transacción ejecutada y su usuario_id, o última ejecutada con usuario).
+ * Nunca usa la sesión del navegador: evita que quien solo abre prod/exporte quede como «registró» la caja.
+ */
+function usuarioIdRegistroCajaDesdeOrdenSync(transacciones, t) {
+  const desdeT = usuarioIdRegistroCajaDesdeTransaccionEjecutada(t);
+  if (desdeT) return desdeT;
+  return usuarioIdRegistroCajaFallbackUltimaEjecutadaConUsuario(transacciones);
+}
+
 function fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nro, fechaFallbackDia, ahoraFallbackIso) {
   if (nro == null || nro === '') return { fecha: fechaFallbackDia, estado_fecha: ahoraFallbackIso };
   const t = (transacciones || []).find((x) => Number(x.numero) === Number(nro));
@@ -17254,7 +17289,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
         const instId = rInst.data.id;
         const multicontraparteManual = !!(rInst.data && rInst.data.multicontraparte_manual);
         return Promise.all([
-          client.from('transacciones').select('id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at').eq('instrumentacion_id', instId),
+          client.from('transacciones').select('id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at, usuario_id').eq('instrumentacion_id', instId),
           client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
           client.from('modos_pago').select('id, codigo'),
           orden.intermediario_id ? client.from('intermediarios').select('nombre').eq('id', orden.intermediario_id).maybeSingle() : Promise.resolve({ data: null }),
@@ -17409,7 +17444,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   transaccion_numero: t.numero != null ? t.numero : null,
                   concepto: conceptoCaja,
                   fecha: feT.fecha,
-                  usuario_id: currentUserId,
+                  usuario_id: usuarioIdRegistroCajaDesdeOrdenSync(transacciones, t),
                 });
               }
               // CC multicontraparte: un solo lote tras el forEach (solo si hay alguna ejecutada; pendientes van en el mismo lote).
@@ -17432,7 +17467,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                 transaccion_numero: t.numero != null ? t.numero : null,
                 concepto: conceptoCaja,
                 fecha: feT.fecha,
-                usuario_id: currentUserId,
+                usuario_id: usuarioIdRegistroCajaDesdeOrdenSync(transacciones, t),
               });
             }
             // Egreso Intermediario→Cliente (cp_ic y cruces con int.): **no** movimiento de caja de Pandy.
@@ -17603,6 +17638,11 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
               });
             }
             if (intermediarioId && filasComisionIntermediarioMotor.length && parClienteCerradoFb) {
+              const tRefComisionCaja =
+                nroTransComisionChequeFb != null
+                  ? transacciones.find((x) => Number(x.numero) === Number(nroTransComisionChequeFb))
+                  : null;
+              const uidComisionCajaCheque = usuarioIdRegistroCajaDesdeOrdenSync(transacciones, tRefComisionCaja);
               filasComisionIntermediarioMotor.forEach((filaIntFb) => {
                 const mIfb = Number(filaIntFb.monto) || 0;
                 if (mIfb < 1e-6) return;
@@ -17617,7 +17657,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
                   transaccion_numero: nroTransComisionChequeFb,
                   concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaFb, mIfb, orden.numero, nroTransComisionChequeFb),
                   fecha: feSynthChequeFb.fecha,
-                  usuario_id: currentUserId,
+                  usuario_id: uidComisionCajaCheque,
                 });
               });
             }
