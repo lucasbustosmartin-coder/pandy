@@ -1918,7 +1918,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.5</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.5.1</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2078,7 +2078,7 @@
           <div class="inicio-gp-wrap inicio-gp-cajas-grid-row" id="inicio-card-gp-operativo" style="display:none;">
             <div class="inicio-caja-card">
               <div class="inicio-gp-header-row">
-                <h3 class="inicio-gp-titulo">G/P Operativa<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: G/P Operativa"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>G/P Operativa</strong> (Panel de Control): suma en el período elegido cuatro bloques — <strong>movimientos de caja manuales</strong> (sin orden, tipo con «incluye en G/P» en Cajas → Tipos), <strong>movimientos de caja por órdenes</strong> (solo movimientos de caja donde la transacción tiene a <strong><span class="js-marca-sistema-nombre">Pandi</span></strong> como pagador o cobrador y modo efectivo/banco/cheque según corresponda: es <strong>dinero real</strong> de la casa), <strong>Cuenta Corriente Clientes</strong> y <strong>Cuenta Corriente Intermediarios</strong> (suma algebraica de <strong>todas</strong> las líneas cerradas en el rango, no el saldo neto por persona). Por eso el <strong>Total</strong> por moneda no es un «resultado contable único»: en USD puede anularse, por casualidad, caja real (p. ej. −5.000) con la suma de líneas de CC intermediario (+5.000) sin que eso represente «cero negocio». En ARS suele alinearse mejor con la intuición cuando la mayor parte pasa por caja y CC en el mismo acuerdo. Períodos en calendario <strong>Argentina</strong>; semana <strong>lun–dom</strong>.</span></span></h3>
+                <h3 class="inicio-gp-titulo">G/P Operativa<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: G/P Operativa"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>G/P Operativa</strong>: el <strong>Total</strong> por moneda es la suma de las <strong>cuatro filas</strong> de la matriz para el período elegido. Cómo se calcula cada una: tocá el <strong>?</strong> al lado del nombre de esa fila (caja manual, caja por órdenes, cuenta corriente clientes, cuenta corriente intermediarios).<br><br>El Total <strong>no</strong> es un único resultado contable: junta <strong>caja real</strong> con <strong>sumas del libro de CC</strong>; en una moneda pueden compensarse entre sí sin significar «cero negocio».<br><br>Períodos en calendario <strong>Argentina</strong>; la semana va de <strong>lunes a domingo</strong>.</span></span></h3>
                 <div class="inicio-gp-toolbar">
                   <div class="inicio-gp-periodos" role="tablist" aria-label="Período G/P Operativa">
                     <button type="button" class="btn-secondary inicio-gp-pill activo" data-inicio-gp-periodo="dia" aria-selected="true">Día</button>
