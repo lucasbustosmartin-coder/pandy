@@ -20347,6 +20347,8 @@ function proyectarEgresoCajaEmpresaSiEjecutadaTransaccion(t, ctx) {
   if (!(pag === 'pandy' || cob === 'pandy')) return null;
   const signoCaja = cob === 'pandy' ? 1 : -1;
   if (signoCaja * montoTrx >= -EPS) return null;
+  // Validación de saldo antes de marcar ejecutada: solo efectivo. Transferencia/banco (y cheque) no bloquean por saldo de caja empresa; el sync igual puede insertar movimientos_caja en banco/cheque.
+  if (String(codigoModo || '').toLowerCase() !== 'efectivo') return null;
   const cajaTipo = codigoCajaTipoDesdeCodigo(codigoModo);
   return { cajaTipo, moneda: mon, montoAbs: montoTrx };
 }
