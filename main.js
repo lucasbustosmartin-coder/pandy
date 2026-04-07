@@ -5889,11 +5889,15 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
     monedas.map((m) => celNum(cajaOrd, m, false)).join(''),
   );
   const rowCli = gpFila(
-    '<div class="inicio-gp-matriz-label-sub">Cuenta Corriente Clientes</div>',
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-clientes">Cuenta Corriente Clientes<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Clientes en G/P Operativa">' +
+      helpIconSvg +
+      '</button><span class="help-popover"><strong>Cuenta Corriente Clientes</strong> (esta fila): suma algebraica de todas las líneas de la cuenta corriente de clientes con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>).<br><br>En <strong>Cuenta corriente → Cliente → Saldos</strong> sí entran también los pendientes; por eso el total allí puede diferir de esta fila sin que sea un error.</span></span></div>',
     monedas.map((m) => celNum(ccC, m, false)).join(''),
   );
   const rowInt = gpFila(
-    '<div class="inicio-gp-matriz-label-sub">Cuenta Corriente Intermediarios</div>',
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-intermediarios">Cuenta Corriente Intermediarios<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Intermediarios en G/P Operativa">' +
+      helpIconSvg +
+      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): mismo criterio que clientes, sobre la cuenta corriente de intermediarios: suma algebraica de todas las líneas con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>).<br><br>En <strong>Cuenta corriente → Intermediario → Saldos</strong> sí entran también los pendientes; el total puede diferir de esta fila por el mismo motivo.</span></span></div>',
     monedas.map((m) => celNum(ccI, m, false)).join(''),
   );
   elMatriz.innerHTML = filaCabecera + rowTotal + rowCaja + rowCajaOrd + rowCli + rowInt;

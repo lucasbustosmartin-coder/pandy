@@ -847,8 +847,17 @@
       gap: 0.35rem;
     }
     .inicio-gp-matriz-label-caja-manual .help-inline,
-    .inicio-gp-matriz-label-caja-ordenes .help-inline { display: inline-flex; align-items: center; }
+    .inicio-gp-matriz-label-caja-ordenes .help-inline,
+    .inicio-gp-matriz-label-cc-clientes .help-inline,
+    .inicio-gp-matriz-label-cc-intermediarios .help-inline { display: inline-flex; align-items: center; }
     .inicio-gp-matriz-label-caja-ordenes {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .inicio-gp-matriz-label-cc-clientes,
+    .inicio-gp-matriz-label-cc-intermediarios {
       display: flex;
       align-items: center;
       flex-wrap: wrap;
@@ -1909,7 +1918,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.4</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.5</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
