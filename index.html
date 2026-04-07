@@ -471,6 +471,170 @@
     .modal-backdrop.activo { display: flex; }
     /* Cuenta corriente: Ver detalle y modales manual / editar fila — por encima del drawer en ≤768px (sidebar z-index 250). Si no, el modal queda “atrás” y parece que no se puede tocar nada. */
     #modal-cc-detalle-backdrop.activo { z-index: 260; }
+    #modal-gp-operativa-detalle-backdrop.activo { z-index: 265; }
+    .modal-gp-operativa-detalle { max-width: min(95vw, 960px); width: 95%; }
+    .modal-gp-operativa-detalle .modal-body { min-width: 0; max-width: 100%; overflow-x: hidden; }
+    #modal-gp-operativa-detalle-leyenda { margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #64748b; line-height: 1.4; }
+    #modal-gp-operativa-detalle-loading { margin: 0.5rem 0; }
+    #modal-gp-operativa-detalle-content .gp-detalle-seccion { margin-bottom: 1.25rem; }
+    #modal-gp-operativa-detalle-content .gp-detalle-seccion:last-child { margin-bottom: 0; }
+    .gp-detalle-seccion-titulo { margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 600; color: #1e293b; }
+    #modal-gp-operativa-detalle-content .tabla-gp-detalle-wrap { max-height: min(50vh, 22rem); overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; margin-top: 0.35rem; }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle thead th { position: sticky; top: 0; z-index: 1; background: #f1f5f9; box-shadow: 0 1px 0 #e2e8f0; text-align: left; padding: 0.5rem 0.45rem; font-weight: 600; }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle td { padding: 0.45rem 0.45rem; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+    #modal-gp-operativa-detalle-content .gp-detalle-monto { font-variant-numeric: tabular-nums; font-weight: 600; }
+    #modal-gp-operativa-detalle-content .gp-detalle-monto.positivo { color: #0d7d3d; }
+    #modal-gp-operativa-detalle-content .gp-detalle-monto.negativo { color: #b91c1c; }
+    .modal-gp-operativa-detalle .modal-gp-operativa-detalle-header-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .modal-gp-operativa-detalle #modal-gp-operativa-detalle-header-actions {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-consolidado-titulo-fila .gp-detalle-seccion-titulo {
+      flex: 1;
+      min-width: 10rem;
+      margin: 0;
+    }
+    #modal-gp-operativa-detalle-content .btn-gp-operativa-detalle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.25rem;
+      height: 1.25rem;
+      padding: 0;
+      margin-left: 0;
+      background: none;
+      border: none;
+      border-radius: 50%;
+      color: #6b7280;
+      cursor: pointer;
+      flex-shrink: 0;
+      box-sizing: border-box;
+    }
+    #modal-gp-operativa-detalle-content .btn-gp-operativa-detalle:hover,
+    #modal-gp-operativa-detalle-content .btn-gp-operativa-detalle:focus-visible {
+      color: #0ea5e9;
+    }
+    #modal-gp-operativa-detalle-content .btn-gp-operativa-detalle svg {
+      width: 1rem;
+      height: 1rem;
+    }
+    .modal-gp-operativa-detalle .modal-gp-operativa-detalle-header-icono {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      flex-shrink: 0;
+      color: #4b5563;
+    }
+    .modal-gp-operativa-detalle .modal-gp-operativa-detalle-header-icono svg {
+      width: 1.125rem;
+      height: 1.125rem;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-seccion-consolidado {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #e2e8f0;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-consolidado-line {
+      margin: 0.35rem 0 0 0;
+      font-size: 0.95rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.5;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-consolidado-monto.positivo { color: #0d7d3d; }
+    #modal-gp-operativa-detalle-content .gp-detalle-consolidado-monto.negativo { color: #b91c1c; }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle tfoot td {
+      background: #f8fafc;
+      border-top: 2px solid #e2e8f0;
+      padding: 0.55rem 0.45rem;
+      vertical-align: middle;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-montos {
+      font-variant-numeric: tabular-nums;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-total-label {
+      vertical-align: middle;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-total-inner {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-montos-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.5rem 0.65rem;
+      align-items: start;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-moneda-block {
+      min-width: 0;
+      text-align: right;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-moneda-codigo {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #64748b;
+      letter-spacing: 0.02em;
+      margin-bottom: 0.15rem;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-monto-eye {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.2rem;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-monto {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-eye-col {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.25rem;
+      flex-shrink: 0;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-eye-placeholder {
+      display: inline-block;
+      width: 1.25rem;
+      height: 1.25rem;
+      flex-shrink: 0;
+    }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-eye-col .btn-gp-operativa-detalle {
+      margin-left: 0;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-consolidado-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.5rem 0.65rem;
+      margin-top: 0.5rem;
+      font-variant-numeric: tabular-nums;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-consolidado-titulo-fila {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+      margin: 0 0 0.25rem 0;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-consolidado-titulo-fila .btn-gp-operativa-detalle {
+      margin-left: 0;
+    }
     #modal-cc-manual-editar-backdrop.activo,
     #modal-cc-movimiento-manual-backdrop.activo,
     #modal-movimiento-cc-backdrop.activo { z-index: 270; }
@@ -802,7 +966,20 @@
     .inicio-gp-wrap { margin-bottom: 1.25rem; }
     .inicio-gp-wrap.inicio-gp-cajas-grid-row { grid-column: 1 / -1; width: 100%; margin-bottom: 0; }
     .inicio-gp-header-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
-    .inicio-gp-titulo { margin: 0; font-size: 1.05rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; color: #1a1a1a; }
+    .inicio-gp-titulo { margin: 0; font-size: 1.05rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem; color: #1a1a1a; }
+    .inicio-gp-titulo-icono {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      flex-shrink: 0;
+      color: #4b5563;
+    }
+    .inicio-gp-titulo-icono svg {
+      width: 1.125rem;
+      height: 1.125rem;
+    }
     .inicio-gp-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
     .inicio-gp-periodos { display: flex; flex-wrap: wrap; gap: 0.35rem; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
     .inicio-gp-periodos button { min-height: 2.25rem; padding: 0.35rem 0.75rem; font-size: 0.875rem; border-radius: 8px; box-sizing: border-box; }
@@ -818,10 +995,38 @@
     }
     .inicio-gp-matriz-fila {
       display: grid;
-      grid-template-columns: minmax(9rem, 1.45fr) repeat(3, minmax(4.75rem, 1fr));
-      gap: 0.45rem 0.6rem;
+      grid-template-columns: minmax(9rem, 1.45fr) 1.4rem repeat(3, minmax(4.5rem, 1fr) 1.35rem);
+      gap: 0.45rem 0.5rem;
       align-items: baseline;
       min-width: 0;
+    }
+    .inicio-gp-matriz-moneda-pareja {
+      display: contents;
+    }
+    .inicio-gp-matriz-ojo-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      align-self: center;
+      min-width: 0;
+      padding: 0;
+    }
+    .inicio-gp-matriz-ojo-placeholder {
+      display: inline-block;
+      width: 1.25rem;
+      height: 1.25rem;
+      flex-shrink: 0;
+      box-sizing: border-box;
+    }
+    .inicio-gp-matriz-label-total-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .inicio-gp-matriz-fila-linea-superior {
+      display: contents;
     }
     .inicio-gp-matriz-fila-monedas {
       display: contents;
@@ -829,6 +1034,54 @@
     .inicio-gp-matriz-fila-label {
       min-width: 0;
       overflow-wrap: anywhere;
+    }
+    .inicio-gp-matriz-fila-help {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      align-self: center;
+      min-width: 0;
+      padding: 0;
+    }
+    .inicio-gp-matriz-fila-help .help-icon-btn {
+      margin-left: 0;
+    }
+    /* Mismo tamaño visual que help-icon-btn; no usar .help-icon-btn (dispara modal Ayuda global). */
+    .inicio-gp-matriz-ojo-cell .btn-gp-operativa-detalle,
+    .inicio-gp-matriz-label-total-wrap .btn-gp-operativa-detalle,
+    .modal-gp-operativa-detalle #modal-gp-operativa-detalle-header-actions .btn-gp-operativa-detalle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.25rem;
+      height: 1.25rem;
+      padding: 0;
+      margin-left: 0;
+      background: none;
+      border: none;
+      border-radius: 50%;
+      color: #6b7280;
+      cursor: pointer;
+      flex-shrink: 0;
+      box-sizing: border-box;
+    }
+    .inicio-gp-matriz-ojo-cell .btn-gp-operativa-detalle:hover,
+    .inicio-gp-matriz-ojo-cell .btn-gp-operativa-detalle:focus-visible,
+    .inicio-gp-matriz-label-total-wrap .btn-gp-operativa-detalle:hover,
+    .inicio-gp-matriz-label-total-wrap .btn-gp-operativa-detalle:focus-visible,
+    .modal-gp-operativa-detalle #modal-gp-operativa-detalle-header-actions .btn-gp-operativa-detalle:hover,
+    .modal-gp-operativa-detalle #modal-gp-operativa-detalle-header-actions .btn-gp-operativa-detalle:focus-visible {
+      color: #0ea5e9;
+    }
+    .inicio-gp-matriz-ojo-cell .btn-gp-operativa-detalle svg,
+    .inicio-gp-matriz-label-total-wrap .btn-gp-operativa-detalle svg,
+    .modal-gp-operativa-detalle #modal-gp-operativa-detalle-header-actions .btn-gp-operativa-detalle svg {
+      width: 1rem;
+      height: 1rem;
+    }
+    .inicio-gp-matriz-fila-help--placeholder {
+      visibility: hidden;
+      pointer-events: none;
     }
     /* Misma tipografía que cabeceras USD/ARS/EUR en tarjeta Caja Efectivo (.inicio-caja-fila + .inicio-caja-col-header) */
     .inicio-gp-matriz-h {
@@ -840,29 +1093,6 @@
       font-weight: 600;
       color: #374151;
       font-variant-numeric: tabular-nums;
-    }
-    .inicio-gp-matriz-label-caja-manual {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.35rem;
-    }
-    .inicio-gp-matriz-label-caja-manual .help-inline,
-    .inicio-gp-matriz-label-caja-ordenes .help-inline,
-    .inicio-gp-matriz-label-cc-clientes .help-inline,
-    .inicio-gp-matriz-label-cc-intermediarios .help-inline { display: inline-flex; align-items: center; }
-    .inicio-gp-matriz-label-caja-ordenes {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.35rem;
-    }
-    .inicio-gp-matriz-label-cc-clientes,
-    .inicio-gp-matriz-label-cc-intermediarios {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.35rem;
     }
     .inicio-gp-matriz-label-total {
       font-size: 1.2rem;
@@ -1772,17 +2002,67 @@
       .inicio-accesos .link-inicio { min-height: 44px; justify-content: center; }
       .help-popover { max-width: min(320px, calc(100vw - 2rem)); }
       .inicio-gp-matriz-fila {
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
         gap: 0.45rem;
         align-items: stretch;
+      }
+      .inicio-gp-matriz-fila-linea-superior {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.35rem;
+        width: 100%;
+        min-width: 0;
+      }
+      .inicio-gp-matriz-fila-linea-superior .inicio-gp-matriz-fila-label {
+        flex: 1;
+        min-width: 0;
+      }
+      .inicio-gp-matriz-fila-linea-superior .inicio-gp-matriz-fila-help {
+        flex-shrink: 0;
+      }
+      .inicio-gp-matriz-moneda-pareja {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.2rem;
+        min-width: 0;
       }
       .inicio-gp-matriz-fila-monedas {
         display: grid;
         grid-template-columns: repeat(3, minmax(4.25rem, 1fr));
         gap: 0.35rem;
+        width: 100%;
       }
-      .inicio-gp-matriz-fila-cabecera .inicio-gp-matriz-fila-label {
+      .inicio-gp-matriz-ojo-cell .btn-gp-operativa-detalle,
+      .inicio-gp-matriz-label-total-wrap .btn-gp-operativa-detalle {
+        min-width: 44px;
+        min-height: 44px;
+        width: 44px;
+        height: 44px;
+      }
+      .inicio-gp-matriz-ojo-placeholder {
+        width: 44px;
+        height: 44px;
+      }
+      .inicio-gp-matriz-fila-cabecera .inicio-gp-matriz-fila-linea-superior {
         display: none;
+      }
+      .modal-gp-operativa-detalle #modal-gp-operativa-detalle-header-actions .btn-gp-operativa-detalle {
+        min-width: 44px;
+        min-height: 44px;
+      }
+      #modal-gp-operativa-detalle-content .btn-gp-operativa-detalle {
+        min-width: 44px;
+        min-height: 44px;
+      }
+      #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-eye-col {
+        width: 44px;
+      }
+      #modal-gp-operativa-detalle-content table.tabla-gp-detalle .gp-detalle-tfoot-eye-placeholder {
+        width: 44px;
+        height: 44px;
       }
       .inicio-gp-matriz-label-total { font-size: 1.12rem; }
       .inicio-gp-matriz-num-total { font-size: 1.12rem; }
@@ -1919,7 +2199,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.5.5</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.5.6</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2079,7 +2359,7 @@
           <div class="inicio-gp-wrap inicio-gp-cajas-grid-row" id="inicio-card-gp-operativo" style="display:none;">
             <div class="inicio-caja-card">
               <div class="inicio-gp-header-row">
-                <h3 class="inicio-gp-titulo">G/P Operativa<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: G/P Operativa"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>G/P Operativa</strong>: el <strong>Total</strong> por moneda es la suma de las <strong>cuatro filas</strong> de la matriz para el período elegido. Cómo se calcula cada una: tocá el <strong>?</strong> al lado del nombre de esa fila (caja manual, caja por órdenes, cuenta corriente clientes, cuenta corriente intermediarios).<br><br>El Total <strong>no</strong> es un único resultado contable: junta <strong>caja real</strong> con <strong>sumas del libro de CC</strong>; en una moneda pueden compensarse entre sí sin significar «cero negocio».<br><br>Períodos en calendario <strong>Argentina</strong>; la semana va de <strong>lunes a domingo</strong>.</span></span></h3>
+                <h3 class="inicio-gp-titulo"><span class="inicio-gp-titulo-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16V9"/><path d="M12 16v-5"/><path d="M17 16V6"/></svg></span>G/P Operativa<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: G/P Operativa"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>G/P Operativa</strong>: el <strong>Total</strong> por moneda es la suma de las <strong>cuatro filas</strong> de la matriz para el período elegido. Junto al nombre de cada fila solo está el <strong>?</strong> (ayuda de esa fila). El <strong>ojo</strong> junto a la palabra <strong>Total</strong> abre el desglose conjunto de las cuatro filas (no se muestra si los tres totales por moneda son cero). En USD, ARS y EUR, un <strong>ojo</strong> aparece solo a la derecha de cada importe cuando ese importe es <strong>mayor que cero</strong> y abre el detalle filtrado por esa moneda; las columnas quedan alineadas con celdas vacías del mismo ancho donde no hay ojo.<br><br>El Total <strong>no</strong> es un único resultado contable: junta <strong>caja real</strong> con <strong>sumas del libro de CC</strong>; en una moneda pueden compensarse entre sí sin significar «cero negocio».<br><br>Períodos en calendario <strong>Argentina</strong>; la semana va de <strong>lunes a domingo</strong>.</span></span></h3>
                 <div class="inicio-gp-toolbar">
                   <div class="inicio-gp-periodos" role="tablist" aria-label="Período G/P Operativa">
                     <button type="button" class="btn-secondary inicio-gp-pill activo" data-inicio-gp-periodo="dia" aria-selected="true">Día</button>
@@ -3730,6 +4010,24 @@
             <tbody id="cc-detalle-operaciones-tbody"></tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-gp-operativa-detalle-backdrop" class="modal-backdrop">
+    <div class="modal modal-gp-operativa-detalle">
+      <div class="modal-header">
+        <div class="modal-gp-operativa-detalle-header-main">
+          <span class="inicio-gp-titulo-icono modal-gp-operativa-detalle-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16V9"/><path d="M12 16v-5"/><path d="M17 16V6"/></svg></span>
+          <h2 id="modal-gp-operativa-detalle-titulo" style="margin:0;">Movimientos en G/P Operativa</h2>
+          <span id="modal-gp-operativa-detalle-header-actions" aria-live="polite"></span>
+        </div>
+        <button type="button" class="modal-close" id="modal-gp-operativa-detalle-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="modal-gp-operativa-detalle-leyenda" class="inicio-gp-leyenda"></p>
+        <div id="modal-gp-operativa-detalle-loading" class="vista-loading-spinner" style="display:none;">Cargando…</div>
+        <div id="modal-gp-operativa-detalle-content"></div>
       </div>
     </div>
   </div>

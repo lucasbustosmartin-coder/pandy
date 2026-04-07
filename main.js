@@ -5880,6 +5880,17 @@ function setupInicioGpOperativo() {
       loadInicioGpOperativo();
     });
   });
+  wrap.addEventListener('click', (e) => {
+    const det = e.target.closest('.btn-gp-operativa-detalle');
+    if (!det || !wrap.contains(det)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const bolsa = det.getAttribute('data-gp-bolsa');
+    if (!bolsa) return;
+    const m = det.getAttribute('data-gp-moneda');
+    if (bolsa === 'total') openModalGpOperativaDetalle('total');
+    else openModalGpOperativaDetalle(bolsa, m ? { moneda: m } : {});
+  });
   inicioGpOperativoListenersAttached = true;
 }
 
@@ -5904,6 +5915,415 @@ function inicioGpClaseSigno(num) {
   return '';
 }
 
+const GP_OPERATIVA_DETALLE_BOLSAS = [
+  { key: 'caja_manual', titulo: 'Movimientos de caja manuales' },
+  { key: 'caja_ordenes', titulo: 'Movimientos de caja por órdenes' },
+  { key: 'cc_cliente', titulo: 'Cuenta corriente — clientes' },
+  { key: 'cc_intermediario', titulo: 'Cuenta corriente — intermediarios' },
+];
+
+/** Filas planas del último desglose «total» (cuatro tablas); para ver solo una moneda en todas las filas. */
+let pandiGpDetalleCacheTotalFilas = null;
+
+const GP_DETALLE_EYE_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+
+function inicioGpHtmlBotonVerDetalleMovimientos(bolsa, tituloBtn, more) {
+  const mo = more || {};
+  const b = escapeHtml(bolsa);
+  const t = escapeHtml(tituloBtn);
+  const mon = mo.moneda ? String(mo.moneda).toUpperCase() : '';
+  const dm =
+    mon && MONEDAS_GP_PANEL.includes(mon) ? ' data-gp-moneda="' + escapeHtml(mon) + '"' : '';
+  return (
+    '<button type="button" class="btn-gp-operativa-detalle" data-gp-bolsa="' +
+    b +
+    '"' +
+    dm +
+    ' title="' +
+    t +
+    '" aria-label="' +
+    t +
+    '">' +
+    GP_DETALLE_EYE_SVG +
+    '</button>'
+  );
+}
+
+function inicioGpOperativaDetalleLeyendaModalTexto() {
+  if (inicioGpOperativoPeriodo === 'total') {
+    return 'Período: todo el historial (desde siempre). Zona horaria: Argentina. Mismo criterio que la tarjeta.';
+  }
+  const rango = inicioGpOperativoRangoFechas(inicioGpOperativoPeriodo);
+  if (rango.desde && rango.hasta) {
+    return `Período: ${rango.desde} al ${rango.hasta} (inclusive). Argentina. Listado alineado a las sumas de la matriz.`;
+  }
+  return '';
+}
+
+function pandiNormalizarGpOperativaDetalleRpc(data) {
+  if (data == null) return [];
+  if (Array.isArray(data)) return data;
+  if (typeof data === 'string') {
+    try {
+      const j = JSON.parse(data);
+      return Array.isArray(j) ? j : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+}
+
+function pandiGpOperativaDetalleRefTexto(row) {
+  if (!row || typeof row !== 'object') return '–';
+  const parts = [];
+  if (row.entidad) parts.push(String(row.entidad));
+  if (row.tipo_movimiento) parts.push(String(row.tipo_movimiento));
+  if (row.orden_numero != null && row.orden_numero !== '') parts.push('Orden #' + String(row.orden_numero));
+  if (row.transaccion_numero != null && row.transaccion_numero !== '') parts.push('Trans. ' + String(row.transaccion_numero));
+  return parts.length ? parts.join(' · ') : '–';
+}
+
+function pandiTotalesGpDetallePorMonedaDesdeFilas(rows) {
+  const sums = { USD: 0, ARS: 0, EUR: 0 };
+  (rows || []).forEach((r) => {
+    const mon = String(r.moneda || '').toUpperCase();
+    if (!Object.prototype.hasOwnProperty.call(sums, mon)) return;
+    sums[mon] += Number(r.monto) || 0;
+  });
+  return sums;
+}
+
+function pandiHtmlGpDetalleTfootDesdeContexto(rows, ctx) {
+  const c = ctx || {};
+  const bolsaKey = c.bolsaKey;
+  const ojosMoneda = Boolean(c.mostrarOjosMontoPorMoneda && bolsaKey);
+  const sums = pandiTotalesGpDetallePorMonedaDesdeFilas(rows);
+  const blocks = MONEDAS_GP_PANEL.map((m) => {
+    const v = sums[m];
+    const hasNum = Math.abs(v) >= 1e-12;
+    const cls = inicioGpClaseSigno(v);
+    const montoStr = hasNum ? escapeHtml(formatMonto(v, m)) : '–';
+    let eyeCol;
+    if (!ojosMoneda) {
+      eyeCol = '<span class="gp-detalle-tfoot-eye-placeholder" aria-hidden="true"></span>';
+    } else if (v > 1e-12) {
+      eyeCol =
+        '<span class="gp-detalle-tfoot-eye-col">' +
+        inicioGpHtmlBotonVerDetalleMovimientos(bolsaKey, 'Ver solo movimientos en ' + m, { moneda: m }) +
+        '</span>';
+    } else {
+      eyeCol = '<span class="gp-detalle-tfoot-eye-placeholder" aria-hidden="true"></span>';
+    }
+    return (
+      '<div class="gp-detalle-tfoot-moneda-block">' +
+      '<span class="gp-detalle-tfoot-moneda-codigo">' +
+      escapeHtml(m) +
+      '</span>' +
+      '<div class="gp-detalle-tfoot-monto-eye">' +
+      '<span class="gp-detalle-tfoot-monto ' +
+      cls +
+      '">' +
+      montoStr +
+      '</span>' +
+      eyeCol +
+      '</div></div>'
+    );
+  }).join('');
+  return (
+    '<tfoot><tr class="gp-detalle-tfoot-total">' +
+    '<td colspan="2" class="gp-detalle-tfoot-total-label"><span class="gp-detalle-tfoot-total-inner"><strong>Total</strong></span></td>' +
+    '<td colspan="3" class="gp-detalle-tfoot-montos gp-detalle-tfoot-montos-grid-wrap">' +
+    '<div class="gp-detalle-tfoot-montos-grid">' +
+    blocks +
+    '</div></td></tr></tfoot>'
+  );
+}
+
+function pandiHtmlGpDetalleSeccionConsolidado(allRows) {
+  const sums = pandiTotalesGpDetallePorMonedaDesdeFilas(allRows);
+  const blocks = MONEDAS_GP_PANEL.map((m) => {
+    const v = sums[m];
+    const hasNum = Math.abs(v) >= 1e-12;
+    const cls = inicioGpClaseSigno(v);
+    const montoStr = hasNum ? escapeHtml(formatMonto(v, m)) : '–';
+    const eyeCol =
+      v > 1e-12
+        ? '<span class="gp-detalle-tfoot-eye-col">' +
+          inicioGpHtmlBotonVerDetalleMovimientos(
+            '__all__',
+            'Ver movimientos en ' + m + ' (todas las filas)',
+            { moneda: m },
+          ) +
+          '</span>'
+        : '<span class="gp-detalle-tfoot-eye-placeholder" aria-hidden="true"></span>';
+    return (
+      '<div class="gp-detalle-tfoot-moneda-block">' +
+      '<span class="gp-detalle-tfoot-moneda-codigo">' +
+      escapeHtml(m) +
+      '</span>' +
+      '<div class="gp-detalle-tfoot-monto-eye">' +
+      '<span class="gp-detalle-tfoot-monto ' +
+      cls +
+      '">' +
+      montoStr +
+      '</span>' +
+      eyeCol +
+      '</div></div>'
+    );
+  }).join('');
+  return (
+    '<section class="gp-detalle-seccion gp-detalle-seccion-consolidado" aria-label="Total consolidado">' +
+    '<div class="gp-detalle-consolidado-titulo-fila">' +
+    '<h4 class="gp-detalle-seccion-titulo">Total consolidado (suma de las cuatro filas)</h4>' +
+    inicioGpHtmlBotonVerDetalleMovimientos('total', 'Actualizar desglose completo') +
+    '</div>' +
+    '<div class="gp-detalle-consolidado-grid">' +
+    blocks +
+    '</div></section>'
+  );
+}
+
+function pandiHtmlTablaGpOperativaDetalleFilas(rows, tfootCtx) {
+  const head =
+    '<thead><tr><th>Fecha</th><th>Moneda</th><th>Monto</th><th>Concepto</th><th>Referencia</th></tr></thead>';
+  const emptyBody =
+    '<tbody><tr><td colspan="5">No hay movimientos en el período con este criterio.</td></tr></tbody>';
+  const foot = pandiHtmlGpDetalleTfootDesdeContexto(rows || [], tfootCtx);
+  if (!rows || rows.length === 0) {
+    return head + emptyBody + foot;
+  }
+  const body = rows
+    .map((r) => {
+      const mon = String(r.moneda || 'USD').toUpperCase();
+      const m = Number(r.monto);
+      const cls = inicioGpClaseSigno(m);
+      const montoStr = formatMonto(m, mon);
+      const fec = String(r.fecha || '').slice(0, 10);
+      return (
+        '<tr><td>' +
+        escapeHtml(fec) +
+        '</td><td>' +
+        escapeHtml(mon) +
+        '</td><td class="gp-detalle-monto ' +
+        cls +
+        '">' +
+        escapeHtml(montoStr) +
+        '</td><td class="td-concepto">' +
+        escapeHtml(r.concepto || '–') +
+        '</td><td class="td-concepto">' +
+        escapeHtml(pandiGpOperativaDetalleRefTexto(r)) +
+        '</td></tr>'
+      );
+    })
+    .join('');
+  return head + '<tbody>' + body + '</tbody>' + foot;
+}
+
+function pandiLoadGpOperativaDetalleFilas(bolsa) {
+  const rango = inicioGpOperativoRangoFechas(inicioGpOperativoPeriodo);
+  return client.rpc('gp_operativa_detalle', { p_desde: rango.desde, p_hasta: rango.hasta, p_bolsa: bolsa }).then((res) => {
+    if (res.error) return Promise.reject(res.error);
+    return pandiNormalizarGpOperativaDetalleRpc(res.data);
+  });
+}
+
+function closeModalGpOperativaDetalle() {
+  pandiGpDetalleCacheTotalFilas = null;
+  const backdrop = document.getElementById('modal-gp-operativa-detalle-backdrop');
+  if (backdrop) backdrop.classList.remove('activo');
+  const content = document.getElementById('modal-gp-operativa-detalle-content');
+  if (content) content.innerHTML = '';
+  const load = document.getElementById('modal-gp-operativa-detalle-loading');
+  if (load) load.style.display = 'none';
+  const headerActions = document.getElementById('modal-gp-operativa-detalle-header-actions');
+  if (headerActions) headerActions.innerHTML = '';
+}
+
+function openModalGpOperativaDetalle(bolsa, opt) {
+  const opts = opt || {};
+  const monedaFiltro =
+    opts.moneda && MONEDAS_GP_PANEL.includes(String(opts.moneda).toUpperCase())
+      ? String(opts.moneda).toUpperCase()
+      : '';
+
+  if (!bolsa || !userPermissions.includes('ver_inicio_gp_operativo')) return;
+  const backdrop = document.getElementById('modal-gp-operativa-detalle-backdrop');
+  const titulo = document.getElementById('modal-gp-operativa-detalle-titulo');
+  const leyenda = document.getElementById('modal-gp-operativa-detalle-leyenda');
+  const loading = document.getElementById('modal-gp-operativa-detalle-loading');
+  const content = document.getElementById('modal-gp-operativa-detalle-content');
+  const headerActions = document.getElementById('modal-gp-operativa-detalle-header-actions');
+  if (!backdrop || !content) return;
+
+  if (headerActions) headerActions.innerHTML = '';
+  if (leyenda) leyenda.textContent = inicioGpOperativaDetalleLeyendaModalTexto();
+  content.innerHTML = '';
+  backdrop.classList.add('activo');
+  if (loading) loading.style.display = 'block';
+
+  const errText = (err) =>
+    (err && (err.message || err.details || String(err.code || ''))) ||
+    'No se pudo cargar. Si la función no existe en Supabase, ejecutá sql/migracion_gp_operativa_detalle.sql.';
+
+  if (bolsa === '__all__') {
+    if (!monedaFiltro) {
+      if (loading) loading.style.display = 'none';
+      return;
+    }
+    if (pandiGpDetalleCacheTotalFilas == null) {
+      if (loading) loading.style.display = 'none';
+      showToast('Abrí primero el desglose completo desde G/P Operativa.', 'info');
+      return;
+    }
+    if (loading) loading.style.display = 'none';
+    if (titulo) titulo.textContent = 'G/P Operativa — ' + monedaFiltro + ' (todas las filas)';
+    if (headerActions) {
+      headerActions.innerHTML =
+        '<button type="button" class="btn-secondary btn-gp-detalle-volver-total" title="Volver al desglose por fila" aria-label="Volver al desglose por fila">Desglose por fila</button>';
+    }
+    const filas = pandiGpDetalleCacheTotalFilas.filter(
+      (r) => String(r.moneda || '').toUpperCase() === monedaFiltro,
+    );
+    content.innerHTML =
+      '<div class="tabla-clientes-wrap tabla-gp-detalle-wrap"><table class="tabla-gp-detalle">' +
+      pandiHtmlTablaGpOperativaDetalleFilas(filas, {
+        bolsaKey: null,
+        mostrarOjosMontoPorMoneda: false,
+      }) +
+      '</table></div>';
+    return;
+  }
+
+  if (bolsa === 'total') {
+    if (titulo) titulo.textContent = 'G/P Operativa — desglose por fila';
+    const keys = GP_OPERATIVA_DETALLE_BOLSAS.map((x) => x.key);
+    Promise.all(keys.map((k) => pandiLoadGpOperativaDetalleFilas(k).then((rows) => ({ k, rows }))))
+      .then((results) => {
+        if (loading) loading.style.display = 'none';
+        const todasLasFilas = results.flatMap((r) => r.rows || []);
+        pandiGpDetalleCacheTotalFilas = todasLasFilas;
+        content.innerHTML =
+          results
+            .map(({ k, rows }) => {
+              const meta = GP_OPERATIVA_DETALLE_BOLSAS.find((x) => x.key === k);
+              const t = meta ? meta.titulo : k;
+              return (
+                '<section class="gp-detalle-seccion"><h4 class="gp-detalle-seccion-titulo">' +
+                escapeHtml(t) +
+                '</h4><div class="tabla-clientes-wrap tabla-gp-detalle-wrap"><table class="tabla-gp-detalle">' +
+                pandiHtmlTablaGpOperativaDetalleFilas(rows, {
+                  bolsaKey: k,
+                  mostrarOjosMontoPorMoneda: true,
+                }) +
+                '</table></div></section>'
+              );
+            })
+            .join('') + pandiHtmlGpDetalleSeccionConsolidado(todasLasFilas);
+      })
+      .catch((err) => {
+        if (loading) loading.style.display = 'none';
+        showToast('G/P detalle: ' + errText(err), 'error');
+        closeModalGpOperativaDetalle();
+      });
+    return;
+  }
+
+  const meta = GP_OPERATIVA_DETALLE_BOLSAS.find((x) => x.key === bolsa);
+  let tituloTxt = meta ? meta.titulo + ' — movimientos' : 'Movimientos G/P Operativa';
+  if (monedaFiltro) tituloTxt += ' (' + monedaFiltro + ')';
+  if (titulo) titulo.textContent = tituloTxt;
+  if (headerActions) {
+    let actionsHtml = '';
+    if (monedaFiltro) {
+      actionsHtml +=
+        '<button type="button" class="btn-secondary btn-gp-detalle-ver-todas-monedas" data-gp-bolsa="' +
+        escapeHtml(bolsa) +
+        '" title="Ver todas las monedas" aria-label="Ver todas las monedas">Todas las monedas</button>';
+    }
+    actionsHtml += inicioGpHtmlBotonVerDetalleMovimientos(
+      'total',
+      'Ver desglose de las cuatro filas',
+    );
+    headerActions.innerHTML = actionsHtml;
+  }
+
+  pandiLoadGpOperativaDetalleFilas(bolsa)
+    .then((rows) => {
+      if (loading) loading.style.display = 'none';
+      let r = rows;
+      if (monedaFiltro) {
+        r = (rows || []).filter((x) => String(x.moneda || '').toUpperCase() === monedaFiltro);
+      }
+      content.innerHTML =
+        '<div class="tabla-clientes-wrap tabla-gp-detalle-wrap"><table class="tabla-gp-detalle">' +
+        pandiHtmlTablaGpOperativaDetalleFilas(r, {
+          bolsaKey: bolsa,
+          mostrarOjosMontoPorMoneda: true,
+        }) +
+        '</table></div>';
+    })
+    .catch((err) => {
+      if (loading) loading.style.display = 'none';
+      showToast('G/P detalle: ' + errText(err), 'error');
+      closeModalGpOperativaDetalle();
+    });
+}
+
+function setupModalGpOperativaDetalle() {
+  const backdrop = document.getElementById('modal-gp-operativa-detalle-backdrop');
+  if (!backdrop || backdrop.dataset.gpDetalleBound === '1') return;
+  backdrop.dataset.gpDetalleBound = '1';
+  const btnClose = document.getElementById('modal-gp-operativa-detalle-close');
+  if (btnClose) btnClose.addEventListener('click', closeModalGpOperativaDetalle);
+  setupBackdropCloseOnlyOnRealClick(backdrop, closeModalGpOperativaDetalle);
+  backdrop.addEventListener('click', (e) => {
+    const volver = e.target.closest('.btn-gp-detalle-volver-total');
+    if (volver && backdrop.contains(volver)) {
+      e.preventDefault();
+      openModalGpOperativaDetalle('total');
+      return;
+    }
+    const todasMon = e.target.closest('.btn-gp-detalle-ver-todas-monedas');
+    if (todasMon && backdrop.contains(todasMon)) {
+      e.preventDefault();
+      const b = todasMon.getAttribute('data-gp-bolsa');
+      if (b && GP_OPERATIVA_DETALLE_BOLSAS.some((x) => x.key === b)) openModalGpOperativaDetalle(b);
+      return;
+    }
+    const hdr = e.target.closest('#modal-gp-operativa-detalle-header-actions .btn-gp-operativa-detalle');
+    if (hdr && backdrop.contains(hdr)) {
+      e.preventDefault();
+      const b = hdr.getAttribute('data-gp-bolsa');
+      if (b === 'total') openModalGpOperativaDetalle('total');
+      return;
+    }
+    const det = e.target.closest('#modal-gp-operativa-detalle-content .btn-gp-operativa-detalle');
+    if (!det || !backdrop.contains(det)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const b = det.getAttribute('data-gp-bolsa');
+    const m = det.getAttribute('data-gp-moneda');
+    if (b === 'total') {
+      openModalGpOperativaDetalle('total');
+      return;
+    }
+    if (b === '__all__' && m) {
+      openModalGpOperativaDetalle('__all__', { moneda: m });
+      return;
+    }
+    if (b && GP_OPERATIVA_DETALLE_BOLSAS.some((x) => x.key === b)) {
+      openModalGpOperativaDetalle(b, m ? { moneda: m } : {});
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!backdrop.classList.contains('activo')) return;
+    closeModalGpOperativaDetalle();
+  });
+}
+
 function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
   if (!elMatriz) return;
   const monedas = MONEDAS_GP_PANEL;
@@ -5912,14 +6332,54 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
     const v = bolsa[mon];
     return v != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
   }
-  function celNum(bolsa, mon, esTotal) {
-    const num = numBolsa(bolsa, mon);
-    const cls = inicioGpClaseSigno(num);
-    const sizeCls = esTotal ? 'inicio-gp-matriz-num-total' : 'inicio-gp-matriz-num-sub';
-    return `<div class="inicio-gp-matriz-num ${sizeCls} ${cls}">${escapeHtml(formatImporteDisplay(num))}</div>`;
+  function bolsaTodasMonedasCero(bolsa) {
+    return monedas.every((m) => Math.abs(numBolsa(bolsa, m)) < 1e-12);
   }
-  function gpFila(labelHtml, numsHtml) {
-    return `<div class="inicio-gp-matriz-fila"><div class="inicio-gp-matriz-fila-label">${labelHtml}</div><div class="inicio-gp-matriz-fila-monedas">${numsHtml}</div></div>`;
+  function celMonedaPareja(bolsaDatos, mon, esTotalFila, bolsaKeyDetalle) {
+    const num = numBolsa(bolsaDatos, mon);
+    const cls = inicioGpClaseSigno(num);
+    const sizeCls = esTotalFila ? 'inicio-gp-matriz-num-total' : 'inicio-gp-matriz-num-sub';
+    const numHtml =
+      '<div class="inicio-gp-matriz-num ' + sizeCls + ' ' + cls + '">' + escapeHtml(formatImporteDisplay(num)) + '</div>';
+    let ojoInner;
+    if (esTotalFila) {
+      ojoInner = '<span class="inicio-gp-matriz-ojo-placeholder" aria-hidden="true"></span>';
+    } else if (num > 1e-12 && bolsaKeyDetalle) {
+      ojoInner = inicioGpHtmlBotonVerDetalleMovimientos(bolsaKeyDetalle, 'Ver movimientos en ' + mon, {
+        moneda: mon,
+      });
+    } else {
+      ojoInner = '<span class="inicio-gp-matriz-ojo-placeholder" aria-hidden="true"></span>';
+    }
+    return (
+      '<div class="inicio-gp-matriz-moneda-pareja">' +
+      numHtml +
+      '<div class="inicio-gp-matriz-ojo-cell">' +
+      ojoInner +
+      '</div></div>'
+    );
+  }
+  function gpFila(labelHtml, helpInnerHtml, monedasParejasHtml, opts) {
+    const o = opts || {};
+    const helpPh = Boolean(o.helpPlaceholder);
+    const helpCls = 'inicio-gp-matriz-fila-help' + (helpPh ? ' inicio-gp-matriz-fila-help--placeholder' : '');
+    return (
+      '<div class="inicio-gp-matriz-fila">' +
+      '<div class="inicio-gp-matriz-fila-linea-superior">' +
+      '<div class="inicio-gp-matriz-fila-label">' +
+      labelHtml +
+      '</div>' +
+      '<div class="' +
+      helpCls +
+      '">' +
+      (helpPh ? '' : helpInnerHtml) +
+      '</div>' +
+      '</div>' +
+      '<div class="inicio-gp-matriz-fila-monedas">' +
+      monedasParejasHtml +
+      '</div>' +
+      '</div>'
+    );
   }
   const helpIconSvg =
     '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>';
@@ -5929,40 +6389,62 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
       const img = src
         ? `<img src="${src}" alt="" class="inicio-caja-icono-moneda" width="20" height="20"/>`
         : '';
-      return `<div class="inicio-gp-matriz-h">${img}<span>${escapeHtml(mon)}</span></div>`;
+      const h = `<div class="inicio-gp-matriz-h inicio-gp-matriz-monto-header">${img}<span>${escapeHtml(mon)}</span></div>`;
+      const ph =
+        '<div class="inicio-gp-matriz-ojo-cell inicio-gp-matriz-ojo-header-slot" aria-hidden="true"><span class="inicio-gp-matriz-ojo-placeholder"></span></div>';
+      return '<div class="inicio-gp-matriz-moneda-pareja">' + h + ph + '</div>';
     })
     .join('');
   const filaCabecera =
-    `<div class="inicio-gp-matriz-fila inicio-gp-matriz-fila-cabecera"><div class="inicio-gp-matriz-fila-label" aria-hidden="true"></div><div class="inicio-gp-matriz-fila-monedas">${headers}</div></div>`;
+    '<div class="inicio-gp-matriz-fila inicio-gp-matriz-fila-cabecera">' +
+    '<div class="inicio-gp-matriz-fila-linea-superior">' +
+    '<div class="inicio-gp-matriz-fila-label" aria-hidden="true"></div>' +
+    '<div class="inicio-gp-matriz-fila-help inicio-gp-matriz-fila-help--placeholder" aria-hidden="true"></div>' +
+    '</div>' +
+    '<div class="inicio-gp-matriz-fila-monedas">' +
+    headers +
+    '</div></div>';
+  const totalTodoCero = bolsaTodasMonedasCero(tot);
+  const totalLabelHtml =
+    '<span class="inicio-gp-matriz-label-total-wrap">' +
+    '<span class="inicio-gp-matriz-label-total">Total</span>' +
+    (totalTodoCero ? '' : inicioGpHtmlBotonVerDetalleMovimientos('total', 'Ver desglose: movimientos de las cuatro filas')) +
+    '</span>';
   const rowTotal = gpFila(
-    '<div class="inicio-gp-matriz-label-total">Total</div>',
-    monedas.map((m) => celNum(tot, m, true)).join(''),
+    totalLabelHtml,
+    '',
+    monedas.map((m) => celMonedaPareja(tot, m, true, null)).join(''),
+    { helpPlaceholder: true },
   );
   const rowCaja = gpFila(
-    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-manual">Movimientos de caja manuales<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja manuales en G/P Operativa">' +
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-manual">Movimientos de caja manuales</div>',
+    '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja manuales en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Movimientos de caja manuales</strong> en esta fila: suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa.</span></span></div>',
-    monedas.map((m) => celNum(cajaMan, m, false)).join(''),
+      '</button><span class="help-popover"><strong>Movimientos de caja manuales</strong> en esta fila: suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa.</span></span>',
+    monedas.map((m) => celMonedaPareja(cajaMan, m, false, 'caja_manual')).join(''),
   );
   const rowCajaOrd = gpFila(
-    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-ordenes">Movimientos de caja por órdenes<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja por órdenes en G/P Operativa">' +
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-ordenes">Movimientos de caja por órdenes</div>',
+    '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja por órdenes en G/P Operativa">' +
       helpIconSvg +
       '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
       escapeHtml(nombreMarcaSistema()) +
-      '</span> cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de los movimientos de caja manuales filtrados por tipo.</span></span></div>',
-    monedas.map((m) => celNum(cajaOrd, m, false)).join(''),
+      '</span> cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de los movimientos de caja manuales filtrados por tipo.</span></span>',
+    monedas.map((m) => celMonedaPareja(cajaOrd, m, false, 'caja_ordenes')).join(''),
   );
   const rowCli = gpFila(
-    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-clientes">Cuenta Corriente Clientes<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Clientes en G/P Operativa">' +
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-clientes">Cuenta Corriente Clientes</div>',
+    '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Clientes en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Cuenta Corriente Clientes</strong> (esta fila): suma algebraica de todas las líneas de la cuenta corriente de clientes con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>).<br><br>En <strong>Cuenta corriente → Cliente → Saldos</strong> sí entran también los pendientes; por eso el total allí puede diferir de esta fila sin que sea un error.</span></span></div>',
-    monedas.map((m) => celNum(ccC, m, false)).join(''),
+      '</button><span class="help-popover"><strong>Cuenta Corriente Clientes</strong> (esta fila): suma algebraica de todas las líneas de la cuenta corriente de clientes con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>).<br><br>En <strong>Cuenta corriente → Cliente → Saldos</strong> sí entran también los pendientes; por eso el total allí puede diferir de esta fila sin que sea un error.</span></span>',
+    monedas.map((m) => celMonedaPareja(ccC, m, false, 'cc_cliente')).join(''),
   );
   const rowInt = gpFila(
-    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-intermediarios">Cuenta Corriente Intermediarios<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Intermediarios en G/P Operativa">' +
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-intermediarios">Cuenta Corriente Intermediarios</div>',
+    '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Intermediarios en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): mismo criterio que clientes, sobre la cuenta corriente de intermediarios: suma algebraica de todas las líneas con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>).<br><br>En <strong>Cuenta corriente → Intermediario → Saldos</strong> sí entran también los pendientes; el total puede diferir de esta fila por el mismo motivo.</span></span></div>',
-    monedas.map((m) => celNum(ccI, m, false)).join(''),
+      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): mismo criterio que clientes, sobre la cuenta corriente de intermediarios: suma algebraica de todas las líneas con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>).<br><br>En <strong>Cuenta corriente → Intermediario → Saldos</strong> sí entran también los pendientes; el total puede diferir de esta fila por el mismo motivo.</span></span>',
+    monedas.map((m) => celMonedaPareja(ccI, m, false, 'cc_intermediario')).join(''),
   );
   elMatriz.innerHTML = filaCabecera + rowTotal + rowCaja + rowCajaOrd + rowCli + rowInt;
   elMatriz.style.display = 'flex';
@@ -23958,6 +24440,7 @@ async function finalizeSessionUiSetup() {
   setupModalCcMovimientoManual();
   setupModalCcManualEditar();
   setupDelegacionAccionesCcManual();
+  setupModalGpOperativaDetalle();
   setupModalesDraggable();
   setupHelpPopovers();
   setupModalSeguridadNuevoPerfil();
@@ -24047,7 +24530,7 @@ function setupHelpPopovers() {
 
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.help-icon-btn');
-    if (!btn) return;
+    if (!btn || btn.classList.contains('btn-gp-operativa-detalle')) return;
     e.preventDefault();
     const wrap = btn.closest('.help-inline');
     const popover = wrap?.querySelector('.help-popover');
