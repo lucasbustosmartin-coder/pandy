@@ -80,10 +80,29 @@ Detalle operativo: pasos numerados abajo y `docs/GIT_Y_VERCEL.md` §4c–§4d.
 
 ---
 
+### Novedades al recargar — `PANDI_RELEASE_BLURB` (obligatorio; lo hace el agente)
+
+**No delegar al usuario.** En cada “ok desplegar”, el agente edita `main.js` y deja listo el texto que verá quien usa la app en el modal PWA **«Nueva versión»** (antes del commit/push).
+
+| Qué | Cómo |
+|-----|------|
+| **Dónde** | Constante **`PANDI_RELEASE_BLURB`** en `main.js`. |
+| **`versionLabel`** | **Idéntico** al texto de `#sidebar-version` en `index.html` (ej. `v3.6.0`). |
+| **`lines`** | **2 a 4** frases **cortas**, en **español**, tono **simple y comercial**: lo que el usuario **va a ver o notar** al recargar (pantallas, ayudas, flujos, correcciones de uso). Basarse en los **cambios reales** de la sesión o del commit, no en mensajes genéricos. |
+| **Solo lo visible** | En **`lines`** **no** mencionar Supabase, PostgreSQL, RPC, migraciones SQL, Vercel, despliegue ni otros detalles de **backend o infra**: el modal es para quien **usa la app**, no para el equipo técnico. Si un cambio fue solo de servidor sin efecto en pantalla, **no** entra en `lines` (y puede documentarse en la solapa **Versiones** de la bitácora para uso interno). Si hubo cambio de servidor **y** efecto visible, describir **solo el efecto** (ej. «Corrección al guardar una orden con…»), no la capa técnica. |
+| **Estilo** | Beneficio visible. **Ejemplos de tono** (adaptar al caso): «Se actualizaron las ayudas en G/P Operativa», «Corrección en el tipo de operación USD–USD con intermediario», «Ajustes en cuenta corriente para ver mejor los movimientos en el celular». |
+| **Evitar** | Jerga interna (`refactor`, `merge`, nombres de RPC, “fix” sin decir qué mejora para el usuario), párrafos largos, detalle técnico de implementación, **cualquier** referencia a base de datos, migraciones o proveedores cloud en el texto del modal. |
+| **`lines: []`** | **Solo** si el despliegue no cambia **nada** perceptible para quien opera la app (p. ej. solo pipeline o config invisible). En ese caso **registrar** en la solapa **Versiones** de la bitácora que fue release sin copy de usuario. Si hubo **cualquier** cambio visible en UI o comportamiento, **`lines` no puede quedar vacío**. |
+
+El **paso 4 (commit)** debe incluir **`main.js`** siempre que se haya actualizado `PANDI_RELEASE_BLURB`.
+
+---
+
 Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK desplegar"), aplicar **siempre** los siguientes pasos en este orden:
 
-1. **Incrementar versión en la app**  
-   En `index.html`, actualizar la versión que se muestra: buscar el elemento con id `sidebar-version` (ej. `<div class="sidebar-version" id="sidebar-version" ...>v1.0</div>`) y cambiar el texto al **siguiente número de versión** (ej. v1.0 → v1.1).
+1. **Versión en la app y novedades para el modal PWA**  
+   En `index.html`, actualizar `#sidebar-version` al **siguiente número de versión** (ej. v3.5.1 → v3.6.0).  
+   En `main.js`, actualizar **`PANDI_RELEASE_BLURB`** cumpliendo la subsección **«Novedades al recargar»** arriba: el **agente** redacta `lines` con lo que el usuario verá al recargar; **`versionLabel`** alineado al sidebar.
 
 2. **Actualizar todas las solapas de la bitácora que correspondan** en `scripts/crear-bitacora-excel.js` (revisar cada una y no omitir las que apliquen):
    - **Versiones:** siempre en despliegue. Agregar una fila en el array `versiones` con (Versión, Fecha, Descripción del despliegue). Usar la misma versión que la del sidebar (ej. 1.1 sin la "v"). **Fecha:** usar `__HOY__` (el script la reemplaza por la fecha en Argentina al generar el Excel). Incluir los cambios principales.

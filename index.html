@@ -566,6 +566,7 @@
     /* Modal de confirmación (showConfirm): ajuste al contenido en toda la app */
     #modal-confirm-backdrop .modal,
     .modal.modal-confirm { width: max-content; max-width: min(95vw, 480px); min-width: 200px; }
+    .modal-confirm .modal-body { max-height: min(55vh, 22rem); overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .modal-confirm .modal-confirm-texto { margin: 0; color: #333; line-height: 1.5; white-space: pre-line; }
     .orden-field-editing { box-shadow: 0 0 0 2px #0ea5e9; outline: none; }
     .form-row.dos-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
@@ -1918,7 +1919,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.5.1</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.5.2</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>

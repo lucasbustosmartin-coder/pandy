@@ -66,6 +66,38 @@ function nombreMarcaSistema() {
   return s || MARCA_OPERADOR_DEFAULT_NOMBRE_VISIBLE;
 }
 
+/**
+ * Modal PWA cuando el service worker tiene una versión lista (recarga para aplicarla).
+ * En cada despliegue («ok desplegar»): el agente iguala `versionLabel` a `#sidebar-version` y redacta `lines`
+ * (2–4 frases cortas, español, tono comercial: lo que el usuario nota al recargar; sin tecnicismos de backend en el texto).
+ * Obligatorio salvo release sin cambios visibles; ver `.cursor/rules/bitacora-tareas.mdc` → «Novedades al recargar». Si `lines` está vacío, el modal solo pregunta si recargar.
+ */
+const PANDI_RELEASE_BLURB = {
+  versionLabel: 'v3.5.2',
+  lines: [
+    'G/P Operativa: el total por moneda suma las cuatro filas del cuadro; cada fila tiene su ayuda (qué entra en el período y qué no).',
+    'Título del panel más directo: te remite al signo de pregunta de cada fila para el detalle.',
+    'Las ayudas distinguen dinero en caja y lo que ves desde cuenta corriente en ese resumen.',
+    'El período del panel sigue la semana en Argentina (de lunes a domingo).',
+  ],
+};
+
+function pandiPwaNuevaVersionMensaje() {
+  const v = PANDI_RELEASE_BLURB && PANDI_RELEASE_BLURB.versionLabel != null
+    ? String(PANDI_RELEASE_BLURB.versionLabel).trim()
+    : '';
+  const rawLines = PANDI_RELEASE_BLURB && Array.isArray(PANDI_RELEASE_BLURB.lines) ? PANDI_RELEASE_BLURB.lines : [];
+  const lines = rawLines.map((l) => String(l || '').trim()).filter(Boolean);
+  let body = `Hay una nueva versión de ${nombreMarcaSistema()}`;
+  if (v) body += ` (${v})`;
+  body += '. ¿Recargás ahora para actualizar?';
+  if (lines.length) {
+    body += '\n\nQué hay de nuevo\n';
+    body += lines.map((l) => `• ${l}`).join('\n');
+  }
+  return body;
+}
+
 /** Icono app 192×192: prod (cara clara) o dev/Preview (panda celeste) según `window.PANDI_ICON_192_DEFAULT` en config.js. */
 function pandiIcon192Default() {
   const w = typeof window !== 'undefined' && window.PANDI_ICON_192_DEFAULT;
@@ -24031,14 +24063,12 @@ try {
       let pwaPromptActive = false;
       let pwaReg = null;
       let pwaCheckDebounceTimer = null;
-      const pwaNuevaVersionMsg =
-        'Hay una nueva versión de Pandi. ¿Recargar ahora para actualizar?';
 
       function showPwaUpdateConfirm() {
         if (pwaPromptActive) return;
         pwaPromptActive = true;
         showConfirm(
-          pwaNuevaVersionMsg,
+          pandiPwaNuevaVersionMensaje(),
           'Recargar',
           () => {
             pwaPromptActive = false;
@@ -24048,6 +24078,7 @@ try {
             pwaPromptActive = false;
           },
           'Después',
+          'Nueva versión',
         );
       }
 
