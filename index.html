@@ -1909,7 +1909,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.2</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.3</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -3178,7 +3178,7 @@
                   <label for="orden-importe-cheque" id="orden-label-importe-cheque" class="orden-primeros-datos-label">Importe en Cheque (ARS) *</label>
                   <label for="orden-tasa-descuento-cliente" class="orden-primeros-datos-label">Tasa al Cliente (%) *</label>
                   <div id="orden-wrap-tasa-descuento-intermediario" class="orden-primeros-datos-col3" style="display:none;">
-                    <label for="orden-tasa-descuento-intermediario" class="orden-primeros-datos-label">Tasa del Intermediario (%) * <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Ej. 1,50 = 1,5%. Acepta hasta <strong>cuatro</strong> decimales (p. ej. 1,2345%). En <strong>USD-USD con intermediario</strong>, el % se aplica sobre el <strong>monto a entregar al cliente</strong> (me); la parte del intermediario no puede superar el spread del acuerdo (mr − me). En CHEQUE-ARS, la tasa descontada del intermediario sigue el criterio del acuerdo en ARS (nominal del cheque).</span></span></label>
+                    <label for="orden-tasa-descuento-intermediario" class="orden-primeros-datos-label">Tasa del Intermediario (%) * <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Ej. 1,50 = 1,5%. Acepta hasta <strong>cuatro</strong> decimales (p. ej. 1,2345%). En <strong>USD-USD con intermediario</strong>, el % se aplica sobre el <strong>importe / monto recibido</strong> del acuerdo (mr, mismo nominal que la tasa al cliente); la parte del intermediario no puede superar el spread (mr − me). En CHEQUE-ARS, la tasa descontada del intermediario sigue el criterio del acuerdo en ARS (nominal del cheque).</span></span></label>
                     <input type="text" id="orden-tasa-descuento-intermediario" inputmode="decimal" class="input-importe orden-primeros-datos-input" placeholder="1,2345" autocomplete="off" />
                   </div>
                   <input type="text" id="orden-importe-cheque" inputmode="decimal" class="input-importe orden-primeros-datos-input" placeholder="0" autocomplete="off" />
@@ -3187,12 +3187,12 @@
                 <div id="orden-wrap-usd-nacho-comision-fija" class="orden-usd-nacho-fija-wrap" style="display:none; grid-column:1/-1; margin-top:0.5rem; padding-top:0.65rem; border-top:1px solid #cce0ff;">
                   <div class="orden-usd-nacho-fija-titulo-row" style="display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem 1rem; margin:0 0 0.4rem 0;">
                     <p style="margin:0; font-size:0.88rem; font-weight:600;">Comisión fija del intermediario (USD) *</p>
-                    <button type="button" class="btn-secondary" id="orden-btn-usd-comision-fija-a-tasa-variable" title="Usar porcentaje sobre el monto a entregar al cliente en lugar de los importes fijos" aria-label="Pasar a comisión variable por tasa del intermediario">
+                    <button type="button" class="btn-secondary" id="orden-btn-usd-comision-fija-a-tasa-variable" title="Usar porcentaje sobre el importe recibido del acuerdo en lugar de los importes fijos" aria-label="Pasar a comisión variable por tasa del intermediario">
                       <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg></span>
                       Usar tasa variable
                     </button>
                   </div>
-                  <p style="margin:0 0 0.5rem 0; font-size:0.82rem; color:#1e3a5f;">Los importes fijos se configuran en <strong>Seguridad</strong> (admin). La tasa variable es el mismo % sobre el monto a entregar al cliente que en otros USD-USD con intermediario.</p>
+                  <p style="margin:0 0 0.5rem 0; font-size:0.82rem; color:#1e3a5f;">Los importes fijos se configuran en <strong>Seguridad</strong> (admin). La tasa variable es el mismo % sobre el importe recibido del acuerdo que en otros USD-USD con intermediario.</p>
                   <div class="orden-usd-nacho-fija-opciones" style="display:flex; flex-wrap:wrap; gap:0.75rem 1.25rem; align-items:center;">
                     <label class="orden-int-patron-opcion" style="margin:0;"><input type="radio" name="orden-usd-nacho-comision-usd" value="50" /><span class="orden-usd-comision-fija-text-a">USD 50</span></label>
                     <label class="orden-int-patron-opcion" style="margin:0;"><input type="radio" name="orden-usd-nacho-comision-usd" value="75" /><span class="orden-usd-comision-fija-text-b">USD 75</span></label>

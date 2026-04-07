@@ -6993,6 +6993,13 @@ function ccTransaccionRefParaMovimientoMoneda(transacciones, tIterada, monedaMov
   if (lista.length === 1) return lista[0];
   if (!lista.length) return tIterada;
   lista.sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0));
+  const pag0 = String(tIterada.pagador || '').toLowerCase();
+  const cob0 = String(tIterada.cobrador || '').toLowerCase();
+  const matchPc = lista.find((x) =>
+    String(x.pagador || '').toLowerCase() === pag0 &&
+    String(x.cobrador || '').toLowerCase() === cob0
+  );
+  if (matchPc) return matchPc;
   return lista[0];
 }
 
@@ -15446,7 +15453,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     let montoEntregar;
     if (isUsdUsd && esWizardUsdUsdConIntermediario() && tasaIntVisible) {
       const tasaIntPct = parseImporteInput(tasaIntEl?.value);
-      // La tasa del intermediario es acuerdo Pandy–intermediario: % sobre me (monto a entregar al cliente), reparto en comisiones_orden con tope al spread mr−me.
+      // La tasa del intermediario es acuerdo Pandy–intermediario: % sobre el importe / mr (mismo nominal que la tasa al cliente), reparto en comisiones_orden con tope al spread mr−me.
       if (!(typeof tasaIntPct === 'number' && !isNaN(tasaIntPct) && tasaIntPct > 0 && tasaIntPct < 100)) {
         setRestoOrdenEditable(false);
         if (wrapMontosCalculados) wrapMontosCalculados.style.display = 'none';
@@ -15735,7 +15742,6 @@ function pandiBuildComisionesOrdenOutboxRows(ctx) {
     nachoComisionFijaRadio,
     usdIntMostrarTasa,
     tasaIntermediarioPct,
-    montoEntregadoUsd,
   } = ctx;
   const comisionUsdN = comisionUsd != null && !isNaN(Number(comisionUsd)) ? Math.max(0, Number(comisionUsd)) : 0;
   const comisionMoneda = esChequeArsOrden ? 'ARS' : 'USD';
@@ -15762,11 +15768,17 @@ function pandiBuildComisionesOrdenOutboxRows(ctx) {
       const fija = Number(nachoComisionFijaRadio) || 0;
       montoInter = fija;
       montoPandy = comisionUsdN - fija;
-    } else if (usdIntMostrarTasa && typeof montoEntregadoUsd === 'number' && !isNaN(montoEntregadoUsd) && montoEntregadoUsd > 0 && tasaIntermediarioPct != null && typeof tasaIntermediarioPct === 'number' && !isNaN(tasaIntermediarioPct)) {
+    } else if (usdIntMostrarTasa && tasaIntermediarioPct != null && typeof tasaIntermediarioPct === 'number' && !isNaN(tasaIntermediarioPct)) {
+      const montoRecibidoUsdSnap = Number((ctx.ordenSnap || {}).monto_recibido) || 0;
+      if (!(montoRecibidoUsdSnap > 0)) {
+        montoPandy = comisionUsdN;
+        montoInter = 0;
+      } else {
       const totalCom = comisionUsdN;
-      const brutoInter = montoEntregadoUsd * (tasaIntermediarioPct / 100);
+      const brutoInter = montoRecibidoUsdSnap * (tasaIntermediarioPct / 100);
       montoInter = Math.min(Math.max(0, brutoInter), Math.max(0, totalCom));
       montoPandy = Math.max(0, totalCom - montoInter);
+      }
     } else {
       montoPandy = comisionUsdN;
       montoInter = 0;
@@ -15885,7 +15897,7 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
     const rawUsdT = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
     const tUsdInt = rawUsdT ? parseImporteInput(rawUsdT) : null;
     if (typeof tUsdInt !== 'number' || isNaN(tUsdInt) || tUsdInt <= 0 || tUsdInt >= 100) {
-      return { error: 'En USD-USD con intermediario completá la tasa del intermediario (%, sobre el monto a entregar al cliente).' };
+      return { error: 'En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe / monto recibido del acuerdo).' };
     }
   }
   const errTrTCola = ordenValidarTasaTransferenciaIntermediarioSegunDom();
@@ -15942,7 +15954,6 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
     nachoComisionFijaRadio: nNach ? Number(nNach.value) : null,
     usdIntMostrarTasa: !!(tipoCodigoU === 'USD-USD' && intermediarioId && ordenUsdIntMostrarTasaIntermediarioEnWizard()),
     tasaIntermediarioPct: tasaDescuentoIntPct ? parseImporteInput(tasaDescuentoIntPct) : null,
-    montoEntregadoUsd: montoEntregado,
     patronInstrumentacionInt: getOrdenPatronInstrumentacionInt(),
     ordenSnap: {
       moneda_recibida: monedaRecibida,
@@ -16146,7 +16157,7 @@ function guardarOrdenDesdeWizard() {
     const rawUsdT = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
     const tUsdInt = rawUsdT ? parseImporteInput(rawUsdT) : null;
     if (typeof tUsdInt !== 'number' || isNaN(tUsdInt) || tUsdInt <= 0 || tUsdInt >= 100) {
-      showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el monto a entregar al cliente).', 'error');
+      showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe / monto recibido del acuerdo).', 'error');
       return Promise.resolve(null);
     }
   }
@@ -16252,11 +16263,11 @@ function guardarOrdenDesdeWizard() {
             montoInter = fija;
             montoPandy = comisionUsdNum - fija;
             persistirPreferenciaComisionFijaInterUsd(fija);
-          } else if (ordenUsdIntMostrarTasaIntermediarioEnWizard() && typeof montoEntregado === 'number' && !isNaN(montoEntregado) && montoEntregado > 0) {
+          } else if (ordenUsdIntMostrarTasaIntermediarioEnWizard() && typeof montoRecibido === 'number' && !isNaN(montoRecibido) && montoRecibido > 0) {
             const tI = parseImporteInput(document.getElementById('orden-tasa-descuento-intermediario')?.value);
             if (typeof tI === 'number' && !isNaN(tI)) {
               const totalCom = comisionUsdNum;
-              const brutoInter = montoEntregado * (tI / 100);
+              const brutoInter = montoRecibido * (tI / 100);
               montoInter = Math.min(Math.max(0, brutoInter), Math.max(0, totalCom));
               montoPandy = Math.max(0, totalCom - montoInter);
             } else {
@@ -16770,7 +16781,7 @@ function saveOrden() {
     const rawUsdTs = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
     const tUsdInts = rawUsdTs ? parseImporteInput(rawUsdTs) : null;
     if (typeof tUsdInts !== 'number' || isNaN(tUsdInts) || tUsdInts <= 0 || tUsdInts >= 100) {
-      showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el monto a entregar al cliente).', 'error');
+      showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe / monto recibido del acuerdo).', 'error');
       return;
     }
   }
@@ -16891,11 +16902,11 @@ function saveOrden() {
               montoInter = fija;
               montoPandy = comisionUsdNumSave - fija;
               persistirPreferenciaComisionFijaInterUsd(fija);
-            } else if (ordenUsdIntMostrarTasaIntermediarioEnWizard() && typeof montoEntregado === 'number' && !isNaN(montoEntregado) && montoEntregado > 0) {
+            } else if (ordenUsdIntMostrarTasaIntermediarioEnWizard() && typeof montoRecibido === 'number' && !isNaN(montoRecibido) && montoRecibido > 0) {
               const tI = parseImporteInput(document.getElementById('orden-tasa-descuento-intermediario')?.value);
               if (typeof tI === 'number' && !isNaN(tI)) {
                 const totalCom = comisionUsdNumSave;
-                const brutoInter = montoEntregado * (tI / 100);
+                const brutoInter = montoRecibido * (tI / 100);
                 montoInter = Math.min(Math.max(0, brutoInter), Math.max(0, totalCom));
                 montoPandy = Math.max(0, totalCom - montoInter);
               } else {
@@ -17893,12 +17904,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId) {
           const comisionInt = comisiones.find((c) => String(c.beneficiario || '').toLowerCase() === 'intermediario');
           let comisionIntMonto = comisionInt ? Number(comisionInt.monto) || 0 : 0;
           let comisionIntMon = (comisionInt && comisionInt.moneda) ? comisionInt.moneda.toUpperCase() : 'ARS';
-          // Sin fila en comisiones_orden pero hay tasa_descuento_intermediario: derivar comisión int. — USD-USD = % sobre me (monto entregado al cliente), tope spread mr−me; resto de tipos (p. ej. CHEQUE) = mr * tasa.
+          // Sin fila en comisiones_orden pero hay tasa_descuento_intermediario: derivar comisión int. — USD-USD = % sobre mr (importe / monto recibido del acuerdo, misma base que la tasa al cliente), tope spread mr−me; resto de tipos (p. ej. CHEQUE) = mr * tasa.
           // Con comisión fija parametrizada **solo en cp_ic** (esUsdUsdInterComisionFijaSync) no usar tasa ni duplicar con inferencia 50/75; en **ci_pc** siempre se permite inferencia por tasa aunque el intermediario esté en Seguridad para fija en cp_ic.
           if (intermediarioId && comisionIntMonto < 1e-6 && !esUsdUsdInterComisionFijaSync && typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1 && tasa > 1e-12 && mr >= 1e-6) {
-            if (codNorm === 'USD-USD' && me >= 1e-6) {
+            if (codNorm === 'USD-USD' && mr >= 1e-6) {
               const spInf = mr - me;
-              const brutoInf = me * tasa;
+              const brutoInf = mr * tasa;
               comisionIntMonto = Math.min(Math.max(0, brutoInf), Math.max(0, spInf));
             } else {
               comisionIntMonto = mr * tasa;

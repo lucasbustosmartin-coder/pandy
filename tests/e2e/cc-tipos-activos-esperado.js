@@ -131,9 +131,9 @@ const COMBINACIONES_USD_USD = COMBINACIONES_USD_USD_RAW.map(withSeedCajaTipo2tx)
 /**
  * USD-USD con intermediario: mismas expectativas **cliente** / detalle que sin int (`reglas_de_negocio` cliente + mr_menos_me).
  * **Caja:** con patrón cp_ic (Tx2 = Intermediario→Cliente), el egreso del intermediario **no** mueve la caja de Pandy; solo cuenta el ingreso Cliente→Pandy cuando está ejecutado (E,E → +mr; P,E → 0; E,P → +mr).
- * CC intermediario (**cp_ic**): saldo USD = −(me + parte comisión int.) con **E,E** o **P,E** (Int→Cliente ejecutado aunque C→P pendiente). E2E: tasa intermediario 1,5% **sobre me** (4982) → comisión int. = 75.
+ * CC intermediario (**cp_ic**): saldo USD = −(me + parte comisión int.) con **E,E** o **P,E** (Int→Cliente ejecutado aunque C→P pendiente). E2E: tasa intermediario 1,5% **sobre mr** (5300) → comisión int. = 80.
  */
-const COMISION_USD_USD_INT_INTERMEDIARIO = Math.round(USD_USD_FIJOS.me * 0.015);
+const COMISION_USD_USD_INT_INTERMEDIARIO = Math.round(USD_USD_FIJOS.mr * 0.015);
 /** Negativo en resumen = Pandy debe al intermediario (suma movimientos CC int). */
 const SALDO_INT_USD_USD_EE = -(USD_USD_FIJOS.me + COMISION_USD_USD_INT_INTERMEDIARIO);
 const COMBINACIONES_USD_USD_INT = COMBINACIONES_USD_USD.map((c) => {

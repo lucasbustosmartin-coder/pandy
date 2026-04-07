@@ -114,9 +114,11 @@ INSERT INTO public.reglas_de_negocio (
   ('USD-ARS', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'USD', 1, 'mr', true, 'cobro_realizado'),
   ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'ARS', 1, 'me', true, 'compromiso_cobrar'),
   ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 1, 'USD', 1, 'mr', true, 'compromiso_cobrar'),
-  -- P,E: ingreso pendiente aporta +me ARS (compromiso_cobrar); egreso ejecutado con contrapartida false debe −me para anular. E,E: ingreso ejecutado aporta −me en cobro_realizado; esta misma fila no aplica (va la de contrapartida true con signo +1).
-  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'me', true, 'compromiso_pago'),
-  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'me', true, 'compromiso_pago')
+  -- P,E: ingreso pendiente aporta +me ARS (compromiso_cobrar); egreso ejecutado con contrapartida false → solo línea −monto_transaccion (anula compromiso pendiente del ingreso).
+  -- E,E: ingreso cliente (C→Inter en ci_pc, o C→P en otros patrones) ya ejecutado → contrapartida true en egreso P→C; hace falta par +/− monto_transaccion en ARS (como egreso Inter→Cliente). Sin linea=1 −1 el motor solo aplicaba linea=0 +1 y quedaba saldo abierto. Varios egresos P→C: una vuelta del motor por trx → (+m_i −m_i) por cada una.
+  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc,
   pagador, cobrador, tipo_transaccion, es_comision,
@@ -203,9 +205,10 @@ INSERT INTO public.reglas_de_negocio (
   ('ARS-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'ARS', 1, 'mr', true, 'cobro_realizado'),
   ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'USD', 1, 'me', true, 'compromiso_cobrar'),
   ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 1, 'ARS', 1, 'mr', true, 'compromiso_cobrar'),
-  -- Espejo USD-ARS+int: P,E anula +me USD pendiente con −me en egreso (solo contrapartida false).
-  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'me', true, 'compromiso_pago'),
-  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'me', true, 'compromiso_pago')
+  -- Espejo USD-ARS+int: P,E − solo false; E,E par +/− en moneda entregada (USD).
+  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc,
   pagador, cobrador, tipo_transaccion, es_comision,

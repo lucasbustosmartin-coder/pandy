@@ -75,6 +75,8 @@ const BOOTSTRAP_FILES = [
   'migracion_tipos_operacion_orden_visual.sql',
   'migracion_tipos_operacion_icono.sql',
   'reglas_de_negocio_tabla.sql',
+  'migracion_reglas_ci_pc_egreso_pandy_monto_transaccion.sql',
+  'migracion_reglas_ci_pc_egreso_pandy_ee_linea1_negativo.sql',
   'migracion_reglas_comision_intermediario_cruces_tc.sql',
   'migracion_permiso_abm_reglas_negocio.sql',
   'migracion_transaccion_revertida_una_vez.sql',

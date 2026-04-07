@@ -1159,7 +1159,7 @@ test.describe('Orden USD-USD con intermediario, tasas duales y CC', () => {
       await page.locator('input[name="orden-int-patron-radio"][value="cp_ic"]').check();
       await expect(page.locator('#orden-wrap-detalles-tras-patron')).toBeVisible({ timeout: 5000 });
 
-      // Montos: me = importe × (1 − tasaCliente/100); tasa intermediario % sobre me, tope mr−me. 6% sobre mr 5000 → me=4700; 3% sobre me → 141 al int.
+      // Montos: me = importe × (1 − tasaCliente/100); tasa intermediario % sobre mr (importe), tope mr−me. 6% sobre 5000 → me=4700; 3% sobre mr → 150 al int.
       await page.locator('#orden-importe-cheque').fill('5000');
       await page.locator('#orden-tasa-descuento-cliente').fill('6');
       await page.locator('#orden-tasa-descuento-intermediario').fill('3');
@@ -1171,7 +1171,7 @@ test.describe('Orden USD-USD con intermediario, tasas duales y CC', () => {
       const meEsperado = 5000 * (1 - 0.06);
       expect(Math.abs(mrNum - 5000) < 1 && Math.abs(meNum - meEsperado) < 1, `Esperado mr≈5000 me≈${meEsperado}; obtenido mr=${mrNum} me=${meNum}`).toBe(true);
 
-      const comisionInterEsperada = Math.round(meNum * 0.03);
+      const comisionInterEsperada = Math.round(mrNum * 0.03);
 
       await page.locator('#orden-btn-ir-instrumentacion').click();
       await expect(page.locator('#orden-step-instrumentacion')).toBeVisible({ timeout: 15000 });
