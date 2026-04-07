@@ -7636,7 +7636,7 @@ function pushMcClienteRow(rowsCcCliente, cid, ordenId, fecha, ahora, partial) {
 /**
  * Multicontraparte manual: CC **solo** si hay al menos una transacción ejecutada; si todas pendientes, ningún movimiento CC.
  * Cliente del acuerdo frente a Pandy: ingresos ARS pendientes (pagador = acuerdo) → −m; ingreso ejecutado acuerdo→otro cliente → par −m/+m (no cambia obligación neta con Pandy) + línea +m al cobrador tercero;
- * ingreso ejecutado acuerdo→Pandy: −m (cobro realizado) +m (ajuste libro acuerdo), mismo criterio de neteo en el libro del acuerdo que el pago a tercero;
+ * ingreso ejecutado acuerdo→Pandy: −m (Cobro realizado) +m (Ajuste libro acuerdo) en CC del acuerdo — **netea en cero** esa pata para no duplicar saldo frente a la instrumentación; el otro ingreso USD (p. ej. Pandy→acuerdo) queda como **+m** y define el saldo neto (p. ej. 300 a favor de Pandy);
  * egreso en moneda entregada pendiente a favor del acuerdo → +m (entrega pendiente, p. ej. USD);
  * egreso ejecutado con cobrador = cliente del acuerdo en monE (pagador Pandy u otro cliente): −m (Pago realizado) +m (ajuste libro acuerdo) en CC del acuerdo; si pagador es otro cliente, también −m (Cobro realizado) en su CC.
  * Resto de clientes y egresos/ingresos ejecutados: movimientos por entidad. Intermediario: delega en aplicarCcMulticontraparteManualTrx.

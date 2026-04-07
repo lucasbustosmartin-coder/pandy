@@ -4,9 +4,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.5.8',
+  versionLabel: 'v3.5.9',
   lines: [
-    'Instrumentación manual multicontraparte disponible en todos los tipos de operación (N pagos y contrapartes explícitas).',
-    'Al cerrar el acuerdo en ese modo, los totales cuentan todos los ingresos en moneda recibida y todos los egresos en moneda entregada, también si Pandy figura como pagador en un ingreso.',
+    'Multicontraparte manual: el ingreso del acuerdo hacia Pandy en moneda recibida vuelve a registrar el par Cobro realizado y Ajuste libro que netean en cero en la cuenta del cliente del acuerdo, para que el saldo en USD no sume de más frente a otra pata del mismo acuerdo.',
+    'Re-sincronizá las órdenes multicontraparte afectadas para regenerar movimientos de cuenta corriente.',
   ],
 };
