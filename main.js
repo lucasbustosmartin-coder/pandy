@@ -4750,6 +4750,16 @@ function getMontosMovimientoCcResumen(m) {
   };
 }
 
+/**
+ * Saldo en tarjetas (Resumen CC, modal detalle, totales pestaña Movimientos): solo movimientos **cerrados**.
+ * No suman al saldo: **anulado** y **pendiente** (siguen listados en tablas; `ccPendientePorMonedaDesdeMovs` marca monedas con compromisos pendientes).
+ */
+function ccMovimientoIncluirEnSaldoResumen(m) {
+  const e = (m && m.estado != null ? String(m.estado) : '').toLowerCase().trim();
+  if (e === 'anulado' || e === 'pendiente') return false;
+  return true;
+}
+
 /** True por moneda si hay al menos un movimiento en estado pendiente con monto en esa moneda. */
 function ccPendientePorMonedaDesdeMovs(movs) {
   const f = { USD: false, EUR: false, ARS: false };
@@ -8621,7 +8631,7 @@ function loadCuentaCorriente(opts) {
       function sumMovsPorMoneda(movs) {
         const acc = { USD: 0, EUR: 0, ARS: 0 };
         (movs || []).forEach((m) => {
-          if ((m.estado || '').toString().toLowerCase() === 'anulado') return;
+          if (!ccMovimientoIncluirEnSaldoResumen(m)) return;
           const has = m.monto_usd != null || m.monto_ars != null || m.monto_eur != null;
           if (has) {
             acc.USD += Number(m.monto_usd) || 0;
@@ -8803,12 +8813,12 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     };
   }
   /**
-   * Saldo CC resumen: suma algebraica por moneda de todos los movimientos no anulados (igual criterio que la lista Movimientos).
+   * Saldo CC resumen: suma algebraica por moneda de movimientos **cerrados** (excluye anulado y pendiente).
    */
   function saldosDesdeMovimientosPorOrden(movs) {
     const acc = { USD: 0, EUR: 0, ARS: 0 };
     (movs || []).forEach((m) => {
-      if ((m.estado || '').toString().toLowerCase() === 'anulado') return;
+      if (!ccMovimientoIncluirEnSaldoResumen(m)) return;
       const montos = getMontosPorMoneda(m);
       acc.USD += montos.USD;
       acc.ARS += montos.ARS;
@@ -9140,7 +9150,7 @@ function aplicarFiltroCcResumen() {
   if (rangoWrap) rangoWrap.style.display = 'none';
   if (contenidoEl) contenidoEl.style.display = 'block';
   if (detalleWrap) detalleWrap.style.display = 'none';
-  // Resumen: solo filas con saldo ≠ 0 (saldo = suma movimientos no anulados).
+  // Resumen: solo filas con saldo ≠ 0 (saldo = suma movimientos cerrados; sin pendiente ni anulado).
   const EPSILON_SALDO = 1e-6;
   const conSaldo = (r) => Math.abs(Number(r.saldos.USD) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.EUR) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.ARS) || 0) >= EPSILON_SALDO;
   const filtrados = ccResumenRowsTodos.filter((r) => r.tipo === ccFiltroTipo).filter(conSaldo);
@@ -9481,7 +9491,7 @@ function compromisoDesdeOrdenes(ordenes, entityId, campoId) {
   return comp;
 }
 
-/** Devuelve Promise<{ movimientos, saldos, ordenes, pendienteClasePorMoneda }>. Saldos = suma de movimientos no anulados (coherente con resumen CC). */
+/** Devuelve Promise<{ movimientos, saldos, ordenes, pendienteClasePorMoneda }>. Saldos = suma de movimientos cerrados (excluye anulado y pendiente; coherente con resumen CC). */
 function fetchMovimientosCcPorEntidad(tipo, entityId) {
   const campoId = tipo === 'cliente' ? 'cliente_id' : 'intermediario_id';
   const tablaMov = tipo === 'cliente' ? 'movimientos_cuenta_corriente' : 'movimientos_cuenta_corriente_intermediario';
@@ -9561,10 +9571,9 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
       });
       return { trById, orderHasEjecutada, trTipoById, trPagadorById, trCobradorById, transaccionesByOrdenId, trParticipanteIdsByTrx, trRowById };
     }).then(({ trById, orderHasEjecutada, trTipoById, trPagadorById, trCobradorById, transaccionesByOrdenId, trParticipanteIdsByTrx, trRowById }) => {
-      // Saldo modal detalle: suma de todos los movimientos no anulados (misma lógica que resumen CC).
+      // Saldo modal detalle: solo cerrados (misma lógica que resumen CC).
       function incluirEnSaldo(m) {
-        if ((m.estado || '').toString().toLowerCase() === 'anulado') return false;
-        return true;
+        return ccMovimientoIncluirEnSaldoResumen(m);
       }
       const sumAll = { USD: 0, EUR: 0, ARS: 0 };
       movimientos.forEach((m) => {
@@ -9881,6 +9890,7 @@ function renderCcTable() {
 
   const totals = { USD: { debe: 0, haber: 0 }, EUR: { debe: 0, haber: 0 }, ARS: { debe: 0, haber: 0 } };
   filtrados.forEach((m) => {
+    if (!ccMovimientoIncluirEnSaldoResumen(m)) return;
     const n = Number(m.monto);
     const mon = m.moneda;
     if (totals[mon]) {

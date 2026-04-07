@@ -29,6 +29,10 @@
 - Así, si una pata está ejecutada y la otra pendiente, el saldo refleja la exposición que queda por moneda. Cuando la orden pasa a ejecutada, deja de sumar al compromiso y su cierre queda reflejado solo en movimientos.
 - En el detalle de CC (modal) se muestra la sección **Operaciones que participan del saldo**: listado de órdenes que aportan al compromiso (fecha, orden, monedas y montos, estado).
 
+### Tarjetas de saldo en la app (Resumen, modal, totales)
+
+- En **Saldos** (grilla por cliente/intermediario), en el **modal «Detalle de movimientos»** (tarjetas USD/ARS/EUR arriba) y en los **totales** de la pestaña **Movimientos** de CC, el importe por moneda es la **suma algebraica solo de movimientos en estado `cerrado`**. **No** entran al saldo los movimientos **`pendiente`** ni **`anulado`** (siguen visibles en las tablas de detalle). Las monedas con líneas pendientes se marcan aparte (`pendienteEnMoneda` / leyendas de clase de pendiente). Implementación: `ccMovimientoIncluirEnSaldoResumen` en `main.js`.
+
 ## Resumen
 
 | Acción | Cuenta corriente | Caja/Bancos |
