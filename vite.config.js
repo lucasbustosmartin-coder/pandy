@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import dotenv from 'dotenv';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -105,6 +105,11 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallback: '/index.html',
         runtimeCaching: [
+          /** Novedades de versión: siempre red (el bundle JS puede estar viejo por el SW; el JSON trae el texto del despliegue actual). */
+          {
+            urlPattern: /^https?:\/\/[^/]+\/pandi-release\.json$/i,
+            handler: 'NetworkOnly',
+          },
           {
             urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/.*/i,
             handler: 'NetworkFirst',
@@ -138,7 +143,7 @@ export default defineConfig({
     },
     {
       name: 'copy-assets-and-config',
-      closeBundle() {
+      async closeBundle() {
         const dist = path.join(__dirname, 'dist');
         copyDirSync(path.join(__dirname, 'assets'), path.join(dist, 'assets'));
         const cfg = path.join(__dirname, 'config.js');
@@ -155,6 +160,18 @@ export default defineConfig({
           fs.copyFileSync(touchSrc, touchDest);
         } else {
           console.warn('[copy-assets] Falta', touchSrc, '— ejecutá npm run assets:dev-favicon');
+        }
+        try {
+          const blurHref = pathToFileURL(path.join(__dirname, 'pandi-release-blurb.js')).href;
+          const mod = await import(`${blurHref}?t=${Date.now()}`);
+          if (mod.PANDI_RELEASE_BLURB) {
+            fs.writeFileSync(
+              path.join(dist, 'pandi-release.json'),
+              JSON.stringify(mod.PANDI_RELEASE_BLURB),
+            );
+          }
+        } catch (e) {
+          console.warn('[pandi-release.json]', e && e.message ? e.message : e);
         }
       },
     },

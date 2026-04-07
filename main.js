@@ -1,4 +1,5 @@
 import { formatMonto, formatImporteDisplay, formatTasaPorcentajeDisplay, formatNumeroComaHastaDecimales, formatImporteParaInput, formatearCeldaMoneda, formatearCeldaMonedaConSigno, htmlTipoOperacionIconos, htmlIconoMonedaTipoOp, isHttpsUrlSegura } from './utils.js';
+import { PANDI_RELEASE_BLURB } from './pandi-release-blurb.js';
 import {
   openPandiOfflineDb,
   idbOrdenesQueueGetAll,
@@ -67,26 +68,15 @@ function nombreMarcaSistema() {
 }
 
 /**
- * Modal PWA cuando el service worker tiene una versión lista (recarga para aplicarla).
- * En cada despliegue («ok desplegar»): el agente iguala `versionLabel` a `#sidebar-version` y redacta `lines`
- * (2–4 frases cortas, español, tono comercial: lo que el usuario nota al recargar; sin tecnicismos de backend en el texto).
- * Obligatorio salvo release sin cambios visibles; ver `.cursor/rules/bitacora-tareas.mdc` → «Novedades al recargar». Si `lines` está vacío, el modal solo pregunta si recargar.
+ * Modal PWA / navegador cuando hay una versión lista (recarga para aplicarla).
+ * Texto de novedades: `pandi-release-blurb.js` (export `PANDI_RELEASE_BLURB`); en producción el aviso usa
+ * `fetch('/pandi-release.json')` para mostrar las novedades del despliegue actual aunque el JS en caché sea viejo.
+ * Despliegue: ver `.cursor/rules/bitacora-tareas.mdc` → «Novedades al recargar».
  */
-const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.5.2',
-  lines: [
-    'G/P Operativa: el total por moneda suma las cuatro filas del cuadro; cada fila tiene su ayuda (qué entra en el período y qué no).',
-    'Título del panel más directo: te remite al signo de pregunta de cada fila para el detalle.',
-    'Las ayudas distinguen dinero en caja y lo que ves desde cuenta corriente en ese resumen.',
-    'El período del panel sigue la semana en Argentina (de lunes a domingo).',
-  ],
-};
-
-function pandiPwaNuevaVersionMensaje() {
-  const v = PANDI_RELEASE_BLURB && PANDI_RELEASE_BLURB.versionLabel != null
-    ? String(PANDI_RELEASE_BLURB.versionLabel).trim()
-    : '';
-  const rawLines = PANDI_RELEASE_BLURB && Array.isArray(PANDI_RELEASE_BLURB.lines) ? PANDI_RELEASE_BLURB.lines : [];
+function pandiPwaNuevaVersionMensajeDesdeBlurb(blurb) {
+  const b = blurb && typeof blurb === 'object' ? blurb : PANDI_RELEASE_BLURB;
+  const v = b && b.versionLabel != null ? String(b.versionLabel).trim() : '';
+  const rawLines = b && Array.isArray(b.lines) ? b.lines : [];
   const lines = rawLines.map((l) => String(l || '').trim()).filter(Boolean);
   let body = `Hay una nueva versión de ${nombreMarcaSistema()}`;
   if (v) body += ` (${v})`;
@@ -96,6 +86,24 @@ function pandiPwaNuevaVersionMensaje() {
     body += lines.map((l) => `• ${l}`).join('\n');
   }
   return body;
+}
+
+function pandiPwaNuevaVersionMensaje() {
+  return pandiPwaNuevaVersionMensajeDesdeBlurb(PANDI_RELEASE_BLURB);
+}
+
+/** Novedades desde el servidor (JSON no precacheado) para el modal antes de recargar; fallback al blurb embebido. */
+async function pandiPwaNuevaVersionMensajeParaPrompt() {
+  try {
+    const r = await fetch('/pandi-release.json', { cache: 'no-store', credentials: 'same-origin' });
+    if (r.ok) {
+      const j = await r.json();
+      if (j && typeof j === 'object') return pandiPwaNuevaVersionMensajeDesdeBlurb(j);
+    }
+  } catch (_) {
+    /* sin red o error */
+  }
+  return pandiPwaNuevaVersionMensaje();
 }
 
 /** Icono app 192×192: prod (cara clara) o dev/Preview (panda celeste) según `window.PANDI_ICON_192_DEFAULT` en config.js. */
@@ -24064,11 +24072,12 @@ try {
       let pwaReg = null;
       let pwaCheckDebounceTimer = null;
 
-      function showPwaUpdateConfirm() {
+      async function showPwaUpdateConfirm() {
         if (pwaPromptActive) return;
         pwaPromptActive = true;
+        const msg = await pandiPwaNuevaVersionMensajeParaPrompt();
         showConfirm(
-          pandiPwaNuevaVersionMensaje(),
+          msg,
           'Recargar',
           () => {
             pwaPromptActive = false;
@@ -24089,7 +24098,7 @@ try {
         } catch (_) {
           /* sin red o SW no disponible */
         }
-        if (pwaReg.waiting) showPwaUpdateConfirm();
+        if (pwaReg.waiting) void showPwaUpdateConfirm();
       }
 
       function schedulePwaUpdateCheck() {
@@ -24102,7 +24111,7 @@ try {
 
       const applyPwaUpdate = registerSW({
         onNeedRefresh() {
-          showPwaUpdateConfirm();
+          void showPwaUpdateConfirm();
         },
         onOfflineReady() {
           showToast(

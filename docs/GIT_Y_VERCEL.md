@@ -65,7 +65,7 @@ La URL “fea” que cambia en cada `npx vercel --yes` sigue existiendo en **Dep
 
 ## 4. Despliegue manual
 
-Antes del push en el flujo «ok desplegar»: subir versión en `index.html` (`#sidebar-version`), y en `main.js` el objeto **`PANDI_RELEASE_BLURB`** (texto breve y comercial de novedades para el modal PWA; detalle en la regla **bitácora-tareas**).
+Antes del push en el flujo «ok desplegar»: subir versión en `index.html` (`#sidebar-version`), y en **`pandi-release-blurb.js`** el objeto **`PANDI_RELEASE_BLURB`** (el build genera **`pandi-release.json`** en `dist/` para que el modal lea novedades por red; detalle en **bitácora-tareas**).
 
 Después de push a `main`, desde la raíz:
 
