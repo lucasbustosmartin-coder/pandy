@@ -1,10 +1,10 @@
--- Instrumentación manual multicontraparte (ARS-USD / USD-ARS sin intermediario).
+-- Instrumentación manual multicontraparte (flag por instrumentación; en app aplica a todos los tipos de operación con orden tipada).
 -- Ejecutar en Supabase SQL Editor después de las migraciones base de transacciones/instrumentación.
 
 ALTER TABLE public.instrumentacion
   ADD COLUMN IF NOT EXISTS multicontraparte_manual boolean NOT NULL DEFAULT false;
 
-COMMENT ON COLUMN public.instrumentacion.multicontraparte_manual IS 'Si true: CC/caja para esta orden no usa motor reglas_de_negocio; aplica regla extendida por transacción + cierre (N pagos, contrapartes Cliente/Intermediario explícitas). Solo ARS-USD/USD-ARS sin int.';
+COMMENT ON COLUMN public.instrumentacion.multicontraparte_manual IS 'Si true: CC/caja para esta orden no usa motor reglas_de_negocio; aplica regla extendida por transacción + cierre (N pagos, contrapartes Cliente/Intermediario explícitas). Alcance de elegibilidad definido en la app (todos los tipos de operación con tipo cargado).';
 
 ALTER TABLE public.transacciones
   ADD COLUMN IF NOT EXISTS pagador_cliente_id uuid REFERENCES public.clientes(id) ON DELETE SET NULL,

@@ -4,9 +4,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.5.7',
+  versionLabel: 'v3.5.8',
   lines: [
-    'G/P Operativa: el ojo junto a cada moneda aparece cuando el importe es distinto de cero, también si es negativo (misma alineación que antes).',
-    'El desglose por fila en el modal usa el mismo criterio en los totales por moneda.',
+    'Instrumentación manual multicontraparte disponible en todos los tipos de operación (N pagos y contrapartes explícitas).',
+    'Al cerrar el acuerdo en ese modo, los totales cuentan todos los ingresos en moneda recibida y todos los egresos en moneda entregada, también si Pandy figura como pagador en un ingreso.',
   ],
 };

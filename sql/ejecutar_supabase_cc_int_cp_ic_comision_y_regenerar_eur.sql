@@ -44,11 +44,9 @@ INSERT INTO public.reglas_de_negocio (
 ) VALUES
   ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('ARS-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('ARS-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,

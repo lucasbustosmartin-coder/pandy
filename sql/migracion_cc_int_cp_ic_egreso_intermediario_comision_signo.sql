@@ -24,14 +24,12 @@ INSERT INTO public.reglas_de_negocio (
   estado_transaccion, contrapartida_ejecutada, linea,
   moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
 ) VALUES
-  ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  -- USD-USD+int y cruces USD-ARS / ARS-USD: P,E en CC intermediario = una sola línea −me (linea 0); ver migracion_reglas_cp_ic_int_pe_intermediario_una_sola_linea_negativa.sql
+  ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('ARS-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('ARS-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
