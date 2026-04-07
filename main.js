@@ -6008,7 +6008,7 @@ function pandiHtmlGpDetalleTfootDesdeContexto(rows, ctx) {
     let eyeCol;
     if (!ojosMoneda) {
       eyeCol = '<span class="gp-detalle-tfoot-eye-placeholder" aria-hidden="true"></span>';
-    } else if (v > 1e-12) {
+    } else if (hasNum) {
       eyeCol =
         '<span class="gp-detalle-tfoot-eye-col">' +
         inicioGpHtmlBotonVerDetalleMovimientos(bolsaKey, 'Ver solo movimientos en ' + m, { moneda: m }) +
@@ -6048,16 +6048,15 @@ function pandiHtmlGpDetalleSeccionConsolidado(allRows) {
     const hasNum = Math.abs(v) >= 1e-12;
     const cls = inicioGpClaseSigno(v);
     const montoStr = hasNum ? escapeHtml(formatMonto(v, m)) : '–';
-    const eyeCol =
-      v > 1e-12
-        ? '<span class="gp-detalle-tfoot-eye-col">' +
-          inicioGpHtmlBotonVerDetalleMovimientos(
-            '__all__',
-            'Ver movimientos en ' + m + ' (todas las filas)',
-            { moneda: m },
-          ) +
-          '</span>'
-        : '<span class="gp-detalle-tfoot-eye-placeholder" aria-hidden="true"></span>';
+    const eyeCol = hasNum
+      ? '<span class="gp-detalle-tfoot-eye-col">' +
+        inicioGpHtmlBotonVerDetalleMovimientos(
+          '__all__',
+          'Ver movimientos en ' + m + ' (todas las filas)',
+          { moneda: m },
+        ) +
+        '</span>'
+      : '<span class="gp-detalle-tfoot-eye-placeholder" aria-hidden="true"></span>';
     return (
       '<div class="gp-detalle-tfoot-moneda-block">' +
       '<span class="gp-detalle-tfoot-moneda-codigo">' +
@@ -6344,7 +6343,7 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
     let ojoInner;
     if (esTotalFila) {
       ojoInner = '<span class="inicio-gp-matriz-ojo-placeholder" aria-hidden="true"></span>';
-    } else if (num > 1e-12 && bolsaKeyDetalle) {
+    } else if (Math.abs(num) > 1e-12 && bolsaKeyDetalle) {
       ojoInner = inicioGpHtmlBotonVerDetalleMovimientos(bolsaKeyDetalle, 'Ver movimientos en ' + mon, {
         moneda: mon,
       });
