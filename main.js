@@ -3964,10 +3964,24 @@ function htmlCcAccionesMovimientoManualRow(m) {
 }
 
 function ccBuscarMovimientoDetallePorIdTipo(id, tipo) {
+  const idStr = String(id);
   const list = ccMovimientosDetalleList || [];
-  const m = list.find((x) => String(x.id) === String(id) && x.tipo === tipo);
+  let m = list.find((x) => String(x.id) === idStr && x.tipo === tipo);
   if (m) return m;
-  const alt = (ccMovimientosList || []).find((x) => String(x.id) === String(id));
+  // Modal «Ver detalle»: la tabla usa ccDetalleMovimientosList (fetch por entidad), no siempre presente en la lista global del resumen ni en ccMovimientosList (solo pestaña Movimientos de una entidad).
+  const listModal = ccDetalleMovimientosList || [];
+  m = listModal.find((x) => String(x.id) === idStr);
+  if (m && m.es_movimiento_manual) {
+    const rowTipo =
+      m.tipo === 'intermediario' || m.tipo === 'cliente'
+        ? m.tipo
+        : ccDetalleTipo === 'intermediario'
+          ? 'intermediario'
+          : 'cliente';
+    if (rowTipo !== tipo) return null;
+    return m.tipo === 'intermediario' || m.tipo === 'cliente' ? m : { ...m, tipo: rowTipo };
+  }
+  const alt = (ccMovimientosList || []).find((x) => String(x.id) === idStr);
   if (!alt || !alt.es_movimiento_manual) return null;
   const inferred = alt.intermediario_id ? 'intermediario' : 'cliente';
   if (inferred !== tipo) return null;
@@ -9665,6 +9679,7 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
         const enriched = movimientosParaDetalle.map((m) => ({
           ...m,
           ...ccNombresPagadorCobradorMovimiento(m, tipo, ordenByIdFetch, clientesByIdDet, intermediariosByIdDet, trTipoById, trPagadorById, trCobradorById, trParticipanteIdsByTrx, trRowById || {}),
+          tipo,
         }));
         return { movimientos: enriched, saldos, ordenes, pendienteEnMoneda: pendMonFull, pendienteClasePorMoneda };
       });

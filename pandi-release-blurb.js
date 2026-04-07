@@ -4,9 +4,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.5.4',
+  versionLabel: 'v3.5.5',
   lines: [
-    'En Cuenta corriente, el saldo por moneda (resumen, «Ver detalle» y totales de la pestaña Movimientos) suma solo movimientos cerrados.',
-    'Los movimientos en estado Pendiente siguen en la lista para verlos, pero ya no entran en el total — igual para clientes e intermediarios.',
+    'Desde «Ver detalle» de cuenta corriente, el lápiz de movimientos manuales vuelve a abrir la edición sin el aviso de «no encontrado».',
+    'El saldo por moneda sigue mostrando solo lo cerrado; los pendientes se ven en la lista pero no suman al total.',
   ],
 };
