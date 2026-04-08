@@ -1550,6 +1550,30 @@
     }
     .cc-toolbar-compartido { margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.75rem; }
     .cc-panel-toolbar { margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+    .cc-toolbar-filtro-nombre-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 1 1 12rem;
+      min-width: 0;
+      max-width: 22rem;
+    }
+    .cc-toolbar-filtro-nombre-wrap .cc-resumen-filtro-nombre-label {
+      flex-shrink: 0;
+      margin: 0;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+    .cc-toolbar-filtro-nombre-wrap .cc-input-filtro-nombre {
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+      padding: 0.4rem 0.55rem;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #fff;
+    }
     /* CC: fila Tipo Cliente/Intermediario; debajo las solapas Saldos/Movimientos (no en la misma fila) */
     #vista-cuenta-corriente .cc-barra-tipo-y-solapas {
       display: flex;
@@ -1608,6 +1632,14 @@
       #form-cc-movimiento-manual .form-group,
       #form-cc-manual-editar .form-group { margin-bottom: 0.85rem; }
       .cc-manual-edit-input { font-size: 16px; max-width: 100%; box-sizing: border-box; min-height: 44px; }
+      .cc-toolbar-filtro-nombre-wrap {
+        flex: 1 1 100%;
+        max-width: none;
+      }
+      .cc-toolbar-filtro-nombre-wrap .cc-input-filtro-nombre {
+        font-size: 16px;
+        min-height: 44px;
+      }
     }
     /* Movimientos CC: una fila — primero todos los filtros (flex wrap), acciones al final (margin-left: auto) */
     .cc-toolbar-mov-filtros-grid {
@@ -2200,7 +2232,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.6.2</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.6.3</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2618,7 +2650,7 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
           Cuenta corriente
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de <span class="js-marca-sistema-nombre">Pandi</span></strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado). Los importes y cruces (ARS, USD, EUR, etc.) siguen el <strong>tipo de operación</strong> del catálogo.<br/><br/>En <strong>Saldos</strong> los importes se muestran en <strong>óptica <span class="js-marca-sistema-nombre">Pandi</span></strong>: número positivo (verde) = a favor de <span class="js-marca-sistema-nombre">Pandi</span>; negativo (rojo) = <span class="js-marca-sistema-nombre">Pandi</span> debe pagar. Si en esa moneda hay movimientos <strong>pendientes</strong>, debajo aparece «Pendiente de cobro» o «Pendiente de pago». El detalle de movimientos y el Excel de líneas siguen la contabilización interna; el export del <strong>resumen</strong> usa la misma óptica que la tabla.<br/><br/>En <strong>Movimientos</strong> el listado, por defecto, muestra solo el <strong>día de hoy</strong> (Argentina); podés cambiar fechas o usar <strong>Histórico</strong> (sin filtro de fechas). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de <span class="js-marca-sistema-nombre">Pandi</span></strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado). Los importes y cruces (ARS, USD, EUR, etc.) siguen el <strong>tipo de operación</strong> del catálogo.<br/><br/>En <strong>Saldos</strong> los importes se muestran en <strong>óptica <span class="js-marca-sistema-nombre">Pandi</span></strong>: número positivo (verde) = a favor de <span class="js-marca-sistema-nombre">Pandi</span>; negativo (rojo) = <span class="js-marca-sistema-nombre">Pandi</span> debe pagar. Si en esa moneda hay movimientos <strong>pendientes</strong>, debajo aparece «Pendiente de cobro» o «Pendiente de pago». Podés <strong>filtrar la lista por nombre</strong> (cliente o intermediario según el Tipo arriba). <strong>Exportar</strong> genera un Excel con el mismo encabezado de auditoría que el resto de exportaciones e incluye solo las filas que ves (y los totales por moneda de esas filas). El detalle de movimientos y el Excel de líneas siguen la contabilización interna.<br/><br/>En <strong>Movimientos</strong> el listado, por defecto, muestra solo el <strong>día de hoy</strong> (Argentina); podés cambiar fechas o usar <strong>Histórico</strong> (sin filtro de fechas). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
         </h3>
         <div class="cc-barra-tipo-y-solapas">
           <div class="vista-toolbar cc-toolbar-compartido">
@@ -2644,13 +2676,17 @@
         <div id="cc-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando…</div>
         <div id="cc-panel-saldos" class="cc-panel-cc" role="tabpanel" aria-labelledby="cc-tab-saldos">
           <div class="vista-toolbar cc-panel-toolbar">
+            <div class="cc-toolbar-filtro-nombre-wrap" id="cc-resumen-filtro-nombre-wrap">
+              <label id="cc-resumen-filtro-nombre-label" for="cc-resumen-filtro-nombre" class="ordenes-filtro-label cc-resumen-filtro-nombre-label">Buscar cliente</label>
+              <input type="search" id="cc-resumen-filtro-nombre" class="cc-input-filtro-nombre" placeholder="Nombre…" autocomplete="off" enterkeyhint="search" />
+            </div>
             <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Recalcular saldos (solo movimientos ejecutados)" aria-label="Refrescar cuenta corriente">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></span>Refrescar
             </button>
             <button type="button" class="btn-primary" id="cc-btn-movimiento-manual" title="Registrar movimiento de cuenta corriente sin orden" aria-label="Nuevo movimiento en cuenta corriente" style="display:none;">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span>Nuevo movimiento
             </button>
-            <button type="button" class="btn-excel" id="cc-btn-exportar-excel" title="Exportar tabla actual (saldos o movimientos) a Excel" aria-label="Exportar a Excel cuenta corriente">
+            <button type="button" class="btn-excel" id="cc-btn-exportar-excel" title="Exportar a Excel: en Saldos, las filas que ves (incl. filtro por nombre); en Movimientos, el listado filtrado y ordenado" aria-label="Exportar a Excel cuenta corriente">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg></span>Exportar
             </button>
           </div>
@@ -2663,15 +2699,15 @@
                 <tr class="cc-resumen-totales-row" aria-label="Totales por moneda en la grilla actual">
                   <th class="th-nombre" scope="row">Total</th>
                   <th class="th-moneda" data-cc-moneda-col="USD" scope="col"><span class="cc-resumen-total-valor" id="cc-resumen-total-usd">–</span></th>
-                  <th class="th-moneda" data-cc-moneda-col="EUR" scope="col"><span class="cc-resumen-total-valor" id="cc-resumen-total-eur">–</span></th>
                   <th class="th-moneda" data-cc-moneda-col="ARS" scope="col"><span class="cc-resumen-total-valor" id="cc-resumen-total-ars">–</span></th>
+                  <th class="th-moneda" data-cc-moneda-col="EUR" scope="col"><span class="cc-resumen-total-valor" id="cc-resumen-total-eur">–</span></th>
                   <th class="th-ver" aria-hidden="true"></th>
                 </tr>
                 <tr>
                   <th class="th-nombre">Nombre</th>
                   <th class="th-moneda" data-cc-moneda-col="USD"><span class="th-moneda-icon"><img src="/assets/Icono_Dolar.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span><span class="sr-only">USD</span></th>
-                  <th class="th-moneda" data-cc-moneda-col="EUR"><span class="th-moneda-icon"><img src="/assets/Icono_Euro.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span><span class="sr-only">EUR</span></th>
                   <th class="th-moneda" data-cc-moneda-col="ARS"><span class="th-moneda-icon"><img src="/assets/Icono_ARS.webp" alt="" class="cc-icono-moneda" width="20" height="20"/></span><span class="sr-only">ARS</span></th>
+                  <th class="th-moneda" data-cc-moneda-col="EUR"><span class="th-moneda-icon"><img src="/assets/Icono_Euro.avif" alt="" class="cc-icono-moneda" width="20" height="20"/></span><span class="sr-only">EUR</span></th>
                   <th class="th-ver">Acción</th>
                 </tr>
               </thead>

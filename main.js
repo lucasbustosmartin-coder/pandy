@@ -4639,10 +4639,10 @@ function hayTipoOperacionActivoConMoneda(moneda) {
 const MONEDAS_PANEL_CAJA_EFECTIVO = ['USD', 'ARS', 'EUR'];
 const MONEDAS_PANEL_CAJA_BANCO = ['USD', 'ARS'];
 
-/** Monedas en UI CC (resumen y movimientos): mismo criterio que Panel/Cajas (`hayTipoOperacionActivoConMoneda`). Orden resumen = USD, EUR, ARS. */
-const MONEDAS_CC_UI = ['USD', 'EUR', 'ARS'];
+/** Monedas en UI CC (resumen Saldos, tarjetas modal, visibilidad): mismo criterio que Panel/Cajas (`hayTipoOperacionActivoConMoneda`). Orden columnas = USD, ARS, EUR (alineado a movimientos CC y caja efectivo). */
+const MONEDAS_CC_UI = ['USD', 'ARS', 'EUR'];
 /** Orden de columnas monetarias en tablas de movimientos CC (vista + modal). */
-const MONEDAS_CC_MOVIMIENTOS_COLS = ['USD', 'ARS', 'EUR'];
+const MONEDAS_CC_MOVIMIENTOS_COLS = MONEDAS_CC_UI;
 let ccUiMonedasVisibles = { USD: true, EUR: true, ARS: true };
 
 /** Iconos moneda fiat en UI (Panel, CC, listado órdenes). */
@@ -4743,6 +4743,46 @@ function aplicarVisibilidadMonedasCuentaCorriente(flagsRaw) {
 function ccColspanResumenSaldosVacio() {
   const n = MONEDAS_CC_UI.filter((m) => ccUiMonedasVisibles[m]).length;
   return 1 + n + 1;
+}
+
+/** Texto para filtro contiene en Saldos (minúsculas, sin acentos). */
+function normalizarTextoBusquedaCc(s) {
+  const t = String(s || '').trim().toLowerCase();
+  if (!t) return '';
+  try {
+    return t.normalize('NFD').replace(/\p{M}/gu, '');
+  } catch (_) {
+    return t;
+  }
+}
+
+/**
+ * Filas del resumen CC visibles en Saldos y en el Excel de saldos: tipo, saldo ≠ 0 y filtro por nombre (si hay).
+ */
+function obtenerFilasCcResumenFiltradas() {
+  const EPSILON_SALDO = 1e-6;
+  const conSaldo = (r) =>
+    Math.abs(Number(r.saldos.USD) || 0) >= EPSILON_SALDO ||
+    Math.abs(Number(r.saldos.EUR) || 0) >= EPSILON_SALDO ||
+    Math.abs(Number(r.saldos.ARS) || 0) >= EPSILON_SALDO;
+  let filas = ccResumenRowsTodos.filter((r) => r.tipo === ccFiltroTipo).filter(conSaldo);
+  const q = (ccResumenFiltroNombre || '').trim();
+  if (q) {
+    const nq = normalizarTextoBusquedaCc(q);
+    if (nq) {
+      filas = filas.filter((r) => normalizarTextoBusquedaCc(r.nombre || '').includes(nq));
+    }
+  }
+  return filas;
+}
+
+function syncCcResumenFiltroNombreAccesibilidad() {
+  const el = document.getElementById('cc-resumen-filtro-nombre');
+  if (!el) return;
+  const esInt = ccFiltroTipo === 'intermediario';
+  el.setAttribute('aria-label', esInt ? 'Filtrar saldos por nombre de intermediario' : 'Filtrar saldos por nombre de cliente');
+  const lab = document.getElementById('cc-resumen-filtro-nombre-label');
+  if (lab) lab.textContent = esInt ? 'Buscar intermediario' : 'Buscar cliente';
 }
 
 /** Montos por moneda de un movimiento CC (cliente o intermediario), misma lógica que buildCcResumenRows. */
@@ -7140,6 +7180,8 @@ let ccDetalleMovimientosRangoInicializado = false;
 let ccCargaSerial = 0;
 /** Filtro opcional por cliente_id o intermediario_id en solapa Movimientos (vacío = todos). */
 let ccDetalleFiltroEntidadId = '';
+/** Texto de búsqueda en solapa Saldos (nombre de cliente o intermediario según Tipo). */
+let ccResumenFiltroNombre = '';
 /** Columnas extra movimientos CC manuales (pagador/cobrador) en SELECT Supabase. */
 const CC_MOV_MANUAL_PAG_COB_COLS = ', manual_grupo_id, manual_pagador_rol, manual_cobrador_rol, manual_pagador_cliente_id, manual_pagador_intermediario_id, manual_cobrador_cliente_id, manual_cobrador_intermediario_id, movimiento_caja_id';
 /** Nombres exactos en tipos_movimiento_caja (ver sql/migracion_tipos_caja_cc_manual.sql). */
@@ -9638,10 +9680,8 @@ function aplicarFiltroCcResumen() {
   if (rangoWrap) rangoWrap.style.display = 'none';
   if (contenidoEl) contenidoEl.style.display = 'block';
   if (detalleWrap) detalleWrap.style.display = 'none';
-  // Resumen: solo filas con saldo ≠ 0 (saldo = suma movimientos cerrados; sin pendiente ni anulado).
-  const EPSILON_SALDO = 1e-6;
-  const conSaldo = (r) => Math.abs(Number(r.saldos.USD) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.EUR) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.ARS) || 0) >= EPSILON_SALDO;
-  const filtrados = ccResumenRowsTodos.filter((r) => r.tipo === ccFiltroTipo).filter(conSaldo);
+  // Resumen: saldo ≠ 0 + filtro por nombre (obtenerFilasCcResumenFiltradas).
+  const filtrados = obtenerFilasCcResumenFiltradas();
   renderCcResumenTable(filtrados);
 }
 
@@ -9698,7 +9738,11 @@ function renderCcResumenTable(rows) {
   if (rows.length === 0) {
     const tipoLabel = ccFiltroTipo === 'cliente' ? 'clientes' : 'intermediarios';
     const colspan = ccColspanResumenSaldosVacio();
-    tbody.innerHTML = '<tr><td colspan="' + colspan + '">No hay ' + tipoLabel + ' con saldo distinto de cero.</td></tr>';
+    const hayFiltroNombre = (ccResumenFiltroNombre || '').trim() !== '';
+    const msg = hayFiltroNombre
+      ? 'Ningún nombre coincide con el filtro. Probá otra búsqueda o vaciá el campo.'
+      : 'No hay ' + tipoLabel + ' con saldo distinto de cero.';
+    tbody.innerHTML = '<tr><td colspan="' + colspan + '">' + msg + '</td></tr>';
     actualizarCcResumenTotalesThead([]);
   } else {
     tbody.querySelectorAll('.btn-ver-detalle').forEach((btn) => {
@@ -9922,9 +9966,7 @@ function exportarCcResumenExcel() {
     return;
   }
   const EPSILON_SALDO = 1e-6;
-  const conSaldo = (r) => Math.abs(Number(r.saldos.USD) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.EUR) || 0) >= EPSILON_SALDO || Math.abs(Number(r.saldos.ARS) || 0) >= EPSILON_SALDO;
-  const conSaldoList = ccResumenRowsTodos.filter(conSaldo);
-  const filtrados = conSaldoList.filter((r) => r.tipo === ccFiltroTipo);
+  const filtrados = obtenerFilasCcResumenFiltradas();
   if (filtrados.length === 0) {
     showToast('No hay filas para exportar.', 'info');
     return;
@@ -9934,10 +9976,9 @@ function exportarCcResumenExcel() {
   const rows = filtrados.map((r) => {
     const tipoLabel = r.tipo === 'cliente' ? 'Cliente' : 'Intermediario';
     const cels = [r.nombre || '', tipoLabel];
-    const pendClase = r.pendienteClasePorMoneda || { USD: 'ninguno', EUR: 'ninguno', ARS: 'ninguno' };
     monedasExp.forEach((mon) => {
-      const sDisp = ccSaldoDisplayOpticaResumen(Number(r.saldos[mon]) || 0, pendClase[mon]);
-      cels.push(sDisp);
+      const raw = Number(r.saldos[mon]) || 0;
+      cels.push(Math.abs(raw) < EPSILON_SALDO ? null : raw);
     });
     return cels;
   });
@@ -11896,6 +11937,7 @@ function setupCuentaCorriente() {
         btn.classList.add('activo');
         ccDetalleFiltroEntidadId = '';
         poblarSelectCcDetalleEntidad();
+        syncCcResumenFiltroNombreAccesibilidad();
         aplicarFiltroCcResumen();
       });
     });
@@ -11980,6 +12022,20 @@ function setupCuentaCorriente() {
       aplicarFiltroCcResumen();
     });
   }
+
+  const ccResumenFiltroNombreEl = document.getElementById('cc-resumen-filtro-nombre');
+  if (ccResumenFiltroNombreEl) {
+    let persistNombreTmr = null;
+    ccResumenFiltroNombreEl.addEventListener('input', () => {
+      ccResumenFiltroNombre = ccResumenFiltroNombreEl.value || '';
+      aplicarFiltroCcResumen();
+      if (persistNombreTmr) clearTimeout(persistNombreTmr);
+      persistNombreTmr = setTimeout(() => {
+        void pandiPersistCcVistaSnapshot();
+      }, 450);
+    });
+  }
+  syncCcResumenFiltroNombreAccesibilidad();
 
   document.querySelectorAll('.link-inicio').forEach((a) => {
     a.addEventListener('click', (e) => {
@@ -14497,6 +14553,7 @@ function pandiPersistCcVistaSnapshot() {
       ccMovimientosDetalleList: JSON.parse(JSON.stringify(detalleParaSnap)),
       ccFiltroTipo,
       ccVistaToggle,
+      ccResumenFiltroNombre,
       ccDetalleFiltroEntidadId,
       ccDetalleDesde,
       ccDetalleHasta,
@@ -14540,6 +14597,9 @@ function pandiSyncCcFiltrosDomDesdeEstado() {
       hastaEl.value = ccDetalleHasta || '';
     }
   }
+  const ccNomEl = document.getElementById('cc-resumen-filtro-nombre');
+  if (ccNomEl) ccNomEl.value = ccResumenFiltroNombre || '';
+  syncCcResumenFiltroNombreAccesibilidad();
 }
 
 async function pandiTryRestoreCcVistaDesdeSnapshot() {
@@ -14556,6 +14616,7 @@ async function pandiTryRestoreCcVistaDesdeSnapshot() {
     ccMovimientosDetalleList = rec.ccMovimientosDetalleList;
     ccFiltroTipo = rec.ccFiltroTipo === 'intermediario' ? 'intermediario' : 'cliente';
     ccVistaToggle = rec.ccVistaToggle === 'detalle' ? 'detalle' : 'resumen';
+    ccResumenFiltroNombre = rec.ccResumenFiltroNombre != null ? String(rec.ccResumenFiltroNombre) : '';
     ccDetalleFiltroEntidadId = rec.ccDetalleFiltroEntidadId ? String(rec.ccDetalleFiltroEntidadId) : '';
     ccDetalleDesde = rec.ccDetalleDesde != null ? String(rec.ccDetalleDesde) : '';
     ccDetalleHasta = rec.ccDetalleHasta != null ? String(rec.ccDetalleHasta) : '';

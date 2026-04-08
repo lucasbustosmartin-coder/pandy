@@ -62,7 +62,7 @@ Sin red, podés **seguir viendo** lo que ya se guardó en el dispositivo al carg
 - **Listado de Órdenes** (mezclado con filas de **cola local**, si hay).  
 - **Panel de inicio:** tarjetas de **caja** (movimientos cerrados), **G/P operativa** (por período: día / semana / mes / total), bloque **Pendientes**.  
 - **Vista Cajas:** tabla de movimientos y totales según la copia.  
-- **Vista Cuenta corriente:** resumen y movimientos según la copia y filtros que ya tenías.  
+- **Vista Cuenta corriente:** resumen y movimientos según la copia y filtros que ya tenías (incluye la búsqueda por nombre en **Saldos** si la usaste).  
 - **Órdenes en el servidor — panel Transacciones** (fila expandida): si antes abriste **Transacciones** con red, suele haber **instrumentación en caché** por orden; se puede combinar con cambios locales pendientes de envío (ver §7).
 
 **Exportar a Excel** (Caja, CC, etc.): si los datos ya están cargados en pantalla, el export usa esa información; no crea datos nuevos en el servidor.

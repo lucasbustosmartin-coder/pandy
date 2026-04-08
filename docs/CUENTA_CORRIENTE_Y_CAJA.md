@@ -32,6 +32,7 @@
 ### Tarjetas de saldo en la app (Resumen, modal, totales)
 
 - En **Saldos** (grilla por cliente/intermediario), en el **modal «Detalle de movimientos»** (tarjetas USD/ARS/EUR arriba) y en los **totales** de la pestaña **Movimientos** de CC, el importe por moneda es la **suma algebraica solo de movimientos en estado `cerrado`**. **No** entran al saldo los movimientos **`pendiente`** ni **`anulado`** (siguen visibles en las tablas de detalle). Las monedas con líneas pendientes se marcan aparte (`pendienteEnMoneda` / leyendas de clase de pendiente). Implementación: `ccMovimientoIncluirEnSaldoResumen` en `main.js`.
+- En la solapa **Saldos**, la grilla admite **filtrar por nombre** (texto contenido en el nombre del cliente o intermediario según el Tipo). Los totales de la cabecera y la **exportación a Excel** usan **las mismas filas visibles** que la tabla; el Excel incluye las filas de metadatos de auditoría estándar (`metaFilasExportacionExcel`) y los importes por moneda como valores numéricos.
 
 ## Resumen
 
