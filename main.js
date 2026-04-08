@@ -9041,19 +9041,17 @@ function loadCuentaCorriente(opts) {
   // hacerlo en cada tick vacía la tabla en lecturas concurrentes y parpadean los saldos sin que haya cambios reales.
   const debeCorrerSyncGlobalAntesDeLeer = !esRecargaPostSync && !silentCc && !skipSyncGlobal;
   if (debeCorrerSyncGlobalAntesDeLeer) {
-    sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
+    return sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
       .catch(() => {})
       .then(() => {
-        if (currentVistaId !== 'vista-cuenta-corriente') return;
-        const ordenModal = document.getElementById('modal-orden-backdrop');
-        if (ordenModal && ordenModal.classList.contains('activo')) return;
+        if (currentVistaId !== 'vista-cuenta-corriente') return Promise.resolve();
         const prevBg = pandiBackgroundRefreshActive;
         pandiBackgroundRefreshActive = true;
-        loadCuentaCorriente({ esRecargaPostSync: true }).finally(() => { pandiBackgroundRefreshActive = prevBg; });
+        return loadCuentaCorriente({ ...opts, skipSyncGlobal: true }).finally(() => { pandiBackgroundRefreshActive = prevBg; });
       });
   }
 
-  // Primera pintada: fetch en paralelo al sync global; al terminar el sync, una recarga silenciosa (esRecargaPostSync) alinea movimientos con el modelo sin bloquear el primer render.
+  // Lectura de movimientos: si acabamos de correr sync arriba (entrada recursiva con skipSyncGlobal), los datos ya están alineados antes de pintar.
   return Promise.all([
       client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
       client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),

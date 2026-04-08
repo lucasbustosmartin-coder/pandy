@@ -39,11 +39,17 @@ No es “menos líneas para que el saldo cierre”: es **cuatro líneas** que **
 - **USD-ARS sin intermediario**: filas en **`reglas_de_negocio`** (`tipo_operacion_codigo = 'USD-ARS'`, `usa_intermediario = false`).
 - **Motor en app**: `aplicarMotorCcDesdeReglasDeNegocio` en `main.js` (una fila de regla → un movimiento CC; `monto_origen` con prorrateo si hay N transacciones que suman el acuerdo; `entidad_cc` para intermediario cuando aplica).
 
+## Con intermediario (ci_pc y cp_ic): transacciones independientes en CC
+
+Con **`usa_intermediario = true`**, las dos transacciones instrumentadas (p. ej. Cliente→Intermediario + Pandy→Cliente, o Cliente→Pandy + Intermediario→Cliente) **no** suman en CC cliente un movimiento extra en la moneda del acuerdo (`+mr`) en una transacción solo para “cerrar” en libros lo ya reflejado en la otra. Cada transacción aporta **solo las líneas de su propia pata** según `reglas_de_negocio`. Migración para bases que tenían el espejo antiguo: `sql/migracion_reglas_cc_int_transacciones_independientes_quitar_espejo_mr.sql`.
+
+En **E,E**, el saldo resumen por moneda **puede no ser cero** en esa vista contable, aunque la operación esté cerrada operativamente: es coherente con mostrar el efecto de cada transacción por separado (sin anular USD/ARS del acuerdo entre Tx1 y Tx2).
+
 ## Regla de verificación rápida
 
 Antes de aceptar un cambio en reglas o en el motor, preguntar:
 
 1. ¿Esta transacción refleja **entrada o salida** de dinero en cada moneda que participa?
-2. Con **E,E**, ¿hay **dos movimientos por transacción** en las dos monedas y **saldo 0** en USD y ARS?
+2. **Sin intermediario**, con **E,E**, ¿hay **dos movimientos por transacción** en las dos monedas y **saldo 0** en USD y ARS? **Con intermediario**, ¿cada transacción solo genera líneas de su pata, sin espejo `+mr` cruzado entre transacciones?
 
 Si la respuesta es coherente con el negocio, el modelo está alineado.

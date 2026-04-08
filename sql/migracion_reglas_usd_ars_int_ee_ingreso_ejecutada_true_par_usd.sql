@@ -1,7 +1,20 @@
--- USD-ARS + intermediario — E,E: ingreso Cliente→Intermediario con contrapartida ejecutada (ambas tx E).
--- Sin −mr/+mr USD en CC cliente el detalle solo mostraba −me y +me ARS (2 ítems); el esperado E2E son 4:
--- −me ARS, −mr USD, +mr USD (ingreso) y +me ARS (egreso). Neto saldo 0 en ambas monedas.
--- Paralelo conceptual: sql/migracion_reglas_usd_ars_ee_ingreso_ejecutada_true_linea1_usd.sql (sin intermediario).
+-- USD-ARS + intermediario — ingreso Cliente→Intermediario ejecutada con contrapartida (E,E).
+-- Política actual: sin línea +mr en línea 2 (transacciones independientes en CC). Solo −me ARS y −mr USD.
+-- Si la base tenía la fila antigua (línea 2 +mr), eliminarla:
+
+DELETE FROM public.reglas_de_negocio
+WHERE tipo_operacion_codigo = 'USD-ARS'
+  AND COALESCE(usa_intermediario, false) = true
+  AND entidad_cc = 'cliente'
+  AND pagador = 'cliente'
+  AND cobrador = 'intermediario'
+  AND tipo_transaccion = 'ingreso'
+  AND COALESCE(es_comision, false) = false
+  AND estado_transaccion = 'ejecutada'
+  AND contrapartida_ejecutada IS TRUE
+  AND linea = 2
+  AND monto_origen = 'mr'
+  AND concepto_leyenda = 'cobro_realizado';
 
 INSERT INTO public.reglas_de_negocio (
   tipo_operacion_codigo, usa_intermediario, entidad_cc,
@@ -10,8 +23,7 @@ INSERT INTO public.reglas_de_negocio (
   moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
 ) VALUES
   ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'ARS', -1, 'me', true, 'cobro_realizado'),
-  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 1, 'USD', -1, 'mr', true, 'cobro_realizado'),
-  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 2, 'USD', 1, 'mr', true, 'cobro_realizado')
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 1, 'USD', -1, 'mr', true, 'cobro_realizado')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc,
   pagador, cobrador, tipo_transaccion, es_comision,

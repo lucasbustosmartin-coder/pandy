@@ -7,6 +7,10 @@
 
 ## Momentos en que se registran movimientos
 
+### Apertura de la vista Cuenta corriente (con conexión)
+
+Con red, al **entrar** al menú **Cuenta corriente** (carga visible, no el refresco silencioso en segundo plano), la app ejecuta primero el **alineado global** de CC y caja por cada orden con instrumentación (`sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion`, encadenado orden a orden) y **después** lee movimientos y pinta saldos y tablas. Así no se muestran cifras basadas en movimientos de BD aún no regenerados por ese sync. La UI permanece en estado de carga hasta completar ese paso y el fetch subsiguiente. El refresco automático periódico de CC sigue siendo **solo lectura** (`SELECT`), sin repetir el sync global, para evitar parpadeos y condiciones de carrera.
+
 ### Cuenta corriente (movimientos_cuenta_corriente y movimientos_cuenta_corriente_intermediario)
 
 1. **Al guardar o editar una transacción** (`saveTransaccion`): siempre se borran los movimientos CC de esa transacción y se vuelven a crear según cobrador/pagador y estado (pendiente → concepto "Transacción pendiente", ejecutada → "Transacción ejecutada").
