@@ -31,7 +31,15 @@ BEGIN
           'monto', m.monto,
           'concepto', COALESCE(m.concepto, ''),
           'tipo_movimiento', t.nombre,
-          'modo_pago', '',
+          'modo_pago', COALESCE(
+            CASE lower(trim(COALESCE(m.caja_tipo, '')))
+              WHEN 'efectivo' THEN 'Efectivo'
+              WHEN 'banco' THEN 'Banco'
+              WHEN 'cheque' THEN 'Cheque'
+              ELSE NULL
+            END,
+            ''
+          ),
           'orden_numero', m.orden_numero,
           'transaccion_numero', m.transaccion_numero,
           'entidad', NULL
@@ -103,7 +111,11 @@ BEGIN
           'monto', m.monto,
           'concepto', COALESCE(m.concepto, ''),
           'tipo_movimiento', NULL,
-          'modo_pago', '',
+          'modo_pago', COALESCE(
+            NULLIF(TRIM(COALESCE(mp.nombre, '')), ''),
+            NULLIF(TRIM(COALESCE(mp.codigo, '')), ''),
+            ''
+          ),
           'orden_numero', o.numero,
           'transaccion_numero', m.transaccion_numero,
           'entidad', c.nombre
@@ -113,6 +125,8 @@ BEGIN
       FROM public.movimientos_cuenta_corriente m
       LEFT JOIN public.clientes c ON c.id = m.cliente_id
       LEFT JOIN public.ordenes o ON o.id = m.orden_id
+      LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
+      LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
       WHERE m.estado = 'cerrado'
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
@@ -135,7 +149,11 @@ BEGIN
         'monto', m.monto,
         'concepto', COALESCE(m.concepto, ''),
         'tipo_movimiento', NULL,
-        'modo_pago', '',
+        'modo_pago', COALESCE(
+          NULLIF(TRIM(COALESCE(mp.nombre, '')), ''),
+          NULLIF(TRIM(COALESCE(mp.codigo, '')), ''),
+          ''
+        ),
         'orden_numero', o.numero,
         'transaccion_numero', m.transaccion_numero,
         'entidad', i.nombre
@@ -145,6 +163,8 @@ BEGIN
     FROM public.movimientos_cuenta_corriente_intermediario m
     LEFT JOIN public.intermediarios i ON i.id = m.intermediario_id
     LEFT JOIN public.ordenes o ON o.id = m.orden_id
+    LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
+    LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
     WHERE m.estado = 'cerrado'
       AND (p_desde IS NULL OR m.fecha >= p_desde)
       AND (p_hasta IS NULL OR m.fecha <= p_hasta)
@@ -153,6 +173,6 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON de movimientos que entran en una fila de G/P Operativa para el período: caja_manual, caja_ordenes, cc_cliente, cc_intermediario. Mismos filtros que gp_operativa_resumen (cerrados, fechas inclusive AR, tipos caja con incluye_gp_operativo en manual). Campo modo_pago: nombre (o código) del catálogo modos_pago vía transacción vinculada a movimientos_caja.transaccion_id en caja_ordenes; vacío en el resto. SECURITY INVOKER / RLS.';
+COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON de movimientos que entran en una fila de G/P Operativa para el período: caja_manual, caja_ordenes, cc_cliente, cc_intermediario. Mismos filtros que gp_operativa_resumen (cerrados, fechas inclusive AR, tipos caja con incluye_gp_operativo en manual). Campo modo_pago (medio de pago en UI): caja_manual = Efectivo/Banco/Cheque desde movimientos_caja.caja_tipo; caja_ordenes y filas CC con transaccion_id = nombre o código modos_pago vía transacciones.modo_pago_id; CC sin transacción o sin modo = vacío. SECURITY INVOKER / RLS.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_detalle(date, date, text) TO authenticated;

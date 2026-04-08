@@ -6086,7 +6086,7 @@ function pandiHtmlGpDetalleSeccionConsolidado(allRows) {
 
 function pandiHtmlTablaGpOperativaDetalleFilas(rows, tfootCtx) {
   const head =
-    '<thead><tr><th>Fecha</th><th>Moneda</th><th>Monto</th><th>Modo de pago</th><th>Concepto</th><th>Referencia</th></tr></thead>';
+    '<thead><tr><th>Fecha</th><th>Moneda</th><th>Monto</th><th>Medio de pago</th><th>Concepto</th><th>Referencia</th></tr></thead>';
   const emptyBody =
     '<tbody><tr><td colspan="6">No hay movimientos en el período con este criterio.</td></tr></tbody>';
   const foot = pandiHtmlGpDetalleTfootDesdeContexto(rows || [], tfootCtx);
@@ -6423,14 +6423,14 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-manual">Movimientos de caja manuales</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja manuales en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Movimientos de caja manuales</strong> en esta fila: suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa.</span></span>',
+      '</button><span class="help-popover"><strong>Movimientos de caja manuales</strong> en esta fila: suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa. En el <strong>detalle</strong>, la columna <strong>Medio de pago</strong> muestra si el movimiento fue en <strong>Efectivo</strong>, <strong>Banco</strong> o <strong>Cheque</strong> (según la caja elegida al cargarlo).</span></span>',
     monedas.map((m) => celMonedaPareja(cajaMan, m, false, 'caja_manual')).join(''),
   );
   const rowCajaOrd = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-ordenes">Movimientos de caja por órdenes</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja por órdenes en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). En el <strong>detalle</strong> (lista) cada fila muestra el <strong>Modo de pago</strong> de la transacción (Efectivo, Transferencia banco, Cheque, etc.) para distinguirlos aunque sigan en la misma fila de la matriz. Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
+      '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). En el <strong>detalle</strong>, la columna <strong>Medio de pago</strong> repite el modo elegido en cada transacción (Efectivo, Transferencia banco, Cheque, etc.). Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
       escapeHtml(nombreMarcaSistema()) +
       '</span> cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de los movimientos de caja manuales filtrados por tipo.</span></span>',
     monedas.map((m) => celMonedaPareja(cajaOrd, m, false, 'caja_ordenes')).join(''),
@@ -6439,14 +6439,14 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-clientes">Cuenta Corriente Clientes</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Clientes en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Cuenta Corriente Clientes</strong> (esta fila): suma algebraica de todas las líneas de la cuenta corriente de clientes con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>).<br><br>En <strong>Cuenta corriente → Cliente → Saldos</strong> sí entran también los pendientes; por eso el total allí puede diferir de esta fila sin que sea un error.</span></span>',
+      '</button><span class="help-popover"><strong>Cuenta Corriente Clientes</strong> (esta fila): suma algebraica de todas las líneas de la cuenta corriente de clientes con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>). En el <strong>detalle</strong>, <strong>Medio de pago</strong> se muestra cuando la línea está ligada a una <strong>transacción</strong> con modo de pago; líneas sin transacción (p. ej. manuales o ajustes) pueden quedar en «–».<br><br>En <strong>Cuenta corriente → Cliente → Saldos</strong> sí entran también los pendientes; por eso el total allí puede diferir de esta fila sin que sea un error.</span></span>',
     monedas.map((m) => celMonedaPareja(ccC, m, false, 'cc_cliente')).join(''),
   );
   const rowInt = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-intermediarios">Cuenta Corriente Intermediarios</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Intermediarios en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): mismo criterio que clientes, sobre la cuenta corriente de intermediarios: suma algebraica de todas las líneas con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>).<br><br>En <strong>Cuenta corriente → Intermediario → Saldos</strong> sí entran también los pendientes; el total puede diferir de esta fila por el mismo motivo.</span></span>',
+      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): mismo criterio que clientes, sobre la cuenta corriente de intermediarios: suma algebraica de todas las líneas con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>). En el <strong>detalle</strong>, <strong>Medio de pago</strong> aparece cuando la línea tiene <strong>transacción</strong> con modo de pago; si no aplica, «–».<br><br>En <strong>Cuenta corriente → Intermediario → Saldos</strong> sí entran también los pendientes; el total puede diferir de esta fila por el mismo motivo.</span></span>',
     monedas.map((m) => celMonedaPareja(ccI, m, false, 'cc_intermediario')).join(''),
   );
   elMatriz.innerHTML = filaCabecera + rowTotal + rowCaja + rowCajaOrd + rowCli + rowInt;

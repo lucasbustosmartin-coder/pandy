@@ -4,9 +4,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.6.1',
+  versionLabel: 'v3.6.2',
   lines: [
-    'En G/P Operativa, al abrir el detalle de «Movimientos de caja por órdenes», cada fila indica el modo de pago de la operación (efectivo, transferencia bancaria o cheque).',
-    'Así se entiende de un vistazo qué entra en esa fila sin separar totales en el panel.',
+    'En G/P Operativa, el detalle de las cuatro filas de la matriz usa la columna «Medio de pago» de forma uniforme.',
+    'Caja manual: ves Efectivo, Banco o Cheque según cómo cargaste cada movimiento; caja por órdenes y cuenta corriente muestran el modo cuando la línea viene de una transacción.',
   ],
 };
