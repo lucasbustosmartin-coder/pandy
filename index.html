@@ -2318,7 +2318,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.6.4</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.0</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2373,6 +2373,10 @@
           <label for="register-password">Contraseña</label>
           <input type="password" id="register-password" required placeholder="Mín. 6 caracteres" autocomplete="new-password" minlength="6" />
         </div>
+        <div class="form-group">
+          <label for="register-display-name">Nombre en la app (opcional)</label>
+          <input type="text" id="register-display-name" maxlength="120" placeholder="Cómo querés aparecer en listados" autocomplete="nickname" />
+        </div>
         <div id="register-error" class="login-error"></div>
         <button type="submit" class="btn-login" id="btn-register"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg></span>Crear cuenta</button>
       </form>
@@ -2383,8 +2387,15 @@
       <header class="page-header">
         <span class="page-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="page-logo" id="page-logo" /></span>
         <h1 id="page-title">Panel de Control</h1>
-        <div class="user-bar" id="user-bar">
-          <span id="user-email"></span>
+        <div class="user-bar" id="user-bar" style="flex-wrap:wrap;align-items:center;gap:0.5rem;">
+          <div class="user-bar-ident" style="display:flex;flex-direction:column;gap:0.25rem;min-width:0;max-width:min(22rem,42vw);">
+            <span id="user-email" style="font-size:0.9rem;word-break:break-all;"></span>
+            <div class="user-bar-nombre-fila" style="display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;">
+              <label for="user-display-name-input" class="sr-only">Nombre en listados</label>
+              <input type="text" id="user-display-name-input" placeholder="Nombre en listados" autocomplete="nickname" maxlength="120" style="min-width:7rem;flex:1;max-width:11rem;padding:0.3rem 0.45rem;border-radius:6px;border:1px solid #cbd5e1;font-size:0.9rem;box-sizing:border-box;" />
+              <button type="button" class="btn-secondary" id="btn-user-display-name-guardar" title="Guardar cómo te mostrarán en la app" aria-label="Guardar nombre en listados" style="min-height:2.25rem;padding:0.25rem 0.5rem;font-size:0.85rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Guardar</button>
+            </div>
+          </div>
           <button type="button" class="btn-refresh" id="btn-refresh" title="Actualizar permisos" aria-label="Actualizar permisos">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
           </button>
@@ -2551,7 +2562,7 @@
         <div id="ordenes-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-ordenes" class="tabla-listado-ordenes">
-            <thead><tr><th>Nº</th><th class="th-orden-fecha">Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
+            <thead><tr><th>Nº</th><th class="th-orden-fecha">Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Usuario</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
             <tbody id="ordenes-tbody"></tbody>
           </table>
         </div>
@@ -2662,7 +2673,7 @@
           <div id="cajas-loading" class="cajas-loading vista-loading-spinner" style="display:none;">Cargando movimientos…</div>
           <div id="cajas-tabla-wrap" class="tabla-movimientos-wrap tabla-wrap-con-scroll" style="display:none;">
             <table class="tabla-movimientos" id="tabla-movimientos-caja">
-              <thead><tr><th class="th-caja-fecha">Fecha</th><th class="th-caja-origen">Origen</th><th class="th-caja-nro">Nro orden</th><th class="th-caja-nro">Nro Trx</th><th class="th-caja-movimiento-nombre">Movimiento</th><th class="th-caja-tipo-mov">Tipo</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda</span></th><th class="th-caja-monto">Monto</th><th class="th-caja-caja-tipo">Caja</th><th>Concepto</th><th></th></tr></thead>
+              <thead><tr><th class="th-caja-fecha">Fecha</th><th class="th-caja-origen">Origen</th><th class="th-caja-nro">Nro orden</th><th class="th-caja-nro">Nro Trx</th><th class="th-caja-movimiento-nombre">Movimiento</th><th class="th-caja-tipo-mov">Tipo</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda</span></th><th class="th-caja-monto">Monto</th><th class="th-caja-caja-tipo">Caja</th><th>Usuario</th><th>Concepto</th><th></th></tr></thead>
               <tbody id="movimientos-caja-tbody"></tbody>
             </table>
           </div>
@@ -3021,7 +3032,7 @@
         <div id="seguridad-loading" class="seguridad-loading vista-loading-spinner">Cargando usuarios…</div>
         <div id="seguridad-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="seguridad-tabla">
-            <thead><tr><th>Email</th><th>Rol</th><th>Acción</th></tr></thead>
+            <thead><tr><th>Email</th><th>Nombre (listados)</th><th>Rol</th><th>Acción</th></tr></thead>
             <tbody id="seguridad-tbody"></tbody>
           </table>
         </div>
@@ -3725,7 +3736,7 @@
               <div id="orden-inst-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando instrumentación…</div>
               <div id="orden-inst-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
                 <table id="orden-inst-tabla">
-                  <thead><tr><th>Nro</th><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Estado</th><th></th></tr></thead>
+                  <thead><tr><th>Nro</th><th>Tipo</th><th>Modo pago</th><th>Moneda</th><th>Monto</th><th>Pagador</th><th>Cobrador</th><th>Usuario</th><th>Estado</th><th></th></tr></thead>
                   <tbody id="orden-inst-tbody"></tbody>
                 </table>
               </div>

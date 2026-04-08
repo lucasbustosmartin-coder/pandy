@@ -130,7 +130,7 @@ En el listado de Órdenes, las filas **«Cola local»** permiten abrir **Editar 
 Hasta que vuelva la conexión (y en algunos casos tocás **Reintentar**), **no** podrás completar en el servidor, entre otras:
 
 - **Actualizar permisos** / refrescar rol desde el menú.  
-- **Seguridad** (usuarios, roles, permisos, tiempo de sesión, comisión USD fija).  
+- **Seguridad** (usuarios, **nombre visible** por usuario, roles, permisos, tiempo de sesión, comisión USD fija).  
 - **Empresa / marca** — guardar configuración.  
 - **Clientes**, **Intermediarios**, **Tipos de operación** (incl. orden visual), **Reglas de negocio** — guardar o refrescar listados.  
 - **Anular orden**; **anular** movimiento manual de CC.  

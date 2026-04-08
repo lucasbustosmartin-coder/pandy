@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.6.4',
+  versionLabel: 'v3.7.0',
   lines: [
-    'Al guardar una orden nueva hay que elegir siempre un cliente en Participantes; sin cliente la app no deja guardar ni en la cola local.',
-    'La ayuda del paso Participantes aclara que el intermediario se suma solo cuando el tipo de operación lo pide.',
-    'Así el listado de órdenes y los reportes quedan alineados con un cliente asignado en cada orden.',
+    'Podés poner un nombre visible para cada usuario: en la barra superior para tu perfil y, si sos admin, en Seguridad para el resto.',
+    'En órdenes, transacciones y cajas se muestra quién actuó con ese nombre (si no hay nombre, el correo).',
+    'Las exportaciones a Excel y el pie de «Exportado por» usan el mismo criterio.',
   ],
 };

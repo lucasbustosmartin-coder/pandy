@@ -26,6 +26,7 @@ const BOOTSTRAP_FILES = [
   'helpers_fecha_argentina.sql',
   'supabase_tablas_negocio.sql',
   'supabase_seguridad.sql',
+  'migracion_user_profiles_display_name.sql',
   'supabase_rls_negocio.sql',
   'supabase_complejidad_ordenes.sql',
   'supabase_seguridad_complejidad.sql',
