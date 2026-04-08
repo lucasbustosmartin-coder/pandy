@@ -733,6 +733,92 @@
     .modal.modal-confirm { width: max-content; max-width: min(95vw, 560px); min-width: 200px; }
     .modal-confirm .modal-body { max-height: min(55vh, 22rem); overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .modal-confirm .modal-confirm-texto { margin: 0; color: #333; line-height: 1.5; white-space: pre-line; }
+    /* Modal «Nueva versión» (PWA / actualización): layout con logo empresa o icono app */
+    .modal.modal-confirm.modal-confirm--release { max-width: min(96vw, 440px); }
+    .modal-confirm--release .modal-body { max-height: min(72vh, 32rem); }
+    .modal-confirm-texto.modal-confirm-texto--rich { white-space: normal; }
+    .pandi-release-card {
+      text-align: left;
+      padding: 1rem 1.1rem 0.25rem;
+      border-radius: 14px;
+      background: linear-gradient(165deg, #f8fafc 0%, #f1f5f9 45%, #eef2ff 100%);
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    }
+    .pandi-release-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.65rem;
+      margin-bottom: 0.85rem;
+    }
+    .pandi-release-logo {
+      width: 80px;
+      height: 80px;
+      object-fit: contain;
+      border-radius: 18px;
+      background: #fff;
+      padding: 6px;
+      box-sizing: border-box;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(226, 232, 240, 0.9);
+    }
+    .pandi-release-version-badge {
+      display: inline-block;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      color: #fff;
+      background: linear-gradient(135deg, #0d2137 0%, #134e6f 100%);
+      padding: 0.28rem 0.85rem;
+      border-radius: 999px;
+      box-shadow: 0 2px 8px rgba(13, 33, 55, 0.25);
+    }
+    .pandi-release-lead {
+      margin: 0 0 0.5rem;
+      font-size: 1rem;
+      line-height: 1.5;
+      color: #334155;
+    }
+    .pandi-release-lead strong { color: #0f172a; }
+    .pandi-release-subtitulo {
+      margin: 0.85rem 0 0.4rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+    }
+    .pandi-release-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .pandi-release-list li {
+      display: flex;
+      gap: 0.55rem;
+      align-items: flex-start;
+      margin: 0.5rem 0 0;
+      font-size: 0.94rem;
+      line-height: 1.45;
+      color: #1e293b;
+    }
+    .pandi-release-check {
+      flex-shrink: 0;
+      width: 1.35rem;
+      height: 1.35rem;
+      margin-top: 0.12rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: rgba(13, 125, 61, 0.12);
+      color: #0d7d3d;
+    }
+    .pandi-release-check svg { width: 0.78rem; height: 0.78rem; }
+    @media (max-width: 480px) {
+      .pandi-release-card { padding: 0.85rem 0.9rem 0.15rem; }
+      .pandi-release-logo { width: 68px; height: 68px; border-radius: 16px; }
+    }
     .orden-field-editing { box-shadow: 0 0 0 2px #0ea5e9; outline: none; }
     .form-row.dos-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
     .form-row.tres-columnas { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
@@ -2232,7 +2318,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.6.3</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.6.4</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -3448,7 +3534,7 @@
           </div>
           <div id="orden-wizard" style="display:none;">
             <div id="orden-step-participantes">
-              <h3 style="margin:0 0 0.75rem 0; font-size:1rem;">Participantes <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><span class="js-marca-sistema-nombre">Pandi</span> siempre participa. Podés cargar la orden con cliente, con intermediario o con ambos.</span></span></h3>
+              <h3 style="margin:0 0 0.75rem 0; font-size:1rem;">Participantes <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><span class="js-marca-sistema-nombre">Pandi</span> siempre participa. Toda orden debe tener un cliente elegido. Si el tipo usa intermediario en cadena, elegí también al intermediario.</span></span></h3>
               <div class="form-row dos-columnas">
                 <div class="form-group">
                   <label>Participante fijo</label>
@@ -4315,7 +4401,7 @@
         <button type="button" class="modal-close" id="modal-confirm-cerrar" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
-        <p id="modal-confirm-mensaje" class="modal-confirm-texto"></p>
+        <div id="modal-confirm-mensaje" class="modal-confirm-texto"></div>
         <div class="form-actions" style="margin-top:1rem; margin-bottom:0;">
           <button type="button" class="btn-primary" id="modal-confirm-aceptar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>Confirmar</button>
           <button type="button" class="btn-secondary" id="modal-confirm-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>Cancelar</button>

@@ -5053,8 +5053,8 @@ function guardarOrdenDesdeWizard(opcionGuardarConComisionCero = false) {
   const estado = document.getElementById('orden-estado').value;
   const observaciones = document.getElementById('orden-observaciones').value.trim() || null;
 
-  if (!clienteId && !intermediarioId) {
-    showToast('Definí participantes: elegí un cliente, un intermediario o ambos.', 'error');
+  if (!clienteId) {
+    showToast('Elegí un cliente. Toda orden debe tener cliente asignado.', 'error');
     return Promise.resolve(null);
   }
   if (!tipoOperacionId) {
@@ -5431,8 +5431,8 @@ function saveOrden(aceptaComisionCero = false) {
   const estado = document.getElementById('orden-estado').value;
   const observaciones = document.getElementById('orden-observaciones').value.trim() || null;
 
-  if (!clienteId && !intermediarioId) {
-    showToast('Definí participantes: elegí un cliente, un intermediario o ambos.', 'error');
+  if (!clienteId) {
+    showToast('Elegí un cliente. Toda orden debe tener cliente asignado.', 'error');
     return;
   }
   if (!tipoOperacionId) {

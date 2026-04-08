@@ -36,6 +36,11 @@ AS $$
 DECLARE
   next_num integer;
 BEGIN
+  IF p_cliente_id IS NULL THEN
+    RAISE EXCEPTION 'ordenes_insertar_con_proximo_numero: cliente_id es obligatorio'
+      USING ERRCODE = 'P0001';
+  END IF;
+
   PERFORM pg_advisory_xact_lock(hashtext('ordenes_proximo_numero'));
 
   SELECT COALESCE(MAX(o.numero), 0) + 1 INTO next_num FROM public.ordenes o;

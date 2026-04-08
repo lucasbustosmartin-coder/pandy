@@ -84,11 +84,13 @@ Detalle operativo: pasos numerados abajo y `docs/GIT_Y_VERCEL.md` §4c–§4d.
 
 **No delegar al usuario.** En cada “ok desplegar”, el agente edita el módulo de novedades y deja listo el texto del modal **«Nueva versión»** (antes del commit/push). Mismo comportamiento en **navegador de escritorio** y **PWA**: el aviso lee las novedades desde la red (`/pandi-release.json`), no solo desde el JavaScript en caché.
 
+**Regla para quien usa el repo:** en el flujo habitual **no hace falta que edites** `pandi-release-blurb.js`. Ese archivo lo actualiza el **agente** al cerrar el despliegue (versión + `lines`). Solo intervendrías ahí si lo pedís explícitamente (p. ej. copy muy particular) o si acordamos una excepción.
+
 | Qué | Cómo |
 |-----|------|
 | **Dónde** | Archivo **`pandi-release-blurb.js`** (export **`PANDI_RELEASE_BLURB`**). El build genera **`dist/pandi-release.json`** (no editar a mano). |
 | **`versionLabel`** | **Idéntico** al texto de `#sidebar-version` en `index.html` (ej. `v3.6.0`). |
-| **`lines`** | **2 a 4** frases **cortas**, en **español**, tono **simple y comercial**: lo que el usuario **va a ver o notar** al recargar (pantallas, ayudas, flujos, correcciones de uso). Basarse en los **cambios reales** de la sesión o del commit, no en mensajes genéricos. |
+| **`lines`** | **2 a 4** frases **cortas**, en **español**, tono **simple y comercial**: lo que el usuario **va a ver o notar** al recargar (pantallas, ayudas, flujos, correcciones de uso). Basarse en los **cambios reales** de la sesión o del commit, no en mensajes genéricos. El modal arma un **layout con más estilo** (tarjeta, badge de versión, lista con íconos) y muestra como mínimo el **logo de la empresa** (`app_empresa.logo_url` si está configurado; si no, el icono 192×192 de la app). |
 | **Solo lo visible** | En **`lines`** **no** mencionar Supabase, PostgreSQL, RPC, migraciones SQL, Vercel, despliegue ni otros detalles de **backend o infra**: el modal es para quien **usa la app**, no para el equipo técnico. Si un cambio fue solo de servidor sin efecto en pantalla, **no** entra en `lines` (y puede documentarse en la solapa **Versiones** de la bitácora para uso interno). Si hubo cambio de servidor **y** efecto visible, describir **solo el efecto** (ej. «Corrección al guardar una orden con…»), no la capa técnica. |
 | **Estilo** | Beneficio visible. **Ejemplos de tono** (adaptar al caso): «Se actualizaron las ayudas en G/P Operativa», «Corrección en el tipo de operación USD–USD con intermediario», «Ajustes en cuenta corriente para ver mejor los movimientos en el celular». |
 | **Evitar** | Jerga interna (`refactor`, `merge`, nombres de RPC, “fix” sin decir qué mejora para el usuario), párrafos largos, detalle técnico de implementación, **cualquier** referencia a base de datos, migraciones o proveedores cloud en el texto del modal. |
@@ -102,7 +104,7 @@ Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK de
 
 1. **Versión en la app y novedades para el modal PWA**  
    En `index.html`, actualizar `#sidebar-version` al **siguiente número de versión** (ej. v3.5.1 → v3.6.0).  
-   En **`pandi-release-blurb.js`**, actualizar **`PANDI_RELEASE_BLURB`** cumpliendo la subsección **«Novedades al recargar»** arriba: el **agente** redacta `lines` con lo que el usuario verá al recargar; **`versionLabel`** alineado al sidebar. Tras `vite build`, **`pandi-release.json`** en `dist/` refleja ese objeto (el modal lo pide por red para no depender del bundle viejo del service worker).
+   En **`pandi-release-blurb.js`**, actualizar **`PANDI_RELEASE_BLURB`** cumpliendo la subsección **«Novedades al recargar»** arriba: **solo el agente** redacta `lines` y alinea **`versionLabel`** al sidebar; **quien pide el despliegue no tiene que tocar este archivo** salvo excepción acordada. Tras `vite build`, **`pandi-release.json`** en `dist/` refleja ese objeto (el modal lo pide por red para no depender del bundle viejo del service worker).
 
 2. **Actualizar todas las solapas de la bitácora que correspondan** en `scripts/crear-bitacora-excel.js` (revisar cada una y no omitir las que apliquen):
    - **Versiones:** siempre en despliegue. Agregar una fila en el array `versiones` con (Versión, Fecha, Descripción del despliegue). Usar la misma versión que la del sidebar (ej. 1.1 sin la "v"). **Fecha:** usar `__HOY__` (el script la reemplaza por la fecha en Argentina al generar el Excel). Incluir los cambios principales.

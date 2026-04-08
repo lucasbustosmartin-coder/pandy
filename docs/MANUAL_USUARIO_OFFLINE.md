@@ -73,7 +73,7 @@ Sin red, podés **seguir viendo** lo que ya se guardó en el dispositivo al carg
 
 ### 6.1 Cola simple — «Orden en cola local»
 
-Desde **Órdenes**, botón para abrir el **formulario reducido** (tipo, fechas, participantes, montos, etc.). Los datos usan el **catálogo en caché** (clientes, intermediarios, tipos, modos de pago). Podés:
+Desde **Órdenes**, botón para abrir el **formulario reducido** (tipo, fechas, participantes, montos, etc.). Los datos usan el **catálogo en caché** (clientes, intermediarios, tipos, modos de pago). **Cliente obligatorio:** toda orden (incluida la cola simple y la plantilla del wizard) debe tener un cliente elegido; el intermediario se suma cuando el tipo de operación lo exige. Podés:
 
 - Guardar ítems en la cola de **este navegador**.  
 - Ver el **resumen**, **quitar** un ítem solo de la cola (no borra Supabase).  

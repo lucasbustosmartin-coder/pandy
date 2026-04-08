@@ -54,7 +54,7 @@ En la UI se planteó: en el modal de orden, poder indicar **con quién acuerda l
 - **Esquema `ordenes`:** ¿campo `acuerdo_con` + `cliente_id` / `intermediario_id` opcionales, o convivencia con `intermediario_id` ya usado para “cadena”?  
 - **Instrumentación:** ¿las transacciones siguen el mismo esquema de pagador/cobrador reemplazando semánticamente “cliente” por “intermediario” en el acuerdo, o hay patrón dedicado?  
 - **`reglas_de_negocio`:** ¿nuevo conjunto de filas para `USD-ARS` con `contraparte_acuerdo = intermediario` (nombre a definir), o extensión de `usa_intermediario` / otro flag?  
-- **Nullable `cliente_id`:** ¿órdenes solo-intermediario permitidas; validaciones; reportes y listados?  
+- **Nullable `cliente_id`:** en la app actual **no** se permite guardar una orden sin cliente (validación en front, RPC `ordenes_insertar_con_proximo_numero` y cola al importar). Siguen existiendo filas históricas o borradores con `NULL` hasta limpieza/migración de datos si se desea `NOT NULL` en tabla.  
 - **Migración:** órdenes históricas = siempre “acuerdo con cliente” por defecto.
 
 ---

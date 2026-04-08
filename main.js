@@ -69,41 +69,56 @@ function nombreMarcaSistema() {
 
 /**
  * Modal PWA / navegador cuando hay una versión lista (recarga para aplicarla).
- * Texto de novedades: `pandi-release-blurb.js` (export `PANDI_RELEASE_BLURB`); en producción el aviso usa
- * `fetch('/pandi-release.json')` para mostrar las novedades del despliegue actual aunque el JS en caché sea viejo.
- * Despliegue: ver `.cursor/rules/bitacora-tareas.mdc` → «Novedades al recargar».
+ * Contenido en HTML (logo empresa o icono app, badge de versión, lista de novedades): `pandi-release-blurb.js`;
+ * en producción el aviso usa `fetch('/pandi-release.json')` para el despliegue actual aunque el bundle JS esté viejo.
+ * Despliegue: ver `.cursor/rules/bitacora-tareas.mdc` → «Novedades al recargar» (`lines` siguen siendo texto plano; se escapan al armar HTML).
  */
-function pandiPwaNuevaVersionMensajeDesdeBlurb(blurb) {
+function pandiPwaNuevaVersionHtmlDesdeBlurb(blurb) {
   const b = blurb && typeof blurb === 'object' ? blurb : PANDI_RELEASE_BLURB;
   const v = b && b.versionLabel != null ? String(b.versionLabel).trim() : '';
   const rawLines = b && Array.isArray(b.lines) ? b.lines : [];
   const lines = rawLines.map((l) => String(l || '').trim()).filter(Boolean);
-  let body = `Hay una nueva versión de ${nombreMarcaSistema()}`;
-  if (v) body += ` (${v})`;
-  body += '. ¿Recargás ahora para actualizar?';
+  const marca = escapeHtml(nombreMarcaSistema());
+  const logoSrc = escapeHtml(logoUrlSeguroParaImgSrc());
+  const badge = v ? `<span class="pandi-release-version-badge">${escapeHtml(v)}</span>` : '';
+  let listBlock = '';
   if (lines.length) {
-    body += '\n\nQué hay de nuevo\n';
-    body += lines.map((l) => `• ${l}`).join('\n');
+    listBlock =
+      '<p class="pandi-release-subtitulo">Qué hay de nuevo</p><ul class="pandi-release-list" role="list">' +
+      lines
+        .map(
+          (l) =>
+            '<li><span class="pandi-release-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span>' +
+            escapeHtml(l) +
+            '</span></li>',
+        )
+        .join('') +
+      '</ul>';
   }
-  return body;
+  return (
+    '<div class="pandi-release-card">' +
+    '<div class="pandi-release-hero">' +
+    `<img class="pandi-release-logo" src="${logoSrc}" width="80" height="80" decoding="async" alt="Logo ${marca}" />` +
+    badge +
+    '</div>' +
+    `<p class="pandi-release-lead">Actualizamos <strong>${marca}</strong> con mejoras pensadas para tu día a día. ¿Recargamos ahora para aplicar la actualización?</p>` +
+    listBlock +
+    '</div>'
+  );
 }
 
-function pandiPwaNuevaVersionMensaje() {
-  return pandiPwaNuevaVersionMensajeDesdeBlurb(PANDI_RELEASE_BLURB);
-}
-
-/** Novedades desde el servidor (JSON no precacheado) para el modal antes de recargar; fallback al blurb embebido. */
-async function pandiPwaNuevaVersionMensajeParaPrompt() {
+/** Novedades desde el servidor (JSON no precacheado) para el modal antes de recargar; fallback al blurb embebido. Devuelve HTML (ver `showConfirm` con `opciones.html`). */
+async function pandiPwaNuevaVersionHtmlParaPrompt() {
   try {
     const r = await fetch('/pandi-release.json', { cache: 'no-store', credentials: 'same-origin' });
     if (r.ok) {
       const j = await r.json();
-      if (j && typeof j === 'object') return pandiPwaNuevaVersionMensajeDesdeBlurb(j);
+      if (j && typeof j === 'object') return pandiPwaNuevaVersionHtmlDesdeBlurb(j);
     }
   } catch (_) {
     /* sin red o error */
   }
-  return pandiPwaNuevaVersionMensaje();
+  return pandiPwaNuevaVersionHtmlDesdeBlurb(PANDI_RELEASE_BLURB);
 }
 
 /** Icono app 192×192: prod (cara clara) o dev/Preview (panda celeste) según `window.PANDI_ICON_192_DEFAULT` en config.js. */
@@ -1017,6 +1032,17 @@ async function pandiImportOfflineQueueSequential() {
         usuario_id: currentUserId,
         updated_at: new Date().toISOString(),
       };
+      const pidCola = payload.cliente_id != null ? String(payload.cliente_id).trim() : '';
+      if (!pidCola) {
+        failed.push({
+          ...item,
+          syncState: 'error',
+          lastError: 'El borrador no tiene cliente. Elegí un cliente al armar la orden o quitá el ítem de la cola.',
+          attempts: (item.attempts || 0) + 1,
+        });
+        showToast('Cola local: un ítem no tiene cliente; no se importó. Revisá o quitá ese borrador.', 'error');
+        continue;
+      }
       const ver = item.v || 1;
       if (ver === 2 && item.transaccionesPlantilla && item.transaccionesPlantilla.length) {
         const resOrd = await insertOrdenConProximoNumero(payload);
@@ -1250,8 +1276,8 @@ async function pandiOrdenOfflineGuardarEnCola() {
     showToast('Este tipo exige intermediario.', 'error');
     return;
   }
-  if (!clienteId && !intermediarioId) {
-    showToast('Elegí al menos cliente o intermediario.', 'error');
+  if (!clienteId) {
+    showToast('Elegí un cliente. Toda orden debe tener cliente asignado.', 'error');
     return;
   }
   if (!tipoOperacionId || !fecha) {
@@ -13268,8 +13294,11 @@ function dismissAllToasts() {
   });
 }
 
-/** Confirmación con mensajería interna (no usar confirm() del navegador). Muestra un modal con mensaje y botones; llama onConfirm al aceptar, onCancel al cancelar o cerrar. textoCancelar y titulo opcionales. */
-function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar, tituloModal) {
+/**
+ * Confirmación con mensajería interna (no usar confirm() del navegador).
+ * `opciones.html === true`: `mensaje` es HTML confiable (solo generado por la app); se aplica layout «Nueva versión» (clase `modal-confirm--release`).
+ */
+function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar, tituloModal, opciones) {
   const backdrop = document.getElementById('modal-confirm-backdrop');
   const titulo = document.getElementById('modal-confirm-titulo');
   const texto = document.getElementById('modal-confirm-mensaje');
@@ -13277,7 +13306,13 @@ function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar
   const btnCancelar = document.getElementById('modal-confirm-cancelar');
   const btnCerrar = document.getElementById('modal-confirm-cerrar');
   if (!backdrop || !texto || !btnAceptar || !btnCancelar) return;
-  texto.textContent = mensaje;
+  const opts = opciones && typeof opciones === 'object' ? opciones : null;
+  const useHtml = !!(opts && opts.html === true);
+  const modalRoot = backdrop.querySelector('.modal.modal-confirm');
+  if (modalRoot) modalRoot.classList.toggle('modal-confirm--release', useHtml);
+  texto.classList.toggle('modal-confirm-texto--rich', useHtml);
+  if (useHtml) texto.innerHTML = mensaje;
+  else texto.textContent = mensaje;
   if (titulo) titulo.textContent = (tituloModal !== undefined && tituloModal !== null && tituloModal !== '') ? tituloModal : 'Confirmar';
   btnAceptar.textContent = textoConfirmar || 'Confirmar';
   btnCancelar.textContent = (textoCancelar !== undefined && textoCancelar !== null) ? textoCancelar : 'Cancelar';
@@ -13286,6 +13321,10 @@ function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar
   const cerrar = (ejecutado) => {
     backdrop.classList.remove('activo');
     backdrop.setAttribute('aria-hidden', 'true');
+    texto.textContent = '';
+    texto.innerHTML = '';
+    texto.classList.remove('modal-confirm-texto--rich');
+    if (modalRoot) modalRoot.classList.remove('modal-confirm--release');
     btnAceptar.onclick = null;
     btnCancelar.onclick = null;
     btnCerrar.onclick = null;
@@ -16291,6 +16330,10 @@ function getProximoNumeroOrden() {
 
 /** Inserta una orden con numero = MAX+1 atómico (función en DB con lock). Si la columna numero no existe o la RPC no está en Supabase, hace INSERT con getProximoNumeroOrden. */
 function insertOrdenConProximoNumero(payload) {
+  const cidIns = payload && payload.cliente_id != null ? String(payload.cliente_id).trim() : '';
+  if (!cidIns) {
+    return Promise.resolve({ data: null, error: { message: 'Toda orden debe tener un cliente asignado.' } });
+  }
   if (!ordenesTieneNumeroColumn) {
     return client.from('ordenes').insert(payload).select('id, numero');
   }
@@ -16452,8 +16495,8 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
   const cotizacion = cotizacionRaw ? parseImporteInput(cotizacionRaw) : null;
   const observaciones = document.getElementById('orden-observaciones').value.trim() || null;
 
-  if (!clienteId && !intermediarioId) {
-    return { error: 'Definí participantes: elegí un cliente, un intermediario o ambos.' };
+  if (!clienteId) {
+    return { error: 'Elegí un cliente. Toda orden debe tener cliente asignado.' };
   }
   if (!tipoOperacionId) {
     return { error: 'Elegí un tipo de operación.' };
@@ -16702,8 +16745,8 @@ function guardarOrdenDesdeWizard() {
   const estado = document.getElementById('orden-estado').value;
   const observaciones = document.getElementById('orden-observaciones').value.trim() || null;
 
-  if (!clienteId && !intermediarioId) {
-    showToast('Definí participantes: elegí un cliente, un intermediario o ambos.', 'error');
+  if (!clienteId) {
+    showToast('Elegí un cliente. Toda orden debe tener cliente asignado.', 'error');
     return Promise.resolve(null);
   }
   if (!tipoOperacionId) {
@@ -17337,8 +17380,8 @@ function saveOrden() {
   const cotizacion = cotizacionRaw ? parseImporteInput(cotizacionRaw) : null;
   const observaciones = document.getElementById('orden-observaciones').value.trim() || null;
 
-  if (!clienteId && !intermediarioId) {
-    showToast('Definí participantes: elegí un cliente, un intermediario o ambos.', 'error');
+  if (!clienteId) {
+    showToast('Elegí un cliente. Toda orden debe tener cliente asignado.', 'error');
     return;
   }
   if (!tipoOperacionId) {
@@ -24693,7 +24736,7 @@ try {
       async function showPwaUpdateConfirm() {
         if (pwaPromptActive) return;
         pwaPromptActive = true;
-        const msg = await pandiPwaNuevaVersionMensajeParaPrompt();
+        const msg = await pandiPwaNuevaVersionHtmlParaPrompt();
         showConfirm(
           msg,
           'Recargar',
@@ -24706,6 +24749,7 @@ try {
           },
           'Después',
           'Nueva versión',
+          { html: true },
         );
       }
 

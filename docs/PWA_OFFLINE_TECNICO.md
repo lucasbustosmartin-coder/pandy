@@ -56,6 +56,7 @@ Todas llevan `savedAt` (ISO) para TTL y franjas de “datos al …”.
 - **Constantes:** `PANDI_OFFLINE_QUEUE_KEY`, API `pandiOfflineQueueInit`, `pandiOfflineQueueRead/Write`.
 - **Contenido:** ítems con `localId`, payload de orden, plantilla v2 (`transaccionesPlantilla`, comisiones, etc.), `syncState` (`pending` / `error`), `attempts`.
 - **UI:** filas sintéticas en Órdenes, modal orden offline, import secuencial con rollback parcial documentado en bitácora.
+- **Cliente obligatorio:** al guardar en cola (formulario reducido o plantilla v2 del wizard) y al importar a Supabase, el payload debe traer `cliente_id`; ítems legacy sin cliente fallan la importación con error en cola (no se crea orden).
 - **Catálogos:** `pandi_offline_catalogos_cache_v1` — clientes, intermediarios, tipos_operacion (con iconos), modos_pago; refresco al tener red (`pandiRefreshOfflineCatalogosCache`).
 
 ---

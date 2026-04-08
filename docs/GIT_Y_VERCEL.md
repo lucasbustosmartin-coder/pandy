@@ -65,7 +65,7 @@ La URL “fea” que cambia en cada `npx vercel --yes` sigue existiendo en **Dep
 
 ## 4. Despliegue manual
 
-Antes del push en el flujo «ok desplegar»: subir versión en `index.html` (`#sidebar-version`), y en **`pandi-release-blurb.js`** el objeto **`PANDI_RELEASE_BLURB`** (el build genera **`pandi-release.json`** en `dist/` para que el modal lea novedades por red; detalle en **bitácora-tareas**).
+Antes del push en el flujo «ok desplegar»: subir versión en `index.html` (`#sidebar-version`), y en **`pandi-release-blurb.js`** el objeto **`PANDI_RELEASE_BLURB`** — en la práctica lo completa el **agente** al cerrar el despliegue; no es un paso manual habitual para quien pide «desplegar» (ver **bitácora-tareas**). El build genera **`pandi-release.json`** en `dist/` para que el modal lea novedades por red. El aviso **«Nueva versión»** usa HTML con logo (empresa o icono por defecto), badge de versión y lista de novedades; `lines` sigue siendo solo texto (se escapa al renderizar).
 
 Después de push a `main`, desde la raíz:
 
