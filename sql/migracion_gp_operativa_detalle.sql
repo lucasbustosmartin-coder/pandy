@@ -31,6 +31,7 @@ BEGIN
           'monto', m.monto,
           'concepto', COALESCE(m.concepto, ''),
           'tipo_movimiento', t.nombre,
+          'modo_pago', '',
           'orden_numero', m.orden_numero,
           'transaccion_numero', m.transaccion_numero,
           'entidad', NULL
@@ -63,6 +64,11 @@ BEGIN
           'monto', m.monto,
           'concepto', COALESCE(m.concepto, ''),
           'tipo_movimiento', t.nombre,
+          'modo_pago', COALESCE(
+            NULLIF(TRIM(COALESCE(mp.nombre, '')), ''),
+            NULLIF(TRIM(COALESCE(mp.codigo, '')), ''),
+            ''
+          ),
           'orden_numero', COALESCE(m.orden_numero, o.numero),
           'transaccion_numero', m.transaccion_numero,
           'entidad', NULL
@@ -72,6 +78,8 @@ BEGIN
       FROM public.movimientos_caja m
       LEFT JOIN public.tipos_movimiento_caja t ON t.id = m.tipo_movimiento_id
       LEFT JOIN public.ordenes o ON o.id = m.orden_id
+      LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
+      LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
       WHERE m.orden_id IS NOT NULL
         AND m.estado = 'cerrado'
         AND (p_desde IS NULL OR m.fecha >= p_desde)
@@ -95,6 +103,7 @@ BEGIN
           'monto', m.monto,
           'concepto', COALESCE(m.concepto, ''),
           'tipo_movimiento', NULL,
+          'modo_pago', '',
           'orden_numero', o.numero,
           'transaccion_numero', m.transaccion_numero,
           'entidad', c.nombre
@@ -126,6 +135,7 @@ BEGIN
         'monto', m.monto,
         'concepto', COALESCE(m.concepto, ''),
         'tipo_movimiento', NULL,
+        'modo_pago', '',
         'orden_numero', o.numero,
         'transaccion_numero', m.transaccion_numero,
         'entidad', i.nombre
@@ -143,6 +153,6 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON de movimientos que entran en una fila de G/P Operativa para el período: caja_manual, caja_ordenes, cc_cliente, cc_intermediario. Mismos filtros que gp_operativa_resumen (cerrados, fechas inclusive AR, tipos caja con incluye_gp_operativo en manual). SECURITY INVOKER / RLS.';
+COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON de movimientos que entran en una fila de G/P Operativa para el período: caja_manual, caja_ordenes, cc_cliente, cc_intermediario. Mismos filtros que gp_operativa_resumen (cerrados, fechas inclusive AR, tipos caja con incluye_gp_operativo en manual). Campo modo_pago: nombre (o código) del catálogo modos_pago vía transacción vinculada a movimientos_caja.transaccion_id en caja_ordenes; vacío en el resto. SECURITY INVOKER / RLS.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_detalle(date, date, text) TO authenticated;

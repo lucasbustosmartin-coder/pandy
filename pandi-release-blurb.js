@@ -4,9 +4,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.6.0',
+  versionLabel: 'v3.6.1',
   lines: [
-    'Multicontraparte manual: en cuenta corriente del cliente del acuerdo, el ingreso ejecutado hacia Pandy en moneda recibida deja solo la línea «Ajuste libro acuerdo» (+) y ya no muestra «Cobro realizado» (−) en esa pata.',
-    'Re-sincronizá las órdenes multicontraparte afectadas para que el saldo en USD refleje el cambio.',
+    'En G/P Operativa, al abrir el detalle de «Movimientos de caja por órdenes», cada fila indica el modo de pago de la operación (efectivo, transferencia bancaria o cheque).',
+    'Así se entiende de un vistazo qué entra en esa fila sin separar totales en el panel.',
   ],
 };

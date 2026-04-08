@@ -472,7 +472,7 @@
     /* Cuenta corriente: Ver detalle y modales manual / editar fila — por encima del drawer en ≤768px (sidebar z-index 250). Si no, el modal queda “atrás” y parece que no se puede tocar nada. */
     #modal-cc-detalle-backdrop.activo { z-index: 260; }
     #modal-gp-operativa-detalle-backdrop.activo { z-index: 265; }
-    .modal-gp-operativa-detalle { max-width: min(95vw, 960px); width: 95%; }
+    .modal-gp-operativa-detalle { max-width: min(95vw, 1040px); width: 95%; }
     .modal-gp-operativa-detalle .modal-body { min-width: 0; max-width: 100%; overflow-x: hidden; }
     #modal-gp-operativa-detalle-leyenda { margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #64748b; line-height: 1.4; }
     #modal-gp-operativa-detalle-loading { margin: 0.5rem 0; }
@@ -483,6 +483,7 @@
     #modal-gp-operativa-detalle-content table.tabla-gp-detalle { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
     #modal-gp-operativa-detalle-content table.tabla-gp-detalle thead th { position: sticky; top: 0; z-index: 1; background: #f1f5f9; box-shadow: 0 1px 0 #e2e8f0; text-align: left; padding: 0.5rem 0.45rem; font-weight: 600; }
     #modal-gp-operativa-detalle-content table.tabla-gp-detalle td { padding: 0.45rem 0.45rem; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+    #modal-gp-operativa-detalle-content table.tabla-gp-detalle td.td-modopago-gp { white-space: nowrap; max-width: 11rem; }
     #modal-gp-operativa-detalle-content .gp-detalle-monto { font-variant-numeric: tabular-nums; font-weight: 600; }
     #modal-gp-operativa-detalle-content .gp-detalle-monto.positivo { color: #0d7d3d; }
     #modal-gp-operativa-detalle-content .gp-detalle-monto.negativo { color: #b91c1c; }
@@ -2199,7 +2200,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.6.0</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.6.1</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>

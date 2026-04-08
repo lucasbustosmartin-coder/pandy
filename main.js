@@ -6034,7 +6034,7 @@ function pandiHtmlGpDetalleTfootDesdeContexto(rows, ctx) {
   return (
     '<tfoot><tr class="gp-detalle-tfoot-total">' +
     '<td colspan="2" class="gp-detalle-tfoot-total-label"><span class="gp-detalle-tfoot-total-inner"><strong>Total</strong></span></td>' +
-    '<td colspan="3" class="gp-detalle-tfoot-montos gp-detalle-tfoot-montos-grid-wrap">' +
+    '<td colspan="4" class="gp-detalle-tfoot-montos gp-detalle-tfoot-montos-grid-wrap">' +
     '<div class="gp-detalle-tfoot-montos-grid">' +
     blocks +
     '</div></td></tr></tfoot>'
@@ -6086,9 +6086,9 @@ function pandiHtmlGpDetalleSeccionConsolidado(allRows) {
 
 function pandiHtmlTablaGpOperativaDetalleFilas(rows, tfootCtx) {
   const head =
-    '<thead><tr><th>Fecha</th><th>Moneda</th><th>Monto</th><th>Concepto</th><th>Referencia</th></tr></thead>';
+    '<thead><tr><th>Fecha</th><th>Moneda</th><th>Monto</th><th>Modo de pago</th><th>Concepto</th><th>Referencia</th></tr></thead>';
   const emptyBody =
-    '<tbody><tr><td colspan="5">No hay movimientos en el período con este criterio.</td></tr></tbody>';
+    '<tbody><tr><td colspan="6">No hay movimientos en el período con este criterio.</td></tr></tbody>';
   const foot = pandiHtmlGpDetalleTfootDesdeContexto(rows || [], tfootCtx);
   if (!rows || rows.length === 0) {
     return head + emptyBody + foot;
@@ -6100,6 +6100,8 @@ function pandiHtmlTablaGpOperativaDetalleFilas(rows, tfootCtx) {
       const cls = inicioGpClaseSigno(m);
       const montoStr = formatMonto(m, mon);
       const fec = String(r.fecha || '').slice(0, 10);
+      const modoRaw = r.modo_pago != null ? String(r.modo_pago).trim() : '';
+      const modoStr = modoRaw ? modoRaw : '–';
       return (
         '<tr><td>' +
         escapeHtml(fec) +
@@ -6109,6 +6111,8 @@ function pandiHtmlTablaGpOperativaDetalleFilas(rows, tfootCtx) {
         cls +
         '">' +
         escapeHtml(montoStr) +
+        '</td><td class="td-modopago-gp">' +
+        escapeHtml(modoStr) +
         '</td><td class="td-concepto">' +
         escapeHtml(r.concepto || '–') +
         '</td><td class="td-concepto">' +
@@ -6426,7 +6430,7 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-ordenes">Movimientos de caja por órdenes</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja por órdenes en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
+      '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). En el <strong>detalle</strong> (lista) cada fila muestra el <strong>Modo de pago</strong> de la transacción (Efectivo, Transferencia banco, Cheque, etc.) para distinguirlos aunque sigan en la misma fila de la matriz. Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
       escapeHtml(nombreMarcaSistema()) +
       '</span> cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de los movimientos de caja manuales filtrados por tipo.</span></span>',
     monedas.map((m) => celMonedaPareja(cajaOrd, m, false, 'caja_ordenes')).join(''),
