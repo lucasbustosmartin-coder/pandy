@@ -9,12 +9,19 @@ En este tipo **no hay comisión como línea aparte en la orden**: la **comisión
 - En la UI, `monto_recibido` debe ser **mayor** que `monto_entregado` (si no, error de validación).
 - Ese margen es el **ingreso de Pandy** por el acuerdo.
 
-En el bloque **Datos del acuerdo** (importe = monto que recibe el cliente, tasa al cliente en %):
+En el bloque **Datos del acuerdo** (importe = monto que recibe el cliente, tasa al cliente en %), el usuario elige la **interpretación de la tasa** (solo en la UI de USD-USD):
 
-**`monto_entregado = importe × (1 − tasa_al_cliente / 100)`**  
-**`comisión = importe − monto_entregado`** (descuento lineal sobre el recibido; la comisión es exactamente **importe × tasa / 100**).
+1. **Descuento sobre lo recibido** (por defecto; compatible con órdenes guardadas antes sin campo explícito):  
+   **`monto_entregado = importe × (1 − tasa_al_cliente / 100)`**  
+   **`comisión = importe − monto_entregado`** (equivale a **importe × tasa / 100**).
 
-Ejemplo: importe 5.300 USD y tasa 6 % → entrega 5.300 × 0,94 = **4.982 USD**, comisión **318 USD**.
+2. **Incremento sobre lo entregado** (tasa inclusiva):  
+   **`monto_entregado = importe / (1 + tasa_al_cliente / 100)`**  
+   **`comisión = importe − monto_entregado`**.
+
+La elección se persiste en **`ordenes.usd_usd_tasa_cliente_modo`** (`descuento` | `incremento`; `NULL` en órdenes viejas = descuento). Migración: `sql/migracion_ordenes_usd_usd_tasa_cliente_modo.sql` y RPC `sql/ordenes_insertar_con_proximo_numero.sql`.
+
+Ejemplo (modo descuento): importe 5.300 USD y tasa 6 % → entrega 5.300 × 0,94 = **4.982 USD**, comisión **318 USD**.
 
 ## Dónde vive la lógica CC
 

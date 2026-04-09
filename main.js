@@ -4777,25 +4777,47 @@ function esPatronVendeFiatConTc(p) {
   return p === 'vende_usd' || p === 'vende_eur';
 }
 
+const USD_USD_TASA_CLIENTE_MODO_DESCUENTO = 'descuento';
+const USD_USD_TASA_CLIENTE_MODO_INCREMENTO = 'incremento';
+
+/** Normaliza modo persistido o del DOM: solo `incremento` altera la fórmula; el resto = descuento (incluye NULL en órdenes viejas). */
+function ordenUsdUsdTasaClienteModoNormalizado(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  return s === USD_USD_TASA_CLIENTE_MODO_INCREMENTO ? USD_USD_TASA_CLIENTE_MODO_INCREMENTO : USD_USD_TASA_CLIENTE_MODO_DESCUENTO;
+}
+
+function ordenUsdUsdTasaClienteModoDesdeDom() {
+  const el = document.querySelector('input[name="orden-usd-usd-tasa-cliente-modo"]:checked');
+  return ordenUsdUsdTasaClienteModoNormalizado(el && el.value);
+}
+
 /**
- * USD-USD — bloque «Datos del acuerdo»: el cliente recibe `importe` (mr); la tasa al cliente es un descuento lineal sobre lo recibido:
- * monto_entregado = importe × (1 − tasa%/100). Comisión implícita = importe − monto_entregado = importe × tasa%/100.
+ * USD-USD — bloque «Datos del acuerdo»: el cliente recibe `importe` (mr).
+ * - descuento: monto_entregado = importe × (1 − tasa%/100); comisión = importe × tasa%/100.
+ * - incremento (inclusiva): monto_entregado = importe / (1 + tasa%/100); comisión = importe − monto_entregado.
  */
-function ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct) {
+function ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct, modo) {
+  const m = ordenUsdUsdTasaClienteModoNormalizado(modo);
   const I = Number(importe);
   const p = Number(tasaPct);
   if (!(typeof I === 'number' && !isNaN(I) && I > 0)) return null;
   if (!(typeof p === 'number' && !isNaN(p) && p > 0 && p < 100)) return null;
+  if (m === USD_USD_TASA_CLIENTE_MODO_INCREMENTO) return I / (1 + p / 100);
   return I * (1 - p / 100);
 }
 
-/** Inversa: tasa % tal que mr × (1 − t/100) = me → t = 100 × (1 − me/mr). */
-function ordenUsdUsdTasaClientePctDesdeMrMe(mr, me) {
+/**
+ * Inversa tasa % desde mr y me guardados en la orden.
+ * descuento: t = 100 × (1 − me/mr). incremento: t = 100 × (mr/me − 1).
+ */
+function ordenUsdUsdTasaClientePctDesdeMrMe(mr, me, modo) {
+  const m = ordenUsdUsdTasaClienteModoNormalizado(modo);
   const r = Number(mr);
   const e = Number(me);
   if (!(typeof r === 'number' && !isNaN(r) && r > 0)) return null;
   if (!(typeof e === 'number' && !isNaN(e) && e > 0)) return null;
   if (e >= r) return null;
+  if (m === USD_USD_TASA_CLIENTE_MODO_INCREMENTO) return 100 * (r / e - 1);
   return 100 * (1 - e / r);
 }
 
@@ -7025,7 +7047,7 @@ function openModalOrdenesPendientes(estadoFilter) {
   tbody.innerHTML = '';
   const selEstado = document.getElementById('ordenes-pendientes-filtro-estado');
   if (selEstado) selEstado.value = estadoFilter || '';
-  const selectOrdPend = ordenesTieneNumeroColumn ? 'id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones' : 'id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones';
+  const selectOrdPend = ordenesTieneNumeroColumn ? 'id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones' : 'id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones';
   client.from('ordenes').select(selectOrdPend).neq('estado', 'orden_ejecutada').neq('estado', 'anulada').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((res) => {
       if (res.error) {
         loadingEl.style.display = 'none';
@@ -15408,8 +15430,8 @@ function loadOrdenes() {
     tbody.innerHTML = '';
   }
 
-  const selectBase = 'id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, observaciones, usuario_id';
-  const selectConNumero = 'id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, observaciones, usuario_id';
+  const selectBase = 'id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id';
+  const selectConNumero = 'id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id';
 
   function runLoadOrdenes(selectCols) {
     return client
@@ -15440,6 +15462,13 @@ function loadOrdenes() {
           if ((msg.includes('usuario_id') || msg.includes('usuario id')) && selectCols.includes('usuario_id')) {
             const sinU = selectCols.replace(', usuario_id', '');
             return runLoadOrdenes(sinU);
+          }
+          if (
+            (msg.includes('usd_usd_tasa_cliente_modo') || msg.includes('usd usd tasa cliente modo')) &&
+            selectCols.includes('usd_usd_tasa_cliente_modo')
+          ) {
+            const sinM = selectCols.replace(', usd_usd_tasa_cliente_modo', '');
+            return runLoadOrdenes(sinM);
           }
           return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(async () => {
             loadingEl.style.display = 'none';
@@ -15879,6 +15908,8 @@ function openModalOrden(registro) {
     const hidPatEarly = document.getElementById('orden-int-patron');
     if (hidPatEarly) hidPatEarly.value = '';
     document.querySelectorAll('input[name="orden-usd-nacho-comision-usd"]').forEach((r) => { r.checked = false; });
+    const rdUsdModo = document.querySelector('input[name="orden-usd-usd-tasa-cliente-modo"][value="descuento"]');
+    if (rdUsdModo) rdUsdModo.checked = true;
     closeOrdenTipoOperacionListbox();
     titulo.textContent = 'Nueva orden';
     syncOrdenTipoOperacionIconosPreview();
@@ -16153,7 +16184,11 @@ function openModalOrden(registro) {
         if (tasaClienteEl) {
           if (esChequeArsReg) tasaClienteEl.value = formatTasaPorcentajeDisplay((1 - me / mr) * 100);
           else if (tipoCodigoReg === 'USD-USD') {
-            const tUsd = ordenUsdUsdTasaClientePctDesdeMrMe(mr, me);
+            const modoUsd = ordenUsdUsdTasaClienteModoNormalizado(registroActual.usd_usd_tasa_cliente_modo);
+            document.querySelectorAll('input[name="orden-usd-usd-tasa-cliente-modo"]').forEach((r) => {
+              r.checked = r.value === modoUsd;
+            });
+            const tUsd = ordenUsdUsdTasaClientePctDesdeMrMe(mr, me, modoUsd);
             if (tUsd != null) tasaClienteEl.value = formatTasaPorcentajeDisplay(tUsd);
           }
         }
@@ -16636,6 +16671,8 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
   const btnIrInst = document.getElementById('orden-btn-ir-instrumentacion');
 
   if (wrapPrimerosDatos) wrapPrimerosDatos.style.display = isTipoPrimerosDatos ? 'block' : 'none';
+  const wrapUsdTasaModo = document.getElementById('orden-wrap-usd-usd-tasa-modo');
+  if (wrapUsdTasaModo) wrapUsdTasaModo.style.display = isUsdUsd ? 'block' : 'none';
   const rowMonedaMontoRec = document.getElementById('orden-row-moneda-monto-recibido');
   const rowMonedaMontoEnt = document.getElementById('orden-row-moneda-monto-entregado');
   if (rowMonedaMontoRec) rowMonedaMontoRec.style.display = isTipoPrimerosDatos ? 'none' : '';
@@ -16741,6 +16778,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     const tasaPct = parseImporteInput(tasaDescuentoClienteEl.value);
     const importeOk = typeof importe === 'number' && !isNaN(importe) && importe > 0;
     const tasaOk = typeof tasaPct === 'number' && !isNaN(tasaPct) && tasaPct > 0 && tasaPct < 100;
+    const modoUsdCli = isUsdUsd ? ordenUsdUsdTasaClienteModoDesdeDom() : USD_USD_TASA_CLIENTE_MODO_DESCUENTO;
     if (!importeOk || !tasaOk) {
       setRestoOrdenEditable(false);
       if (wrapMontosCalculados) wrapMontosCalculados.style.display = 'none';
@@ -16763,13 +16801,13 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
         if (montoRecibidoEl) montoRecibidoEl.value = '';
         if (montoEntregadoEl) montoEntregadoEl.value = '';
         {
-          const mePrev = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct);
+          const mePrev = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct, modoUsdCli);
           const spreadPrev = mePrev != null ? importe - mePrev : null;
           if (comisionDisplay) comisionDisplay.value = spreadPrev != null ? formatImporteDisplay(spreadPrev) : '';
         }
         return;
       }
-      montoEntregar = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct);
+      montoEntregar = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct, modoUsdCli);
     } else if (isUsdUsd && ordenUsdIntMostrarComisionFijaNacho()) {
       const nachoInp = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
       if (!nachoInp) {
@@ -16778,13 +16816,13 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
         if (montoRecibidoEl) montoRecibidoEl.value = '';
         if (montoEntregadoEl) montoEntregadoEl.value = '';
         {
-          const mePrev = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct);
+          const mePrev = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct, modoUsdCli);
           const spreadPrev = mePrev != null ? importe - mePrev : null;
           if (comisionDisplay) comisionDisplay.value = spreadPrev != null ? formatImporteDisplay(spreadPrev) : '';
         }
         return;
       }
-      montoEntregar = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct);
+      montoEntregar = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct, modoUsdCli);
       const comSpread = importe - montoEntregar;
       const fija = Number(nachoInp.value) || 0;
       if (fija > comSpread + 1e-6) {
@@ -16797,7 +16835,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
       }
     } else {
       montoEntregar = isUsdUsd
-        ? ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct)
+        ? ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct, modoUsdCli)
         : importe * (1 - tasaPct / 100);
     }
     if (montoEntregar == null || (typeof montoEntregar === 'number' && (isNaN(montoEntregar) || montoEntregar <= 0))) {
@@ -16833,6 +16871,10 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
       importeChequeEl.addEventListener('input', actualizarPrimerosDatos);
       importeChequeEl.addEventListener('change', actualizarPrimerosDatos);
     }
+    document.querySelectorAll('input[name="orden-usd-usd-tasa-cliente-modo"]').forEach((r) => {
+      r.removeEventListener('change', actualizarPrimerosDatos);
+      r.addEventListener('change', actualizarPrimerosDatos);
+    });
     if (tasaDescuentoClienteEl) {
       tasaDescuentoClienteEl.removeEventListener('input', actualizarPrimerosDatos);
       tasaDescuentoClienteEl.removeEventListener('change', actualizarPrimerosDatos);
@@ -17016,6 +17058,9 @@ function insertOrdenConProximoNumero(payload) {
     p_observaciones: payload.observaciones,
     p_usuario_id: payload.usuario_id,
     p_updated_at: payload.updated_at,
+    p_usd_usd_tasa_cliente_modo: payload.usd_usd_tasa_cliente_modo != null && String(payload.usd_usd_tasa_cliente_modo).trim() !== ''
+      ? String(payload.usd_usd_tasa_cliente_modo).trim()
+      : null,
   }).then((res) => {
     if (!res.error) {
       const row = res.data && (Array.isArray(res.data) ? res.data[0] : res.data);
@@ -17253,6 +17298,7 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
     observaciones,
     usuario_id: currentUserId,
     updated_at: new Date().toISOString(),
+    usd_usd_tasa_cliente_modo: tipoCodigoU === 'USD-USD' ? ordenUsdUsdTasaClienteModoDesdeDom() : null,
   };
 
   const nNach = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
@@ -17518,6 +17564,7 @@ function guardarOrdenDesdeWizard() {
     observaciones,
     usuario_id: currentUserId,
     updated_at: new Date().toISOString(),
+    usd_usd_tasa_cliente_modo: tipoCodigoU === 'USD-USD' ? ordenUsdUsdTasaClienteModoDesdeDom() : null,
   };
 
   function hacerUpdate(estadoPersistir) {
@@ -18179,6 +18226,7 @@ function saveOrden() {
     observaciones,
     usuario_id: currentUserId,
     updated_at: new Date().toISOString(),
+    usd_usd_tasa_cliente_modo: tipoCodigoU === 'USD-USD' ? ordenUsdUsdTasaClienteModoDesdeDom() : null,
   };
 
   function hacerUpdateOrden(estadoPersistir) {
@@ -18765,6 +18813,7 @@ function setupModalChatOrden() {
         observaciones: null,
         usuario_id: currentUserId,
         updated_at: new Date().toISOString(),
+        usd_usd_tasa_cliente_modo: null,
       };
       insertOrdenConProximoNumero(payload).then((res) => {
         if (res.error) {

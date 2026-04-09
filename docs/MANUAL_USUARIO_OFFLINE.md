@@ -80,6 +80,8 @@ Desde **Órdenes**, botón para abrir el **formulario reducido** (tipo, fechas, 
 - **Descargar JSON** de respaldo.  
 - Con conexión: **Enviar cola local** (importa en orden; si algo falla, los mensajes y la cola te orientan).
 
+En el **wizard de Nueva orden**, tipo **USD-USD** (con o sin intermediario), en **Datos del acuerdo** podés elegir si la **tasa al cliente** se interpreta como **descuento sobre lo recibido** o como **incremento sobre lo entregado** (inclusiva); el importe sigue siendo lo que recibe el cliente y el sistema calcula el monto a entregar según esa elección.
+
 ### 6.2 Cola con instrumentación (wizard sin red) — plantilla v2
 
 En **Nueva orden**, si no hay conexión a la nube, el flujo **«Ir a instrumentación»** puede guardar en cola una **plantilla de transacciones** (y comisiones si corresponde), según el tipo:

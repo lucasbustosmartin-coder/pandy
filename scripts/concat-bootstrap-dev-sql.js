@@ -55,6 +55,7 @@ const BOOTSTRAP_FILES = [
   'migracion_orden_tasa_descuento_intermediario.sql',
   'migracion_orden_intermediario_pago_transferencia.sql',
   'migracion_orden_intermediario_transferencia_tasa.sql',
+  'migracion_ordenes_usd_usd_tasa_cliente_modo.sql',
   'migracion_cc_intermediario_orden_id.sql',
   'migracion_cc_movimientos_cliente_montos_y_estado_pendiente.sql',
   'migracion_cc_intermediario_estado_pendiente.sql',

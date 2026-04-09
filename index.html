@@ -884,6 +884,11 @@
     #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-input { grid-row: 2; min-width: 0; width: 100%; box-sizing: border-box; }
     #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-col3 { grid-column: 3; grid-row: 1 / span 2; display: grid; grid-template-rows: auto auto; gap: 0.35rem; align-items: end; min-width: 0; }
     #orden-step-detalles .orden-primeros-datos-row .orden-primeros-datos-col3 .orden-primeros-datos-input { grid-row: 2; width: 100%; box-sizing: border-box; }
+    #orden-step-detalles .orden-usd-usd-tasa-modo-wrap { margin-bottom: 0.65rem; padding-bottom: 0.65rem; border-bottom: 1px solid #cce0ff; max-width: 100%; box-sizing: border-box; }
+    #orden-step-detalles .orden-usd-usd-tasa-modo-wrap .orden-usd-usd-tasa-modo-titulo { margin: 0 0 0.4rem 0; font-size: 0.88rem; font-weight: 600; color: #1e3a5f; line-height: 1.35; }
+    #orden-step-detalles .orden-usd-usd-tasa-modo-wrap .orden-int-patron-opcion { display: flex; align-items: flex-start; gap: 0.45rem; margin-bottom: 0.35rem; max-width: 100%; }
+    #orden-step-detalles .orden-usd-usd-tasa-modo-wrap .orden-int-patron-opcion input[type="radio"] { flex-shrink: 0; margin-top: 0.15rem; min-width: 18px; min-height: 18px; }
+    #orden-step-detalles .orden-usd-usd-tasa-modo-wrap .orden-int-patron-opcion-text { min-width: 0; line-height: 1.4; font-size: 0.84rem; color: #334155; }
     /* Aire entre importe/tasa y la fila Monto a Recibir / Entregar (bloque azul) */
     #orden-wrap-primeros-datos #orden-wrap-montos-calculados {
       margin-top: 1.35rem;
@@ -2321,7 +2326,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.2</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.3</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -3613,8 +3618,19 @@
               <div id="orden-wrap-detalles-tras-patron">
               <div id="orden-wrap-primeros-datos" style="display:none; margin-bottom:1rem; padding:0.85rem 1rem 1rem; background:#f0f7ff; border-radius:8px; border:1px solid #cce0ff;">
                 <p style="margin:0 0 0.75rem 0; font-size:0.9rem; color:#1e3a5f; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;"><strong>Datos del acuerdo</strong>
-                  <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: primeros datos de la orden"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Completá primero estos campos; el resto del formulario se <strong>calcula</strong> y <strong>desbloquea</strong> según el tipo (ej. CHEQUE-ARS: importe y tasas antes de montos derivados).</span></span>
+                  <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: primeros datos de la orden"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Completá primero estos campos; el resto del formulario se <strong>calcula</strong> y <strong>desbloquea</strong> según el tipo (ej. CHEQUE-ARS: importe y tasas antes de montos derivados). En <strong>USD-USD</strong> podés elegir si la tasa al cliente es <strong>descuento sobre lo recibido</strong> o <strong>incremento sobre lo entregado</strong> (inclusiva); el importe sigue siendo lo que recibe el cliente.</span></span>
                 </p>
+                <div id="orden-wrap-usd-usd-tasa-modo" class="orden-usd-usd-tasa-modo-wrap" style="display:none;" role="group" aria-label="Modo de tasa al cliente USD-USD">
+                  <p class="orden-usd-usd-tasa-modo-titulo">Tasa al cliente (USD-USD) — interpretación *</p>
+                  <label class="orden-int-patron-opcion">
+                    <input type="radio" name="orden-usd-usd-tasa-cliente-modo" value="descuento" checked autocomplete="off" />
+                    <span class="orden-int-patron-opcion-text"><strong>Descuento</strong> sobre lo recibido: monto a entregar = importe × (1 − tasa/100).</span>
+                  </label>
+                  <label class="orden-int-patron-opcion">
+                    <input type="radio" name="orden-usd-usd-tasa-cliente-modo" value="incremento" autocomplete="off" />
+                    <span class="orden-int-patron-opcion-text"><strong>Incremento</strong> sobre lo entregado (inclusiva): monto a entregar = importe ÷ (1 + tasa/100).</span>
+                  </label>
+                </div>
                 <div class="form-row tres-columnas orden-primeros-datos-row">
                   <label for="orden-importe-cheque" id="orden-label-importe-cheque" class="orden-primeros-datos-label">Importe en Cheque (ARS) *</label>
                   <label for="orden-tasa-descuento-cliente" class="orden-primeros-datos-label">Tasa al Cliente (%) *</label>

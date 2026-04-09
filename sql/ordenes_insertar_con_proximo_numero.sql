@@ -5,6 +5,9 @@
 -- Al cambiar la firma, ejecutá el DROP de la versión anterior para evitar ERROR 42725 (nombre de función no único).
 
 DROP FUNCTION IF EXISTS public.ordenes_insertar_con_proximo_numero(
+  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, boolean, numeric, text, uuid, timestamptz
+);
+DROP FUNCTION IF EXISTS public.ordenes_insertar_con_proximo_numero(
   uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, text, uuid, timestamptz
 );
 
@@ -26,7 +29,8 @@ CREATE OR REPLACE FUNCTION public.ordenes_insertar_con_proximo_numero(
   p_intermediario_transferencia_tasa numeric,
   p_observaciones text,
   p_usuario_id uuid,
-  p_updated_at timestamptz
+  p_updated_at timestamptz,
+  p_usd_usd_tasa_cliente_modo text DEFAULT NULL
 )
 RETURNS TABLE (id uuid, numero integer)
 LANGUAGE plpgsql
@@ -65,7 +69,8 @@ BEGIN
     intermediario_transferencia_tasa,
     observaciones,
     usuario_id,
-    updated_at
+    updated_at,
+    usd_usd_tasa_cliente_modo
   ) VALUES (
     next_num,
     p_cliente_id,
@@ -85,19 +90,20 @@ BEGIN
     p_intermediario_transferencia_tasa,
     p_observaciones,
     p_usuario_id,
-    p_updated_at
+    p_updated_at,
+    NULLIF(BTRIM(COALESCE(p_usd_usd_tasa_cliente_modo, '')), '')
   )
   RETURNING ordenes.id, ordenes.numero;
 END;
 $$;
 
 COMMENT ON FUNCTION public.ordenes_insertar_con_proximo_numero(
-  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, boolean, numeric, text, uuid, timestamptz
-) IS 'Inserta una orden con numero = MAX(numero)+1 bajo lock. Incluye flags transferencia y tasa opcional sobre pata intermediario.';
+  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, boolean, numeric, text, uuid, timestamptz, text
+) IS 'Inserta una orden con numero = MAX(numero)+1 bajo lock. Incluye flags transferencia, tasa opcional sobre pata intermediario y modo tasa USD-USD.';
 
 GRANT EXECUTE ON FUNCTION public.ordenes_insertar_con_proximo_numero(
-  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, boolean, numeric, text, uuid, timestamptz
+  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, boolean, numeric, text, uuid, timestamptz, text
 ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.ordenes_insertar_con_proximo_numero(
-  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, boolean, numeric, text, uuid, timestamptz
+  uuid, date, text, uuid, boolean, uuid, text, text, numeric, numeric, numeric, numeric, boolean, boolean, numeric, text, uuid, timestamptz, text
 ) TO service_role;
