@@ -290,6 +290,26 @@ function pandiSupabaseQuerySafe(promise) {
   );
 }
 
+/**
+ * Iterador asíncrono que sortea el límite nativo de filas de Supabase front-end (1,000 max).
+ * Exige una función constructora de consulta para generar la API Request en cada pasada (ej: `() => client.from('x').select(...)`).
+ * Envuelve en pandiSupabaseQuerySafe automáticamente para robustez.
+ */
+async function pandiSupabaseFetchAll(queryBuilderFn, step = 1000) {
+  let allData = [];
+  let currentFrom = 0;
+  while (true) {
+    const to = currentFrom + step - 1;
+    const { data, error } = await pandiSupabaseQuerySafe(queryBuilderFn().range(currentFrom, to));
+    if (error) return { data: allData.length > 0 ? allData : null, error };
+    if (!data || data.length === 0) break;
+    allData = allData.concat(data);
+    if (data.length < step) break;
+    currentFrom += step;
+  }
+  return { data: allData, error: null };
+}
+
 /** Guardar orden / instrumentación en servidor: requiere red alcanzable (cola local es el alternativo). */
 function pandiOrdenWizardRequiereRedServidor() {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
@@ -9424,28 +9444,15 @@ function loadCuentaCorriente(opts) {
     if (panelMov) panelMov.style.display = 'none';
   }
 
-  // Refresco automático (~30 s): solo SELECT de movimientos. El sync global borra y reinserta CC/caja por cada orden;
-  // hacerlo en cada tick vacía la tabla en lecturas concurrentes y parpadean los saldos sin que haya cambios reales.
-  const omitirSyncGlobalPorCooldownSesion = debeOmitirCcGlobalSyncPorCooldownSesion();
-  const debeCorrerSyncGlobalAntesDeLeer =
-    !esRecargaPostSync && !silentCc && !skipSyncGlobal && !omitirSyncGlobalPorCooldownSesion;
-  if (debeCorrerSyncGlobalAntesDeLeer) {
-    return sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
-      .catch(() => {})
-      .then(() => {
-        if (currentVistaId !== 'vista-cuenta-corriente') return Promise.resolve();
-        const prevBg = pandiBackgroundRefreshActive;
-        pandiBackgroundRefreshActive = true;
-        return loadCuentaCorriente({ ...opts, skipSyncGlobal: true }).finally(() => { pandiBackgroundRefreshActive = prevBg; });
-      });
-  }
+  // OMITIDO DE FORMA PERMANENTE el forceo de `sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion` para lecturas de pantalla
+  // (destruía la experiencia de usuario y consumía miles de lecturas O(N) recreando tablas íntegras en órdenes pasadas alineadas).
 
-  // Lectura de movimientos: si acabamos de correr sync arriba (entrada recursiva con skipSyncGlobal), los datos ya están alineados antes de pintar.
+  // Lectura de movimientos: usamos pandiSupabaseFetchAll para romper la barrera invisible de < 1000 records.
   return Promise.all([
       client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
       client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
-      client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS),
-      client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS),
+      pandiSupabaseFetchAll(() => client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS)),
+      pandiSupabaseFetchAll(() => client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS)),
       client.from('contraparte_vinculo').select('intermediario_id, cliente_id'),
     ])
     .then(([rClientes, rInt, rMovCli, rMovInt, rVin]) => {
@@ -9493,9 +9500,9 @@ function loadCuentaCorriente(opts) {
                 const toJ = o.tipos_operacion && (Array.isArray(o.tipos_operacion) ? o.tipos_operacion[0] : o.tipos_operacion);
                 ordenMcElegibleById[o.id] = mcOrdenIds.has(o.id) && instrumentacionMulticontraparteManualPermitida(o, toJ);
               });
-            // Cargar TODAS las transacciones pendientes y filtrar por instrumentación en JS (evita límite .in y RLS por orden).
-            return client.from('transacciones').select('id, instrumentacion_id, estado, pagador, cobrador, monto, moneda')
-              .eq('estado', 'pendiente')
+            // Cargar TODAS las transacciones pendientes mediante fetch recursivo iterativo:
+            return pandiSupabaseFetchAll(() => client.from('transacciones').select('id, instrumentacion_id, estado, pagador, cobrador, monto, moneda')
+              .eq('estado', 'pendiente'))
               .then((rTrx) => {
                 if (rTrx.error) return { pendienteClienteAjusteByCli: {}, pendientePandyDebeIntByInt: {} };
                 const pendientes = (rTrx.data || []).filter((t) => (t.estado || '').toString().toLowerCase() === 'pendiente');
