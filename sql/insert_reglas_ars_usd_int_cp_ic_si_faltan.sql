@@ -1,6 +1,7 @@
 -- ARS-USD + intermediario — patrón **cp_ic** (ingreso Cliente→Pandy en ARS, egreso Intermediario→Cliente en USD).
 -- Si ya cargaste `insert_reglas_ars_usd_con_intermediario_si_faltan.sql` tenés solo **ci_pc** (12 filas).
--- El panel de órdenes autocompletaba con **cp_ic** hasta el fix en main.js; sin estas 8 filas el motor no generaba movimientos CC.
+-- El panel de órdenes autocompletaba con **cp_ic** hasta el fix en main.js; sin estas filas el motor no generaba movimientos CC.
+-- Incluye **linea 1** en ingreso ejecutada + contrapartida (E,E) para netear ARS en CC cliente (ver `migracion_reglas_cp_ic_ingreso_ee_par_moneda_recibida.sql`).
 --
 -- Solo INSERT + ON CONFLICT DO NOTHING (no borra ni actualiza filas existentes).
 
@@ -22,6 +23,7 @@ INSERT INTO public.reglas_de_negocio (
 ) VALUES
   ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 1, 'ARS', 1, 'monto_transaccion', true, 'cobro_realizado'),
   ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
   ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),

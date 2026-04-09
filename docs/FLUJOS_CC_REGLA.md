@@ -2,9 +2,9 @@
 
 **Regla obligatoria:** La cuenta corriente **siempre** tiene que cerrar con la regla conceptual (saldo = suma de movimientos; cada movimiento por el monto realmente ejecutado; sin doble conteo). Si en algún cambio o feature el saldo no cierra, hay que preguntar antes de dar por cerrado.
 
-**Regla infalible para el saldo mostrado (cliente e intermediario):** El **saldo** = suma **solo** de movimientos con **estado = cerrado** (se excluyen anulado y pendiente). No se suma ni se resta ningún "pendiente" al número. Así, al pasar una transacción a pendiente, la fila de movimiento queda en pendiente y deja de sumar; el saldo refleja solo lo ya ejecutado (ej. solo Comisión cerrada → saldo = +1.359,11 a favor de Pandy). Los pendientes solo se usan para: (1) mostrar la fila cuando no hay movimientos cerrados pero sí hay pendiente (ej. deuda Pandy→Int); (2) en esa celda, mostrar el monto pendiente en rojo/verde.
+**Saldo mostrado en la app (Saldos, modal detalle, totales Movimientos):** suma **algebraica** de filas en `movimientos_cuenta_corriente` / `movimientos_cuenta_corriente_intermediario` con **cualquier estado distinto de `anulado`** (incluye **`pendiente`** y **`cerrado`**). Los **anulados** no entran al número. En el **modal detalle** (ojo) se muestra además un **subtotal «Saldo pendiente»** (solo filas `pendiente`) en tarjetas y pie de tabla. Implementación: `ccMovimientoIncluirEnSaldoResumen` y `saldosPendiente` en `main.js`.
 
-Referencia conceptual: **docs/REGLA_CC.xlsx**. **Regla simple e infalible (vigente):** **docs/REGLA_CC_SIMPLE_INFALIBLE.md** — solo transacciones **ejecutadas** generan movimientos; signo por pagador/cobrador. El saldo se calcula **solo** desde las tablas `movimientos_cuenta_corriente` y `movimientos_cuenta_corriente_intermediario` (suma de movimientos; solo se excluye `estado = 'anulado'`).
+Referencia conceptual: **docs/REGLA_CC.xlsx**. **docs/REGLA_CC_SIMPLE_INFALIBLE.md** describe **cuándo** el sync persiste o revierte filas según estado de transacción; el **número de saldo en pantalla** sigue la regla del párrafo anterior (suma de filas no anuladas).
 
 ## 1. Momento cero (regla única para todo tipo de operación)
 
@@ -37,7 +37,7 @@ En ambos casos no se tocan montos al ejecutar; solo estado. La regla es única y
 | Confirmación y auditoría | Advertencia explícita; si estaba ejecutada, texto y botón de confirmación reforzados; botón rojo en tabla/modal. `auditoria_app` con `orden_estaba_ejecutada` cuando aplica. Permiso `anular_orden`. RLS: `sql/migracion_rls_anular_orden_cc_caja.sql`. | — |
 | Guardar orden (`saveOrden`) | Tras persistir la orden y comisiones, solo cierra modal y refresca listados; **no** anula CC/caja (eso queda solo en el flujo Anular orden). | — |
 
-El saldo en la vista **excluye** movimientos con `estado === 'anulado'` (ver más abajo).
+El saldo en la vista **excluye** movimientos con `estado === 'anulado'` e **incluye** `pendiente` y `cerrado` en la suma (ver §7).
 
 ## 5. Eliminar transacción (dar de baja)
 
@@ -55,7 +55,7 @@ El saldo en la vista **excluye** movimientos con `estado === 'anulado'` (ver má
 
 | Dónde | Acción | Cumple regla |
 |-------|--------|---------------|
-| `loadCuentaCorriente` / `buildCcResumenRows` | **Regla infalible:** El saldo mostrado = **solo** suma de movimientos (sin sumar ni restar pendientes). Cliente e intermediario igual. Se traen movimientos; en `saldosDesdeMovimientosPorOrden` se excluye solo `estado === 'anulado'`. Los mapas de pendientes (`contribucionPendienteCcUnificada`, `promPendientesCcGlobal`) se usan solo para: mostrar la fila cuando saldo = 0 pero hay pendiente, y en esa celda mostrar el monto pendiente (rojo/verde). Así, al pasar una transacción a pendiente, el movimiento se revierte y el saldo refleja solo lo ejecutado (ej. solo Comisión → +1.359,11). | Sí. |
+| `loadCuentaCorriente` / `buildCcResumenRows` | El saldo mostrado = suma en `saldosDesdeMovimientosPorOrden` vía `ccMovimientoIncluirEnSaldoResumen`: entran **pendiente** y **cerrado**; solo se excluye **`anulado`**. Cliente e intermediario igual. Los mapas de pendientes y `pendienteClasePorMoneda` siguen sirviendo para leyendas y óptica (CHEQUE, USD-USD+int, etc.). En el modal detalle, `saldosPendiente` desglosa la parte solo pendiente en tarjetas y en el `tfoot` de la tabla. | Sí. |
 
 ## 8. Comisiones generadas (Ganancia Pandy, Comisión intermediario)
 

@@ -1519,6 +1519,9 @@
     .cc-saldo-celda-wrap { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; line-height: 1.2; vertical-align: middle; }
     .cc-saldo-leyenda { display: block; font-size: 0.68rem; font-weight: 500; color: #6b7280; line-height: 1.15; max-width: 7.5rem; text-wrap: balance; }
     #modal-cc-detalle-saldos .cc-saldo-leyenda { max-width: 10rem; }
+    .modal-cc-saldos .cc-modal-saldo-pendiente-sub { font-size: 0.88rem; display: block; margin-top: 0.2rem; }
+    #tabla-cc-detalle-modal tr.cc-detalle-tfoot-pendiente td { background: #f8fafc; vertical-align: middle; }
+    #tabla-cc-detalle-modal tr.cc-detalle-tfoot-pendiente .cc-tfoot-subtitulo { font-weight: 400; color: #64748b; font-size: 0.85rem; }
     .tabla-cc-resumen .cc-detalle-concepto-th,
     .tabla-cc-movimientos .cc-detalle-concepto-th { text-align: left; padding-left: 0.75rem; }
     .tabla-cc-resumen td.td-concepto,
@@ -2318,7 +2321,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.1</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.2</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -2697,7 +2700,7 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5a2 2 0 012-2h12a2 2 0 012 2v2"/><path d="M4 7h16v12a2 2 0 01-2 2H6a2 2 0 01-2-2V7"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M12 11v6"/><path d="M9 14h6"/></svg></span>
           Intermediarios
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: intermediarios"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Intermediarios</strong> son terceros con los que <span class="js-marca-sistema-nombre">Pandi</span> opera en circuitos intermediados. Pueden tener <strong>cuenta corriente</strong> propia en la app cuando el tipo de operación lo prevé.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: intermediarios"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><strong>Intermediarios</strong> son terceros con los que <span class="js-marca-sistema-nombre">Pandi</span> opera en circuitos intermediados. Pueden tener <strong>cuenta corriente</strong> propia en la app cuando el tipo de operación lo prevé.<br/><br/>Si la misma persona también es <strong>cliente</strong> en otras operaciones, podés declararlo en <strong>Editar intermediario</strong> con «Mismo registro que cliente»: es un vínculo 1:1 en datos. En <strong>Cuenta corriente</strong>, el tipo Intermediario unifica la vista de ambos libros para esa persona; en <strong>una misma orden</strong> no podés figurar a los dos como cliente e intermediario del vínculo a la vez.</span></span>
         </h3>
         <div class="vista-toolbar">
           <button type="button" id="btn-nuevo-intermediario" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nuevo intermediario</button>
@@ -2705,7 +2708,7 @@
         <div id="intermediarios-loading" class="clientes-loading vista-loading-spinner">Cargando…</div>
         <div id="intermediarios-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-intermediarios">
-            <thead><tr><th>Nombre</th><th>Documento</th><th>Email</th><th>Teléfono</th><th>Activo</th><th></th></tr></thead>
+            <thead><tr><th>Nombre</th><th>Documento</th><th>Email</th><th>Teléfono</th><th>Activo</th><th>Mismo cliente</th><th></th></tr></thead>
             <tbody id="intermediarios-tbody"></tbody>
           </table>
         </div>
@@ -2721,7 +2724,7 @@
         <div id="clientes-loading" class="clientes-loading vista-loading-spinner">Cargando clientes…</div>
         <div id="clientes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-clientes">
-            <thead><tr><th>Nombre</th><th>Documento</th><th>Email</th><th>Teléfono</th><th>Activo</th><th></th></tr></thead>
+            <thead><tr><th>Nombre</th><th>Documento</th><th>Email</th><th>Teléfono</th><th>Activo</th><th>Mismo intermediario</th><th></th></tr></thead>
             <tbody id="clientes-tbody"></tbody>
           </table>
         </div>
@@ -2747,7 +2750,7 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
           Cuenta corriente
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de <span class="js-marca-sistema-nombre">Pandi</span></strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado). Los importes y cruces (ARS, USD, EUR, etc.) siguen el <strong>tipo de operación</strong> del catálogo.<br/><br/>En <strong>Saldos</strong> los importes se muestran en <strong>óptica <span class="js-marca-sistema-nombre">Pandi</span></strong>: número positivo (verde) = a favor de <span class="js-marca-sistema-nombre">Pandi</span>; negativo (rojo) = <span class="js-marca-sistema-nombre">Pandi</span> debe pagar. Si en esa moneda hay movimientos <strong>pendientes</strong>, debajo aparece «Pendiente de cobro» o «Pendiente de pago». Podés <strong>filtrar la lista por nombre</strong> (cliente o intermediario según el Tipo arriba). <strong>Exportar</strong> genera un Excel con el mismo encabezado de auditoría que el resto de exportaciones e incluye solo las filas que ves (y los totales por moneda de esas filas). El detalle de movimientos y el Excel de líneas siguen la contabilización interna.<br/><br/>En <strong>Movimientos</strong> el listado, por defecto, muestra solo el <strong>día de hoy</strong> (Argentina); podés cambiar fechas o usar <strong>Histórico</strong> (sin filtro de fechas). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">La cuenta corriente es <strong>de <span class="js-marca-sistema-nombre">Pandi</span></strong>: muestra qué nos debe cada cliente/intermediario o qué les debemos. Misma convención que <strong>Órdenes</strong>: cada movimiento se entiende respecto del acuerdo (<strong>Moneda IN</strong> = recibido, <strong>Moneda OUT</strong> = entregado). Los importes y cruces (ARS, USD, EUR, etc.) siguen el <strong>tipo de operación</strong> del catálogo.<br/><br/>El selector <strong>Tipo: Cliente / Intermediario</strong> cambia qué listado ves: en <strong>Cliente</strong> solo entran movimientos de la cuenta corriente <em>del cliente</em>. En <strong>Intermediario</strong>, si en Clientes o Intermediarios marcaste <strong>«Mismo registro que…»</strong> (misma persona en ambos circuitos), esa fila y su detalle <strong>unifican</strong> también los movimientos que esa persona tiene como cliente, además de los de intermediario (solo en pantalla; en el servidor cada movimiento sigue en su tabla).<br/><br/>En <strong>Saldos</strong> el saldo por moneda es la <strong>suma de movimientos no anulados</strong> (incluye <strong>pendientes</strong> y cerrados), mostrada en <strong>óptica <span class="js-marca-sistema-nombre">Pandi</span></strong>: positivo (verde) = a favor de <span class="js-marca-sistema-nombre">Pandi</span>; negativo (rojo) = <span class="js-marca-sistema-nombre">Pandi</span> debe pagar. Si en esa moneda hay líneas pendientes, debajo puede verse «Pendiente de cobro» o «Pendiente de pago» (clase de compromiso). En el <strong>detalle</strong> (icono de ojo), las tarjetas muestran además el <strong>subtotal solo de lo pendiente</strong> y la tabla un pie «Saldo pendiente». Podés <strong>filtrar la lista por nombre</strong> (cliente o intermediario según el Tipo arriba). <strong>Exportar</strong> genera un Excel con el mismo encabezado de auditoría que el resto de exportaciones e incluye solo las filas que ves (y los totales por moneda de esas filas). El detalle de movimientos y el Excel de líneas siguen la contabilización interna.<br/><br/>En <strong>Movimientos</strong> el listado, por defecto, muestra solo el <strong>día de hoy</strong> (Argentina); podés cambiar fechas o usar <strong>Histórico</strong> (sin filtro de fechas). Usá el icono de ojo en Saldos para abrir el detalle por entidad y operaciones vinculadas.</span></span>
         </h3>
         <div class="cc-barra-tipo-y-solapas">
           <div class="vista-toolbar cc-toolbar-compartido">
@@ -2777,7 +2780,7 @@
               <label id="cc-resumen-filtro-nombre-label" for="cc-resumen-filtro-nombre" class="ordenes-filtro-label cc-resumen-filtro-nombre-label">Buscar cliente</label>
               <input type="search" id="cc-resumen-filtro-nombre" class="cc-input-filtro-nombre" placeholder="Nombre…" autocomplete="off" enterkeyhint="search" />
             </div>
-            <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Recalcular saldos (solo movimientos ejecutados)" aria-label="Refrescar cuenta corriente">
+            <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Alinear cuenta corriente y caja desde órdenes con instrumentación" aria-label="Refrescar cuenta corriente">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></span>Refrescar
             </button>
             <button type="button" class="btn-primary" id="cc-btn-movimiento-manual" title="Registrar movimiento de cuenta corriente sin orden" aria-label="Nuevo movimiento en cuenta corriente" style="display:none;">
@@ -3105,6 +3108,13 @@
             <label for="cliente-direccion">Dirección</label>
             <input type="text" id="cliente-direccion" maxlength="500" placeholder="" />
           </div>
+          <div class="form-group" id="cliente-vinculo-intermediario-wrap" style="display:none;">
+            <label for="cliente-vinculo-intermediario-id">Mismo registro que intermediario</label>
+            <select id="cliente-vinculo-intermediario-id" class="select-filtro" style="width:100%; max-width:100%;">
+              <option value="">— Sin vínculo —</option>
+            </select>
+            <span class="help-inline" style="margin-top:0.35rem; display:inline-flex;"><button type="button" class="help-icon-btn" aria-label="Ayuda: vínculo intermediario">?</button><span class="help-popover">Opcional. Indica que este <strong>cliente</strong> es la misma persona que un <strong>intermediario</strong> (otro circuito). Un cliente y un intermediario solo pueden tener un vínculo cada uno. Requiere permiso de ABM de clientes o de intermediarios.</span></span>
+          </div>
           <div class="form-group form-group-toggle">
             <label for="cliente-activo" class="label-with-toggle">Activo</label>
             <span class="toggle-switch">
@@ -3388,6 +3398,13 @@
             <label for="intermediario-direccion">Dirección</label>
             <input type="text" id="intermediario-direccion" maxlength="500" placeholder="" />
           </div>
+          <div class="form-group" id="intermediario-vinculo-cliente-wrap" style="display:none;">
+            <label for="intermediario-vinculo-cliente-id">Mismo registro que cliente</label>
+            <select id="intermediario-vinculo-cliente-id" class="select-filtro" style="width:100%; max-width:100%;">
+              <option value="">— Sin vínculo —</option>
+            </select>
+            <span class="help-inline" style="margin-top:0.35rem; display:inline-flex;"><button type="button" class="help-icon-btn" aria-label="Ayuda: vínculo cliente">?</button><span class="help-popover">Opcional. Indica que este <strong>intermediario</strong> es la misma persona que un <strong>cliente</strong> en otras órdenes. Un intermediario y un cliente solo pueden tener un vínculo cada uno. Requiere permiso de ABM de intermediarios o de clientes.</span></span>
+          </div>
           <div class="form-group form-group-toggle">
             <label for="intermediario-activo" class="label-with-toggle">Activo</label>
             <span class="toggle-switch">
@@ -3545,7 +3562,7 @@
           </div>
           <div id="orden-wizard" style="display:none;">
             <div id="orden-step-participantes">
-              <h3 style="margin:0 0 0.75rem 0; font-size:1rem;">Participantes <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><span class="js-marca-sistema-nombre">Pandi</span> siempre participa. Toda orden debe tener un cliente elegido. Si el tipo usa intermediario en cadena, elegí también al intermediario.</span></span></h3>
+              <h3 style="margin:0 0 0.75rem 0; font-size:1rem;">Participantes <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover"><span class="js-marca-sistema-nombre">Pandi</span> siempre participa. Toda orden debe tener un cliente elegido. Si el tipo usa intermediario en cadena, elegí también al intermediario. Si en Clientes/Intermediarios declaraste el vínculo «mismo registro» entre un cliente y un intermediario, <strong>no</strong> podés usar a los dos en la <strong>misma</strong> orden: elegí otro cliente u otro intermediario (en otras órdenes cada rol por separado sí aplica).</span></span></h3>
               <div class="form-row dos-columnas">
                 <div class="form-group">
                   <label>Participante fijo</label>
@@ -4133,7 +4150,7 @@
         </div>
         <div id="modal-cc-detalle-operaciones-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="margin-top:1.25rem; display:none;">
           <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Operaciones vinculadas
-            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: operaciones vinculadas"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Órdenes <strong>no anuladas</strong> en las que participa este cliente o intermediario. El <strong>saldo</strong> mostrado arriba corresponde a movimientos que ya impactan según reglas; si todo está pendiente puede ser <strong>cero</strong> aunque haya compromisos: en esta tabla ves también filas de <strong>compromiso pendiente</strong> (ej. «Deuda por…»).</span></span>
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: operaciones vinculadas"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg></button><span class="help-popover">Órdenes <strong>no anuladas</strong> en las que participa este cliente o intermediario. El <strong>saldo</strong> de las tarjetas arriba incluye movimientos <strong>pendientes y cerrados</strong> (no anulados). El <strong>subtotal «Saldo pendiente»</strong> en la tarjeta y en el pie de la tabla desglosa solo la parte en estado pendiente.</span></span>
           </h4>
           <table class="tabla-cc-debe-haber" id="tabla-cc-detalle-operaciones">
             <thead>

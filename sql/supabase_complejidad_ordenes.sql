@@ -61,6 +61,21 @@ CREATE INDEX IF NOT EXISTS idx_intermediarios_nombre ON public.intermediarios (n
 
 COMMENT ON TABLE public.intermediarios IS 'Terceros con cuenta corriente propia (Pandy ↔ intermediario). Operación intermediada.';
 
+-- ========== 3b. Vínculo intermediario ↔ cliente (misma persona / misma CC en vista futura) ==========
+CREATE TABLE IF NOT EXISTS public.contraparte_vinculo (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  intermediario_id uuid NOT NULL REFERENCES public.intermediarios(id) ON DELETE CASCADE,
+  cliente_id uuid NOT NULL REFERENCES public.clientes(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now(),
+  CONSTRAINT contraparte_vinculo_intermediario_id_key UNIQUE (intermediario_id),
+  CONSTRAINT contraparte_vinculo_cliente_id_key UNIQUE (cliente_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_contraparte_vinculo_cliente ON public.contraparte_vinculo (cliente_id);
+CREATE INDEX IF NOT EXISTS idx_contraparte_vinculo_intermediario ON public.contraparte_vinculo (intermediario_id);
+
+COMMENT ON TABLE public.contraparte_vinculo IS 'Puente 1:1 opcional: el mismo sujeto económico figura como intermediario en algunas órdenes y como cliente en otras. Los movimientos CC siguen en movimientos_cuenta_corriente / movimientos_cuenta_corriente_intermediario; la app podrá consolidar lectura usando esta tabla. Un intermediario y un cliente solo pueden participar en un vínculo cada uno.';
+
 -- ========== 4. Cambios en órdenes ==========
 -- Nuevas columnas (nullable para no romper datos existentes)
 ALTER TABLE public.ordenes

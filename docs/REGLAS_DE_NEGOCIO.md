@@ -17,8 +17,8 @@ Reglas explícitas que la sync traduce en **movimientos de cuenta corriente** (y
 ## Alcance actual
 
 - **`USD-ARS`**, **`ARS-USD`** y **`USD-USD`** con **`usa_intermediario = false`**: filas en `reglas_de_negocio` con **`entidad_cc = 'cliente'`** (USD-ARS/ARS-USD: espejo lógico mr/me y prorrateos; USD-USD: misma moneda, comisión implícita **`mr_menos_me`** = mr − me).
-- **`USD-ARS`** con **`usa_intermediario = true`** (flujo inverso): `sql/reglas_usd_ars_int_inversa_reglas_de_negocio.sql` — ver `docs/REG_NEG_USD_ARS_INT_PASO1.md`.
-- **`ARS-USD`** con **`usa_intermediario = true`**: `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql` — ver `docs/REG_NEG_ARS_USD_INT_PASO1.md`.
+- **`USD-ARS`** con **`usa_intermediario = true`** (flujo inverso): `sql/reglas_usd_ars_int_inversa_reglas_de_negocio.sql` — ver `docs/REG_NEG_USD_ARS_INT_PASO1.md`. **cp_ic E,E:** mismo criterio de par ± en ingreso C→Pandy (USD); migración compartida `sql/migracion_reglas_cp_ic_ingreso_ee_par_moneda_recibida.sql`.
+- **`ARS-USD`** con **`usa_intermediario = true`**: `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql` — ver `docs/REG_NEG_ARS_USD_INT_PASO1.md`. **cp_ic E,E:** par ± en ingreso Cliente→Pandy (moneda recibida); bases viejas: `sql/migracion_reglas_cp_ic_ingreso_ee_par_moneda_recibida.sql`.
 - **Revisión par ± en CC (cruces con int, excl. CHEQUE y USD-USD+int):** `docs/REG_INTERMEDIARIO_CRUCES_REVISION_PAR_EJECUTADA.md`.
 - **`USD-USD`** con **`usa_intermediario = false`**: **`reglas_de_negocio`** (única fuente; **`sql/migracion_reglas_usd_usd_sin_int.sql`** o `sql/reglas_de_negocio_tabla.sql` actualizado). Comisión = **`mr_menos_me`**. Resumen: **`docs/USD_USD_SIN_INTERMEDIARIO.md`**.
 - **`USD-USD`** con **`usa_intermediario = true`**: **`reglas_de_negocio`** — misma matriz cliente que sin int + fila intermediario con **`comision_intermediario`**. **`sql/migracion_usd_usd_intermediario_tipo_y_reglas.sql`**. Resumen: **`docs/USD_USD_CON_INTERMEDIARIO.md`**.
@@ -63,8 +63,10 @@ En la app, el **saldo** es la suma algebraica por moneda de esas filas (solo se 
 
 ## Consumo en la app
 
-`main.js`: `getReglasDeNegocio(codigo, usa_intermediario)` consulta **cualquier** `tipo_operacion_codigo`. Si hay filas → **`aplicarMotorCcDesdeReglasDeNegocio`** (cliente e intermediario vía `entidad_cc`). **USD-USD** (con o sin intermediario): comisión implícita = fila `es_comision` con `monto_origen = mr_menos_me` cuando **mr > me** y par cliente cerrado. **USD-USD** con int: fila intermediario `comision_intermediario` desde `comisiones_orden`. **CHEQUE-ARS** con int: comisiones y `monto_efectivo_intermediario` desde la orden. Si **no** hay filas → fallbacks legacy (sin `cc_modelo_reglas`).
+`main.js`: `getReglasDeNegocio(codigo, usa_intermediario)` consulta **cualquier** `tipo_operacion_codigo`. Si hay filas → **`aplicarMotorCcDesdeReglasDeNegocio`** (cliente e intermediario vía `entidad_cc`). **Ingreso ejecutado** `pagador = cobrador = cliente` con UUID distintos (tercero paga al cliente del acuerdo en **moneda recibida**): si **no** existe fila en la tabla para esa clave, el motor inserta **+m** «Compromiso de pago» con leyenda tercero «cumple pata» en CC del cliente del acuerdo (y puede convivir con filas explícitas en Supabase cuando se agreguen). **Ingreso** `pandy→cliente` en monR al acuerdo sin fila: mismo criterio con leyenda Pandy «cumple pata». **USD-USD** (con o sin intermediario): comisión implícita = fila `es_comision` con `monto_origen = mr_menos_me` cuando **mr > me** y par cliente cerrado. **USD-USD** con int: fila intermediario `comision_intermediario` desde `comisiones_orden`. **CHEQUE-ARS** con int: comisiones y `monto_efectivo_intermediario` desde la orden. Si **no** hay filas → fallbacks legacy (sin `cc_modelo_reglas`).
 
 ## Referencia cruzada
 
+- `docs/CC_OPERACION_CIERRE_Y_PIPELINE_SYNC.md` — **recorrido sync → motor → `contrapartidaEjecutada`**, principio de cierre por orden (parcial/total) y por qué una orden ejecutada puede dejar saldo ARS colgado si instrumentación y claves de reglas no coinciden.
+- `docs/CC_GRIETAS_INVARIANTE_SALDO_CERO_ORDEN.md` — **inventario de grietas** del pipeline (motor sin match, legacy, multicontraparte manual, RPC, drift SQL, etc.) frente al invariante de neteo cliente–Pandy por orden cerrada.
 - `docs/CC_MODELO_TABLA_REGLAS.md` — semántica histórica de `cc_modelo_reglas` (migración hacia `reglas_de_negocio`).

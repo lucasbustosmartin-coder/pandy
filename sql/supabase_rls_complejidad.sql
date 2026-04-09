@@ -34,6 +34,21 @@ CREATE POLICY "intermediarios_update" ON public.intermediarios FOR UPDATE TO aut
 DROP POLICY IF EXISTS "intermediarios_delete" ON public.intermediarios;
 CREATE POLICY "intermediarios_delete" ON public.intermediarios FOR DELETE TO authenticated USING (public.has_permission('abm_intermediarios'));
 
+-- ========== contraparte_vinculo (intermediario ↔ cliente, misma persona) ==========
+ALTER TABLE public.contraparte_vinculo ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "contraparte_vinculo_select" ON public.contraparte_vinculo;
+CREATE POLICY "contraparte_vinculo_select" ON public.contraparte_vinculo FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "contraparte_vinculo_insert" ON public.contraparte_vinculo;
+CREATE POLICY "contraparte_vinculo_insert" ON public.contraparte_vinculo FOR INSERT TO authenticated
+  WITH CHECK (public.has_permission('abm_intermediarios') OR public.has_permission('abm_clientes'));
+DROP POLICY IF EXISTS "contraparte_vinculo_update" ON public.contraparte_vinculo;
+CREATE POLICY "contraparte_vinculo_update" ON public.contraparte_vinculo FOR UPDATE TO authenticated
+  USING (public.has_permission('abm_intermediarios') OR public.has_permission('abm_clientes'))
+  WITH CHECK (public.has_permission('abm_intermediarios') OR public.has_permission('abm_clientes'));
+DROP POLICY IF EXISTS "contraparte_vinculo_delete" ON public.contraparte_vinculo;
+CREATE POLICY "contraparte_vinculo_delete" ON public.contraparte_vinculo FOR DELETE TO authenticated
+  USING (public.has_permission('abm_intermediarios') OR public.has_permission('abm_clientes'));
+
 -- ========== comisiones_orden ==========
 ALTER TABLE public.comisiones_orden ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "comisiones_orden_select" ON public.comisiones_orden;
@@ -82,6 +97,7 @@ CREATE POLICY "mov_cc_int_delete" ON public.movimientos_cuenta_corriente_interme
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.tipos_operacion TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.modos_pago TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.intermediarios TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.contraparte_vinculo TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.comisiones_orden TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.instrumentacion TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.transacciones TO authenticated;

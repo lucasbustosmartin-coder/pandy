@@ -41,15 +41,15 @@ No es “menos líneas para que el saldo cierre”: es **cuatro líneas** que **
 
 ## Con intermediario (ci_pc y cp_ic): transacciones independientes en CC
 
-Con **`usa_intermediario = true`**, las dos transacciones instrumentadas (p. ej. Cliente→Intermediario + Pandy→Cliente, o Cliente→Pandy + Intermediario→Cliente) **no** suman en CC cliente un movimiento extra en la moneda del acuerdo (`+mr`) en una transacción solo para “cerrar” en libros lo ya reflejado en la otra. Cada transacción aporta **solo las líneas de su propia pata** según `reglas_de_negocio`. Migración para bases que tenían el espejo antiguo: `sql/migracion_reglas_cc_int_transacciones_independientes_quitar_espejo_mr.sql`.
+Con **`usa_intermediario = true`**, las dos transacciones instrumentadas (p. ej. Cliente→Intermediario + Pandy→Cliente, o Cliente→Pandy + Intermediario→Cliente) **no** suman en CC cliente un movimiento extra **`+mr` en el egreso** de una pata solo para “cerrar” en libros lo ya reflejado en la **otra** transacción (criterio que motivó `sql/migracion_reglas_cc_int_transacciones_independientes_quitar_espejo_mr.sql`). Cada transacción aporta las líneas de **su** pata según `reglas_de_negocio`.
 
-En **E,E**, el saldo resumen por moneda **puede no ser cero** en esa vista contable, aunque la operación esté cerrada operativamente: es coherente con mostrar el efecto de cada transacción por separado (sin anular USD/ARS del acuerdo entre Tx1 y Tx2).
+En **cp_ic** con **E,E**, dentro de **cada** transacción sí puede haber **par ±** en la moneda que esa transacción mueve en CC cliente (p. ej. en ingreso Cliente→Pandy: par en **moneda recibida** del acuerdo; en egreso Intermediario→Cliente: par en **moneda entregada**), de modo que si el cliente **cumplió** ambas patas el **resumen** no muestre deuda fantasma en ARS ni USD. Migración puntual si faltaba la segunda línea del ingreso: `sql/migracion_reglas_cp_ic_ingreso_ee_par_moneda_recibida.sql`. Ver `docs/REG_NEG_ARS_USD_INT_PASO1.md` / `REG_NEG_USD_ARS_INT_PASO1.md`.
 
 ## Regla de verificación rápida
 
 Antes de aceptar un cambio en reglas o en el motor, preguntar:
 
 1. ¿Esta transacción refleja **entrada o salida** de dinero en cada moneda que participa?
-2. **Sin intermediario**, con **E,E**, ¿hay **dos movimientos por transacción** en las dos monedas y **saldo 0** en USD y ARS? **Con intermediario**, ¿cada transacción solo genera líneas de su pata, sin espejo `+mr` cruzado entre transacciones?
+2. **Sin intermediario**, con **E,E**, ¿hay **dos movimientos por transacción** en las dos monedas y **saldo 0** en USD y ARS? **Con intermediario**, ¿cada transacción genera líneas de su pata **sin** espejo `+mr` **cruzado entre transacciones**, y en **cp_ic E,E** el ingreso C→Pandy incluye **par ±** en moneda recibida si hace falta para no dejar saldo fantasma?
 
 Si la respuesta es coherente con el negocio, el modelo está alineado.

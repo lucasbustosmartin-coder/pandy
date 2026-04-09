@@ -9,15 +9,20 @@
 
 ### Apertura de la vista Cuenta corriente (con conexión)
 
-Con red, al **entrar** al menú **Cuenta corriente** (carga visible, no el refresco silencioso en segundo plano), la app ejecuta primero el **alineado global** de CC y caja por cada orden con instrumentación (`sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion`, encadenado orden a orden) y **después** lee movimientos y pinta saldos y tablas. Así no se muestran cifras basadas en movimientos de BD aún no regenerados por ese sync. La UI permanece en estado de carga hasta completar ese paso y el fetch subsiguiente. El refresco automático periódico de CC sigue siendo **solo lectura** (`SELECT`), sin repetir el sync global, para evitar parpadeos y condiciones de carrera.
+Con red, al **entrar** al menú **Cuenta corriente** (carga visible, no el refresco silencioso en segundo plano), la app ejecuta primero el **alineado global** de CC y caja por cada orden con instrumentación (`sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion`: varias órdenes en **paralelo por lotes**, una sola corrida compartida si otra vista ya disparó el mismo sync, y **cooldown** en sesión para no repetir al reabrir el menú en menos de ~1 min si el último sync global fue exitoso) y **después** lee movimientos y pinta saldos y tablas. Así no se muestran cifras basadas en movimientos de BD aún no regenerados por ese sync. El botón **Refrescar** fuerza de nuevo el sync global completo. El refresco automático periódico de CC sigue siendo **solo lectura** (`SELECT`), sin repetir el sync global, para evitar parpadeos y condiciones de carrera.
 
 ### Cuenta corriente (movimientos_cuenta_corriente y movimientos_cuenta_corriente_intermediario)
 
-1. **Al guardar o editar una transacción** (`saveTransaccion`): siempre se borran los movimientos CC de esa transacción y se vuelven a crear según cobrador/pagador y estado (pendiente → concepto "Transacción pendiente", ejecutada → "Transacción ejecutada").
-2. **Al cambiar el estado** pendiente ↔ ejecutada (`cambiarEstadoTransaccion`): mismo criterio; la CC se actualiza en ambos sentidos.
-3. **Al auto-completar la instrumentación** (sin intermediario o CHEQUE con intermediario): las transacciones creadas automáticamente generan desde el inicio sus movimientos en CC en estado "Transacción pendiente". Helper: `insertarMovimientosCcParaTransaccion`.
-4. **Al eliminar una transacción** (dar de baja): se eliminan los movimientos de CC asociados a esa transacción.
-5. **Movimientos de cierre por orden ejecutada** (`generarMovimientoConversionCc`, `generarMovimientoConversionCcIntermediario`): cuando la orden pasa a "orden_ejecutada", se generan movimientos adicionales (Conversión de moneda, Comisión del acuerdo) para saldar la cuenta por esa orden. Solo consideran transacciones ejecutadas.
+La **fuente de verdad** es el sync por orden: `sincronizarCcYCajaDesdeOrden` borra los movimientos derivados de esa orden y los vuelve a armar desde las transacciones vigentes.
+
+1. **Momento 0:** en cuanto existe una transacción **pendiente** guardada, el sync debe generar las filas CC que correspondan (columna `estado` del movimiento = **`pendiente`** o **`cerrado`** alineada al estado de la transacción; leyendas según motor `reglas_de_negocio`, multicontraparte manual o legacy). **Multicontraparte manual** ya no exige “al menos una ejecutada” para empezar a reflejar CC del acuerdo.
+2. **Al guardar o editar una transacción** (`saveTransaccion`) y al **cambiar el estado** (`cambiarEstadoTransaccion`): tras persistir, se encadena el sync de la orden; la CC se recalcula completa para esa orden.
+3. **Tipos con motor** (`reglas_de_negocio`): el motor aplica también transacciones pendientes; si falta fila en la tabla, puede no generarse movimiento hasta completar reglas o fallback documentado.
+4. **Legacy** (sin motor en ese tipo) y **CHEQUE-ARS con intermediario**: mismas patas en **pendiente** o **ejecutada** con `estado` de fila coherente.
+5. **Al eliminar una transacción** (dar de baja): el sync deja de incluir esa transacción (y se eliminan movimientos al reescribir la orden).
+6. **Movimientos de cierre por orden ejecutada** (`generarMovimientoConversionCc`, …): cuando la orden pasa a "orden_ejecutada", movimientos adicionales según reglas vigentes. Solo consideran transacciones ejecutadas donde aplique.
+
+**Resumen CC (grilla Saldos):** la exposición por transacciones **pendientes** del cliente en **misma moneda** (USD-USD, etc.) queda en las **filas CC `pendiente`** tras el sync; ya no se suma un ajuste sintético paralelo en `contribucionPendienteCcUnificada` para ese caso (sigue el ajuste **intermediario** Pandy→Intermediario pendiente donde el modelo CHEQUE aún no generó fila CC).
 
 ### Caja y Bancos (movimientos_caja)
 
@@ -35,7 +40,7 @@ Con red, al **entrar** al menú **Cuenta corriente** (carga visible, no el refre
 
 ### Tarjetas de saldo en la app (Resumen, modal, totales)
 
-- En **Saldos** (grilla por cliente/intermediario), en el **modal «Detalle de movimientos»** (tarjetas USD/ARS/EUR arriba) y en los **totales** de la pestaña **Movimientos** de CC, el importe por moneda es la **suma algebraica solo de movimientos en estado `cerrado`**. **No** entran al saldo los movimientos **`pendiente`** ni **`anulado`** (siguen visibles en las tablas de detalle). Las monedas con líneas pendientes se marcan aparte (`pendienteEnMoneda` / leyendas de clase de pendiente). Implementación: `ccMovimientoIncluirEnSaldoResumen` en `main.js`.
+- En **Saldos** (grilla por cliente/intermediario), en el **modal «Detalle de movimientos»** (tarjetas USD/ARS/EUR arriba) y en los **totales** de la pestaña **Movimientos** de CC, el importe por moneda es la **suma algebraica de movimientos no anulados** (incluye **`pendiente`** y **`cerrado`**). Solo **`anulado`** queda fuera del saldo (sigue visible en tablas). Las monedas con líneas pendientes se marcan aparte (`pendienteEnMoneda` / leyendas de clase de pendiente). En el **modal detalle**, bajo cada tarjeta puede mostrarse el **subtotal «Saldo pendiente»** (solo filas `pendiente`) y la tabla de movimientos tiene un pie con el mismo subtotal. Implementación: `ccMovimientoIncluirEnSaldoResumen` y `saldosPendiente` en `continuarFetchMovimientosCcCore` / `htmlCcModalSaldosCards` en `main.js`.
 - En la solapa **Saldos**, la grilla admite **filtrar por nombre** (texto contenido en el nombre del cliente o intermediario según el Tipo). Los totales de la cabecera y la **exportación a Excel** usan **las mismas filas visibles** que la tabla; el Excel incluye las filas de metadatos de auditoría estándar (`metaFilasExportacionExcel`) y los importes por moneda como valores numéricos.
 
 ## Resumen
@@ -50,4 +55,6 @@ Con red, al **entrar** al menú **Cuenta corriente** (carga visible, no el refre
 | Orden ejecutada (conversión/comisión) | Sí (movimientos de cierre) | No (ya se impactó por cada transacción ejecutada) |
 | Eliminar transacción | Se borran movimientos de esa transacción | Se borra movimiento de esa transacción |
 
-Implementación: `main.js` (saveTransaccion, cambiarEstadoTransaccion, insertarMovimientosCcParaTransaccion, autoCompletarInstrumentacion*, eliminarTransaccion, generarMovimientoConversionCc*).
+Implementación: `main.js` (`sincronizarCcYCajaDesdeOrden`, saveTransaccion, cambiarEstadoTransaccion, `aplicarCcMulticontraparteManualConciliacionCompleta`, `aplicarMotorCcDesdeReglasDeNegocio`, autoCompletarInstrumentacion*, eliminarTransaccion, generarMovimientoConversionCc*).
+
+**Intermediario y cliente como la misma persona:** la tabla `contraparte_vinculo` declara el vínculo 1:1; se gestiona desde **Clientes** e **Intermediarios** (editar registro). En **Cuenta corriente**, con el filtro **Cliente** solo se muestran movimientos y saldos de `movimientos_cuenta_corriente` de ese cliente (la CC “pura” del rol cliente). Con el filtro **Intermediario**, la fila y el detalle de ese intermediario **suman y listan** también los movimientos de `movimientos_cuenta_corriente` del cliente vinculado, además de `movimientos_cuenta_corriente_intermediario` — **solo lectura en pantalla**; la persistencia y el sync no mezclan tablas. En **órdenes**, no se puede guardar la misma fila con ese `cliente_id` y ese `intermediario_id` a la vez (regla Fase 4; trigger en BD). Ver `docs/PLAN_INTERMEDIARIO_CLIENTE_CC_UNIFICADA.md`.
