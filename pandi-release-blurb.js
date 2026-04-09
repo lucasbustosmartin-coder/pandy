@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.4',
+  versionLabel: 'v3.7.5',
   lines: [
     'Potenciamos el motor de la aplicación: ahora Pandi carga de manera ultra rápida en tu celular y consume muchos menos recursos.',
-    'Optimizamos las descargas de Excel. El módulo se activa en segundo plano solo cuando lo necesitas, agilizando tu pantalla principal.',
-    'Aplicamos mejoras visuales de compresión que aligeran drásticamente el peso del sistema, cuidando tus datos y batería.'
+    'Optimizamos las descargas de Excel y aplicamos mejoras visuales que aligeran drásticamente el peso del sistema, cuidando tus datos y batería.',
+    'Corregimos un error crítico en el asistente de órdenes donde ingresar la cotización borraba lo cargado previamente por el usuario.'
   ],
 };

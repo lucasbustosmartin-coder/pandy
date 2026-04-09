@@ -16043,6 +16043,9 @@ function openModalOrden(registro) {
       const opt = selTipoEl && selTipoEl.selectedOptions && selTipoEl.selectedOptions[0];
       const codigo = opt ? (opt.getAttribute('data-codigo') || '') : '';
       const tipoId = selTipoEl ? (selTipoEl.value || '') : '';
+      if (document.getElementById('orden-monto-recibido')) document.getElementById('orden-monto-recibido').value = '';
+      if (document.getElementById('orden-monto-entregado')) document.getElementById('orden-monto-entregado').value = '';
+      if (document.getElementById('orden-cotizacion')) document.getElementById('orden-cotizacion').value = '';
       if (codigo) {
         if (wizard) wizard.style.display = 'block';
         if (selCliente) selCliente.disabled = false;
@@ -16609,7 +16612,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
         const baseEntregar = tieneEntregar ? e : 1;
         if (tieneEntregar || origen === 'tc') {
           _actualizandoMontosTc = true;
-          if (!tieneEntregar) montoEntregadoEl.value = formatImporteDisplay(1);
+          if (!tieneEntregar && origen === 'entregar' && montoEntregadoEl.value.trim() === '') montoEntregadoEl.value = formatImporteDisplay(1);
           montoRecibidoEl.value = formatImporteDisplay(baseEntregar * tc);
           _actualizandoMontosTc = false;
         }
