@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js';
 import { formatMonto, formatImporteDisplay, formatTasaPorcentajeDisplay, formatNumeroComaHastaDecimales, formatImporteParaInput, formatearCeldaMoneda, formatearCeldaMonedaConSigno, htmlTipoOperacionIconos, htmlIconoMonedaTipoOp, isHttpsUrlSegura } from './utils.js';
 import { PANDI_RELEASE_BLURB } from './pandi-release-blurb.js';
 import {
@@ -11,8 +12,7 @@ import {
   idbReadSnapshotDelete,
   idbReadSnapshotKeysByPrefix,
 } from './pandi-offline-idb.js';
-// XLSX se carga por script en index.html (CDN) para que funcione en producción sin bundler
-const XLSX = window.XLSX;
+// El motor XLSX fue extraído a excel-export.js (usando lazy loading de Vite ESM) para rendimiento PWA.
 
 const SUPABASE_URL = (typeof window.SUPABASE_URL !== 'undefined' && window.SUPABASE_URL) ? window.SUPABASE_URL : '';
 const SUPABASE_ANON_KEY = (typeof window.SUPABASE_ANON_KEY !== 'undefined' && window.SUPABASE_ANON_KEY) ? window.SUPABASE_ANON_KEY : '';
@@ -22,7 +22,7 @@ if (!SUPABASE_ANON_KEY || !SUPABASE_URL) {
   throw new Error('Missing Supabase config');
 }
 
-const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /** Icono custom de tipo op (URL de otro proyecto o bucket inexistente en dev): fallback a IN→OUT automático. */
 function pandiOnTipoOpCustomImgError(img) {
@@ -5576,12 +5576,14 @@ function exportarMovimientosCajaExcel() {
         ];
       });
       const aoa = aoaExcelConMetaExportacion(header, rows);
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Movimientos caja');
       const nombreArchivo = 'caja_movimientos_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
-      XLSX.writeFile(wb, nombreArchivo);
-      showToast('Exportado: ' + nombreArchivo, 'success');
+      import('./excel-export.js').then((mExport) => {
+        mExport.generarArchivoExcel(nombreArchivo, { 'Movimientos caja': aoa });
+        showToast('Exportado: ' + nombreArchivo, 'success');
+      }).catch(e => {
+        console.error('Error cargando módulo excel:', e);
+        showToast('Error al preparar exportación.', 'error');
+      });
     });
   });
 }
@@ -10478,12 +10480,14 @@ function exportarCcResumenExcel() {
         return [(m.fecha || '').toString().slice(0, 10), tipoOp, nroOrden, nroTrans, m.concepto || '', ...celdasMon, estado, m.ccPagador || '', m.ccCobrador || '', mailReg || '–'];
       });
       const aoa = aoaExcelConMetaExportacion(header, rows);
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'CC detalle movimientos');
       const nombreArchivo = 'cc_detalle_movimientos_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
-      XLSX.writeFile(wb, nombreArchivo);
-      showToast('Exportado: ' + nombreArchivo, 'success');
+      import('./excel-export.js').then((mExport) => {
+        mExport.generarArchivoExcel(nombreArchivo, { 'CC detalle movimientos': aoa });
+        showToast('Exportado: ' + nombreArchivo, 'success');
+      }).catch(e => {
+        console.error('Error cargando módulo excel:', e);
+        showToast('Error al preparar exportación.', 'error');
+      });
     });
     return;
   }
@@ -10518,12 +10522,14 @@ function exportarCcResumenExcel() {
   });
   rows.push(totalFila);
   const aoa = aoaExcelConMetaExportacion(header, rows);
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Cuenta corriente');
   const nombreArchivo = 'cuenta_corriente_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
-  XLSX.writeFile(wb, nombreArchivo);
-  showToast('Exportado: ' + nombreArchivo, 'success');
+  import('./excel-export.js').then((mExport) => {
+    mExport.generarArchivoExcel(nombreArchivo, { 'Cuenta corriente': aoa });
+    showToast('Exportado: ' + nombreArchivo, 'success');
+  }).catch(e => {
+    console.error('Error cargando módulo excel:', e);
+    showToast('Error al preparar exportación.', 'error');
+  });
 }
 
 /** Compromiso por moneda desde órdenes (solo no anuladas y no ejecutadas): +monto_recibido en moneda_recibida, -monto_entregado en moneda_entregada. Las ejecutadas ya están realizadas en movimientos (incl. comisión/ganancia). */

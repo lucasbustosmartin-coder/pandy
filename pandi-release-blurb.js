@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.3',
+  versionLabel: 'v3.7.4',
   lines: [
-    'En órdenes USD–USD, en Datos del acuerdo podés elegir si la tasa al cliente es un descuento sobre lo recibido o un incremento sobre lo entregado: el importe sigue siendo lo que recibe el cliente y el monto a entregar se calcula según esa opción.',
-    'La elección queda guardada en la orden para cuando la vuelvas a abrir o edites.',
-    'Actualizamos textos de ayuda y el manual de uso offline con este criterio.',
+    'Potenciamos el motor de la aplicación: ahora Pandi carga de manera ultra rápida en tu celular y consume muchos menos recursos.',
+    'Optimizamos las descargas de Excel. El módulo se activa en segundo plano solo cuando lo necesitas, agilizando tu pantalla principal.',
+    'Aplicamos mejoras visuales de compresión que aligeran drásticamente el peso del sistema, cuidando tus datos y batería.'
   ],
 };
