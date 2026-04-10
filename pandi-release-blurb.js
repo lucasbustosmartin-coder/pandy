@@ -5,10 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.6',
+  versionLabel: 'v3.7.7',
   lines: [
-    'Potenciamos la lectura y procesamiento de la app: redujimos radicalmente el tiempo de carga del menú Cuenta Corriente.',
-    'Blindamos la memoria de saldos: ahora el sistema captura el conteo histórico recursivamente y de forma ilimitada sin perder precisión.',
-    'Optimizamos tu consumo: la aplicación solo reconstruye bases de datos en sincronización cuando lo pidas expresamente (botón Refrescar).'
+    'Visibilidad financiera: ahora el historial de la Cuenta Corriente transparenta los movimientos anulados, mostrándolos en color rojo en la cuadrícula general sin alterar el balance.',
+    'Corrección de sincronía en anulaciones: el sistema contable estricto ahora comprende retroactivamente aquellas transacciones anuladas manualmente o desde el origen.',
   ],
 };
