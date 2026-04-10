@@ -7841,13 +7841,13 @@ function esMismoParticipantePagadorCobrador(pagador, cobrador, orden, idsMc) {
   return false;
 }
 
-function pushMcClienteRow(rowsCcCliente, cid, ordenId, fecha, ahora, partial) {
+function pushMcClienteRow(rowsCcCliente, cid, ordenId, fecha, ahora, partial, fallbackUId) {
   if (!cid) return;
   rowsCcCliente.push({
     cliente_id: cid,
     orden_id: ordenId,
     fecha,
-    usuario_id: currentUserId,
+    usuario_id: fallbackUId || currentUserId,
     estado: 'cerrado',
     estado_fecha: ahora,
     ...partial,
@@ -19203,14 +19203,14 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
   if (pag === 'cliente' && cob !== 'intermediario' && clienteId) {
     inserts.push(client.from('movimientos_cuenta_corriente').insert({
       cliente_id: clienteId, moneda: mon, monto: -montoCobroCc, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
-      concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+      concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, transNumero), fecha, usuario_id: t.usuario_id || t.p_usuario_id || currentUserId, estado: 'cerrado', estado_fecha: ahora,
       ...montosCobro,
     }));
   }
   if (cob === 'cliente' && pag !== 'intermediario' && clienteId) {
     inserts.push(client.from('movimientos_cuenta_corriente').insert({
       cliente_id: clienteId, moneda: mon, monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
-      concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+      concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, transNumero), fecha, usuario_id: t.usuario_id || t.p_usuario_id || currentUserId, estado: 'cerrado', estado_fecha: ahora,
       ...montosDeuda,
     }));
   }
@@ -19222,7 +19222,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
         .eq('orden_id', ordenId).eq('intermediario_id', intermediarioId).eq('transaccion_id', transaccionId).eq('estado', 'pendiente')
         .then(() => client.from('movimientos_cuenta_corriente_intermediario').insert({
           intermediario_id: intermediarioId, moneda: mon, monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
-          concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+          concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, transNumero), fecha, usuario_id: t.usuario_id || t.p_usuario_id || currentUserId, estado: 'cerrado', estado_fecha: ahora,
           ...montosCcPorMoneda(mon, monto),
         }))
     );
@@ -19240,7 +19240,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
         })
         .then(() => client.from('movimientos_cuenta_corriente_intermediario').insert({
           intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero, moneda: monInt, monto: -montoEfectivoInt,
-          concepto: conceptoCcLeyenda('compromiso_cobrar', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+          concepto: conceptoCcLeyenda('compromiso_cobrar', ordenNumero, transNumero), fecha, usuario_id: t.usuario_id || t.p_usuario_id || currentUserId, estado: 'cerrado', estado_fecha: ahora,
           ...montosCcPorMoneda(monInt, -montoEfectivoInt),
         }))
         .then(() => {
@@ -19262,14 +19262,14 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
   if (cob === 'cliente' && pag === 'intermediario' && intermediarioId) {
     inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
       intermediario_id: intermediarioId, moneda: mon, monto: -monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
-      concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+      concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, transNumero), fecha, usuario_id: t.usuario_id || t.p_usuario_id || currentUserId, estado: 'cerrado', estado_fecha: ahora,
       ...montosCcPorMoneda(mon, -monto),
     }));
   }
   if (cob === 'intermediario' && pag === 'cliente' && intermediarioId) {
     inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert({
       intermediario_id: intermediarioId, moneda: mon, monto: -monto, orden_id: ordenId, transaccion_id: transaccionId, transaccion_numero: transNumero,
-      concepto: conceptoCcLeyenda('pago_realizado', ordenNumero, transNumero), fecha, usuario_id: currentUserId, estado: 'cerrado', estado_fecha: ahora,
+      concepto: conceptoCcLeyenda('pago_realizado', ordenNumero, transNumero), fecha, usuario_id: t.usuario_id || t.p_usuario_id || currentUserId, estado: 'cerrado', estado_fecha: ahora,
       ...montosCcPorMoneda(mon, -monto),
     }));
   }

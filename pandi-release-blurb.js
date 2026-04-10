@@ -5,9 +5,8 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.10',
+  versionLabel: 'v3.7.11',
   lines: [
-    'Incorporamos etiquetas visuales de color en Cuentas Corrientes para resaltar con mayor facilidad los estados (Pendiente, Cerrado, Anulada).',
-    'Agregamos información del Usuario en ambas pestañas de movimientos de la cuenta corriente, brindando más contexto en pantalla sobre interacciones y responsables.',
+    'Corrrección en trazabilidad de Cuentas Corrientes: solucionamos una inconsistencia técnica por la cual operaciones antiguas registraban al usuario en línea en lugar del responsable original de la transacción. ¡Ahora la atribución histórica es inmutable y 100% fidedigna!',
   ],
 };
