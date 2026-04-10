@@ -21,6 +21,7 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Despliegue v3.7.9 (prod + preview estable)', 'Actualización en calculadora USD-USD con intermediario: en el modo "Incremento", el Monto a Recibir ahora incorpora efectivamente el porcentaje indicado y el Monto a Entregar iguala estrictamente al importe base transaccionado. index.html "#sidebar-version", pandi-release-blurb.js. vercel --prod; npx vercel --yes; merge main→preview-empleado.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'Despliegue v3.7.7 (prod + preview estable)', 'CC: visibilidad de movimientos anulados (estilo rojo .cc-fila-anulada). Funciones frontend (incluirEnSaldo) no bloquean renderizado; verificación continua del balance con ccMovimientoIncluirEnSaldoResumen. Actualización de script SQL para limpiar estado anulado retroactivo en transacciones y cajas.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'Despliegue v3.7.6 (prod + preview estable)', 'Performance Cuenta Corriente: implementación de pandiSupabaseFetchAll iterador en main.js para saltear limite de 1000 items Supabase. Extirpación del flag O(N) sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion del load principal (ahora exlusivo del refresh manual). version v3.7.6', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'Despliegue v3.7.5 (prod + preview estable)', 'Bugfix: se resolvió el sobre-escrito cruzado de valores del cliente con el tipo de cambio al cambiar el tipo de operación. Limpieza residual reactiva y v3.7.5 en release blurb. vercel --prod; npx vercel --yes.', 'Despliegue'],
@@ -942,6 +943,7 @@ wsRef['!cols'] = [{ wch: 28 }, { wch: 70 }];
 // --- Hoja Versiones
 const versiones = [
   ['Versión', 'Fecha', 'Descripción'],
+  ['3.7.9', '__HOY__', 'Despliegue: v3.7.9 — Actualización en calculadora USD-USD con intermediario: en el modo "Incremento", el Monto a Recibir calcula el importe base por la tasa, y el Monto a Entregar iguala al importe. pandi-release-blurb; sidebar v3.7.9; vercel --prod; npx vercel --yes; merge main→preview-empleado.'],
   ['3.7.7', '__HOY__', 'Despliegue: v3.7.7 — CC: los movimientos anulados ahora son visibles en la tabla con estilo remarcado en rojo y etiqueta Anulada (sin afectar saldos). Solucionada falla de persistencia retroactiva de estados anulados desde base de datos. pandi-release-blurb; sidebar v3.7.7; vercel --prod; npx vercel --yes; merge main→preview-empleado.'],
   ['3.7.6', '__HOY__', 'Despliegue: v3.7.6 — Performance Cuenta Corriente: implementación iterador para sorteo del límite de 1000 ítems en Supabase y optimización de carga evitando re-sincronizaciones en caliente. pandi-release-blurb; sidebar v3.7.6; vercel --prod; npx vercel --yes; merge preview-empleado + verificación SHA.'],
   ['3.7.4', '__HOY__', 'Despliegue: v3.7.4 — Performance PWA extrema: Code Splitting SheetJS a excel-export.js asíncrono, CSS inline a style.css y 49 SVGs comprimidos en <use>. pandi-release-blurb; sidebar v3.7.4; vercel --prod; npx vercel --yes; merge preview-empleado + verificación SHA.'],
