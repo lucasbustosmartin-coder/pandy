@@ -19255,6 +19255,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
             fecha,
             ahora,
             instrumentacionId,
+            usuarioId: t.usuario_id || t.p_usuario_id,
           });
         })
     );
@@ -19540,7 +19541,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   transaccion_numero: t.numero != null ? t.numero : null,
                   concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: currentUserId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
                   moneda: mon,
                   monto: -montoIngresoCc,
                   estado: estadoFilaCc,
@@ -19556,7 +19557,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   transaccion_numero: t.numero != null ? t.numero : null,
                   concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: currentUserId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
                   moneda: mon,
                   monto: monto,
                   estado: estadoFilaCc,
@@ -19578,7 +19579,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   monto,
                   concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: currentUserId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
                   estado: estadoFilaCc,
                   estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(monInt, monto),
@@ -19595,7 +19596,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   monto: montoEfectivoInt,
                   concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: currentUserId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
                   estado: estadoFilaCc,
                   estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(monInt, montoEfectivoInt),
@@ -19611,7 +19612,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   monto: -monto,
                   concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: currentUserId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
                   estado: estadoFilaCc,
                   estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(mon, -monto),
@@ -19627,7 +19628,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   monto: -monto,
                   concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: currentUserId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
                   estado: estadoFilaCc,
                   estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(mon, -monto),
@@ -19674,7 +19675,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             const montoComisionCcClienteChequeFb =
               spreadAcuerdoChequeInt >= 1e-6 ? spreadAcuerdoChequeInt : comisionPandyMonto;
             if (clienteId && montoComisionCcClienteChequeFb >= 1e-6 && !parClienteCerradoFb) {
-              rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: currentUserId, moneda: comisionPandyMon, monto: montoComisionCcClienteChequeFb, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(comisionPandyMon, montoComisionCcClienteChequeFb) });
+              rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId, moneda: comisionPandyMon, monto: montoComisionCcClienteChequeFb, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(comisionPandyMon, montoComisionCcClienteChequeFb) });
             }
             const hayTx3Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && (t.estado || '').toLowerCase() === 'ejecutada');
             const hayTx4Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'intermediario' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
@@ -19683,7 +19684,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 const mIfb = Number(filaIntFb.monto) || 0;
                 if (mIfb < 1e-6) return;
                 const monIfb = String(filaIntFb.moneda || 'ARS').toUpperCase();
-                rowsCcInt.push({ intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: currentUserId, moneda: monIfb, monto: -mIfb, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(monIfb, -mIfb) });
+                rowsCcInt.push({ intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId, moneda: monIfb, monto: -mIfb, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(monIfb, -mIfb) });
               });
             }
             if (intermediarioId && filasComisionIntermediarioMotor.length && parClienteCerradoFb) {
@@ -19747,7 +19748,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
                 concepto: conceptoCierre,
                 fecha: feCierre.fecha,
-                usuario_id: currentUserId,
+                usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
                 moneda: monR,
                 monto: montoRecibido,
                 estado: 'cerrado',
@@ -19761,7 +19762,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
                 concepto: conceptoCierre,
                 fecha: feCierre.fecha,
-                usuario_id: currentUserId,
+                usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
                 moneda: monE,
                 monto: -montoEntregado,
                 estado: 'cerrado',
@@ -19854,7 +19855,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           const idsTrx = transacciones.map((t) => t.id).filter(Boolean);
           return client.rpc('sync_cc_caja_orden', {
             p_orden_id: ordenId,
-            p_usuario_id: currentUserId,
+            p_usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
             p_rows_cc_cliente: rowsCcClienteUnicos,
             p_rows_cc_int: rowsCcIntUnicos,
             p_rows_caja: rowsCaja,
@@ -20077,7 +20078,7 @@ function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
             monto: -comMonto,
             concepto: conceptoCcLeyenda('comision_acuerdo', ordenNumero, transaccionNumero),
             fecha,
-            usuario_id: currentUserId,
+            usuario_id: usuarioId || currentUserId,
             estado: 'cerrado',
             estado_fecha: ahora,
             ...montosCcPorMoneda(monCom, -comMonto),
@@ -20111,7 +20112,7 @@ function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediario
         transaccion_numero: nroRef,
         concepto: conceptoCom,
         fecha,
-        usuario_id: currentUserId,
+        usuario_id: usuarioId || currentUserId,
       }).select('id').single()
         .then((rCaja) => {
           const mcId = rCaja.data && rCaja.data.id;
@@ -20176,7 +20177,7 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, transIngr
         monto_ars: numCc(monR === 'ARS' ? -mr : 0),
         monto_eur: numCc(monR === 'EUR' ? -mr : 0),
         fecha,
-        usuario_id: currentUserId,
+        usuario_id: usuarioId || currentUserId,
         estado: 'pendiente',
       };
       const row2 = {
@@ -20191,7 +20192,7 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, transIngr
         monto_ars: numCc(monR === 'ARS' ? mr : 0),
         monto_eur: numCc(monR === 'EUR' ? mr : 0),
         fecha,
-        usuario_id: currentUserId,
+        usuario_id: usuarioId || currentUserId,
         estado: 'pendiente',
       };
       return Promise.all([

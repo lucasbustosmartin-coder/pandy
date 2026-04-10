@@ -5,8 +5,8 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.12',
+  versionLabel: 'v3.7.13',
   lines: [
-    'Corrrección extendida en trazabilidad: Solucionamos el inconveniente visual que asignaba temporalmente el autor en sesión a los movimientos pendientes. Ahora las proyecciones visuales de Cuenta Corriente heredan fidedignamente al autor de la orden.',
+    'Protección Integral de Trazabilidad Histórica: Hemos implementado una auditoría de fondo que erradica la posibilidad de que una sincronización automatizada (ya sea de Cuentas Corrientes, Comisiones o Caja) herede accidentalmente tu usuario de sesión. Todo el legado y registro de datos es ahora 100% inalterable y fiel al autor original.',
   ],
 };
