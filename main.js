@@ -9614,7 +9614,6 @@ function loadCuentaCorriente(opts) {
     }).then(({ rTrInst, instByOrden, trById, orderHasEjecutada, ordenNumeroById, trPagadorById, trCobradorById, trTipoById, ordenById, trRowById, pendientePandyDebeIntByInt, pendienteClienteAjusteByCli, trParticipanteIdsByTrx }) => {
       // Incluir en saldo: compromisos (Compromiso de Pago / Compromiso a Cobrar o legacy "Compromiso") y realizados (Cobro/Pago Realizado o legacy "Compromiso Saldado").
       function incluirEnSaldo(m, trEstados, ordEjecutada) {
-        if (m.estado === 'anulado') return false;
         const concepto = (m.concepto || '').toString();
         if (concepto.includes('Cobro Realizado') || concepto.includes('Pago Realizado')) return true;
         if (concepto.includes('Compromiso de Pago') || concepto.includes('Compromiso a Cobrar')) return true;
@@ -19435,8 +19434,8 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           // Multicontraparte manual: CC en `aplicarCcMulticontraparteManualConciliacionCompleta`; este bucle solo aporta caja MC si ejecutada.
           transacciones.forEach((t) => {
             const estT = String(t.estado || '').toLowerCase();
-            if (estT === 'anulada') return;
             const esEjecutada = estT === 'ejecutada';
+            let estadoFilaCc = esEjecutada ? 'cerrado' : (estT === 'anulada' ? 'anulado' : 'pendiente');
             const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
             const transaccionId = t.id;
             const monto = Number(t.monto) || 0;
@@ -19776,6 +19775,23 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             seenInt.add(key);
             return true;
           });
+
+          // Enforce 'anulado' status for movements coming from annulled transactions
+          const rxAnuladasIdStrings = transacciones
+            .filter((t) => String(t.estado || '').toLowerCase() === 'anulada')
+            .map((t) => String(t.id));
+          if (rxAnuladasIdStrings.length > 0) {
+            rowsCcClienteUnicos.forEach((r) => {
+              if (r.transaccion_id && rxAnuladasIdStrings.includes(String(r.transaccion_id))) {
+                r.estado = 'anulado';
+              }
+            });
+            rowsCcIntUnicos.forEach((r) => {
+              if (r.transaccion_id && rxAnuladasIdStrings.includes(String(r.transaccion_id))) {
+                r.estado = 'anulado';
+              }
+            });
+          }
 
           const ordLabelInv = orden.numero != null ? String(orden.numero) : String(ordenId || '').slice(0, 8);
           if (motorCcWarnings.length && !silenciarAvisosInvarianteCc) {
