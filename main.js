@@ -10372,14 +10372,16 @@ function renderCcVistaDetalle(filtrados) {
       const celdaUsd = mon === 'USD' ? formatearCeldaMonedaConSigno(valUsd, 'USD') : '–';
       const celdaArs = mon === 'ARS' ? formatearCeldaMonedaConSigno(valArs, 'ARS') : '–';
       const celdaEur = mon === 'EUR' ? formatearCeldaMonedaConSigno(valEur, 'EUR') : '–';
-      const estadoLabel = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
+      const isAnulado = String(m.estado || '').toLowerCase() === 'anulado' || String(m.estado || '').toLowerCase() === 'anulada';
+      const estadoHtml = isAnulado ? '<span class="badge badge-estado-anulada">Anulada</span>' : escapeHtml(m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
+      const rowClass = isAnulado ? ' class="cc-fila-anulada"' : '';
       const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
       const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
       const tipoOp = (m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–';
       const tipoOpHtml = m.es_movimiento_manual
         ? '<span class="cc-tipo-op-manual" title="Sin orden">Manual</span>'
         : (tipoOp === '–' ? '–' : htmlTipoOperacionIconos(tipoOp, m.tipo_op_nombre || '', { iconoModo: m.tipo_op_icono_modo, iconoUrlPublica: m.tipo_op_icono_url, usaIntermediario: m.tipo_op_usa_intermediario === true }));
-      return `<tr>
+      return `<tr${rowClass}>
           <td class="cc-col-fija cc-col-fija-1">${(m.fecha || '').toString().slice(0, 10)}</td>
           <td class="cc-col-fija cc-col-fija-2 cc-col-tipo-op-iconos">${tipoOpHtml}</td>
           <td>${escapeHtml(nroOrden)}</td>
@@ -10388,7 +10390,7 @@ function renderCcVistaDetalle(filtrados) {
           <td data-cc-moneda-col="USD">${celdaUsd}</td>
           <td data-cc-moneda-col="ARS">${celdaArs}</td>
           <td data-cc-moneda-col="EUR">${celdaEur}</td>
-          <td>${escapeHtml(estadoLabel)}</td>
+          <td>${estadoHtml}</td>
           <td>${escapeHtml(m.ccPagador || '–')}</td>
           <td>${escapeHtml(m.ccCobrador || '–')}</td>
           <td class="cc-col-acciones-manual">${htmlCcAccionesMovimientoManualRow(m)}</td>
@@ -10976,14 +10978,16 @@ function renderCcDetalleTable() {
       const celdaUsd = mon === 'USD' ? formatearCeldaMonedaConSigno(valUsd, 'USD') : '–';
       const celdaArs = mon === 'ARS' ? formatearCeldaMonedaConSigno(valArs, 'ARS') : '–';
       const celdaEur = mon === 'EUR' ? formatearCeldaMonedaConSigno(valEur, 'EUR') : '–';
-      const estadoLabel = (m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
+      const isAnulado = String(m.estado || '').toLowerCase() === 'anulado' || String(m.estado || '').toLowerCase() === 'anulada';
+      const estadoHtml = isAnulado ? '<span class="badge badge-estado-anulada">Anulada</span>' : escapeHtml(m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
+      const rowClass = isAnulado ? ' class="cc-fila-anulada"' : '';
       const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
       const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
       const tipoOp = (m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–';
       const tipoOpHtml = m.es_movimiento_manual
         ? '<span class="cc-tipo-op-manual" title="Sin orden">Manual</span>'
         : (tipoOp === '–' ? '–' : htmlTipoOperacionIconos(tipoOp, m.tipo_op_nombre || '', { iconoModo: m.tipo_op_icono_modo, iconoUrlPublica: m.tipo_op_icono_url, usaIntermediario: m.tipo_op_usa_intermediario === true }));
-      return `<tr>
+      return `<tr${rowClass}>
           <td class="cc-col-fija cc-col-fija-1">${(m.fecha || '').toString().slice(0, 10)}</td>
           <td class="cc-col-fija cc-col-fija-2 cc-col-tipo-op-iconos">${tipoOpHtml}</td>
           <td>${escapeHtml(nroOrden)}</td>
@@ -10992,7 +10996,7 @@ function renderCcDetalleTable() {
           <td data-cc-moneda-col="USD">${celdaUsd}</td>
           <td data-cc-moneda-col="ARS">${celdaArs}</td>
           <td data-cc-moneda-col="EUR">${celdaEur}</td>
-          <td>${escapeHtml(estadoLabel)}</td>
+          <td>${estadoHtml}</td>
           <td>${escapeHtml(m.ccPagador || '–')}</td>
           <td>${escapeHtml(m.ccCobrador || '–')}</td>
           <td class="cc-col-acciones-manual">${htmlCcAccionesMovimientoManualRow(m)}</td>

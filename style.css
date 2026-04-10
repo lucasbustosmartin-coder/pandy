@@ -1820,6 +1820,7 @@
     .badge-estado-instrumentacion-cerrada-ejecucion { background: #fef08a; color: #854d0e; }
     .badge-estado-orden-ejecutada { background: #bbf7d0; color: #15803d; }
     .badge-estado-anulada { background: #fecaca; color: #b91c1c; }
+    .cc-fila-anulada td { background-color: #fef2f2 !important; color: #9ca3af; }
     .badge-estado-abierta, .badge-estado-parcialmente_cerrada, .badge-estado-cerrada { background: #e5e7eb; color: #6b7280; }
     .badge-estado-cotizacion { background: #e5e7eb; color: #4b5563; }
     .badge-estado-concertada { background: #d1fae5; color: #047857; }
