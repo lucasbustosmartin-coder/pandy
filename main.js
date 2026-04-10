@@ -19497,8 +19497,6 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
 
             if (usarMotorEfectivo || usarMulticontraparteSync) return;
 
-            const estadoFilaCc = esEjecutada ? 'cerrado' : 'pendiente';
-
             if (clienteId && !esGananciaTrx && !esComisionPandyTrx && incluirEnMovimientosCcClienteModelo(orden, t)) {
               if (pag === 'cliente' && cob !== 'intermediario') {
                 const codigo = (toJoin && toJoin.codigo) || null;
