@@ -7862,7 +7862,7 @@ function pushMcClienteRow(rowsCcCliente, cid, ordenId, fecha, ahora, partial, fa
  * egreso ejecutado con cobrador = cliente del acuerdo en monE (pagador Pandy u otro cliente): −m (Pago realizado) +m (ajuste libro acuerdo) en CC del acuerdo; si pagador es otro cliente, también −m (Cobro realizado) en su CC.
  * Resto de clientes y egresos/ingresos ejecutados: movimientos por entidad. Intermediario: delega en aplicarCcMulticontraparteManualTrx.
  */
-function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt) {
+function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt, fallbackUId) {
   const lista = transacciones || [];
 
   const cidAcuerdo = orden.cliente_id || null;
@@ -7882,7 +7882,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
     const feMc = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
 
     if (pag === 'intermediario' || cob === 'intermediario') {
-      aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, feMc.fecha, feMc.estado_fecha, rowsCcCliente, rowsCcInt);
+      aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, feMc.fecha, feMc.estado_fecha, rowsCcCliente, rowsCcInt, fallbackUId);
       return;
     }
 
@@ -8097,7 +8097,8 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
 /**
  * CC por transacción (instrumentación multicontraparte manual), una sola trx: usado para patas con intermediario y delegación interna.
  */
-function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt) {
+function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt, fallbackUId) {
+  const finalUId = t.usuario_id || fallbackUId || currentUserId;
   const monto = Number(t.monto) || 0;
   const mon = (t.moneda || 'USD').toUpperCase();
   const transaccionId = t.id;
@@ -8129,7 +8130,7 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
       transaccion_numero: nro,
       concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, nro) + (esIngresoAcuerdoAIntermediario ? ' (pago a intermediario)' : ''),
       fecha,
-      usuario_id: currentUserId,
+      usuario_id: finalUId,
       moneda: mon,
       monto: -monto,
       estado: estadoFilaCc,
@@ -8144,7 +8145,7 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
         transaccion_numero: nro,
         concepto: `Ajuste libro acuerdo — Orden ${ordenNumero} · Trans ${nro != null ? nro : '–'}`,
         fecha,
-        usuario_id: currentUserId,
+        usuario_id: finalUId,
         moneda: mon,
         monto,
         estado: estadoFilaCc,
@@ -8162,7 +8163,7 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
         transaccion_numero: nro,
         concepto: conceptoCcLeyenda('pago_realizado', ordenNumero, nro),
         fecha,
-        usuario_id: currentUserId,
+        usuario_id: finalUId,
         moneda: mon,
         monto: -monto,
         estado: estadoFilaCc,
@@ -8176,7 +8177,7 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
         transaccion_numero: nro,
         concepto: `Ajuste libro acuerdo — Orden ${ordenNumero} · Trans ${nro != null ? nro : '–'}`,
         fecha,
-        usuario_id: currentUserId,
+        usuario_id: finalUId,
         moneda: mon,
         monto,
         estado: estadoFilaCc,
@@ -8191,7 +8192,7 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
         transaccion_numero: nro,
         concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, nro),
         fecha,
-        usuario_id: currentUserId,
+        usuario_id: finalUId,
         moneda: mon,
         monto,
         estado: estadoFilaCc,
@@ -8211,7 +8212,7 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
       monto: -monto,
       concepto: conceptoCcLeyenda('pago_realizado', ordenNumero, nro),
       fecha,
-      usuario_id: currentUserId,
+      usuario_id: finalUId,
       estado: estadoFilaCc,
       estado_fecha: ahora,
       ...montosCcPorMoneda(mon, -monto),
@@ -8228,7 +8229,7 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
       monto,
       concepto: conceptoCcLeyenda('cobro_realizado', ordenNumero, nro),
       fecha,
-      usuario_id: currentUserId,
+      usuario_id: finalUId,
       estado: estadoFilaCc,
       estado_fecha: ahora,
       ...montosCcPorMoneda(mon, monto),
@@ -19344,6 +19345,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           orden.intermediario_id ? client.from('intermediarios').select('nombre').eq('id', orden.intermediario_id).maybeSingle() : Promise.resolve({ data: null }),
         ]).then(([rTr, rCom, rModos, rIntNom]) => {
           const transacciones = rTr.data || [];
+          const orderUId = usuarioIdRegistroCajaFallbackUltimaEjecutadaConUsuario(transacciones);
           const comisiones = rCom.data || [];
           const modosMap = {};
           (rModos.data || []).forEach((m) => { modosMap[m.id] = m.codigo || 'efectivo'; });
@@ -19635,7 +19637,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           });
 
           if (usarMulticontraparteSync) {
-            aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, orden.numero, fecha, ahora, rowsCcCliente, rowsCcInt);
+            aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, orden.numero, fecha, ahora, rowsCcCliente, rowsCcInt, typeof uId !== 'undefined' ? (uId || orderUId) : orderUId);
           }
 
           // Motor único: filas en `reglas_de_negocio` para (codigo, usa_intermediario). Multicontraparte manual no usa motor (evita duplicar CC).
