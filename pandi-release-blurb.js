@@ -5,9 +5,8 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.8',
+  versionLabel: 'v3.7.9',
   lines: [
-    'Visibilidad financiera: ahora el historial de la Cuenta Corriente transparenta los movimientos anulados, mostrándolos en color rojo en la cuadrícula general sin alterar el balance.',
-    'Corrección de sincronía en anulaciones: el sistema contable estricto ahora comprende retroactivamente aquellas transacciones anuladas manualmente o desde el origen.',
+    'Actualización en calculadora USD-USD con intermediario: en el modo "Incremento", el Monto a Recibir ahora incorpora efectivamente el porcentaje indicado y el Monto a Entregar iguala estrictamente al importe base transaccionado.',
   ],
 };
