@@ -8963,9 +8963,11 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         }
       }
     }
-    const reglasTx = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, false, estado, contrapartida);
+    // Si es anulada, el motor debe usar las reglas de 'pendiente' para poder generar los movimientos base
+    const estadoParaMotor = estado === 'anulada' ? 'pendiente' : estado;
+    const reglasTx = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, false, estadoParaMotor, contrapartida);
     if (!reglasTx.length) {
-      const reglasEsComision = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, true, estado, contrapartida);
+      const reglasEsComision = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, true, estadoParaMotor, contrapartida);
       if (
         !reglasEsComision.length &&
         Array.isArray(motorCcWarnings) &&
