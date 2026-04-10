@@ -1,0 +1,14 @@
+---
+description: Reglas para la integración de diseño con Stitch en el proyecto Pandi
+globs: src/components/ui/**/*, src/styles/**/*
+---
+
+# Reglas de Diseño Autónomo (Stitch)
+
+- **Fuente de Verdad**: Antes de cualquier cambio visual, ejecutá `list_projects` en Stitch.
+- **Proceso**: 
+  1. Identificá la pantalla en Stitch usando `list_screens`.
+  2. Obtené el diseño con `get_screen`.
+  3. Traducí el JSON de Stitch a componentes React + Tailwind.
+- **Estilo**: Respetá estrictamente los colores y espaciados definidos en el diseño de Stitch.
+- **Alcance**: Solo modificá archivos en `src/components/ui` para evitar romper la lógica de negocio.

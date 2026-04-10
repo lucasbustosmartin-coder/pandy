@@ -5,8 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.9',
+  versionLabel: 'v3.7.10',
   lines: [
-    'Actualización en calculadora USD-USD con intermediario: en el modo "Incremento", el Monto a Recibir ahora incorpora efectivamente el porcentaje indicado y el Monto a Entregar iguala estrictamente al importe base transaccionado.',
+    'Incorporamos etiquetas visuales de color en Cuentas Corrientes para resaltar con mayor facilidad los estados (Pendiente, Cerrado, Anulada).',
+    'Agregamos información del Usuario en ambas pestañas de movimientos de la cuenta corriente, brindando más contexto en pantalla sobre interacciones y responsables.',
   ],
 };

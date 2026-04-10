@@ -5363,12 +5363,12 @@ function ccLeyendaSaldoResumenHtml(_mon, _pendMon, _clase, sDisp) {
 
 function ccColspanVistaDetalleMovimientos() {
   const n = MONEDAS_CC_MOVIMIENTOS_COLS.filter((m) => ccUiMonedasVisibles[m]).length;
-  return 5 + n + 3 + 1;
+  return 5 + n + 4 + 1; // + 1 para Usuario
 }
 
 function ccColspanModalDetalleMovimientos() {
   const n = MONEDAS_CC_MOVIMIENTOS_COLS.filter((m) => ccUiMonedasVisibles[m]).length;
-  return 5 + n + 3 + 1;
+  return 5 + n + 4 + 1; // + 1 para Usuario
 }
 
 function htmlCcModalSaldosCards(saldos, pendMon, pendClase, saldosPendiente) {
@@ -10209,7 +10209,13 @@ function aplicarFiltroCcResumen() {
     if (ccDetalleSortCol) {
       filasVista = [...filtrados].sort((a, b) => compareCcDetalleRow(a, b, ccDetalleSortCol, ccDetalleSortDir));
     }
-    renderCcVistaDetalle(filasVista);
+    const idsUsuario = [...new Set(filasVista.map((m) => m.usuario_id).filter(Boolean))];
+    fetchMapaEtiquetaUsuarioPorIds(idsUsuario).then((mapaUsuarios) => {
+      filasVista.forEach((m) => {
+        if (m.usuario_id) m.usuario_nombre = mapaUsuarios[m.usuario_id];
+      });
+      renderCcVistaDetalle(filasVista);
+    });
     return;
   }
   syncCcPestañasYPaneles();
@@ -10383,8 +10389,13 @@ function renderCcVistaDetalle(filtrados) {
       const celdaUsd = mon === 'USD' ? formatearCeldaMonedaConSigno(valUsd, 'USD') : '–';
       const celdaArs = mon === 'ARS' ? formatearCeldaMonedaConSigno(valArs, 'ARS') : '–';
       const celdaEur = mon === 'EUR' ? formatearCeldaMonedaConSigno(valEur, 'EUR') : '–';
-      const isAnulado = String(m.estado || '').toLowerCase() === 'anulado' || String(m.estado || '').toLowerCase() === 'anulada';
-      const estadoHtml = isAnulado ? '<span class="badge badge-estado-anulada">Anulada</span>' : escapeHtml(m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
+      const isAnulado = String(m.estado || '').toLowerCase() === 'anulada' || String(m.estado || '').toLowerCase() === 'anulado';
+      const estLower = String(m.estado || '').toLowerCase();
+      let estadoHtml;
+      if (estLower === 'anulada' || estLower === 'anulado') estadoHtml = '<span class="badge badge-estado-anulada">Anulada</span>';
+      else if (estLower === 'cerrado' || estLower === 'cerrada') estadoHtml = '<span class="badge badge-estado-cerrada">Cerrado</span>';
+      else if (estLower === 'pendiente') estadoHtml = '<span class="badge badge-estado-pendiente">Pendiente</span>';
+      else estadoHtml = escapeHtml(m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
       const rowClass = isAnulado ? ' class="cc-fila-anulada"' : '';
       const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
       const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
@@ -10404,6 +10415,7 @@ function renderCcVistaDetalle(filtrados) {
           <td>${estadoHtml}</td>
           <td>${escapeHtml(m.ccPagador || '–')}</td>
           <td>${escapeHtml(m.ccCobrador || '–')}</td>
+          <td>${escapeHtml(m.usuario_nombre || '–')}</td>
           <td class="cc-col-acciones-manual">${htmlCcAccionesMovimientoManualRow(m)}</td>
         </tr>`;
     })
@@ -10979,30 +10991,40 @@ function renderCcDetalleTable() {
   if (ccDetalleModalSortCol) {
     filtrados = [...ccDetalleMovimientosList].sort((a, b) => compareCcDetalleRow(a, b, ccDetalleModalSortCol, ccDetalleModalSortDir));
   }
-  tbody.innerHTML = filtrados
-    .map((m) => {
-      // Un movimiento = una moneda (la de la transacción). Mostrar solo esa columna; el resto "–".
-      const mon = (m.moneda || 'USD').toUpperCase();
-      const valUsd = mon === 'USD' ? (m.monto_usd != null ? Number(m.monto_usd) : Number(m.monto) || 0) : null;
-      const valArs = mon === 'ARS' ? (m.monto_ars != null ? Number(m.monto_ars) : Number(m.monto) || 0) : null;
-      const valEur = mon === 'EUR' ? (m.monto_eur != null ? Number(m.monto_eur) : Number(m.monto) || 0) : null;
-      const celdaUsd = mon === 'USD' ? formatearCeldaMonedaConSigno(valUsd, 'USD') : '–';
-      const celdaArs = mon === 'ARS' ? formatearCeldaMonedaConSigno(valArs, 'ARS') : '–';
-      const celdaEur = mon === 'EUR' ? formatearCeldaMonedaConSigno(valEur, 'EUR') : '–';
-      const isAnulado = String(m.estado || '').toLowerCase() === 'anulado' || String(m.estado || '').toLowerCase() === 'anulada';
-      const estadoHtml = isAnulado ? '<span class="badge badge-estado-anulada">Anulada</span>' : escapeHtml(m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
-      const rowClass = isAnulado ? ' class="cc-fila-anulada"' : '';
-      const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
-      const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
-      const tipoOp = (m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–';
-      const tipoOpHtml = m.es_movimiento_manual
-        ? '<span class="cc-tipo-op-manual" title="Sin orden">Manual</span>'
-        : (tipoOp === '–' ? '–' : htmlTipoOperacionIconos(tipoOp, m.tipo_op_nombre || '', { iconoModo: m.tipo_op_icono_modo, iconoUrlPublica: m.tipo_op_icono_url, usaIntermediario: m.tipo_op_usa_intermediario === true }));
-      return `<tr${rowClass}>
-          <td class="cc-col-fija cc-col-fija-1">${(m.fecha || '').toString().slice(0, 10)}</td>
-          <td class="cc-col-fija cc-col-fija-2 cc-col-tipo-op-iconos">${tipoOpHtml}</td>
-          <td>${escapeHtml(nroOrden)}</td>
-          <td>${escapeHtml(nroTrans)}</td>
+  const idsUsuario = [...new Set(filtrados.map((m) => m.usuario_id).filter(Boolean))];
+  fetchMapaEtiquetaUsuarioPorIds(idsUsuario).then((mapaUsuarios) => {
+    filtrados.forEach((m) => {
+      if (m.usuario_id) m.usuario_nombre = mapaUsuarios[m.usuario_id] || m.usuario_id;
+    });
+    tbody.innerHTML = filtrados
+      .map((m) => {
+        // Un movimiento = una moneda (la de la transacción). Mostrar solo esa columna; el resto "–".
+        const mon = (m.moneda || 'USD').toUpperCase();
+        const valUsd = mon === 'USD' ? (m.monto_usd != null ? Number(m.monto_usd) : Number(m.monto) || 0) : null;
+        const valArs = mon === 'ARS' ? (m.monto_ars != null ? Number(m.monto_ars) : Number(m.monto) || 0) : null;
+        const valEur = mon === 'EUR' ? (m.monto_eur != null ? Number(m.monto_eur) : Number(m.monto) || 0) : null;
+        const celdaUsd = mon === 'USD' ? formatearCeldaMonedaConSigno(valUsd, 'USD') : '–';
+        const celdaArs = mon === 'ARS' ? formatearCeldaMonedaConSigno(valArs, 'ARS') : '–';
+        const celdaEur = mon === 'EUR' ? formatearCeldaMonedaConSigno(valEur, 'EUR') : '–';
+        const isAnulado = String(m.estado || '').toLowerCase() === 'anulada' || String(m.estado || '').toLowerCase() === 'anulado';
+        const estLower = String(m.estado || '').toLowerCase();
+        let estadoHtml;
+        if (estLower === 'anulada' || estLower === 'anulado') estadoHtml = '<span class="badge badge-estado-anulada">Anulada</span>';
+        else if (estLower === 'cerrado' || estLower === 'cerrada') estadoHtml = '<span class="badge badge-estado-cerrada">Cerrado</span>';
+        else if (estLower === 'pendiente') estadoHtml = '<span class="badge badge-estado-pendiente">Pendiente</span>';
+        else estadoHtml = escapeHtml(m.estado === 'pendiente' ? 'Pendiente' : (m.estado === 'cerrado' ? 'Cerrado' : (m.estado || '–')));
+        const rowClass = isAnulado ? ' class="cc-fila-anulada"' : '';
+        const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
+        const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
+        const tipoOp = (m.tipo_operacion != null && m.tipo_operacion !== '–') ? String(m.tipo_operacion) : '–';
+        const tipoOpHtml = m.es_movimiento_manual
+          ? '<span class="cc-tipo-op-manual" title="Sin orden">Manual</span>'
+          : (tipoOp === '–' ? '–' : htmlTipoOperacionIconos(tipoOp, m.tipo_op_nombre || '', { iconoModo: m.tipo_op_icono_modo, iconoUrlPublica: m.tipo_op_icono_url, usaIntermediario: m.tipo_op_usa_intermediario === true }));
+        return `<tr${rowClass}>
+            <td class="cc-col-fija cc-col-fija-1">${(m.fecha || '').toString().slice(0, 10)}</td>
+            <td class="cc-col-fija cc-col-fija-2 cc-col-tipo-op-iconos">${tipoOpHtml}</td>
+            <td>${escapeHtml(nroOrden)}</td>
+            <td>${escapeHtml(nroTrans)}</td>
           <td class="td-concepto">${escapeHtml(m.concepto || '–')}</td>
           <td data-cc-moneda-col="USD">${celdaUsd}</td>
           <td data-cc-moneda-col="ARS">${celdaArs}</td>
@@ -11010,44 +11032,46 @@ function renderCcDetalleTable() {
           <td>${estadoHtml}</td>
           <td>${escapeHtml(m.ccPagador || '–')}</td>
           <td>${escapeHtml(m.ccCobrador || '–')}</td>
+          <td>${escapeHtml(m.usuario_nombre || '–')}</td>
           <td class="cc-col-acciones-manual">${htmlCcAccionesMovimientoManualRow(m)}</td>
         </tr>`;
-    })
-    .join('');
+      })
+      .join('');
 
-  if (filtrados.length === 0) {
-    if (tfoot) tfoot.innerHTML = '';
-    tbody.innerHTML = '<tr><td colspan="' + ccColspanModalDetalleMovimientos() + '">No hay movimientos.</td></tr>';
-  } else {
-    if (tfoot) {
-      const sumP = { USD: 0, ARS: 0, EUR: 0 };
-      (ccDetalleMovimientosList || []).forEach((m) => {
-        if (String(m.estado || '').toLowerCase().trim() !== 'pendiente') return;
-        const z = getMontosMovimientoCcResumen(m);
-        sumP.USD += z.USD;
-        sumP.ARS += z.ARS;
-        sumP.EUR += z.EUR;
-      });
-      const EPS = 1e-9;
-      const hasPend = Math.abs(sumP.USD) >= EPS || Math.abs(sumP.ARS) >= EPS || Math.abs(sumP.EUR) >= EPS;
-      if (!hasPend) tfoot.innerHTML = '';
-      else {
-        const u = Math.abs(sumP.USD) < EPS ? null : sumP.USD;
-        const a = Math.abs(sumP.ARS) < EPS ? null : sumP.ARS;
-        const eurVal = Math.abs(sumP.EUR) < EPS ? null : sumP.EUR;
-        tfoot.innerHTML = `<tr class="cc-detalle-tfoot-pendiente">
-          <td colspan="5"><strong>Saldo pendiente</strong> <span class="cc-tfoot-subtitulo">(subtotal)</span></td>
-          <td data-cc-moneda-col="USD">${formatearCeldaMonedaConSigno(u, 'USD')}</td>
-          <td data-cc-moneda-col="ARS">${formatearCeldaMonedaConSigno(a, 'ARS')}</td>
-          <td data-cc-moneda-col="EUR">${formatearCeldaMonedaConSigno(eurVal, 'EUR')}</td>
-          <td colspan="4"></td>
-        </tr>`;
+    if (filtrados.length === 0) {
+      if (tfoot) tfoot.innerHTML = '';
+      tbody.innerHTML = '<tr><td colspan="' + ccColspanModalDetalleMovimientos() + '">No hay movimientos.</td></tr>';
+    } else {
+      if (tfoot) {
+        const sumP = { USD: 0, ARS: 0, EUR: 0 };
+        (ccDetalleMovimientosList || []).forEach((m) => {
+          if (String(m.estado || '').toLowerCase().trim() !== 'pendiente') return;
+          const z = getMontosMovimientoCcResumen(m);
+          sumP.USD += z.USD;
+          sumP.ARS += z.ARS;
+          sumP.EUR += z.EUR;
+        });
+        const EPS = 1e-9;
+        const hasPend = Math.abs(sumP.USD) >= EPS || Math.abs(sumP.ARS) >= EPS || Math.abs(sumP.EUR) >= EPS;
+        if (!hasPend) tfoot.innerHTML = '';
+        else {
+          const u = Math.abs(sumP.USD) < EPS ? null : sumP.USD;
+          const a = Math.abs(sumP.ARS) < EPS ? null : sumP.ARS;
+          const eurVal = Math.abs(sumP.EUR) < EPS ? null : sumP.EUR;
+          tfoot.innerHTML = `<tr class="cc-detalle-tfoot-pendiente">
+            <td colspan="5"><strong>Saldo pendiente</strong> <span class="cc-tfoot-subtitulo">(subtotal)</span></td>
+            <td data-cc-moneda-col="USD">${formatearCeldaMonedaConSigno(u, 'USD')}</td>
+            <td data-cc-moneda-col="ARS">${formatearCeldaMonedaConSigno(a, 'ARS')}</td>
+            <td data-cc-moneda-col="EUR">${formatearCeldaMonedaConSigno(eurVal, 'EUR')}</td>
+            <td colspan="5"></td>
+          </tr>`;
+        }
       }
+      setupCcDetalleModalSortHeaders();
     }
-    setupCcDetalleModalSortHeaders();
-  }
-  reaplicarVisibilidadMonedasCuentaCorrienteDom();
-  setupDelegacionAccionesCcManual();
+    reaplicarVisibilidadMonedasCuentaCorrienteDom();
+    setupDelegacionAccionesCcManual();
+  });
 }
 
 function setupCcDetalleModalSortHeaders() {
