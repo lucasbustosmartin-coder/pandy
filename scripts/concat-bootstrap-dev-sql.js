@@ -33,6 +33,7 @@ const BOOTSTRAP_FILES = [
   'supabase_rls_complejidad.sql',
   'migracion_contraparte_vinculo_intermediario_cliente.sql',
   'migracion_ordenes_validar_no_par_vinculado_fase4.sql',
+  'migracion_ordenes_quitar_trigger_par_vinculado.sql',
   'migracion_transaccion_cobrador_pagador.sql',
   'migracion_instrumentacion_multicontraparte.sql',
   'migracion_transaccion_chk_pagador_cobrador_multicontraparte.sql',

@@ -24,6 +24,17 @@ La **fuente de verdad** es el sync por orden: `sincronizarCcYCajaDesdeOrden` bor
 5. **Al eliminar una transacción** (dar de baja): el sync deja de incluir esa transacción (y se eliminan movimientos al reescribir la orden).
 6. **Movimientos de cierre por orden ejecutada** (`generarMovimientoConversionCc`, …): cuando la orden pasa a "orden_ejecutada", movimientos adicionales según reglas vigentes. Solo consideran transacciones ejecutadas donde aplique.
 
+### Auditoría en SQL (¿faltan movimientos CC?)
+
+En Supabase SQL Editor se puede ejecutar **`sql/auditoria_cc_transacciones_y_ordenes.sql`** (consultas 1–5 y la **§6** de diagnóstico por `orden_id`: tipo de operación, multicontraparte manual y conteos de `reglas_de_negocio`). Incluye, entre otras:
+
+1. Transacciones en **pendiente** o **ejecutada** sin ninguna fila en `movimientos_cuenta_corriente` ni en `movimientos_cuenta_corriente_intermediario` (mismo `transaccion_id`).
+2. Órdenes con al menos una transacción no anulada y **cero** filas CC en **ambos** libros (candidatas a que el sync nunca persistió nada para esa orden).
+3. Incoherencias entre orden/transacción **anulada** y movimientos CC que siguen sin estado anulado (revisar en tu BD si el movimiento usa `anulado` u `anulada` según migraciones).
+4. Resumen por orden: conteos de transacciones por estado vs filas CC.
+
+Los resultados pueden incluir **falsos positivos** si una transacción concreta, por reglas de negocio, no debe generar CC en ningún libro; sirven como lista corta para revisar orden por orden en la app o forzar **Refrescar** en Cuenta corriente y volver a consultar.
+
 **Resumen CC (grilla Saldos):** la exposición por transacciones **pendientes** del cliente en **misma moneda** (USD-USD, etc.) queda en las **filas CC `pendiente`** tras el sync; ya no se suma un ajuste sintético paralelo en `contribucionPendienteCcUnificada` para ese caso (sigue el ajuste **intermediario** Pandy→Intermediario pendiente donde el modelo CHEQUE aún no generó fila CC).
 
 ### Caja y Bancos (movimientos_caja)
@@ -59,4 +70,4 @@ La **fuente de verdad** es el sync por orden: `sincronizarCcYCajaDesdeOrden` bor
 
 Implementación: `main.js` (`sincronizarCcYCajaDesdeOrden`, saveTransaccion, cambiarEstadoTransaccion, `aplicarCcMulticontraparteManualConciliacionCompleta`, `aplicarMotorCcDesdeReglasDeNegocio`, autoCompletarInstrumentacion*, eliminarTransaccion, generarMovimientoConversionCc*).
 
-**Intermediario y cliente como la misma persona:** la tabla `contraparte_vinculo` declara el vínculo 1:1; se gestiona desde **Clientes** e **Intermediarios** (editar registro). En **Cuenta corriente**, con el filtro **Cliente** solo se muestran movimientos y saldos de `movimientos_cuenta_corriente` de ese cliente (la CC “pura” del rol cliente). Con el filtro **Intermediario**, la fila y el detalle de ese intermediario **suman y listan** también los movimientos de `movimientos_cuenta_corriente` del cliente vinculado, además de `movimientos_cuenta_corriente_intermediario` — **solo lectura en pantalla**; la persistencia y el sync no mezclan tablas. En **órdenes**, no se puede guardar la misma fila con ese `cliente_id` y ese `intermediario_id` a la vez (regla Fase 4; trigger en BD). Ver `docs/PLAN_INTERMEDIARIO_CLIENTE_CC_UNIFICADA.md`.
+**Intermediario y cliente como la misma persona:** la tabla `contraparte_vinculo` declara el vínculo 1:1; se gestiona desde **Clientes** e **Intermediarios** (editar registro). En **Cuenta corriente**, con el filtro **Cliente** solo se muestran movimientos y saldos de `movimientos_cuenta_corriente` de ese cliente (la CC “pura” del rol cliente). Con el filtro **Intermediario**, la fila y el detalle de ese intermediario **suman y listan** también los movimientos de `movimientos_cuenta_corriente` del cliente vinculado, además de `movimientos_cuenta_corriente_intermediario` — **solo lectura en pantalla**; la persistencia y el sync no mezclan tablas. En **órdenes**, sí puede guardarse el mismo par `cliente_id` / `intermediario_id` del vínculo en una orden cuando el tipo lo requiere; si la base aún tiene el trigger antiguo de la Fase 4, aplicar `sql/migracion_ordenes_quitar_trigger_par_vinculado.sql`. Ver `docs/PLAN_INTERMEDIARIO_CLIENTE_CC_UNIFICADA.md`.

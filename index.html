@@ -249,7 +249,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.20</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.21</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -628,7 +628,7 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-7"></use></svg></span>
           Intermediarios
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: intermediarios"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><strong>Intermediarios</strong> son terceros con los que <span class="js-marca-sistema-nombre">Pandi</span> opera en circuitos intermediados. Pueden tener <strong>cuenta corriente</strong> propia en la app cuando el tipo de operación lo prevé.<br/><br/>Si la misma persona también es <strong>cliente</strong> en otras operaciones, podés declararlo en <strong>Editar intermediario</strong> con «Mismo registro que cliente»: es un vínculo 1:1 en datos. En <strong>Cuenta corriente</strong>, el tipo Intermediario unifica la vista de ambos libros para esa persona; en <strong>una misma orden</strong> no podés figurar a los dos como cliente e intermediario del vínculo a la vez.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: intermediarios"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><strong>Intermediarios</strong> son terceros con los que <span class="js-marca-sistema-nombre">Pandi</span> opera en circuitos intermediados. Pueden tener <strong>cuenta corriente</strong> propia en la app cuando el tipo de operación lo prevé.<br/><br/>Si la misma persona también es <strong>cliente</strong> en otras operaciones, podés declararlo en <strong>Editar intermediario</strong> con «Mismo registro que cliente»: es un vínculo 1:1 en datos. En <strong>Cuenta corriente</strong>, el tipo Intermediario unifica la vista de ambos libros para esa persona. En <strong>una misma orden</strong> podés usar ese cliente y ese intermediario vinculados cuando el tipo de operación lo requiera; si antes no habías creado el vínculo y cargaste dos registros distintos, creá el vínculo en Clientes/Intermediarios para que la CC quede alineada.</span></span>
         </h3>
         <div class="vista-toolbar">
           <button type="button" id="btn-nuevo-intermediario" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-28"></use></svg></span>Nuevo intermediario</button>
@@ -1491,7 +1491,7 @@
           </div>
           <div id="orden-wizard" style="display:none;">
             <div id="orden-step-participantes">
-              <h3 style="margin:0 0 0.75rem 0; font-size:1rem;">Participantes <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><span class="js-marca-sistema-nombre">Pandi</span> siempre participa. Toda orden debe tener un cliente elegido. Si el tipo usa intermediario en cadena, elegí también al intermediario. Si en Clientes/Intermediarios declaraste el vínculo «mismo registro» entre un cliente y un intermediario, <strong>no</strong> podés usar a los dos en la <strong>misma</strong> orden: elegí otro cliente u otro intermediario (en otras órdenes cada rol por separado sí aplica).</span></span></h3>
+              <h3 style="margin:0 0 0.75rem 0; font-size:1rem;">Participantes <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ver ayuda"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><span class="js-marca-sistema-nombre">Pandi</span> siempre participa. Toda orden debe tener un cliente elegido. Si el tipo usa intermediario en cadena, elegí también al intermediario. Si en Clientes/Intermediarios declaraste el vínculo «mismo registro» entre un cliente y un intermediario, podés usarlos <strong>juntos</strong> en la misma orden cuando el tipo de operación lo requiera (misma persona en ambos roles). Si todavía no creaste el vínculo y cargaste dos registros distintos, completalo en Clientes/Intermediarios para alinear la cuenta corriente unificada.</span></span></h3>
               <div class="form-row dos-columnas">
                 <div class="form-group">
                   <label>Participante fijo</label>

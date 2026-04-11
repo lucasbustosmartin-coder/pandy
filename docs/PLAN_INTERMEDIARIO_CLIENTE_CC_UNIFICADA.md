@@ -35,11 +35,11 @@ Los movimientos siguen guardándose donde corresponde por rol (**CC cliente** vs
 
 ---
 
-## Fase 4 — Órdenes (hecha en app + BD)
+## Fase 4 — Órdenes (ajustada: se permite el par vinculado en la misma orden)
 
-- **Regla:** en **la misma orden** **no** puede coincidir `cliente_id` e `intermediario_id` con una fila de **`contraparte_vinculo`** (misma persona en ambos roles en una sola operación).
-- **Front:** validación antes de guardar en `saveOrden`, `guardarOrdenDesdeWizard`, y en cola offline (`pandiValidarWizardOrdenPayloadParaColaLocal` usando caché `contraparte_vinculo` tras `pandiRefreshOfflineCatalogosCache`).
-- **Supabase:** trigger `tr_ordenes_no_par_vinculado` (`BEFORE INSERT OR UPDATE OF cliente_id, intermediario_id` en `ordenes`) vía `sql/migracion_ordenes_validar_no_par_vinculado_fase4.sql` (ejecutar en bases ya desplegadas; incluido en `scripts/concat-bootstrap-dev-sql.js`). **Aplicado en Pandi:** script corrido en **dev** y **producción** (ver `docs/SUPABASE_REQUISITOS.md`).
+- **Regla de producto:** si existe vínculo en **`contraparte_vinculo`**, la **misma orden** **puede** tener ese `cliente_id` y ese `intermediario_id` a la vez cuando el circuito lo exige (misma persona en ambos roles; la vista CC tipo Intermediario ya unifica ambos libros).
+- **Front:** ya **no** se rechaza el guardado por coincidencia con `contraparte_vinculo` (`saveOrden`, wizard, cola offline).
+- **Supabase:** la restricción anterior (trigger `tr_ordenes_no_par_vinculado` de `sql/migracion_ordenes_validar_no_par_vinculado_fase4.sql`) se **revoca** con **`sql/migracion_ordenes_quitar_trigger_par_vinculado.sql`** en cada base donde se hubiera aplicado la Fase 4. El bootstrap dev concatena ese script después de la migración Fase 4. Detalle: `docs/SUPABASE_REQUISITOS.md`.
 
 ---
 

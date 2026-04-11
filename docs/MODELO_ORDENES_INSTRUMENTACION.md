@@ -34,7 +34,7 @@ No hace falta volver a ejecutar `tablas_negocio`, `seguridad`, `rls_negocio` ni 
 - **Estado de la orden:** Pendiente Instrumentar | Instrumentación Parcial | Cerrada en Ejecución | Orden Ejecutada (derivado de transacciones y conciliación con el acuerdo). Ver `sql/migracion_estado_orden.sql`.
 - **Transacciones:** Pendiente | Ejecutada. Solo al ejecutarse impactan caja y cuenta corriente.
 - **Operación:** directa (solo Pandy–cliente) o intermediada (participa intermediario con su cuenta corriente).
-- **Vínculo cliente ↔ intermediario (misma persona):** si hay fila en `contraparte_vinculo`, **no** se permite que la **misma orden** tenga a la vez ese `cliente_id` y ese `intermediario_id` (evita mezclar roles en un solo acuerdo). Validación en la app y trigger `tr_ordenes_no_par_vinculado` en BD (`sql/migracion_ordenes_validar_no_par_vinculado_fase4.sql`). Ver `docs/PLAN_INTERMEDIARIO_CLIENTE_CC_UNIFICADA.md` (Fase 4).
+- **Vínculo cliente ↔ intermediario (misma persona):** si hay fila en `contraparte_vinculo`, la **misma orden** **puede** incluir ese `cliente_id` y ese `intermediario_id` cuando el circuito intermediado lo requiere. Bases que aún tengan el trigger legacy de la antigua Fase 4 deben ejecutar `sql/migracion_ordenes_quitar_trigger_par_vinculado.sql`. Ver `docs/PLAN_INTERMEDIARIO_CLIENTE_CC_UNIFICADA.md` (Fase 4).
 
 ## Entidades
 

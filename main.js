@@ -225,10 +225,6 @@ const PANDI_OFFLINE_CACHE_KEY = 'pandi_offline_catalogos_cache_v1';
 const PANDI_CACHED_PERMISSIONS_KEY = 'pandi_cached_permissions_v1';
 const PANDI_OFFLINE_MS_PARA_MODO_REDUCIDO = 10 * 60 * 1000;
 
-/** Fase 4: orden con cliente + intermediario que son el par en contraparte_vinculo. */
-const PANDI_MSG_ORDEN_PAR_VINCULO_PROHIBIDO =
-  'En una misma orden no puede figurar a la vez como cliente e intermediario el mismo registro vinculado. Elegí otro cliente u otro intermediario, o ajustá el vínculo en Clientes / Intermediarios si no corresponde.';
-
 let _pandiOfflineDb = null;
 let _pandiOfflineQueueMem = [];
 let _pandiOfflineQueueInitDone = false;
@@ -753,14 +749,6 @@ function pandiOfflineCacheWritePayload(clientesRows, intRows, tiposRows, modosPa
       })
     );
   } catch (e) { /* ignore */ }
-}
-
-/** True si cliente_id e intermediario_id coinciden con una fila de contraparte_vinculo (Fase 4). */
-function pandiEsOrdenClienteIntermediarioParVinculado(clienteId, intermediarioId, filasVinculo) {
-  if (!clienteId || !intermediarioId || !Array.isArray(filasVinculo) || !filasVinculo.length) return false;
-  const c = String(clienteId);
-  const i = String(intermediarioId);
-  return filasVinculo.some((r) => r && String(r.cliente_id) === c && String(r.intermediario_id) === i);
 }
 
 /** Id del modo «efectivo» desde caché offline (plantilla de transacciones al importar). */
@@ -17282,13 +17270,6 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
   if (usaIntermediarioTipo && !intermediarioId) {
     return { error: 'Para este tipo de operación es obligatorio elegir un intermediario.' };
   }
-  if (intermediarioId) {
-    const cacheCola = pandiOfflineCatalogosRead();
-    const vin = cacheCola && Array.isArray(cacheCola.contraparte_vinculo) ? cacheCola.contraparte_vinculo : null;
-    if (vin && pandiEsOrdenClienteIntermediarioParVinculado(clienteId, intermediarioId, vin)) {
-      return { error: PANDI_MSG_ORDEN_PAR_VINCULO_PROHIBIDO };
-    }
-  }
   const selTipoOptPre = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
   const tipoCodigoPre = selTipoOptPre ? (selTipoOptPre.getAttribute('data-codigo') || '') : '';
   if (String(tipoCodigoPre).trim().toUpperCase() === 'USD-USD' && usaIntermediarioTipo && intermediarioId && !ordenIntPatronExplicitoElegido()) {
@@ -17777,22 +17758,7 @@ function guardarOrdenDesdeWizard() {
     });
   }
 
-  if (!intermediarioId) {
-    return ejecutarGuardarOrdenWizardTrasVinculo();
-  }
-  return pandiSupabaseQuerySafe(
-    client.from('contraparte_vinculo').select('cliente_id').eq('cliente_id', clienteId).eq('intermediario_id', intermediarioId).maybeSingle(),
-  ).then((rv) => {
-    if (rv.error) {
-      pandiToastSupabaseErrorAmigable(rv.error, 'Error');
-      return null;
-    }
-    if (rv.data) {
-      showToast(PANDI_MSG_ORDEN_PAR_VINCULO_PROHIBIDO, 'error');
-      return null;
-    }
-    return ejecutarGuardarOrdenWizardTrasVinculo();
-  });
+  return ejecutarGuardarOrdenWizardTrasVinculo();
 }
 
 function ensureInstrumentacionForOrden(ordenId) {
@@ -18473,23 +18439,7 @@ function saveOrden() {
     });
   }
 
-  if (!intermediarioId) {
-    ejecutarPromGuardadoOrdenSaveOrden();
-    return;
-  }
-  pandiSupabaseQuerySafe(
-    client.from('contraparte_vinculo').select('cliente_id').eq('cliente_id', clienteId).eq('intermediario_id', intermediarioId).maybeSingle(),
-  ).then((rv) => {
-    if (rv.error) {
-      showToast('Error: ' + (rv.error.message || 'No se pudo validar el vínculo cliente–intermediario.'), 'error');
-      return;
-    }
-    if (rv.data) {
-      showToast(PANDI_MSG_ORDEN_PAR_VINCULO_PROHIBIDO, 'error');
-      return;
-    }
-    ejecutarPromGuardadoOrdenSaveOrden();
-  });
+  ejecutarPromGuardadoOrdenSaveOrden();
 }
 
 function setupModalOrden() {
