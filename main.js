@@ -3641,7 +3641,10 @@ function transaccionesTodasPendientesParaAnulacion(list) {
   return txs.every((t) => String(t.estado || '').toLowerCase() === 'pendiente');
 }
 
-/** Anula movimientos CC (cliente e intermediario, no manual) y caja por orden_id. Único lugar que aplica estos UPDATE. */
+/**
+ * UPDATE masivo de CC/caja a anulado por orden (legado).
+ * La **anulación de orden** en la app usa `sincronizarCcYCajaDesdeOrden` (regenera filas); se mantiene por si hace falta un parche manual puntual en BD.
+ */
 function anularMovimientosCcYCajaNoManualPorOrden(ordenId, ahora) {
   return client
     .from('movimientos_cuenta_corriente')
@@ -3673,7 +3676,8 @@ function anularMovimientosCcYCajaNoManualPorOrden(ordenId, ahora) {
 }
 
 /**
- * Persiste anulación: orden → anulada. Si todas las transacciones están pendientes (o no hay), no toca CC/caja; si no, anula movimientos vía anularMovimientosCcYCajaNoManualPorOrden.
+ * Persiste anulación: orden → anulada, transacciones → anulada, luego **siempre** `sincronizarCcYCajaDesdeOrden`
+ * (regenera CC/caja derivada: filas CC con `estado` anulado ligadas a trx anuladas; caja solo por trx ejecutadas).
  * Incluye órdenes en estado orden_ejecutada (acción grave; confirmación en UI).
  */
 function ejecutarAnulacionOrdenCompleta(ordenId) {
@@ -3704,27 +3708,21 @@ function ejecutarAnulacionOrdenCompleta(ordenId) {
               (ord.numero != null ? ' #' + ord.numero : '') +
               (eraEjecutada ? ' (estaba Orden ejecutada).' : '. ') +
               ' Transacciones de instrumentación marcadas anulada.' +
-              (todasPendientes
-                ? ' Sin cambios en CC/caja (todas las transacciones estaban pendientes o no había transacciones).'
-                : ' Movimientos CC cliente e intermediario (no manual) y caja vinculados a la orden marcados como anulados.');
+              ' CC y caja de la orden recalculadas por sincronización (CC en anulado donde corresponde; no suman al saldo).';
             function finAuditoria() {
               registrarAuditoriaApp('orden', 'anular', detalle, {
                 orden_id: ordenId,
                 instrumentacion_id: instrumentacionId,
                 todas_transacciones_pendientes: todasPendientes,
-                afecto_cc_caja: !todasPendientes,
+                afecto_cc_caja: true,
                 orden_estaba_ejecutada: eraEjecutada,
               });
             }
-            return anularTodasTransaccionesInstrumentacion(instrumentacionId, ahora).then(() => {
-              if (todasPendientes) {
-                finAuditoria();
-                return { ok: true, todasPendientes: true };
-              }
-              return anularMovimientosCcYCajaNoManualPorOrden(ordenId, ahora).then(() => {
-                finAuditoria();
-                return { ok: true, todasPendientes: false };
-              });
+            return anularTodasTransaccionesInstrumentacion(instrumentacionId, ahora).then(() =>
+              sincronizarCcYCajaDesdeOrden(ordenId, { silenciarAvisosInvarianteCc: false, propagarError: true }),
+            ).then(() => {
+              finAuditoria();
+              return { ok: true, todasPendientes };
             });
           });
       });
@@ -3751,11 +3749,11 @@ function solicitarConfirmacionYAnularOrden(ordenId, callbacks) {
       const esEjecutada = st === 'orden_ejecutada';
       const base =
         'La orden pasará a estado Anulada.\n\n' +
-        'Si todas las transacciones de la instrumentación están pendientes (o no hay ninguna), no se modifican movimientos de cuenta corriente ni de caja.\n\n' +
-        'Si hay alguna transacción en otro estado (por ejemplo ejecutada), se marcarán como anulados los movimientos de cuenta corriente del cliente y del intermediario vinculados a la orden (excepto movimientos cargados como manuales), y los movimientos de caja de esa orden. Es una operación sensible.\n\n' +
+        'Después se recalculan la cuenta corriente (cliente e intermediario) y la caja **derivadas** de esta orden: las filas CC ligadas a transacciones anuladas quedan visibles con estado **Anulada** y **no suman** al saldo. La caja solo refleja transacciones que estuvieron ejecutadas. Los movimientos CC **manuales** no se regeneran con el sync.\n\n' +
+        'Es una operación sensible.\n\n' +
         '¿Confirmás la anulación?';
       const msg = esEjecutada
-        ? 'La orden está en estado Orden ejecutada: suele implicar transacciones ya cerradas y movimientos contables reales. Al anular se marcará la orden como Anulada y, salvo el caso excepcional de transacciones todas pendientes, se anularán los movimientos de CC y caja vinculados a esta orden.\n\n' + base
+        ? 'La orden está en estado Orden ejecutada: suele implicar transacciones ya cerradas y movimientos contables reales. Al anular se marcará la orden como Anulada y se volverá a sincronizar CC y caja desde la instrumentación (mismo criterio que arriba).\n\n' + base
         : base;
       showConfirm(
         msg,
@@ -19296,7 +19294,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
  * Fecha contable y estado_fecha de cada fila derivada se anclan a la transacción (`fecha_ejecucion`, `updated_at`); ver `fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion`.
  * **Invariante neteo CC cliente del acuerdo:** si el acuerdo está “cerrado” para este criterio (par ingreso+egreso clásico ejecutados, o multicontraparte manual con todas las transacciones ejecutadas o anuladas), la suma por moneda de las filas CC cerradas de ese cliente y orden debe ser cero, salvo en moneda recibida el residual explicado por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata». Si no cumple, **no** se llama a `sync_cc_caja_orden` (no se persiste CC/caja derivada de este cálculo).
  * @param {string} ordenId
- * @param {{ silenciarAvisosInvarianteCc?: boolean }} [optsSyncCc] Si `silenciarAvisosInvarianteCc`, no muestra toasts de diagnóstico del motor ni del neteo (p. ej. sync global encadenado); el bloqueo por neteo igual evita la RPC.
+ * @param {{ silenciarAvisosInvarianteCc?: boolean, propagarError?: boolean }} [optsSyncCc] Si `silenciarAvisosInvarianteCc`, no muestra toasts de diagnóstico del motor ni del neteo (p. ej. sync global encadenado); el bloqueo por neteo igual evita la RPC. Si `propagarError`, el `.catch` final **rechaza** la promesa (p. ej. tras anular orden) en lugar de resolver en silencio.
  * @returns {Promise<void>}
  */
 function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
@@ -19897,6 +19895,9 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
     })
     .catch((err) => {
       console.warn('sincronizarCcYCajaDesdeOrden:', err && (err.message || err.code));
+      if (optsSyncCc.propagarError === true) {
+        return Promise.reject(err);
+      }
       if (err && err.code === PANDI_CC_NETEO_INVARIANT_CODE) {
         return Promise.resolve();
       }

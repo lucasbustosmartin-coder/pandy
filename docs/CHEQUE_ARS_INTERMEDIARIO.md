@@ -31,6 +31,8 @@ Convención alineada a la **cuenta corriente de Pandy** (qué le debe el interme
 | **Comisión del acuerdo** (parte del intermediario) | **−** importe de comisión | Lo que el intermediario reconoce a favor de Pandy por tasa/spread. |
 | **Cobro realizado** (Tx4: intermediario entrega efectivo a Pandy) | **−** monto efectivo | Reduce la deuda neta; con el par cerrado la suma de las tres líneas debe dar **0**. |
 
+Mientras **Tx4 sigue pendiente** y **Tx3** (u otra contraparte del par Pandy–intermediario) **no** está ejecutada, `contrapartida_ejecutada` es **false** para esa ingreso: hace falta una fila en `reglas_de_negocio` con `estado_transaccion = pendiente` y `contrapartida_ejecutada = false` (además de la fila con `true` cuando ya matchea el par). Canónico en `sql/reglas_de_negocio_tabla.sql`; parche: `sql/migracion_reglas_pendiente_contrapartida_false_usd_usd_int_y_cheque_tx4.sql`.
+
 Ejemplo: cheque 25.000 ARS, comisión int 375 ARS, efectivo a devolver 24.625 ARS → líneas **+25.000**, **−375** y, al ejecutar Tx4, **−24.625**; saldo neto **0**.
 
 En el **resumen** CC, el test E2E sigue interpretando el saldo del intermediario con la lógica `saldoResumenANumero(..., true)` (lectura coherente con deuda neta aunque la celda muestre signo “positivo” en verde).

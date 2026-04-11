@@ -26,12 +26,15 @@ La **fuente de verdad** es el sync por orden: `sincronizarCcYCajaDesdeOrden` bor
 
 ### Auditoría en SQL (¿faltan movimientos CC?)
 
-En Supabase SQL Editor se puede ejecutar **`sql/auditoria_cc_transacciones_y_ordenes.sql`** (consultas 1–5 y la **§6** de diagnóstico por `orden_id`: tipo de operación, multicontraparte manual y conteos de `reglas_de_negocio`). Incluye, entre otras:
+En Supabase SQL Editor se puede ejecutar **`sql/auditoria_cc_transacciones_y_ordenes.sql`** (consultas **1**, **1b**, 2–5, **3b**, **5a** y la **§6** de diagnóstico por `orden_id`: tipo de operación, multicontraparte manual y conteos de `reglas_de_negocio`). Incluye, entre otras:
 
-1. Transacciones en **pendiente** o **ejecutada** sin ninguna fila en `movimientos_cuenta_corriente` ni en `movimientos_cuenta_corriente_intermediario` (mismo `transaccion_id`).
+1. Transacciones en **pendiente** o **ejecutada** sin ninguna fila en `movimientos_cuenta_corriente` ni en `movimientos_cuenta_corriente_intermediario` (mismo `transaccion_id`), con **tipo de operación**, **pagador/cobrador**, moneda, monto y prefijo de concepto (para cruzar con `reglas_de_negocio` y con la instrumentación en la app).
+1b. Mismo criterio que (1) pero **solo** si la orden **ya tiene** al menos un movimiento CC en algún libro (hueco **parcial**: conviene abrir la orden, revisar la pata y el sync; tras actualizar el front, **Refrescar** en Cuenta corriente reintenta persistir).
 2. Órdenes con al menos una transacción no anulada y **cero** filas CC en **ambos** libros (candidatas a que el sync nunca persistió nada para esa orden).
 3. Incoherencias entre orden/transacción **anulada** y movimientos CC que siguen sin estado anulado (revisar en tu BD si el movimiento usa `anulado` u `anulada` según migraciones).
-4. Resumen por orden: conteos de transacciones por estado vs filas CC.
+3b. Órdenes en estado **anulada** con al menos una transacción pero **cero** filas CC en cliente e intermediario (legado antes de que el flujo «Anular orden» siempre sincronizara; corregir con **Refrescar** en Cuenta corriente o sync por orden).
+4. Resumen por orden (§5): conteos de transacciones por estado vs filas CC.
+5. Igual que (4) pero **solo órdenes no anuladas** (§5a): vista «solo vigentes» sin mezclar anuladas en el mismo listado.
 
 Los resultados pueden incluir **falsos positivos** si una transacción concreta, por reglas de negocio, no debe generar CC en ningún libro; sirven como lista corta para revisar orden por orden en la app o forzar **Refrescar** en Cuenta corriente y volver a consultar.
 
@@ -67,7 +70,8 @@ Los resultados pueden incluir **falsos positivos** si una transacción concreta,
 | Auto-completar instrumentación | Sí (todas las transacciones creadas) | No |
 | Orden ejecutada (conversión/comisión) | Sí (movimientos de cierre) | No (ya se impactó por cada transacción ejecutada) |
 | Eliminar transacción | Se borran movimientos de esa transacción | Se borra movimiento de esa transacción |
+| **Anular orden** | Siempre sync por orden: CC derivada regenerada; filas con transacción anulada en **anulado** (visibles, fuera del saldo) | Caja derivada solo por transacciones que estuvieron ejecutadas |
 
-Implementación: `main.js` (`sincronizarCcYCajaDesdeOrden`, saveTransaccion, cambiarEstadoTransaccion, `aplicarCcMulticontraparteManualConciliacionCompleta`, `aplicarMotorCcDesdeReglasDeNegocio`, autoCompletarInstrumentacion*, eliminarTransaccion, generarMovimientoConversionCc*).
+Implementación: `main.js` (`sincronizarCcYCajaDesdeOrden`, saveTransaccion, cambiarEstadoTransaccion, `aplicarCcMulticontraparteManualConciliacionCompleta`, `aplicarMotorCcDesdeReglasDeNegocio`, autoCompletarInstrumentacion*, eliminarTransaccion, generarMovimientoConversionCc*, `ejecutarAnulacionOrdenCompleta`).
 
 **Intermediario y cliente como la misma persona:** la tabla `contraparte_vinculo` declara el vínculo 1:1; se gestiona desde **Clientes** e **Intermediarios** (editar registro). En **Cuenta corriente**, con el filtro **Cliente** solo se muestran movimientos y saldos de `movimientos_cuenta_corriente` de ese cliente (la CC “pura” del rol cliente). Con el filtro **Intermediario**, la fila y el detalle de ese intermediario **suman y listan** también los movimientos de `movimientos_cuenta_corriente` del cliente vinculado, además de `movimientos_cuenta_corriente_intermediario` — **solo lectura en pantalla**; la persistencia y el sync no mezclan tablas. En **órdenes**, sí puede guardarse el mismo par `cliente_id` / `intermediario_id` del vínculo en una orden cuando el tipo lo requiere; si la base aún tiene el trigger antiguo de la Fase 4, aplicar `sql/migracion_ordenes_quitar_trigger_par_vinculado.sql`. Ver `docs/PLAN_INTERMEDIARIO_CLIENTE_CC_UNIFICADA.md`.
