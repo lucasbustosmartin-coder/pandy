@@ -751,6 +751,83 @@ function pandiOfflineCacheWritePayload(clientesRows, intRows, tiposRows, modosPa
   } catch (e) { /* ignore */ }
 }
 
+/** Filas `contraparte_vinculo` al abrir el modal de orden (validación cliente + intermediario con tipo «con intermediario»). */
+let pandiOrdenModalContraparteVinculoRows = null;
+
+const PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO =
+  'Este cliente está vinculado con el intermediario que elegiste. No uses tipo con intermediario: elegí el mismo tipo sin intermediario y armá la operación como multiparte (varias contrapartes en instrumentación).';
+
+function pandiExisteParContraparteVinculo(rows, clienteId, intermediarioId) {
+  if (!clienteId || !intermediarioId || !Array.isArray(rows)) return false;
+  const c = String(clienteId).trim();
+  const i = String(intermediarioId).trim();
+  for (let k = 0; k < rows.length; k++) {
+    const v = rows[k];
+    if (v && String(v.cliente_id) === c && String(v.intermediario_id) === i) return true;
+  }
+  return false;
+}
+
+/** Tipo con intermediario + cliente e intermediario coinciden con una fila de `contraparte_vinculo`. */
+function pandiOrdenWizardParVinculadoTipoIntermediarioInvalido(vinculosRows) {
+  const selTipo = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+  if (!selTipo || selTipo.getAttribute('data-usa-intermediario') !== 'true') return false;
+  const clienteId = document.getElementById('orden-cliente')?.value?.trim() || '';
+  const intermediarioId = document.getElementById('orden-intermediario')?.value?.trim() || '';
+  const rows = Array.isArray(vinculosRows) ? vinculosRows : [];
+  return pandiExisteParContraparteVinculo(rows, clienteId, intermediarioId);
+}
+
+let _pandiOrdWizParVinLastToastKey = '';
+
+function pandiOrdenWizardNotificarSiParVinculadoConIntermediario(vinculosRows) {
+  if (!pandiOrdenWizardParVinculadoTipoIntermediarioInvalido(vinculosRows)) {
+    _pandiOrdWizParVinLastToastKey = '';
+    return;
+  }
+  const selTipo = document.getElementById('orden-tipo-operacion');
+  const c = document.getElementById('orden-cliente')?.value?.trim() || '';
+  const i = document.getElementById('orden-intermediario')?.value?.trim() || '';
+  const t = selTipo && selTipo.value ? selTipo.value.trim() : '';
+  const key = `${t}|${c}|${i}`;
+  if (key === _pandiOrdWizParVinLastToastKey) return;
+  _pandiOrdWizParVinLastToastKey = key;
+  showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
+}
+
+function pandiOrdenWizardVinculosRowsParaValidarCola() {
+  if (Array.isArray(pandiOrdenModalContraparteVinculoRows)) return pandiOrdenModalContraparteVinculoRows;
+  const c = pandiOfflineCatalogosRead();
+  return (c && Array.isArray(c.contraparte_vinculo)) ? c.contraparte_vinculo : [];
+}
+
+let _pandiOrdOffParVinLastToastKey = '';
+
+function pandiOrdenOfflineParVinculadoInvalidoDesdeCache(cache) {
+  const rows = cache && Array.isArray(cache.contraparte_vinculo) ? cache.contraparte_vinculo : [];
+  const selTipo = document.getElementById('orden-offline-tipo')?.selectedOptions?.[0];
+  if (!selTipo || selTipo.getAttribute('data-usa-intermediario') !== 'true') return false;
+  const c = (document.getElementById('orden-offline-cliente') || {}).value?.trim() || '';
+  const i = (document.getElementById('orden-offline-intermediario') || {}).value?.trim() || '';
+  return pandiExisteParContraparteVinculo(rows, c, i);
+}
+
+function pandiOrdenOfflineNotificarSiParVinculadoConIntermediario() {
+  const cache = pandiOfflineCatalogosRead();
+  if (!pandiOrdenOfflineParVinculadoInvalidoDesdeCache(cache)) {
+    _pandiOrdOffParVinLastToastKey = '';
+    return;
+  }
+  const selTipo = document.getElementById('orden-offline-tipo');
+  const c = (document.getElementById('orden-offline-cliente') || {}).value?.trim() || '';
+  const i = (document.getElementById('orden-offline-intermediario') || {}).value?.trim() || '';
+  const t = selTipo && selTipo.value ? selTipo.value.trim() : '';
+  const key = `off|${t}|${c}|${i}`;
+  if (key === _pandiOrdOffParVinLastToastKey) return;
+  _pandiOrdOffParVinLastToastKey = key;
+  showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
+}
+
 /** Id del modo «efectivo» desde caché offline (plantilla de transacciones al importar). */
 function pandiModoPagoEfectivoIdDesdeCache(cache) {
   const rows = cache && cache.modos_pago;
@@ -1227,6 +1304,7 @@ function pandiOrdenOfflineSyncTipoAMonedas() {
 }
 
 function pandiOrdenOfflineOpenModal() {
+  _pandiOrdOffParVinLastToastKey = '';
   if (!currentUserId) {
     showToast('Iniciá sesión para usar la cola local.', 'error');
     return;
@@ -1286,6 +1364,7 @@ function pandiOrdenOfflineOpenModal() {
   pandiOrdenOfflinePintarResumenCola();
   backdrop.classList.add('activo');
   backdrop.setAttribute('aria-hidden', 'false');
+  pandiOrdenOfflineNotificarSiParVinculadoConIntermediario();
 }
 
 async function pandiOrdenOfflineGuardarEnCola() {
@@ -1302,6 +1381,10 @@ async function pandiOrdenOfflineGuardarEnCola() {
   const usaInt = selTipo ? selTipo.getAttribute('data-usa-intermediario') === 'true' : false;
   if (usaInt && !intermediarioId) {
     showToast('Este tipo exige intermediario.', 'error');
+    return;
+  }
+  if (usaInt && intermediarioId && pandiOrdenOfflineParVinculadoInvalidoDesdeCache(cache)) {
+    showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
     return;
   }
   if (!clienteId) {
@@ -1416,7 +1499,16 @@ function setupModalOrdenOffline() {
   });
   setupBackdropCloseOnlyOnRealClick(backdrop, pandiOrdenOfflineCloseModal);
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); void pandiOrdenOfflineGuardarEnCola(); });
-  if (selTipo) selTipo.addEventListener('change', pandiOrdenOfflineSyncTipoAMonedas);
+  if (selTipo) {
+    selTipo.addEventListener('change', () => {
+      pandiOrdenOfflineSyncTipoAMonedas();
+      pandiOrdenOfflineNotificarSiParVinculadoConIntermediario();
+    });
+  }
+  const selOffCli = document.getElementById('orden-offline-cliente');
+  const selOffInt = document.getElementById('orden-offline-intermediario');
+  if (selOffCli) selOffCli.addEventListener('change', pandiOrdenOfflineNotificarSiParVinculadoConIntermediario);
+  if (selOffInt) selOffInt.addEventListener('change', pandiOrdenOfflineNotificarSiParVinculadoConIntermediario);
   setupInputImporte(document.getElementById('orden-offline-tasa-cheque-pct'), PANDI_TASA_PCT_DECIMALES, true);
   const comboUi = backdrop.querySelector('.orden-tipo-operacion-combo-ui');
   const comboBtn = document.getElementById('orden-offline-tipo-combo-btn');
@@ -16023,6 +16115,8 @@ function openModalOrden(registro) {
   }
   ordenModalLoadSeq += 1;
   const modalLoadSeq = ordenModalLoadSeq;
+  _pandiOrdWizParVinLastToastKey = '';
+  pandiOrdenModalContraparteVinculoRows = null;
   if (registro == null) {
     ordenWizardUsdUsdCpIcIgnorarComisionFija = false;
     idEl.value = '';
@@ -16077,6 +16171,9 @@ function openModalOrden(registro) {
     pandiSupabaseQuerySafe(
       client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
     ),
+    pandiSupabaseQuerySafe(
+      client.from('contraparte_vinculo').select('intermediario_id, cliente_id'),
+    ),
   ]);
   const promRegistro = registro
     ? Promise.resolve(registro)
@@ -16090,7 +16187,7 @@ function openModalOrden(registro) {
       });
 
   Promise.all([promDatos, promRegistro])
-    .then(([[rClientes, rTipos, rInt], registroActual]) => {
+    .then(([[rClientes, rTipos, rInt, rVin], registroActual]) => {
       if (modalLoadSeq !== ordenModalLoadSeq) return;
       let clientes = rClientes.data || [];
       let tiposRaw = rTipos.data || [];
@@ -16098,6 +16195,12 @@ function openModalOrden(registro) {
       const errC = rClientes.error;
       const errT = rTipos.error;
       const errI = rInt.error;
+      let vinculosRows = (rVin && !rVin.error && Array.isArray(rVin.data)) ? rVin.data : [];
+      if (rVin && rVin.error) {
+        const cacheVin = pandiOfflineCatalogosRead();
+        if (cacheVin && Array.isArray(cacheVin.contraparte_vinculo)) vinculosRows = cacheVin.contraparte_vinculo;
+      }
+      pandiOrdenModalContraparteVinculoRows = vinculosRows;
       const netBad =
         pandiSupabaseConnectivityIssue !== 'none' ||
         (typeof navigator !== 'undefined' && navigator.onLine === false);
@@ -16178,10 +16281,16 @@ function openModalOrden(registro) {
       }
       syncOrdenTipoOperacionIconosPreview();
       rebuildOrdenTipoOperacionListbox();
+      pandiOrdenWizardNotificarSiParVinculadoConIntermediario(vinculosRows);
     }
     if (selTipoEl) selTipoEl.onchange = onTipoChange;
+    if (selCliente) {
+      selCliente.onchange = () => {
+        pandiOrdenWizardNotificarSiParVinculadoConIntermediario(vinculosRows);
+      };
+    }
     if (selIntEl) {
-      selIntEl.addEventListener('change', () => {
+      selIntEl.onchange = () => {
         const intId = selIntEl.value?.trim();
         const nom = ordenWizardIntermediarioNombreVisible();
         if (!intermediarioTieneComisionFijaUsdAcordada(intId, nom)) {
@@ -16189,7 +16298,8 @@ function openModalOrden(registro) {
         }
         syncOrdenIntPatronInstrumentacionWrap();
         syncOrdenWizardUsdUsdIntComisionUi();
-      });
+        pandiOrdenWizardNotificarSiParVinculadoConIntermediario(vinculosRows);
+      };
     }
     if (btnNext) btnNext.onclick = () => {
       const optTipo = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
@@ -16197,6 +16307,10 @@ function openModalOrden(registro) {
       const valorIntermediario = document.getElementById('orden-intermediario')?.value?.trim() || '';
       if (usaIntermediario && !valorIntermediario) {
         showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
+        return;
+      }
+      if (pandiOrdenWizardParVinculadoTipoIntermediarioInvalido(vinculosRows)) {
+        showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
         return;
       }
       showOrdenWizardStep('detalles');
@@ -16424,6 +16538,7 @@ function openModalOrden(registro) {
           const codP = optP ? (optP.getAttribute('data-codigo') || '') : '';
           if (codP && selTipoEl) adaptarFormularioOrden(codP, tipos, selTipoEl.value || '');
           aplicarOrdenRegistroIntermediarioTransferenciaYTasa(registroActual);
+          pandiOrdenWizardNotificarSiParVinculadoConIntermediario(vinculosRows);
         });
       } else {
         syncOrdenIntPatronInstrumentacionWrap();
@@ -17331,6 +17446,13 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
   if (usaIntermediarioTipo && !intermediarioId) {
     return { error: 'Para este tipo de operación es obligatorio elegir un intermediario.' };
   }
+  if (
+    usaIntermediarioTipo &&
+    intermediarioId &&
+    pandiExisteParContraparteVinculo(pandiOrdenWizardVinculosRowsParaValidarCola(), clienteId, intermediarioId)
+  ) {
+    return { error: PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO };
+  }
   const selTipoOptPre = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
   const tipoCodigoPre = selTipoOptPre ? (selTipoOptPre.getAttribute('data-codigo') || '') : '';
   if (String(tipoCodigoPre).trim().toUpperCase() === 'USD-USD' && usaIntermediarioTipo && intermediarioId && !ordenIntPatronExplicitoElegido()) {
@@ -17583,6 +17705,10 @@ function guardarOrdenDesdeWizard() {
   }
   if (usaIntermediarioTipo && !intermediarioId) {
     showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
+    return Promise.resolve(null);
+  }
+  if (pandiOrdenWizardParVinculadoTipoIntermediarioInvalido(pandiOrdenWizardVinculosRowsParaValidarCola())) {
+    showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
     return Promise.resolve(null);
   }
   const selTipoOptPre = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
@@ -18233,6 +18359,10 @@ function saveOrden() {
   }
   if (usaIntermediarioSave && !intermediarioId) {
     showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
+    return;
+  }
+  if (pandiOrdenWizardParVinculadoTipoIntermediarioInvalido(pandiOrdenWizardVinculosRowsParaValidarCola())) {
+    showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
     return;
   }
   const tipoCodigoSavePre = selTipoOptSave ? (selTipoOptSave.getAttribute('data-codigo') || '') : '';

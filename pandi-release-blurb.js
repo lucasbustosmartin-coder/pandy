@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.25',
+  versionLabel: 'v3.7.26',
   lines: [
-    'Corrección al armar la cuenta corriente cuando una orden quedó anulada sin llegar a ejecutar ninguna transacción: ahora deberían aparecer las líneas en Anulada tras usar Refrescar.',
-    'Sigue valiendo lo anterior: al anular, la vista recalcula esa orden y las anuladas no suman al saldo.',
+    'En Nueva orden, si el tipo lleva intermediario y el cliente y el intermediario son el mismo par vinculado en el sistema, la app te avisa y te orienta a usar el tipo sin intermediario y multiparte.',
+    'Las ayudas en Participantes e Intermediarios y el manual quedaron alineados a ese criterio.',
   ],
 };

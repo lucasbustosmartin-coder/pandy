@@ -38,7 +38,7 @@ Los movimientos siguen guardándose donde corresponde por rol (**CC cliente** vs
 ## Fase 4 — Órdenes (ajustada: se permite el par vinculado en la misma orden)
 
 - **Regla de producto:** si existe vínculo en **`contraparte_vinculo`**, la **misma orden** **puede** tener ese `cliente_id` y ese `intermediario_id` a la vez cuando el circuito lo exige (misma persona en ambos roles; la vista CC tipo Intermediario ya unifica ambos libros).
-- **Front:** ya **no** se rechaza el guardado por coincidencia con `contraparte_vinculo` (`saveOrden`, wizard, cola offline).
+- **Front — tipo *con* intermediario:** si el usuario elige un **tipo de operación que usa intermediario** y además **cliente** e **intermediario** coinciden con una fila de **`contraparte_vinculo`**, la app **avisa con toast** al cumplirse las tres condiciones y **bloquea** guardar / avanzar al paso detalles / cola local (wizard online, cola con plantilla y modal «Orden en cola local»). El mensaje indica usar el **mismo tipo sin intermediario** y armar la instrumentación como **multiparte**. No aplica cuando el intermediario elegido **no** es el del vínculo de ese cliente.
 - **Supabase:** la restricción anterior (trigger `tr_ordenes_no_par_vinculado` de `sql/migracion_ordenes_validar_no_par_vinculado_fase4.sql`) se **revoca** con **`sql/migracion_ordenes_quitar_trigger_par_vinculado.sql`** en cada base donde se hubiera aplicado la Fase 4. El bootstrap dev concatena ese script después de la migración Fase 4. Detalle: `docs/SUPABASE_REQUISITOS.md`.
 
 ---
