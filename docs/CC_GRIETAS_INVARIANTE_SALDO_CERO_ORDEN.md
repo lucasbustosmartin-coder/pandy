@@ -155,6 +155,8 @@ Los scripts en `sql/` son la fuente de verdad **esperada**; Supabase puede queda
 
 Helpers: `motorCcTransaccionEsperaReglaEnTabla`, `sumaCcClienteCerradoPorMonedaDesdeFilas`, constante `EPS_CC_NETEO_CLIENTE_ORDEN`.
 
+**Lookup y roles:** el motor aplica `transaccionNormalizarPagCobVacios` y `pagCobEfectivosTransaccionSync` sobre cada transacción antes de `lookupReglasDeNegocio`, alineado al sync de CC. Si `pagador`/`cobrador` en BD vienen vacíos o null, no se usa solo el valor crudo (que impediría matchear filas con `cliente` / `pandy` / `intermediario`).
+
 ---
 
 ## Pendiente / endurecimiento futuro

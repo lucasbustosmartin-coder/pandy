@@ -8805,19 +8805,19 @@ function motorCcTransaccionEsperaReglaEnTabla(t, ctx) {
   const montoT = Number(t.monto) || 0;
   const comM = Number(ctx.comM) || 0;
   const mr = Number(ctx.mr) || 0;
+  const tNorm = transaccionNormalizarPagCobVacios(t);
+  const { pag: pagEf, cob: cobEf } = pagCobEfectivosTransaccionSync(tNorm);
   if (
     comM >= 1e-6 &&
     tipo === 'ingreso' &&
-    String(t.pagador || '').toLowerCase() === 'cliente' &&
-    String(t.cobrador || '').toLowerCase() === 'pandy' &&
+    pagEf === 'cliente' &&
+    cobEf === 'pandy' &&
     Math.abs(montoT - comM) < 1e-6 &&
     montoT < mr - 1e-6
   ) {
     return false;
   }
-  const pag = String(t.pagador || '').toLowerCase();
-  const cob = String(t.cobrador || '').toLowerCase();
-  return !!pag && !!cob;
+  return !!pagEf && !!cobEf;
 }
 
 /** Suma `monto` por moneda solo en filas CC cliente `estado === cerrado`. */
@@ -8926,22 +8926,22 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
   (transacciones || []).forEach((t) => {
     if ((t.concepto || '').includes('Ganancia del acuerdo')) return;
     const montoT = Number(t.monto) || 0;
+    const tNorm = transaccionNormalizarPagCobVacios(t);
+    const { pag, cob } = pagCobEfectivosTransaccionSync(tNorm);
     // Instrumentación USD-USD: el ingreso de cobro lleva monto = mr (acuerdo). `comisiones_orden` solo reparte el spread (Pandy/int.); si existiera otra fila ingreso con monto = parte Pandy de ese reparto, no duplicar aquí movimientos por transacción (la comisión implícita cliente sale de la fila `es_comision` + `mr_menos_me` en reglas, bloque más abajo). El cobro principal tiene siempre monto ≈ mr; solo omitir cuando el monto coincide con la parte Pandy y es claramente menor que mr (no es el cobro nominal).
     if (
       comM >= 1e-6 &&
       (t.tipo || '').toLowerCase() === 'ingreso' &&
-      String(t.pagador || '').toLowerCase() === 'cliente' &&
-      String(t.cobrador || '').toLowerCase() === 'pandy' &&
+      pag === 'cliente' &&
+      cob === 'pandy' &&
       Math.abs(montoT - comM) < 1e-6 &&
       montoT < mr - 1e-6
     ) {
       return;
     }
-    const pag = String(t.pagador || '').toLowerCase();
-    const cob = String(t.cobrador || '').toLowerCase();
     const tipo = (t.tipo || '').toLowerCase();
     const estado = (t.estado || '').toLowerCase();
-    const contrapartida = contrapartidaEjecutada(transacciones, t.pagador, t.cobrador, t.tipo);
+    const contrapartida = contrapartidaEjecutada(transacciones, pag, cob, t.tipo);
     // Ingreso monR al cliente del acuerdo sin matriz en reglas (Cliente→Cliente tercero, o Pandy→Cliente): mismo modelo que multicontraparte manual regla B / pata sustituta.
     if (tipo === 'ingreso' && estado === 'ejecutada' && clienteId && orden && orden.cliente_id && montoT >= 1e-9) {
       const monROrd = String(orden.moneda_recibida || 'USD').toUpperCase();
