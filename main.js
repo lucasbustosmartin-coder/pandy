@@ -1537,8 +1537,8 @@ async function pandiPrefetchOneOrdenInstrumentacionSnapshot(ordenRow, modosPagoG
     const instrumentacionId = rI.data.id;
     const mcRow = rI.data;
     const [rOrdFull, res] = await Promise.all([
-      client.from('ordenes').select('id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, estado, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)').eq('id', ordenId).single(),
-      client.from('transacciones').select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true }),
+      client.from('ordenes').select('id, usuario_id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, estado, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)').eq('id', ordenId).single(),
+      client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true }),
     ]);
     if (res.error) return;
     const ordenTotales = rOrdFull.data || ordenRow;
@@ -1876,7 +1876,7 @@ function pandiOpenModalEditarInstrumentacionOnline(ordenId) {
   client
     .from('ordenes')
     .select(
-      'id, numero, cliente_id, intermediario_id, estado, fecha, tipo_operacion_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)',
+      'id, usuario_id, numero, cliente_id, intermediario_id, estado, fecha, tipo_operacion_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)',
     )
     .eq('id', oid)
     .single()
@@ -1910,7 +1910,7 @@ function pandiOpenModalEditarInstrumentacionOnline(ordenId) {
           client
             .from('transacciones')
             .select(
-              'id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, fecha_ejecucion, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id',
+              'id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, fecha_ejecucion, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id',
             )
             .eq('instrumentacion_id', instId)
             .order('created_at', { ascending: true }),
@@ -3627,7 +3627,7 @@ function fetchTransaccionesParaAnulacionOrden(ordenId) {
       if (!instId) return { transacciones: [], instrumentacionId: null };
       return client
         .from('transacciones')
-        .select('id, estado')
+        .select('id, usuario_id, estado')
         .eq('instrumentacion_id', instId)
         .then((rTr) => ({ transacciones: rTr.data || [], instrumentacionId: instId }));
     });
@@ -3692,7 +3692,7 @@ function ejecutarAnulacionOrdenCompleta(ordenId) {
   const ahora = new Date().toISOString();
   return client
     .from('ordenes')
-    .select('id, estado, numero')
+    .select('id, usuario_id, estado, numero')
     .eq('id', ordenId)
     .single()
     .then((rOrd) => {
@@ -3800,9 +3800,9 @@ function ccTablaMovCcPorTipoEntidad(tipo) {
 }
 
 const CC_MANUAL_EDIT_ROW_COLS_CLI =
-  'id, cliente_id, concepto, fecha, movimiento_caja_id, manual_grupo_id, moneda, monto, manual_pagador_rol, manual_cobrador_rol, manual_pagador_cliente_id, manual_pagador_intermediario_id, manual_cobrador_cliente_id, manual_cobrador_intermediario_id, manual_tip_movimiento';
+  'id, usuario_id, cliente_id, concepto, fecha, movimiento_caja_id, manual_grupo_id, moneda, monto, manual_pagador_rol, manual_cobrador_rol, manual_pagador_cliente_id, manual_pagador_intermediario_id, manual_cobrador_cliente_id, manual_cobrador_intermediario_id, manual_tip_movimiento';
 const CC_MANUAL_EDIT_ROW_COLS_INT =
-  'id, intermediario_id, concepto, fecha, movimiento_caja_id, manual_grupo_id, moneda, monto, manual_pagador_rol, manual_cobrador_rol, manual_pagador_cliente_id, manual_pagador_intermediario_id, manual_cobrador_cliente_id, manual_cobrador_intermediario_id, manual_tip_movimiento';
+  'id, usuario_id, intermediario_id, concepto, fecha, movimiento_caja_id, manual_grupo_id, moneda, monto, manual_pagador_rol, manual_cobrador_rol, manual_pagador_cliente_id, manual_pagador_intermediario_id, manual_cobrador_cliente_id, manual_cobrador_intermediario_id, manual_tip_movimiento';
 
 function ccManualParseModoDesdeConcepto(concepto) {
   const c = String(concepto || '');
@@ -6933,7 +6933,7 @@ function loadInicioPendientes() {
   const penVis = pandiInicioPendientesCardsVisibles();
   const silentPen = isPandiBackgroundRefresh();
   const promOrd = bodyOrd && penVis.ordenes
-    ? client.from('ordenes').select('id, estado').neq('estado', 'orden_ejecutada').neq('estado', 'anulada')
+    ? client.from('ordenes').select('id, usuario_id, estado').neq('estado', 'orden_ejecutada').neq('estado', 'anulada')
     : Promise.resolve({ data: [], error: null });
   const promTr = elCountTr && penVis.transacciones
     ? client.from('transacciones').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente')
@@ -7079,7 +7079,7 @@ function openModalOrdenesPendientes(estadoFilter) {
   tbody.innerHTML = '';
   const selEstado = document.getElementById('ordenes-pendientes-filtro-estado');
   if (selEstado) selEstado.value = estadoFilter || '';
-  const selectOrdPend = ordenesTieneNumeroColumn ? 'id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones' : 'id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones';
+  const selectOrdPend = ordenesTieneNumeroColumn ? 'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones' : 'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones';
   client.from('ordenes').select(selectOrdPend).neq('estado', 'orden_ejecutada').neq('estado', 'anulada').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((res) => {
       if (res.error) {
         loadingEl.style.display = 'none';
@@ -7180,7 +7180,7 @@ function openModalTransaccionesPendientes() {
       const instToOrden = {};
       (rInst.data || []).forEach((i) => { instToOrden[i.id] = i.orden_id; });
       const ordenIds = [...new Set(Object.values(instToOrden).filter(Boolean))];
-      const selectOrdTr = ordenesTieneNumeroColumn ? 'id, numero, cliente_id, intermediario_id, fecha' : 'id, cliente_id, intermediario_id, fecha';
+      const selectOrdTr = ordenesTieneNumeroColumn ? 'id, usuario_id, numero, cliente_id, intermediario_id, fecha' : 'id, usuario_id, cliente_id, intermediario_id, fecha';
       client.from('ordenes').select(selectOrdTr).in('id', ordenIds).then((rOrd) => {
         const ordenesMap = {};
         (rOrd.data || []).forEach((o) => { ordenesMap[o.id] = o; });
@@ -7847,7 +7847,7 @@ function pushMcClienteRow(rowsCcCliente, cid, ordenId, fecha, ahora, partial, fa
     cliente_id: cid,
     orden_id: ordenId,
     fecha,
-    usuario_id: fallbackUId || currentUserId,
+    usuario_id: fallbackUId || null,
     estado: 'cerrado',
     estado_fecha: ahora,
     ...partial,
@@ -8098,7 +8098,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
  * CC por transacción (instrumentación multicontraparte manual), una sola trx: usado para patas con intermediario y delegación interna.
  */
 function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt, fallbackUId) {
-  const finalUId = t.usuario_id || fallbackUId || currentUserId;
+  const finalUId = t.usuario_id || fallbackUId || null;
   const monto = Number(t.monto) || 0;
   const mon = (t.moneda || 'USD').toUpperCase();
   const transaccionId = t.id;
@@ -9464,8 +9464,8 @@ function loadCuentaCorriente(opts) {
   return Promise.all([
       client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
       client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
-      pandiSupabaseFetchAll(() => client.from('movimientos_cuenta_corriente').select('id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS)),
-      pandiSupabaseFetchAll(() => client.from('movimientos_cuenta_corriente_intermediario').select('id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS)),
+      pandiSupabaseFetchAll(() => client.from('movimientos_cuenta_corriente').select('id, usuario_id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS)),
+      pandiSupabaseFetchAll(() => client.from('movimientos_cuenta_corriente_intermediario').select('id, usuario_id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS)),
       client.from('contraparte_vinculo').select('intermediario_id, cliente_id'),
     ])
     .then(([rClientes, rInt, rMovCli, rMovInt, rVin]) => {
@@ -9498,7 +9498,7 @@ function loadCuentaCorriente(opts) {
       const inst = Object.values(instById);
       const ordenIdsFromInst = [...new Set(inst.map((i) => i.orden_id).filter(Boolean))];
       if (ordenIdsFromInst.length === 0) return { pendienteClienteAjusteByCli: {}, pendientePandyDebeIntByInt: {} };
-      return client.from('ordenes').select('id, cliente_id, intermediario_id, monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tipo_operacion_id, tipos_operacion(codigo, usa_intermediario)')
+      return client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tipo_operacion_id, tipos_operacion(codigo, usa_intermediario)')
           .in('id', ordenIdsFromInst)
           .then((rO) => {
             if (rO.error) return { pendienteClienteAjusteByCli: {}, pendientePandyDebeIntByInt: {} };
@@ -9551,9 +9551,9 @@ function loadCuentaCorriente(opts) {
     })
       .catch(() => ({ pendienteClienteAjusteByCli: {}, pendientePandyDebeIntByInt: {} }));
     return Promise.all([
-      transaccionIds.length > 0 ? client.from('transacciones').select('id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
+      transaccionIds.length > 0 ? client.from('transacciones').select('id, usuario_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
       ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
-      ordenIds.length > 0 ? client.from('ordenes').select('id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario), monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tasa_descuento_intermediario').in('id', ordenIds) : Promise.resolve({ data: [] }),
+      ordenIds.length > 0 ? client.from('ordenes').select('id, usuario_id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario), monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tasa_descuento_intermediario').in('id', ordenIds) : Promise.resolve({ data: [] }),
       promPendientesCcGlobal,
     ]).then(([rTr, rInst, rOrdenes, pendientesResult]) => {
       const trById = {};
@@ -10590,7 +10590,7 @@ function continuarFetchMovimientosCcCore(movimientos, ordenes, tipo, entityId, l
   const transaccionIds = [...new Set((movimientos.map((m) => m.transaccion_id)).filter(Boolean))];
   const ordenIds = [...new Set((movimientos.map((m) => m.orden_id)).filter(Boolean))];
   return Promise.all([
-      transaccionIds.length > 0 ? client.from('transacciones').select('id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
+      transaccionIds.length > 0 ? client.from('transacciones').select('id, usuario_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
       ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
     ]).then(([rTr, rInst]) => {
       const trById = {};
@@ -10827,8 +10827,8 @@ function continuarFetchMovimientosCcCore(movimientos, ordenes, tipo, entityId, l
 /** Saldos y movimientos por entidad; intermediario con vínculo suma CC cliente del par (solo lectura). */
 function fetchMovimientosCcPorEntidad(tipo, entityId) {
   const selOrden = ordenesTieneNumeroColumn
-    ? 'id, numero, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario)'
-    : 'id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario)';
+    ? 'id, usuario_id, numero, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario)'
+    : 'id, usuario_id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario)';
   const selectMovCli =
     'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id, cliente_id' +
     CC_MOV_MANUAL_PAG_COB_COLS;
@@ -13582,7 +13582,7 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
     );
     return Promise.resolve();
   }
-  return client.from('transacciones').select('id, numero, estado, monto, tipo, instrumentacion_id, modo_pago_id, moneda, cobrador, pagador, concepto, tipo_cambio, owner').eq('id', transaccionId).single().then((rTr) => {
+  return client.from('transacciones').select('id, usuario_id, numero, estado, monto, tipo, instrumentacion_id, modo_pago_id, moneda, cobrador, pagador, concepto, tipo_cambio, owner').eq('id', transaccionId).single().then((rTr) => {
     const t = rTr.data;
     if (!t) return Promise.resolve();
     const oldMonto = Number(t.monto) || 0;
@@ -13801,7 +13801,7 @@ function guardarSoloModoPagoTransaccion(transaccionId, modoPagoId, onSuccess, on
     if (onFailure) onFailure();
     return Promise.resolve();
   }
-  return client.from('transacciones').select('id, numero, estado, monto, moneda, concepto, instrumentacion_id, modo_pago_id, cobrador').eq('id', transaccionId).single().then((rTr) => {
+  return client.from('transacciones').select('id, usuario_id, numero, estado, monto, moneda, concepto, instrumentacion_id, modo_pago_id, cobrador').eq('id', transaccionId).single().then((rTr) => {
     const t = rTr.data;
     if (!t) return Promise.resolve();
     if (t.modo_pago_id === modoPagoId) {
@@ -15061,7 +15061,7 @@ async function pandiExpandOrdenIntentarMostrarInstrumentacionSnapshot(panel, ord
 async function pandiApplyOneTrxInstrumentacionPatchToServer(trxId, instId, patch) {
   const tid = String(trxId);
   const p = patch || {};
-  let r = await client.from('transacciones').select('id, estado, monto, modo_pago_id').eq('id', tid).single();
+  let r = await client.from('transacciones').select('id, usuario_id, estado, monto, modo_pago_id').eq('id', tid).single();
   if (r.error || !r.data) throw new Error(r.error?.message || 'transacción');
   let cur = r.data;
   if (p.monto != null && Math.abs(Number(p.monto) - Number(cur.monto)) > 1e-9) {
@@ -15069,7 +15069,7 @@ async function pandiApplyOneTrxInstrumentacionPatchToServer(trxId, instId, patch
       guardarSoloMontoTransaccion(tid, formatImporteParaInput(p.monto), resolve);
     });
   }
-  r = await client.from('transacciones').select('id, estado, monto, modo_pago_id').eq('id', tid).single();
+  r = await client.from('transacciones').select('id, usuario_id, estado, monto, modo_pago_id').eq('id', tid).single();
   if (r.error || !r.data) throw new Error(r.error?.message || 'transacción');
   cur = r.data;
   if (p.modo_pago_id != null && String(p.modo_pago_id) !== String(cur.modo_pago_id)) {
@@ -15077,7 +15077,7 @@ async function pandiApplyOneTrxInstrumentacionPatchToServer(trxId, instId, patch
       guardarSoloModoPagoTransaccion(tid, p.modo_pago_id, resolve, () => resolve());
     });
   }
-  r = await client.from('transacciones').select('id, estado').eq('id', tid).single();
+  r = await client.from('transacciones').select('id, usuario_id, estado').eq('id', tid).single();
   if (r.error || !r.data) throw new Error(r.error?.message || 'transacción');
   cur = r.data;
   const estPatch = p.estado != null ? String(p.estado).toLowerCase() : null;
@@ -15135,8 +15135,8 @@ async function pandiFlushPendingInstrumentacionOfflinePatches() {
       anyOk = true;
       const rInst = await client.from('instrumentacion').select('multicontraparte_manual').eq('id', instId).maybeSingle();
       const mcRow = rInst.data || null;
-      const rOrd = await client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, estado, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single();
-      const res = await client.from('transacciones').select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instId).order('created_at', { ascending: true });
+      const rOrd = await client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, estado, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single();
+      const res = await client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instId).order('created_at', { ascending: true });
       if (!res.error && res.data) {
         const ordenTotales = rOrd.data || {};
         const maps = await fetchMapsNombresParticipantesTransacciones(ordenTotales, res.data || []);
@@ -15483,8 +15483,8 @@ function loadOrdenes() {
     tbody.innerHTML = '';
   }
 
-  const selectBase = 'id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id';
-  const selectConNumero = 'id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id';
+  const selectBase = 'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id';
+  const selectConNumero = 'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id';
 
   function runLoadOrdenes(selectCols) {
     return client
@@ -15676,7 +15676,7 @@ function crearOrdenBorrador() {
     usuario_id: currentUserId,
     updated_at: new Date().toISOString(),
   };
-  const selectCols = ordenesTieneNumeroColumn ? 'id, numero, fecha, estado, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado' : 'id, fecha, estado, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado';
+  const selectCols = ordenesTieneNumeroColumn ? 'id, usuario_id, numero, fecha, estado, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado' : 'id, fecha, estado, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado';
   return client.from('ordenes').insert(payload).select(selectCols).single().then((r) => {
     if (r.error || !r.data) return Promise.reject(new Error(r.error?.message || 'No se pudo crear la orden'));
     return r.data;
@@ -17087,7 +17087,7 @@ function insertOrdenConProximoNumero(payload) {
     return Promise.resolve({ data: null, error: { message: 'Toda orden debe tener un cliente asignado.' } });
   }
   if (!ordenesTieneNumeroColumn) {
-    return client.from('ordenes').insert(payload).select('id, numero');
+    return client.from('ordenes').insert(payload).select('id, usuario_id, numero');
   }
   return client.rpc('ordenes_insertar_con_proximo_numero', {
     p_cliente_id: payload.cliente_id,
@@ -17121,7 +17121,7 @@ function insertOrdenConProximoNumero(payload) {
     if (!rpcNoDisponible) return res;
     return getProximoNumeroOrden().then((nextNum) => {
       const p = { ...payload, numero: nextNum };
-      return client.from('ordenes').insert(p).select('id, numero').then((insertRes) => {
+      return client.from('ordenes').insert(p).select('id, usuario_id, numero').then((insertRes) => {
         if (insertRes.error) return insertRes;
         showToast('Orden creada. Para asignación atómica de número, ejecutá sql/ordenes_insertar_con_proximo_numero.sql en Supabase.', 'info');
         return { data: insertRes.data, error: null };
@@ -17627,7 +17627,7 @@ function guardarOrdenDesdeWizard() {
       ? client.from('instrumentacion').select('id, multicontraparte_manual').eq('orden_id', id).maybeSingle().then((rInst) => {
           const instId = rInst.data && rInst.data.id;
           const mcFlag = !!(rInst.data && rInst.data.multicontraparte_manual);
-          const promTr = instId ? client.from('transacciones').select('id, estado, tipo, moneda, monto, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id').eq('instrumentacion_id', instId) : Promise.resolve({ data: [] });
+          const promTr = instId ? client.from('transacciones').select('id, usuario_id, estado, tipo, moneda, monto, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id').eq('instrumentacion_id', instId) : Promise.resolve({ data: [] });
           const promTipo = tipoOperacionId ? client.from('tipos_operacion').select('codigo, usa_intermediario').eq('id', tipoOperacionId).single() : Promise.resolve({ data: null });
           return Promise.all([promTr, promTipo]).then(([rTr, rTipo]) => {
             const list = rTr.data || [];
@@ -17822,8 +17822,8 @@ function renderOrdenWizardInstrumentacion(instId) {
       return;
     }
     Promise.all([
-      client.from('ordenes').select('id, cliente_id, tipo_operacion_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, estado, clientes(nombre), intermediarios(nombre), tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single(),
-      client.from('transacciones').select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instId).order('created_at', { ascending: true }),
+      client.from('ordenes').select('id, usuario_id, cliente_id, tipo_operacion_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, estado, clientes(nombre), intermediarios(nombre), tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single(),
+      client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instId).order('created_at', { ascending: true }),
       client.from('modos_pago').select('id, codigo, nombre'),
     ]).then(([rOrd, resTr, rModos]) => {
       loadingEl.style.display = 'none';
@@ -17988,7 +17988,7 @@ function renderOrdenWizardInstrumentacion(instId) {
         };
         const estadoTexto = (t) => (String(t.estado || '').toLowerCase() === 'anulada' ? 'Anulada' : (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente'));
         const listaSorted = sortTransaccionesPorNumero(lista);
-        const selTrxWizardCols = 'id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id';
+        const selTrxWizardCols = 'id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id';
         function paintWizardTabla(maps, mapUsuario) {
           mapUsuario = mapUsuario || {};
           const cobradorL = (t) => transaccionParticipanteCeldaHtml(t, orden, 'cobrador', maps);
@@ -18110,7 +18110,7 @@ function renderOrdenWizardInstrumentacion(instId) {
           }
           return Promise.resolve();
         }).then(() =>
-          client.from('transacciones').select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, usuario_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instId).order('created_at', { ascending: true })
+          client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, usuario_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instId).order('created_at', { ascending: true })
         ).then((r2) => {
           list = r2.data || [];
           renderWizardList(list);
@@ -18301,7 +18301,7 @@ function saveOrden() {
               const promTr = instId
                 ? client
                     .from('transacciones')
-                    .select('id, estado, tipo, moneda, monto, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id')
+                    .select('id, usuario_id, estado, tipo, moneda, monto, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id')
                     .eq('instrumentacion_id', instId)
                 : Promise.resolve({ data: [] });
               const promTipo = tipoOperacionId ? client.from('tipos_operacion').select('codigo, usa_intermediario').eq('id', tipoOperacionId).single() : Promise.resolve({ data: null });
@@ -19027,7 +19027,7 @@ function textoAvisoFaltaOExcesoInstrumentacion(orden, transacciones, totalesOpts
 
 function fetchOrdenYTransaccionesParaValidarCierreWizard(ordenId, instId) {
   if (!ordenId || !instId) return Promise.resolve({ orden: null, transacciones: [], totalesOpts: undefined });
-  return client.from('ordenes').select('id, tipo_operacion_id, estado, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
+  return client.from('ordenes').select('id, usuario_id, tipo_operacion_id, estado, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
     const orden = rOrd.data;
     if (!orden) return { orden: null, transacciones: [], totalesOpts: undefined };
     return Promise.all([
@@ -19296,7 +19296,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
   const fecha = fechaHoyYYYYMMDDArgentina();
   const ahora = new Date().toISOString();
 
-  return client.from('ordenes').select('id, numero, estado, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, intermediarios(nombre)').eq('id', ordenId).single()
+  return client.from('ordenes').select('id, usuario_id, numero, estado, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, intermediarios(nombre)').eq('id', ordenId).single()
     .then((rOrd) => {
       if (rOrd.error || !rOrd.data) return Promise.resolve();
       const orden = rOrd.data;
@@ -19340,13 +19340,13 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
         const instId = rInst.data.id;
         const multicontraparteManual = !!(rInst.data && rInst.data.multicontraparte_manual);
         return Promise.all([
-          client.from('transacciones').select('id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at, usuario_id').eq('instrumentacion_id', instId),
+          client.from('transacciones').select('id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at, usuario_id').eq('instrumentacion_id', instId),
           client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
           client.from('modos_pago').select('id, codigo'),
           orden.intermediario_id ? client.from('intermediarios').select('nombre').eq('id', orden.intermediario_id).maybeSingle() : Promise.resolve({ data: null }),
         ]).then(([rTr, rCom, rModos, rIntNom]) => {
           const transacciones = rTr.data || [];
-          const orderUId = usuarioIdRegistroCajaFallbackUltimaEjecutadaConUsuario(transacciones);
+          const orderUId = usuarioIdRegistroCajaFallbackUltimaEjecutadaConUsuario(transacciones) || orden.usuario_id;
           const comisiones = rCom.data || [];
           const modosMap = {};
           (rModos.data || []).forEach((m) => { modosMap[m.id] = m.codigo || 'efectivo'; });
@@ -19921,7 +19921,7 @@ function asegurarGananciaPandy(ordenId, instrumentacionId, orden, clienteId, com
             cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'ejecutada', concepto: 'Ganancia del acuerdo',
             pagador_cliente_id: clienteId,
             tipo_cambio: null, fecha_ejecucion: fecha, usuario_id: currentUserId, updated_at: ahora,
-          }).select('id, numero').single();
+          }).select('id, usuario_id, numero').single();
         })
         .then((rNew) => {
           const trId = rNew.data && rNew.data.id;
@@ -20159,7 +20159,7 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, transIngr
   return client.from('ordenes').select('numero').eq('id', ordenId).single()
     .then((rOrd) => rOrd.data?.numero)
     .then((ordenNum) =>
-      client.from('transacciones').select('id, numero').in('id', [transIngresoClienteId, transEgresoClienteId]).then((rTr) => {
+      client.from('transacciones').select('id, usuario_id, numero').in('id', [transIngresoClienteId, transEgresoClienteId]).then((rTr) => {
         const trs = rTr.data || [];
         const nroIngresoCli = trs.find((x) => x.id === transIngresoClienteId)?.numero;
         const nroEgresoCli = trs.find((x) => x.id === transEgresoClienteId)?.numero;
@@ -20253,7 +20253,7 @@ function insertarMovimientosCcMomentoCero(ordenId, orden, ingresoId, egresoId) {
   const fecha = fechaHoyYYYYMMDDArgentina();
   const ahora = new Date().toISOString();
 
-  return client.from('transacciones').select('id, numero').in('id', [ingresoId, egresoId]).then((rTr) => {
+  return client.from('transacciones').select('id, usuario_id, numero').in('id', [ingresoId, egresoId]).then((rTr) => {
       const trs = rTr.data || [];
       const nroIngreso = trs.find((x) => x.id === ingresoId)?.numero;
       const nroEgreso = trs.find((x) => x.id === egresoId)?.numero;
@@ -20890,10 +20890,10 @@ function expandOrdenTransacciones(ordenId, orden) {
       panel.dataset.instrumentacionId = instrumentacionId;
 
       Promise.all([
-        client.from('ordenes').select('id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, estado, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)').eq('id', ordenId).single(),
+        client.from('ordenes').select('id, usuario_id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, estado, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)').eq('id', ordenId).single(),
         client
           .from('transacciones')
-          .select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id')
+          .select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id')
           .eq('instrumentacion_id', instrumentacionId)
           .order('created_at', { ascending: true }),
       ]).then(async ([rOrdFull, res]) => {
@@ -21076,7 +21076,7 @@ function expandOrdenTransacciones(ordenId, orden) {
               }
               return Promise.resolve();
             }).then(() =>
-              client.from('transacciones').select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true })
+              client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true })
             ).then((r2) => {
               list = (r2.data || []);
               return renderTransaccionesList(list);
@@ -21111,8 +21111,8 @@ function refreshTransaccionesPanel(ordenId) {
   }
   tbody.innerHTML = '';
   Promise.all([
-    client.from('transacciones').select('id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true }),
-    client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, estado, tipo_operacion_id, cotizacion, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single(),
+    client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true }),
+    client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, estado, tipo_operacion_id, cotizacion, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single(),
     client.from('instrumentacion').select('multicontraparte_manual').eq('id', instrumentacionId).maybeSingle(),
   ]).then(([resTr, resOrd, rInstMc]) => {
     const orden = resOrd?.data || null;
@@ -21580,7 +21580,7 @@ function openModalTransaccion(registro, instrumentacionId) {
       const ordenId = rInst.data && rInst.data.orden_id;
       const multicontraparteManual = !!(rInst.data && rInst.data.multicontraparte_manual);
       if (!ordenId) return { ...vacio, multicontraparteManual };
-      return client.from('ordenes').select('id, cliente_id, intermediario_id, cotizacion, tipo_operacion_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, clientes(nombre), tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)').eq('id', ordenId).single().then((rOrd) => {
+      return client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, cotizacion, tipo_operacion_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, clientes(nombre), tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)').eq('id', ordenId).single().then((rOrd) => {
         const o = rOrd.data || {};
         const cot = o.cotizacion != null && Number(o.cotizacion) > 0 ? Number(o.cotizacion) : null;
         const monedaRecibida = (o.moneda_recibida || '').trim().toUpperCase() || '';
@@ -22029,7 +22029,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
       if (esEgresoPandyInt) {
         const [rModos, rOrden, rLista] = await Promise.all([
           client.from('modos_pago').select('id, codigo'),
-          client.from('ordenes').select('id, intermediario_id, tipo_operacion_id').eq('id', ordenId).single(),
+          client.from('ordenes').select('id, usuario_id, intermediario_id, tipo_operacion_id').eq('id', ordenId).single(),
           client.from('transacciones').select('id, tipo, modo_pago_id, cobrador, pagador, estado').eq('instrumentacion_id', instrumentacionId),
         ]);
         const modosMap = Object.fromEntries((rModos.data || []).map((m) => [m.id, m]));
@@ -22162,7 +22162,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
               fecha_ejecucion: payload.fecha_ejecucion,
               usuario_id: currentUserId,
               updated_at: new Date().toISOString(),
-            }).select('id, numero').single();
+            }).select('id, usuario_id, numero').single();
           }
           return promesaSiguiente.then((rNew) => {
             const nuevaTrxId = rNew && rNew.data && rNew.data.id;
@@ -22741,7 +22741,7 @@ function saveTransaccion() {
       showToast('No se encontró la orden de esta instrumentación.', 'error');
       return;
     }
-    client.from('ordenes').select('id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
+    client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
       const orden = rOrd.data;
       if (!orden) {
         showToast('No se encontró la orden.', 'error');
@@ -22869,7 +22869,7 @@ function saveTransaccion() {
 
   const prom = id
     ? client.from('transacciones').update(payload).eq('id', id)
-    : client.from('transacciones').insert(payload).select('id, numero').single();
+    : client.from('transacciones').insert(payload).select('id, usuario_id, numero').single();
 
   function insertarCompensatoria() {
     if (!montoCompensatorio || montoCompensatorio <= 0) return Promise.resolve();
@@ -23448,7 +23448,7 @@ function generarTransaccionesCompensacionPandyIntermediario(ordenId, instrumenta
  */
 function generarMovimientoConversionCc(ordenId) {
   if (!ordenId || !currentUserId) return Promise.resolve();
-  return client.from('ordenes').select('id, cliente_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion').eq('id', ordenId).single().then((rOrd) => {
+  return client.from('ordenes').select('id, usuario_id, cliente_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion').eq('id', ordenId).single().then((rOrd) => {
     const orden = rOrd.data;
     if (!orden || !orden.cliente_id) return;
     const clienteId = orden.cliente_id;
@@ -23577,7 +23577,7 @@ function generarMovimientoConversionCc(ordenId) {
  */
 function generarMovimientoConversionCcIntermediario(ordenId) {
   if (!ordenId || !currentUserId) return Promise.resolve();
-  return client.from('ordenes').select('id, intermediario_id, moneda_entregada, monto_entregado').eq('id', ordenId).single().then((rOrd) => {
+  return client.from('ordenes').select('id, usuario_id, intermediario_id, moneda_entregada, monto_entregado').eq('id', ordenId).single().then((rOrd) => {
     const orden = rOrd.data;
     if (!orden || !orden.intermediario_id) return Promise.resolve();
     const intermediarioId = orden.intermediario_id;
@@ -23743,7 +23743,7 @@ function actualizarEstadoOrden(ordenId) {
     const instId = r.data && r.data.id;
     if (!instId) return;
     const mcInst = !!(r.data && r.data.multicontraparte_manual);
-    return client.from('ordenes').select('id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
+    return client.from('ordenes').select('id, usuario_id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
       const orden = rOrd.data;
       if (!orden) return;
       return client.from('transacciones').select('id, tipo, moneda, monto, estado, tipo_cambio, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instId).then((res) => {
@@ -23756,7 +23756,7 @@ function actualizarEstadoOrden(ordenId) {
           const prom = loadOrdenes();
           if (prom && ordenIdAbierto) {
             prom.then(() => {
-              client.from('ordenes').select('id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones').eq('id', ordenIdAbierto).single().then((rOrd2) => {
+              client.from('ordenes').select('id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, observaciones').eq('id', ordenIdAbierto).single().then((rOrd2) => {
                 if (rOrd2.data) expandOrdenTransacciones(ordenIdAbierto, rOrd2.data);
               });
             });
