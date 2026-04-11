@@ -19542,7 +19542,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   transaccion_numero: t.numero != null ? t.numero : null,
                   concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
                   moneda: mon,
                   monto: -montoIngresoCc,
                   estado: estadoFilaCc,
@@ -19558,7 +19558,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   transaccion_numero: t.numero != null ? t.numero : null,
                   concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
                   moneda: mon,
                   monto: monto,
                   estado: estadoFilaCc,
@@ -19580,7 +19580,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   monto,
                   concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
                   estado: estadoFilaCc,
                   estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(monInt, monto),
@@ -19597,7 +19597,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   monto: montoEfectivoInt,
                   concepto: conceptoCcLeyenda('cobro_realizado', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
                   estado: estadoFilaCc,
                   estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(monInt, montoEfectivoInt),
@@ -19613,7 +19613,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   monto: -monto,
                   concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
                   estado: estadoFilaCc,
                   estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(mon, -monto),
@@ -19629,7 +19629,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                   monto: -monto,
                   concepto: conceptoCcLeyenda('pago_realizado', orden.numero, t.numero),
                   fecha: feT.fecha,
-                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
+                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
                   estado: estadoFilaCc,
                   estado_fecha: feT.estado_fecha,
                   ...montosCcPorMoneda(mon, -monto),
@@ -19639,7 +19639,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           });
 
           if (usarMulticontraparteSync) {
-            aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, orden.numero, fecha, ahora, rowsCcCliente, rowsCcInt, typeof uId !== 'undefined' ? (uId || orderUId) : orderUId);
+            aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, orden.numero, fecha, ahora, rowsCcCliente, rowsCcInt, typeof uId !== 'undefined' ? (uId || orden.usuario_id || null) : (orden.usuario_id || null));
           }
 
           // Motor único: filas en `reglas_de_negocio` para (codigo, usa_intermediario). Multicontraparte manual no usa motor (evita duplicar CC).
@@ -19676,7 +19676,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             const montoComisionCcClienteChequeFb =
               spreadAcuerdoChequeInt >= 1e-6 ? spreadAcuerdoChequeInt : comisionPandyMonto;
             if (clienteId && montoComisionCcClienteChequeFb >= 1e-6 && !parClienteCerradoFb) {
-              rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId, moneda: comisionPandyMon, monto: montoComisionCcClienteChequeFb, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(comisionPandyMon, montoComisionCcClienteChequeFb) });
+              rowsCcCliente.push({ cliente_id: clienteId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null, moneda: comisionPandyMon, monto: montoComisionCcClienteChequeFb, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(comisionPandyMon, montoComisionCcClienteChequeFb) });
             }
             const hayTx3Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && (t.estado || '').toLowerCase() === 'ejecutada');
             const hayTx4Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'intermediario' && String(t.cobrador || '').toLowerCase() === 'pandy' && (t.estado || '').toLowerCase() === 'ejecutada');
@@ -19685,7 +19685,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 const mIfb = Number(filaIntFb.monto) || 0;
                 if (mIfb < 1e-6) return;
                 const monIfb = String(filaIntFb.moneda || 'ARS').toUpperCase();
-                rowsCcInt.push({ intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId, moneda: monIfb, monto: -mIfb, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(monIfb, -mIfb) });
+                rowsCcInt.push({ intermediario_id: intermediarioId, orden_id: ordenId, transaccion_id: null, transaccion_numero: null, concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb), fecha: feSynthChequeFb.fecha, usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null, moneda: monIfb, monto: -mIfb, estado: 'cerrado', estado_fecha: feSynthChequeFb.estado_fecha, ...montosCcPorMoneda(monIfb, -mIfb) });
               });
             }
             if (intermediarioId && filasComisionIntermediarioMotor.length && parClienteCerradoFb) {
@@ -19749,7 +19749,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
                 concepto: conceptoCierre,
                 fecha: feCierre.fecha,
-                usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
+                usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
                 moneda: monR,
                 monto: montoRecibido,
                 estado: 'cerrado',
@@ -19763,7 +19763,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
                 concepto: conceptoCierre,
                 fecha: feCierre.fecha,
-                usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
+                usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
                 moneda: monE,
                 monto: -montoEntregado,
                 estado: 'cerrado',
@@ -19856,7 +19856,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           const idsTrx = transacciones.map((t) => t.id).filter(Boolean);
           return client.rpc('sync_cc_caja_orden', {
             p_orden_id: ordenId,
-            p_usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orderUId,
+            p_usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
             p_rows_cc_cliente: rowsCcClienteUnicos,
             p_rows_cc_int: rowsCcIntUnicos,
             p_rows_caja: rowsCaja,
