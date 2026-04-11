@@ -7871,6 +7871,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
 
   lista.forEach((t) => {
     const estado = (t.estado || '').toLowerCase();
+    const finalUId = t.usuario_id || t.p_usuario_id || fallbackUId || null;
     const tipo = (t.tipo || '').toLowerCase();
     const mon = (t.moneda || 'USD').toUpperCase();
     const monto = Number(t.monto) || 0;
