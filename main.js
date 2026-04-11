@@ -18895,6 +18895,43 @@ let transaccionesOrdenIdActual = null;
 /** Sólo el último openModalTransaccion aplica UI: si hay doble click o reentradas, un callback tardío no debe ejecutar form.reset() pisando el formulario ya cargado (E2E 03 USD-ARS E,P: modal quedaba en Ingreso + modo Ninguno). */
 let openModalTransaccionSeq = 0;
 
+/** Normaliza strings vacíos en pagador/cobrador para que `pagCobEfectivosTransaccionSync` aplique defaults como en sync CC. */
+function transaccionNormalizarPagCobVacios(t) {
+  if (!t || typeof t !== 'object') return t;
+  const o = { ...t };
+  if (o.pagador != null && String(o.pagador).trim() === '') o.pagador = null;
+  if (o.cobrador != null && String(o.cobrador).trim() === '') o.cobrador = null;
+  return o;
+}
+
+/**
+ * ¿Incluir esta transacción en totales de instrumentación vs acuerdo (modo no multicontraparte)?
+ * Usa la misma convención que sync (`pagCobEfectivosTransaccionSync`) para pagador/cobrador null o vacíos.
+ * Cuenta patas del cliente y del intermediario del acuerdo; excluye solo el intercambio puro Pandy↔Intermediario
+ * (conciliación entre libros sin el cliente en la fila).
+ */
+function transaccionParticipaTotalesAcuerdo(t, orden) {
+  if (!orden || !orden.cliente_id) return true;
+  const tn = transaccionNormalizarPagCobVacios(t);
+  const { pag, cob } = pagCobEfectivosTransaccionSync(tn);
+  if (pag === 'cliente' || cob === 'cliente') return true;
+  if (!orden.intermediario_id) return false;
+  const esPuroPandyIntermediario =
+    (pag === 'pandy' && cob === 'intermediario') || (pag === 'intermediario' && cob === 'pandy');
+  if (esPuroPandyIntermediario) {
+    const tipoL = String(tn.tipo || '').toLowerCase();
+    const monE = String(orden.moneda_entregada || '').toUpperCase().trim();
+    const tm = String(tn.moneda || '').toUpperCase().trim();
+    const me = Number(orden.monto_entregado) || 0;
+    const m = Number(tn.monto) || 0;
+    if (tipoL === 'egreso' && pag === 'pandy' && cob === 'intermediario' && tm === monE && Math.abs(m - me) <= 1e-3) {
+      return true;
+    }
+    return false;
+  }
+  return pag === 'intermediario' || cob === 'intermediario';
+}
+
 /** Convierte monto a la moneda destino. tipo_cambio = unidades ARS por 1 unidad de la otra (ej. ARS por 1 USD). */
 function convertirAMonedaOrden(monto, monedaOrigen, monedaDestino, tipoCambio) {
   if (monedaOrigen === monedaDestino) return Number(monto);
@@ -18925,16 +18962,16 @@ function totalesInstrumentacion(transacciones, orden, options) {
     if (totalesMc) {
       // Cierre del acuerdo por volumen en moneda IN / OUT: cualquier pata (incl. ingreso con pagador Pandy / egreso con cobrador tercero, etc.).
     } else {
-      // Para comparar con el acuerdo del cliente, solo cuentan transacciones donde participa el cliente (rol genérico).
-      // Las transacciones Pandy ↔ Intermediario se permiten para conciliar cuentas, pero no deben bloquear el acuerdo.
-      if (requiereCliente && !(t.cobrador === 'cliente' || t.pagador === 'cliente')) return;
+      // Acuerdo: patas del cliente (y del intermediario del acuerdo, salvo puro Pandy↔Intermediario); ver `transaccionParticipaTotalesAcuerdo`.
+      if (requiereCliente && !transaccionParticipaTotalesAcuerdo(t, orden)) return;
     }
     const monto = Number(t.monto);
     const tcTrx = t.tipo_cambio != null && !isNaN(t.tipo_cambio) ? Number(t.tipo_cambio) : null;
     const tc = (tcTrx != null && tcTrx > 0) ? tcTrx : tcAcuerdo;
-    if (t.tipo === 'ingreso') {
+    const tipoL = String(t.tipo || '').toLowerCase();
+    if (tipoL === 'ingreso') {
       totalRecibido += convertirAMonedaOrden(monto, t.moneda, monedaRecibida, tc);
-    } else {
+    } else if (tipoL === 'egreso') {
       totalEntregado += convertirAMonedaOrden(monto, t.moneda, monedaEntregada, tc);
     }
   });
