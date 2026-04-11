@@ -7841,13 +7841,13 @@ function esMismoParticipantePagadorCobrador(pagador, cobrador, orden, idsMc) {
   return false;
 }
 
-function pushMcClienteRow(rowsCcCliente, cid, ordenId, fecha, ahora, partial, fallbackUId) {
+function pushMcClienteRow(rowsCcCliente, cid, ordenId, fecha, ahora, partial, finalUId) {
   if (!cid) return;
   rowsCcCliente.push({
     cliente_id: cid,
     orden_id: ordenId,
     fecha,
-    usuario_id: fallbackUId || null,
+    usuario_id: finalUId || null,
     estado: 'cerrado',
     estado_fecha: ahora,
     ...partial,
@@ -7898,7 +7898,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           estado: 'pendiente',
           estado_fecha: feMc.estado_fecha,
           ...montosCcPorMoneda(mon, -monto),
-        });
+        }), finalUId);
       }
       if (tipo === 'egreso' && mon === monE && cob === 'cliente' && cidCob && String(cidCob) === String(cidAcuerdo)) {
         pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, feMc.fecha, feMc.estado_fecha, {
@@ -7910,7 +7910,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           estado: 'pendiente',
           estado_fecha: feMc.estado_fecha,
           ...montosCcPorMoneda(mon, monto),
-        });
+        }), finalUId);
       }
       return;
     }
@@ -7928,7 +7928,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto: -monto,
           ...montosCcPorMoneda(mon, -monto),
-        });
+        }), finalUId);
         pushMcClienteRow(rowsCcCliente, cidPag, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
@@ -7936,7 +7936,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto,
           ...montosCcPorMoneda(mon, monto),
-        });
+        }), finalUId);
         pushMcClienteRow(rowsCcCliente, cidCob, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
@@ -7944,7 +7944,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto,
           ...montosCcPorMoneda(mon, monto),
-        });
+        }), finalUId);
         return;
       }
       if (esAcuerdoPag && cobPandy) {
@@ -7955,7 +7955,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto: -monto,
           ...montosCcPorMoneda(mon, -monto),
-        });
+        }), finalUId);
         pushMcClienteRow(rowsCcCliente, cidPag, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
@@ -7963,7 +7963,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto,
           ...montosCcPorMoneda(mon, monto),
-        });
+        }), finalUId);
         return;
       }
       /** Pandy paga al cliente del acuerdo en monR: Pandy cumple la pata del cliente — regla B (CC puede no netear a cero frente a Pandy en esa moneda). Leyenda explícita para distinguir de otros ingresos. */
@@ -7983,7 +7983,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto,
           ...montosCcPorMoneda(mon, monto),
-        });
+        }), finalUId);
         return;
       }
       /** Cliente tercero paga al cliente del acuerdo en monR: +m compromiso con leyenda tercero pata en CC acuerdo + −m cobro en tercero (paridad con motor `aplicarMotorCcDesdeReglasDeNegocio`). */
@@ -8005,7 +8005,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto,
           ...montosCcPorMoneda(mon, monto),
-        });
+        }), finalUId);
         pushMcClienteRow(rowsCcCliente, cidPag, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
@@ -8013,7 +8013,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto: -monto,
           ...montosCcPorMoneda(mon, -monto),
-        });
+        }), finalUId);
         return;
       }
       if (cidPag) {
@@ -8024,7 +8024,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto: -monto,
           ...montosCcPorMoneda(mon, -monto),
-        });
+        }), finalUId);
       }
       if (cidCob && (!cidPag || String(cidCob) !== String(cidPag))) {
         pushMcClienteRow(rowsCcCliente, cidCob, ordenId, feMc.fecha, feMc.estado_fecha, {
@@ -8034,7 +8034,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto,
           ...montosCcPorMoneda(mon, monto),
-        });
+        }), finalUId);
       }
       return;
     }
@@ -8049,7 +8049,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto: -monto,
           ...montosCcPorMoneda(mon, -monto),
-        });
+        }), finalUId);
         pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
@@ -8057,7 +8057,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto,
           ...montosCcPorMoneda(mon, monto),
-        });
+        }), finalUId);
         if (cidPag && String(cidPag) !== String(cidCob)) {
           pushMcClienteRow(rowsCcCliente, cidPag, ordenId, feMc.fecha, feMc.estado_fecha, {
             transaccion_id: t.id,
@@ -8066,7 +8066,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
             moneda: mon,
             monto: -monto,
             ...montosCcPorMoneda(mon, -monto),
-          });
+          }), finalUId);
         }
         return;
       }
@@ -8078,7 +8078,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto: -monto,
           ...montosCcPorMoneda(mon, -monto),
-        });
+        }), finalUId);
       }
       if (cidCob && (!cidPag || String(cidCob) !== String(cidPag))) {
         pushMcClienteRow(rowsCcCliente, cidCob, ordenId, feMc.fecha, feMc.estado_fecha, {
@@ -8088,7 +8088,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           moneda: mon,
           monto,
           ...montosCcPorMoneda(mon, monto),
-        });
+        }), finalUId);
       }
     }
   });

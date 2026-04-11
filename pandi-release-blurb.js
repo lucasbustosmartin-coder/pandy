@@ -5,8 +5,8 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.17',
+  versionLabel: 'v3.7.18',
   lines: [
-    'Hotfix de Sincronización Automática: Se corrigió una interrupción en el motor que causaba que la cuenta corriente se mostrará en blanco o solo con transacciones manuales. El panel vuelve a la normalidad y procesa exitosamente los registros históricos sin perder su trazabilidad de autoría.',
+    'Hotfix Multicontraparte (v3.7.18): Se corrigió un bug nativo en el motor que forzaba el usuario del "creador de la orden" en lugar del "ejecutor" al recalcular los movimientos CC Multicontraparte Manual (iconito 👥). Pandy ahora es 100% determinista y blinda a rajatabla tus arreglos SQL históricos.',
   ],
 };
