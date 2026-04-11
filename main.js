@@ -7719,12 +7719,12 @@ function usuarioIdRegistroCajaFallbackUltimaEjecutadaConUsuario(transacciones) {
   const ej = (transacciones || []).filter(
     (x) =>
       (x.estado || '').toLowerCase() === 'ejecutada' &&
-      x.usuario_id != null &&
-      String(x.usuario_id).trim() !== '',
+      (x.usuario_id != null || x.p_usuario_id != null) &&
+      (String(x.usuario_id || x.p_usuario_id).trim() !== ''),
   );
   if (!ej.length) return null;
   ej.sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0));
-  return String(ej[0].usuario_id).trim();
+  return String(ej[0].usuario_id || ej[0].p_usuario_id).trim();
 }
 
 /**
@@ -8098,7 +8098,7 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
  * CC por transacción (instrumentación multicontraparte manual), una sola trx: usado para patas con intermediario y delegación interna.
  */
 function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt, fallbackUId) {
-  const finalUId = t.usuario_id || fallbackUId || null;
+  const finalUId = t.usuario_id || t.p_usuario_id || fallbackUId || null;
   const monto = Number(t.monto) || 0;
   const mon = (t.moneda || 'USD').toUpperCase();
   const transaccionId = t.id;
