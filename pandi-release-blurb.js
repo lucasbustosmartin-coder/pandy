@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.24',
+  versionLabel: 'v3.7.25',
   lines: [
-    'Al anular una orden, la cuenta corriente de esa operación se vuelve a armar como siempre: vas a ver las líneas en anulado con la etiqueta Anulada y no suman al saldo, también cuando todas las transacciones estaban pendientes.',
-    'El mensaje de confirmación al anular explica mejor qué pasa con la vista y con la caja. Si tenías órdenes viejas anuladas sin movimientos en CC, un Refrescar en Cuenta corriente ayuda a alinearlas.',
+    'Corrección al armar la cuenta corriente cuando una orden quedó anulada sin llegar a ejecutar ninguna transacción: ahora deberían aparecer las líneas en Anulada tras usar Refrescar.',
+    'Sigue valiendo lo anterior: al anular, la vista recalcula esa orden y las anuladas no suman al saldo.',
   ],
 };
