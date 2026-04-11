@@ -5,8 +5,8 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.16',
+  versionLabel: 'v3.7.17',
   lines: [
-    'Corrección Invisible de Autoría: Se identificó y resolvió una falla estructural en las consultas JavaScript donde se ignoraba la descarga de la columna `p_usuario_id`. Ahora el sistema de reportes en cuenta corriente rastrea perfectamente al autor real del movimiento en Supabase, evitando la autoasignación ("LMB" u otros propios) a registros generados en segundo plano ("Compromiso de Pago" o "Cobro Realizado").',
+    'Hotfix de Sincronización Automática: Se corrigió una interrupción en el motor que causaba que la cuenta corriente se mostrará en blanco o solo con transacciones manuales. El panel vuelve a la normalidad y procesa exitosamente los registros históricos sin perder su trazabilidad de autoría.',
   ],
 };
