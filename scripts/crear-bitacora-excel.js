@@ -21,6 +21,7 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Motor CC: lookup reglas con contrapartida invertida si trx anulada y matriz vacía', 'lookupReglasDeNegocioMotorContrapartidaAnulada: orden anulada sin patas ejecutadas — contrapartidaEjecutada siempre false; si no hay filas pendiente+false, reintenta con true para alinear a matrices legado. Refrescar CC inserta huella anulada. docs CC_OPERACION_CIERRE §2b.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Despliegue v3.7.24 (prod + preview estable)', 'Anular orden + sync CC/caja unificado; sidebar v3.7.24; pandi-release-blurb. vercel --prod; npx vercel --yes; merge main→preview-empleado + verificación SHA.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'Anular orden: siempre sync CC/caja (huella anulada)', 'ejecutarAnulacionOrdenCompleta tras marcar trx anulada llama sincronizarCcYCajaDesdeOrden(propagarError); filas CC estado anulado visibles; ya no se omite cuando todas pendientes. Confirmación UI. anularMovimientosCcYCajaNoManualPorOrden solo legado. sql auditoría §3b; docs FLUJOS_CC_REGLA §4, CUENTA_CORRIENTE_Y_CAJA.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Auditoría CC: excluir orden anulada en §1/1b/2 + consulta 5a', 'sql/auditoria_cc_transacciones_y_ordenes.sql: órdenes anuladas sin CC no se listan como fuga; §5a resumen sin anuladas. docs CUENTA_CORRIENTE_Y_CAJA §Auditoría.', 'Desarrollo'],

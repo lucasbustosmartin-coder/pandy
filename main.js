@@ -8672,6 +8672,49 @@ function lookupReglasDeNegocio(reglas, tipoOperacionCodigo, pagador, cobrador, t
   return lookupReglasDeNegocioTipos(reglas, tipoOperacionCodigo, pagador, cobrador, tipoTransaccion, esComision, estadoTransaccion, contrapartidaEjecutada);
 }
 
+/**
+ * Motor CC: con transacción **anulada** se usa `estado_transaccion = pendiente` en la matriz; `contrapartidaEjecutada()`
+ * solo es true si otra pata está **ejecutada**. Si **todas** las patas quedaron anuladas, contrapartida es siempre false;
+ * si en `reglas_de_negocio` solo existían filas para el otro booleano (legado), el primer lookup queda vacío y no se
+ * generaba CC para órdenes anuladas sin ejecutadas. Se reintenta con `!contrapartidaEjecutada` **solo** cuando la trx es anulada.
+ */
+function lookupReglasDeNegocioMotorContrapartidaAnulada(
+  reglas,
+  tipoOperacionCodigo,
+  pagador,
+  cobrador,
+  tipoTransaccion,
+  esComision,
+  estadoParaMotor,
+  contrapartidaEjecutada,
+  estadoTransaccionLower,
+) {
+  const est = String(estadoTransaccionLower || '').toLowerCase();
+  let rows = lookupReglasDeNegocio(
+    reglas,
+    tipoOperacionCodigo,
+    pagador,
+    cobrador,
+    tipoTransaccion,
+    esComision,
+    estadoParaMotor,
+    contrapartidaEjecutada,
+  );
+  if ((!rows || !rows.length) && est === 'anulada') {
+    rows = lookupReglasDeNegocio(
+      reglas,
+      tipoOperacionCodigo,
+      pagador,
+      cobrador,
+      tipoTransaccion,
+      esComision,
+      estadoParaMotor,
+      !contrapartidaEjecutada,
+    );
+  }
+  return rows || [];
+}
+
 /** Tolerancia al comprobar neteo CC cliente por moneda tras el motor (misma escala que el resto del archivo). */
 const EPS_CC_NETEO_CLIENTE_ORDEN = 1e-6;
 
@@ -8985,9 +9028,29 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     }
     // Si es anulada, el motor debe usar las reglas de 'pendiente' para poder generar los movimientos base
     const estadoParaMotor = estado === 'anulada' ? 'pendiente' : estado;
-    const reglasTx = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, false, estadoParaMotor, contrapartida);
+    const reglasTx = lookupReglasDeNegocioMotorContrapartidaAnulada(
+      reglasDeNegocio,
+      tipoOperacionCodigo,
+      pag,
+      cob,
+      tipo,
+      false,
+      estadoParaMotor,
+      contrapartida,
+      estado,
+    );
     if (!reglasTx.length) {
-      const reglasEsComision = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, true, estadoParaMotor, contrapartida);
+      const reglasEsComision = lookupReglasDeNegocioMotorContrapartidaAnulada(
+        reglasDeNegocio,
+        tipoOperacionCodigo,
+        pag,
+        cob,
+        tipo,
+        true,
+        estadoParaMotor,
+        contrapartida,
+        estado,
+      );
       if (
         !reglasEsComision.length &&
         Array.isArray(motorCcWarnings) &&

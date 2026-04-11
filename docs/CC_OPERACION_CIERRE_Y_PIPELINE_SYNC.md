@@ -29,6 +29,10 @@ Inventario explícito de **dónde** el sistema puede fallar ese criterio (tres v
 
 **Conclusión:** la CC es correcta solo si (a) las **transacciones** encajan con las **claves** de la tabla `reglas_de_negocio`, y (b) **`contrapartidaEjecutada`** y los helpers reflejan **el mismo** flujo operativo que la mesa usa.
 
+### 2b. Órdenes anuladas sin ninguna transacción ejecutada
+
+`contrapartidaEjecutada` solo es **true** si en la instrumentación existe la pata contraria en estado **ejecutada**. Si **todas** las transacciones pasaron a **anulada**, el flag queda **false** siempre; si en `reglas_de_negocio` la matriz solo tenía filas útiles para `contrapartida_ejecutada = true` (caso “segunda pata ya cumplida” en el modelo P/E), el lookup con **false** devolvía **cero** reglas y el sync **no insertaba** movimientos CC para esa orden (hueco en la vista pese a Refrescar). El motor aplica un **reintento solo con trx anulada**: si el primer `lookupReglasDeNegocio` con `estado_transaccion = pendiente` está vacío, se vuelve a buscar con el **mismo** estado pero **`contrapartida_ejecutada` invertido** (`lookupReglasDeNegocioMotorContrapartidaAnulada` en `main.js`). Las filas generadas siguen marcándose **anulado** en el sync por `transaccion_id` anulada.
+
 ---
 
 ## 3. Por qué un caso “real” puede mostrar −5M ARS con orden ejecutada
