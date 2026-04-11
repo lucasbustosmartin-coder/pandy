@@ -5,8 +5,8 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.14',
+  versionLabel: 'v3.7.16',
   lines: [
-    'Corrección Definitiva en la Trazabilidad Virtual: Se parcharon las consultas de la PWA que omitían traer el ID del autor original al renderizar transacciones "Pendientes" en tiempo real. Ahora todo refresco visual y sincronización de base de datos extrae y respeta al usuario real que generó la orden de antemano.',
+    'Corrección Invisible de Autoría: Se identificó y resolvió una falla estructural en las consultas JavaScript donde se ignoraba la descarga de la columna `p_usuario_id`. Ahora el sistema de reportes en cuenta corriente rastrea perfectamente al autor real del movimiento en Supabase, evitando la autoasignación ("LMB" u otros propios) a registros generados en segundo plano ("Compromiso de Pago" o "Cobro Realizado").',
   ],
 };
