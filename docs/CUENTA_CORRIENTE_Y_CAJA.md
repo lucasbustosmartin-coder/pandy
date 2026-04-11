@@ -15,6 +15,8 @@ Con red, al **entrar** al menú **Cuenta corriente** (carga visible, no el refre
 
 La **fuente de verdad** es el sync por orden: `sincronizarCcYCajaDesdeOrden` borra los movimientos derivados de esa orden y los vuelve a armar desde las transacciones vigentes.
 
+**Columna «Usuario» (auditoría):** cada movimiento derivado debe llevar el **`usuario_id` de quien ejecutó o grabó la transacción** de referencia (`transacciones.usuario_id`), con fallback al creador de la orden (`ordenes.usuario_id`) en líneas sintéticas. No debe usarse la sesión de quien solo abre la pantalla o pulsa **Refrescar** en CC: el motor `aplicarMotorCcDesdeReglasDeNegocio` y el armado de filas legacy/multicontraparte siguen esa regla; la RPC `sync_cc_caja_orden` en Supabase complementa resolviendo `usuario_id` desde `transacciones`/`ordenes` si el JSON llegara incompleto (`sql/rpc_sync_cc_caja_orden.sql`).
+
 1. **Momento 0:** en cuanto existe una transacción **pendiente** guardada, el sync debe generar las filas CC que correspondan (columna `estado` del movimiento = **`pendiente`** o **`cerrado`** alineada al estado de la transacción; leyendas según motor `reglas_de_negocio`, multicontraparte manual o legacy). **Multicontraparte manual** ya no exige “al menos una ejecutada” para empezar a reflejar CC del acuerdo.
 2. **Al guardar o editar una transacción** (`saveTransaccion`) y al **cambiar el estado** (`cambiarEstadoTransaccion`): tras persistir, se encadena el sync de la orden; la CC se recalcula completa para esa orden.
 3. **Tipos con motor** (`reglas_de_negocio`): el motor aplica también transacciones pendientes; si falta fila en la tabla, puede no generarse movimiento hasta completar reglas o fallback documentado.

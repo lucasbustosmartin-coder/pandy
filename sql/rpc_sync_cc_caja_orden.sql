@@ -5,6 +5,9 @@
 -- no rompa el INSERT (evita "cannot cast jsonb null to type integer" en filas de comisión con transaccion_numero null).
 -- Caja: movimientos_caja.usuario_id sale solo del JSON de cada fila (quien ejecutó la transacción en el front);
 -- no se rellena con p_usuario_id para no atribuir resync del admin al operador real.
+-- CC cliente/intermediario: si el JSON no trae usuario_id (o null), se resuelve desde transacciones.usuario_id
+-- y luego ordenes.usuario_id; p_usuario_id solo como último recurso (frontes viejos). Así un «Refrescar» CC
+-- no puede grabar al invocador como dueño de los movimientos si la fila tiene transaccion_id en BD.
 
 CREATE OR REPLACE FUNCTION public.sync_cc_caja_orden(
   p_orden_id uuid,
@@ -56,7 +59,19 @@ BEGIN
       (r->>'transaccion_numero')::integer,
       r->>'concepto',
       COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina()),
-      COALESCE((r->>'usuario_id')::uuid, p_usuario_id),
+      COALESCE(
+        NULLIF(TRIM(COALESCE(r->>'usuario_id', '')), '')::uuid,
+        (
+          SELECT tr.usuario_id
+          FROM public.transacciones tr
+          WHERE (r->>'transaccion_id') IS NOT NULL
+            AND TRIM(COALESCE(r->>'transaccion_id', '')) <> ''
+            AND tr.id = (NULLIF(TRIM(r->>'transaccion_id'), ''))::uuid
+          LIMIT 1
+        ),
+        (SELECT o.usuario_id FROM public.ordenes o WHERE o.id = (r->>'orden_id')::uuid LIMIT 1),
+        p_usuario_id
+      ),
       r->>'moneda',
       (r->>'monto')::numeric,
       COALESCE((r->>'monto_usd')::numeric, 0),
@@ -81,7 +96,19 @@ BEGIN
       (r->>'transaccion_numero')::integer,
       r->>'concepto',
       COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina()),
-      COALESCE((r->>'usuario_id')::uuid, p_usuario_id),
+      COALESCE(
+        NULLIF(TRIM(COALESCE(r->>'usuario_id', '')), '')::uuid,
+        (
+          SELECT tr.usuario_id
+          FROM public.transacciones tr
+          WHERE (r->>'transaccion_id') IS NOT NULL
+            AND TRIM(COALESCE(r->>'transaccion_id', '')) <> ''
+            AND tr.id = (NULLIF(TRIM(r->>'transaccion_id'), ''))::uuid
+          LIMIT 1
+        ),
+        (SELECT o.usuario_id FROM public.ordenes o WHERE o.id = (r->>'orden_id')::uuid LIMIT 1),
+        p_usuario_id
+      ),
       r->>'moneda',
       (r->>'monto')::numeric,
       COALESCE((r->>'monto_usd')::numeric, 0),

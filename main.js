@@ -7737,6 +7737,28 @@ function usuarioIdRegistroCajaDesdeOrdenSync(transacciones, t) {
   return usuarioIdRegistroCajaFallbackUltimaEjecutadaConUsuario(transacciones);
 }
 
+/**
+ * `usuario_id` en movimientos CC (sync / motor): quien ejecutó o grabó la transacción de referencia,
+ * con fallback a `ordenes.usuario_id`. No usar `currentUserId` acá: un resync o «Refrescar» CC no debe
+ * re-atribuir movimientos al operador que solo abrió la pantalla.
+ */
+function usuarioIdMovimientoCcDesdeTransaccionOOrden(trx, orden) {
+  if (trx && typeof trx === 'object') {
+    const u = trx.usuario_id || trx.p_usuario_id;
+    if (u != null && String(u).trim() !== '') return String(u).trim();
+  }
+  if (orden && orden.usuario_id != null && String(orden.usuario_id).trim() !== '') return String(orden.usuario_id).trim();
+  return null;
+}
+
+/** Filas CC sintéticas (sin `transaccion_id`): última trx ejecutada con actor, luego creador de la orden. */
+function usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden) {
+  const u = usuarioIdRegistroCajaFallbackUltimaEjecutadaConUsuario(transacciones);
+  if (u) return u;
+  if (orden && orden.usuario_id != null && String(orden.usuario_id).trim() !== '') return String(orden.usuario_id).trim();
+  return null;
+}
+
 function fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nro, fechaFallbackDia, ahoraFallbackIso) {
   if (nro == null || nro === '') return { fecha: fechaFallbackDia, estado_fecha: ahoraFallbackIso };
   const t = (transacciones || []).find((x) => Number(x.numero) === Number(nro));
@@ -8962,7 +8984,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
               transaccion_numero: nro,
               concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, nro) + ' (' + leyPata + ')',
               fecha: feT.fecha,
-              usuario_id: currentUserId,
+              usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(t, orden),
               moneda: monTrx,
               monto: montoT,
               estado: 'cerrado',
@@ -9038,7 +9060,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         transaccion_numero: nroRef,
         concepto: conceptoCcLeyenda(ley, orden.numero, nroRef),
         fecha: feT.fecha,
-        usuario_id: currentUserId,
+        usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(tRef, orden),
         moneda,
         monto: montoCc,
         estado: estadoMov,
@@ -9148,7 +9170,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
           transaccion_numero: null,
           concepto: conceptoCcLeyenda(ley, orden.numero, nroTransComisionConceptoUsd),
           fecha: feComUsd.fecha,
-          usuario_id: currentUserId,
+          usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
           moneda,
           monto: montoCc,
           estado: cerrado ? 'cerrado' : 'pendiente',
@@ -9232,7 +9254,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
               transaccion_numero: null,
               concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComInt),
               fecha: feComInt.fecha,
-              usuario_id: currentUserId,
+              usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
               moneda: monedaInt,
               monto: montoCcInt,
               estado: cerradoInt ? 'cerrado' : 'pendiente',
@@ -9299,7 +9321,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         transaccion_numero: null,
         concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConceptoChequeArs),
         fecha: feComChequeArs.fecha,
-        usuario_id: currentUserId,
+        usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
         moneda,
         monto: signo * montoComisionLineaCcClienteCheque,
         estado: cerrado ? 'cerrado' : 'pendiente',
@@ -9339,7 +9361,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
           transaccion_numero: null,
           concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConceptoChequeArs),
           fecha: feComChequeArs.fecha,
-          usuario_id: currentUserId,
+          usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
           moneda: monCom,
           monto: signo * comInt,
           estado: parIntCerrado ? 'cerrado' : 'pendiente',
@@ -19639,7 +19661,17 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           });
 
           if (usarMulticontraparteSync) {
-            aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, orden.numero, fecha, ahora, rowsCcCliente, rowsCcInt, typeof uId !== 'undefined' ? (uId || orden.usuario_id || null) : (orden.usuario_id || null));
+            aplicarCcMulticontraparteManualConciliacionCompleta(
+              transacciones,
+              orden,
+              ordenId,
+              orden.numero,
+              fecha,
+              ahora,
+              rowsCcCliente,
+              rowsCcInt,
+              orderUId || orden.usuario_id || null,
+            );
           }
 
           // Motor único: filas en `reglas_de_negocio` para (codigo, usa_intermediario). Multicontraparte manual no usa motor (evita duplicar CC).
@@ -19749,7 +19781,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
                 concepto: conceptoCierre,
                 fecha: feCierre.fecha,
-                usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
+                usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(egresoRef, orden),
                 moneda: monR,
                 monto: montoRecibido,
                 estado: 'cerrado',
@@ -19763,7 +19795,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
                 concepto: conceptoCierre,
                 fecha: feCierre.fecha,
-                usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
+                usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(egresoRef, orden),
                 moneda: monE,
                 monto: -montoEntregado,
                 estado: 'cerrado',
@@ -19856,7 +19888,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           const idsTrx = transacciones.map((t) => t.id).filter(Boolean);
           return client.rpc('sync_cc_caja_orden', {
             p_orden_id: ordenId,
-            p_usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
+            p_usuario_id: orderUId || orden.usuario_id || null,
             p_rows_cc_cliente: rowsCcClienteUnicos,
             p_rows_cc_int: rowsCcIntUnicos,
             p_rows_caja: rowsCaja,

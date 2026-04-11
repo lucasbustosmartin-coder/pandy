@@ -1,0 +1,9 @@
+-- 2026-04-10 — Actualización de `public.sync_cc_caja_orden` (usuario_id en CC).
+--
+-- El SQL Editor de Supabase no incluye otros archivos: copiar y ejecutar el contenido
+-- completo de `sql/rpc_sync_cc_caja_orden.sql` (CREATE OR REPLACE + GRANT + COMMENT).
+--
+-- Cambio: en inserts a `movimientos_cuenta_corriente` e `movimientos_cuenta_corriente_intermediario`,
+-- si el JSON no trae `usuario_id`, se usa `transacciones.usuario_id` (por `transaccion_id`),
+-- luego `ordenes.usuario_id`, y solo al final `p_usuario_id`. Complementa el fix en `main.js`
+-- (motor CC ya no usa `currentUserId` al resincronizar).
