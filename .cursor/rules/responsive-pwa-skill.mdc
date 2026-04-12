@@ -1,0 +1,14 @@
+---
+description: Indica leer el skill responsive+PWA al tocar layout móvil, tablas anchas, modales, PWA u offline. Usar cuando el trabajo sea UI responsiva, breakpoints, manifest, service worker, instalación o scroll táctil.
+alwaysApply: true
+---
+
+# Skill responsive y PWA
+
+Si el usuario o la tarea implican **revisión, plan, auditoría o implementación** de **UI móvil / responsiva** (≤768 / ≤480, touch, tablas, modales, wizards), **PWA** (manifest, SW, instalación, actualización) u **offline**:
+
+1. **Obligatorio al inicio:** **leé** **`.cursor/skills/responsive-pwa-web-design/SKILL.md`** con la herramienta de lectura de archivos **antes** de proponer plan, lista de mejoras o cambios de código. Sirve para **autoparecer** el criterio (checklist, PWA mínimo, patrones frágiles, formato de salida).
+2. **Alineá** la respuesta a las secciones del skill (viewport, breakpoints, tablas+sticky+overscroll, modales, PWA tabla mínima, anti-patrones) y al **formato de salida** del skill cuando corresponda **revisión o plan** (resumen → problemas por severidad → acciones → prueba sugerida).
+3. **No contradigas** las reglas del repo (**tablas-y-movil-lyp**, **gestos-trackpad-overscroll-spa**, **nueva-orden-responsive**): el skill **complementa**; ante conflicto, priman reglas Pandi y `docs/`.
+
+**Excepción (no hace falta abrir el skill):** cambio puntual sin impacto en layout ni PWA (p. ej. un string de negocio, renombre de variable, SQL sin UI).

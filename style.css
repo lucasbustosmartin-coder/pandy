@@ -153,7 +153,28 @@
     .login-screen .login-footer a { color: #0d7d3d; cursor: pointer; }
     .login-screen .login-logo-wrap { width: 56px; height: 56px; margin: 0 auto 1.25rem auto; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(0,0,0,0.1); }
 .login-screen .login-logo-wrap .login-logo { width: 100%; height: 100%; object-fit: contain; object-position: center; }
-    .user-bar { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; font-size: 0.9rem; color: #555; }
+    .user-bar { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; font-size: 0.9rem; color: #555; flex-wrap: wrap; }
+    .user-bar-ident {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      min-width: 0;
+      max-width: min(28rem, 100%);
+    }
+    .user-bar-email { font-size: 0.9rem; word-break: break-word; overflow-wrap: anywhere; line-height: 1.35; color: #444; }
+    .user-bar-nombre-fila { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; min-width: 0; }
+    .user-bar-nombre-input {
+      min-width: 0;
+      flex: 1 1 10rem;
+      max-width: 16rem;
+      padding: 0.35rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      font-size: 0.9rem;
+      box-sizing: border-box;
+    }
+    .user-bar-acciones { display: inline-flex; align-items: center; gap: 0.5rem; flex-shrink: 0; flex-wrap: wrap; }
+    #btn-user-display-name-guardar { min-height: 2.25rem; padding: 0.35rem 0.55rem; font-size: 0.85rem; }
     .user-bar .btn-cerrar { padding: 0.4rem 0.75rem; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; font-size: 0.85rem; }
     .user-bar .btn-cerrar:hover { background: #f0f0f0; }
     .user-bar .btn-refresh { display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; min-width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; color: #555; box-sizing: border-box; }
@@ -1522,7 +1543,52 @@
     .btn-ver-detalle:hover { color: #0ea5e9; background: rgba(0,0,0,0.04); }
     .btn-ver-detalle .btn-icon { display: inline-flex; }
     .btn-ver-detalle .btn-icon svg { width: 20px; height: 20px; }
-    @media (max-width: 768px) { .tabla-cc-resumen { font-size: 0.9rem; } .tabla-cc-resumen th, .tabla-cc-resumen td { padding: 0.4rem 0.5rem; } }
+    @media (max-width: 768px) {
+      .tabla-cc-resumen { font-size: 0.9rem; }
+      .tabla-cc-resumen th, .tabla-cc-resumen td { padding: 0.4rem 0.5rem; }
+      /* Saldos CC: no comprimir importes grandes — scroll horizontal en el wrap existente */
+      #cc-panel-saldos #cc-contenido.tabla-clientes-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+      }
+      #cc-panel-saldos #tabla-cc-resumen {
+        table-layout: auto;
+        width: max-content;
+        min-width: 100%;
+      }
+      #cc-panel-saldos #tabla-cc-resumen col.cc-col { width: auto; }
+      #cc-panel-saldos #tabla-cc-resumen thead tr.cc-resumen-totales-row th.th-moneda .cc-resumen-total-valor {
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      #cc-panel-saldos #tabla-cc-resumen th.th-moneda,
+      #cc-panel-saldos #tabla-cc-resumen td:not(:first-child):not(:last-child) {
+        white-space: nowrap;
+        min-width: 5.75rem;
+      }
+      #cc-panel-saldos #tabla-cc-resumen th.th-nombre,
+      #cc-panel-saldos #tabla-cc-resumen td:first-child {
+        min-width: 6.5rem;
+        max-width: 12rem;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        vertical-align: middle;
+      }
+      #cc-panel-saldos #tabla-cc-resumen th.th-ver,
+      #cc-panel-saldos #tabla-cc-resumen td:last-child {
+        min-width: 3.25rem;
+        white-space: nowrap;
+      }
+      #cc-panel-saldos #tabla-cc-resumen .cc-saldo-celda-wrap {
+        white-space: nowrap;
+        max-width: none;
+      }
+      #cc-panel-saldos #tabla-cc-resumen .cc-saldo-leyenda {
+        max-width: none;
+        white-space: normal;
+      }
+    }
     .toggle-moneda { display: inline-flex; border-radius: 8px; border: 1px solid #ccc; overflow: hidden; background: #eee; }
     .toggle-moneda button { padding: 0.5rem 1rem; border: none; background: transparent; cursor: pointer; font-size: 0.9rem; }
     .toggle-moneda button.activo { background: #1a1a1a; color: #fff; font-weight: 600; }
@@ -1927,12 +1993,23 @@
         padding-bottom: 0.5rem;
         margin-bottom: 0.75rem;
         box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        flex-direction: row;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        grid-template-rows: auto auto;
+        column-gap: 0.65rem;
+        row-gap: 0.55rem;
+        align-items: center;
       }
-      .page-header .page-logo-wrap { height: 36px; width: 36px; }
-      .page-header h1, #page-title { font-size: 1.25rem; }
+      .page-header .page-logo-wrap { height: 36px; width: 36px; grid-column: 1; grid-row: 1; }
+      .page-header h1, .page-header #page-title {
+        font-size: 1.25rem;
+        grid-column: 2;
+        grid-row: 1;
+        margin: 0;
+        min-width: 0;
+        justify-self: start;
+        text-align: left;
+      }
       /* Backdrop del drawer: visible siempre para poder animar opacidad (no display:none ↔ block) */
       .sidebar-backdrop {
         display: block;
@@ -1959,7 +2036,32 @@
         text-align: center;
       }
       .vista-loading-spinner::before { width: 30px; height: 30px; }
-      .user-bar { margin-left: 0; width: 100%; order: 3; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
+      .user-bar {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        margin-left: 0;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.65rem;
+      }
+      .user-bar-ident { max-width: 100%; }
+      .user-bar-nombre-fila { width: 100%; }
+      .user-bar-nombre-input {
+        max-width: 100%;
+        flex: 1 1 auto;
+        min-height: 44px;
+        font-size: 16px;
+      }
+      #btn-user-display-name-guardar { min-height: 44px; }
+      .user-bar-acciones {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        justify-content: flex-start;
+      }
       .user-bar .btn-cerrar { min-height: 44px; padding: 0.5rem 0.85rem; }
       .user-bar .btn-refresh { min-width: 44px; min-height: 44px; }
       .login-screen { margin: 1rem; padding: 1.25rem; max-width: calc(100vw - 2rem); }
@@ -2099,18 +2201,28 @@
         flex-shrink: 0;
       }
       .inicio-gp-matriz-moneda-pareja {
-        display: flex;
+        display: inline-flex;
         flex-direction: row;
         align-items: center;
         justify-content: flex-end;
-        gap: 0.2rem;
+        gap: 0.35rem;
         min-width: 0;
       }
+      /* Importes largos: columnas con ancho mínimo real; scroll horizontal en .inicio-gp-matriz-wrap */
       .inicio-gp-matriz-fila-monedas {
         display: grid;
-        grid-template-columns: repeat(3, minmax(4.25rem, 1fr));
-        gap: 0.35rem;
-        width: 100%;
+        grid-template-columns: repeat(3, minmax(6.5rem, max-content));
+        gap: 0.4rem 0.6rem;
+        width: max-content;
+        min-width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        align-items: center;
+        justify-content: flex-end;
+      }
+      .inicio-gp-matriz-num {
+        white-space: nowrap;
+        flex-shrink: 0;
       }
       .inicio-gp-matriz-ojo-cell .btn-gp-operativa-detalle,
       .inicio-gp-matriz-label-total-wrap .btn-gp-operativa-detalle {
@@ -2157,7 +2269,7 @@
       .sidebar-toggle { width: 52px; height: 48px; min-height: 44px; }
       .sidebar:not(.expanded) .sidebar-toggle { margin: 4px; width: 44px; height: 44px; }
       .sidebar.expanded .sidebar-toggle { width: 52px; height: 48px; }
-      .page-header .page-logo-wrap { height: 32px; width: 32px; }
+      .page-header .page-logo-wrap { height: 32px; width: 32px; grid-column: 1; grid-row: 1; }
       /* Alinear cabecera sticky con el padding más chico de main en móvil */
       .page-header {
         margin-left: calc(-1 * max(0.75rem, env(safe-area-inset-left)));
@@ -2167,7 +2279,7 @@
         margin-top: calc(-1 * max(0.25rem, env(safe-area-inset-top)));
         padding-top: max(0.25rem, env(safe-area-inset-top));
       }
-      #page-title { font-size: 1.1rem; }
+      .page-header #page-title, .page-header h1 { font-size: 1.1rem; }
       .card { padding: 0.85rem; }
       .modal { max-width: 98vw; width: 98%; border-radius: 10px; margin: 0; }
       .modal.modal-ancho { max-width: 100%; }
@@ -2192,8 +2304,8 @@
         gap: 0.4rem;
       }
       .inicio-gp-matriz-fila-monedas {
-        grid-template-columns: repeat(3, minmax(3.85rem, 1fr));
-        gap: 0.3rem;
+        grid-template-columns: repeat(3, minmax(6rem, max-content));
+        gap: 0.35rem 0.45rem;
       }
       .inicio-gp-matriz-h { font-size: 0.85rem; gap: 0.35rem; }
       .inicio-gp-matriz-label-total { font-size: 1.02rem; }

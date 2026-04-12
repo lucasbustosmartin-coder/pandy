@@ -249,7 +249,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.26</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.27</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -318,19 +318,21 @@
       <header class="page-header">
         <span class="page-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="page-logo" id="page-logo" /></span>
         <h1 id="page-title">Panel de Control</h1>
-        <div class="user-bar" id="user-bar" style="flex-wrap:wrap;align-items:center;gap:0.5rem;">
-          <div class="user-bar-ident" style="display:flex;flex-direction:column;gap:0.25rem;min-width:0;max-width:min(22rem,42vw);">
-            <span id="user-email" style="font-size:0.9rem;word-break:break-all;"></span>
-            <div class="user-bar-nombre-fila" style="display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;">
+        <div class="user-bar" id="user-bar">
+          <div class="user-bar-ident">
+            <span id="user-email" class="user-bar-email"></span>
+            <div class="user-bar-nombre-fila">
               <label for="user-display-name-input" class="sr-only">Nombre en listados</label>
-              <input type="text" id="user-display-name-input" placeholder="Nombre en listados" autocomplete="nickname" maxlength="120" style="min-width:7rem;flex:1;max-width:11rem;padding:0.3rem 0.45rem;border-radius:6px;border:1px solid #cbd5e1;font-size:0.9rem;box-sizing:border-box;" />
-              <button type="button" class="btn-secondary" id="btn-user-display-name-guardar" title="Guardar cómo te mostrarán en la app" aria-label="Guardar nombre en listados" style="min-height:2.25rem;padding:0.25rem 0.5rem;font-size:0.85rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar</button>
+              <input type="text" id="user-display-name-input" class="user-bar-nombre-input" placeholder="Nombre en listados" autocomplete="nickname" maxlength="120" />
+              <button type="button" class="btn-secondary" id="btn-user-display-name-guardar" title="Guardar cómo te mostrarán en la app" aria-label="Guardar nombre en listados"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar</button>
             </div>
           </div>
-          <button type="button" class="btn-refresh" id="btn-refresh" title="Actualizar permisos" aria-label="Actualizar permisos">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg>
-          </button>
-          <button type="button" class="btn-cerrar" id="btn-cerrar-sesion"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-20"></use></svg></span>Cerrar sesión</button>
+          <div class="user-bar-acciones" role="group" aria-label="Actualizar y cerrar sesión">
+            <button type="button" class="btn-refresh" id="btn-refresh" title="Actualizar permisos" aria-label="Actualizar permisos">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg>
+            </button>
+            <button type="button" class="btn-cerrar" id="btn-cerrar-sesion"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-20"></use></svg></span>Cerrar sesión</button>
+          </div>
         </div>
       </header>
 

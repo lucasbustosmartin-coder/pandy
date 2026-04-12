@@ -2,6 +2,8 @@
 
 Referencia rápida de cómo se comporta la app en pantallas estrechas (≤768px) y móviles (≤480px).
 
+**Auditoría Fase A** (matriz §3, recorrido PWA §6, checklist por vista §7, plantilla hallazgos §9, preview / local / LAN): **`docs/FASE_A_PRUEBAS_MOVIL_PWA.md`**.
+
 ## Navegación
 
 - **Menú lateral:** fijo a la izquierda; el contenido principal tiene margen igual al ancho de la franja colapsada (56px en tablet, 52px en móvil chico).
@@ -16,7 +18,7 @@ Referencia rápida de cómo se comporta la app en pantallas estrechas (≤768px)
 ## CSS principal
 
 - **769px+:** sidebar en flujo normal; sin backdrop; `main-content` sin margen extra.
-- **≤768px:** `position: sticky` en `.page-header`, safe areas, tablas con scroll horizontal, toolbar Cajas en columna, solapas CC/Cajas con scroll horizontal si hace falta, selects `font-size: 16px` (menos zoom iOS), modal orden “primeros datos” en una columna.
+- **≤768px:** `position: sticky` en `.page-header` (**grid**: logo+título arriba, bloque usuario debajo), safe areas, tablas con scroll horizontal, toolbar Cajas en columna, solapas CC/Cajas con scroll horizontal si hace falta, selects `font-size: 16px` (menos zoom iOS), modal orden “primeros datos” en una columna. **G/P Operativa:** fila de montos con ancho mínimo por moneda + scroll en wrap. **CC Saldos:** tabla con scroll horizontal si los importes son largos.
 - **≤480px:** ajustes extra de padding, toasts a ancho completo con safe area inferior.
 
 ## Tablas (estándar LyP)
@@ -29,5 +31,5 @@ El flujo depende del **tipo de operación** (participantes, bloque azul, patrón
 
 ## Archivos
 
-- Estilos: `index.html` (`@media` y clases anteriores).
-- Lógica menú/backdrop: `main.js` (`pandiIsMobileNavLayout`, `pandiSyncSidebarBackdrop`, `pandiCollapseMobileSidebarAfterNav`).
+- Estilos responsive: principalmente **`style.css`** (`@media` ≤768 / ≤480, safe area, modales, tablas).
+- Lógica menú/backdrop: **`main.js`** (`pandiIsMobileNavLayout`, `pandiSyncSidebarBackdrop`, `pandiCollapseMobileSidebarAfterNav`).
