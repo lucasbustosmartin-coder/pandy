@@ -7088,13 +7088,13 @@ function renderOrdenesPendientesTabla() {
   const selIntermediario = document.getElementById('ordenes-pendientes-filtro-intermediario');
   const selEstado = document.getElementById('ordenes-pendientes-filtro-estado');
   if (!tbody) return;
-  const clienteId = selCliente && selCliente.value ? selCliente.value : '';
-  const intermediarioId = selIntermediario && selIntermediario.value ? selIntermediario.value : '';
-  const estadoVal = selEstado && selEstado.value ? selEstado.value : '';
+  const clienteId = selCliente && selCliente.value ? String(selCliente.value) : '';
+  const intermediarioId = selIntermediario && selIntermediario.value ? String(selIntermediario.value) : '';
+  const estadoVal = selEstado && selEstado.value ? String(selEstado.value) : '';
   let list = ordenesPendientesList;
-  if (clienteId) list = list.filter((o) => o.cliente_id === clienteId);
-  if (intermediarioId) list = list.filter((o) => o.intermediario_id === intermediarioId);
-  if (estadoVal) list = list.filter((o) => o.estado === estadoVal);
+  if (clienteId) list = list.filter((o) => String(o.cliente_id || '') === clienteId);
+  if (intermediarioId) list = list.filter((o) => String(o.intermediario_id || '') === intermediarioId);
+  if (estadoVal) list = list.filter((o) => String(o.estado || '') === estadoVal);
   const canEditarOrden = userPermissions.includes('editar_orden');
   const canIngresarTransacciones = userPermissions.includes('ingresar_transacciones');
   const canEditarTransacciones = userPermissions.includes('editar_transacciones');
@@ -7125,14 +7125,14 @@ function renderOrdenesPendientesTabla() {
   tbody.querySelectorAll('.btn-editar-orden-pendiente').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.getAttribute('data-id');
-      const row = ordenesPendientesList.find((r) => r.id === id);
+      const row = ordenesPendientesList.find((r) => String(r.id) === String(id));
       if (row && backdrop) { backdrop.classList.remove('activo'); openModalOrden(row); }
     });
   });
   tbody.querySelectorAll('.btn-transacciones-pendiente').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.getAttribute('data-id');
-      const orden = ordenesPendientesList.find((r) => r.id === id);
+      const orden = ordenesPendientesList.find((r) => String(r.id) === String(id));
       if (!orden) return;
       if (backdrop) backdrop.classList.remove('activo');
       showView('vista-ordenes', 'Órdenes');
@@ -7315,12 +7315,12 @@ function renderTransaccionesPendientesTabla() {
   const chkPandy = document.getElementById('transacciones-pendientes-filtro-pandy');
   if (!tbody) return;
   const canEditarTransacciones = userPermissions.includes('editar_transacciones');
-  const clienteId = selCliente && selCliente.value ? selCliente.value : '';
-  const intermediarioId = selIntermediario && selIntermediario.value ? selIntermediario.value : '';
+  const clienteId = selCliente && selCliente.value ? String(selCliente.value) : '';
+  const intermediarioId = selIntermediario && selIntermediario.value ? String(selIntermediario.value) : '';
   const soloPandy = chkPandy && chkPandy.checked;
   let list = transaccionesPendientesList;
-  if (clienteId) list = list.filter((t) => t.cliente_id === clienteId);
-  if (intermediarioId) list = list.filter((t) => t.intermediario_id === intermediarioId);
+  if (clienteId) list = list.filter((t) => String(t.cliente_id || '') === clienteId);
+  if (intermediarioId) list = list.filter((t) => String(t.intermediario_id || '') === intermediarioId);
   if (soloPandy) list = list.filter((t) => t.cobrador === 'pandy' || t.pagador === 'pandy');
   const ordenesMap = transaccionesPendientesOrdenesMap;
   const clientesMap = transaccionesPendientesClientesMap;
@@ -7363,10 +7363,10 @@ function renderTransaccionesPendientesTabla() {
       const nuevoEstado = this.value;
       cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId, this).then(() => {
         if (nuevoEstado === 'ejecutada') {
-          const idx = transaccionesPendientesList.findIndex((r) => r.id === transaccionId);
+          const idx = transaccionesPendientesList.findIndex((r) => String(r.id) === String(transaccionId));
           if (idx >= 0) transaccionesPendientesList.splice(idx, 1);
         } else {
-          const item = list.find((r) => r.id === transaccionId);
+          const item = list.find((r) => String(r.id) === String(transaccionId));
           if (item) item.estado = nuevoEstado;
         }
         renderTransaccionesPendientesTabla();
@@ -7378,7 +7378,7 @@ function renderTransaccionesPendientesTabla() {
     btn.addEventListener('click', () => {
       const id = btn.getAttribute('data-id');
       const instId = btn.getAttribute('data-instrumentacion-id');
-      const row = list.find((r) => r.id === id);
+      const row = list.find((r) => String(r.id) === String(id));
       if (row) openModalTransaccion(row, instId);
     });
   });
@@ -14669,7 +14669,7 @@ function renderOrdenesTabla(list) {
   tbody.querySelectorAll('.btn-transacciones').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.getAttribute('data-id');
-      if (id) expandOrdenTransacciones(id, list.find((r) => r.id === id));
+      if (id) expandOrdenTransacciones(id, list.find((r) => String(r.id) === String(id)));
     });
   });
   tbody.querySelectorAll('.btn-anular-orden-tabla').forEach((btn) => {
@@ -14685,12 +14685,12 @@ function aplicarFiltrosOrdenesVista() {
   const selCliente = document.getElementById('ordenes-filtro-cliente');
   const selIntermediario = document.getElementById('ordenes-filtro-intermediario');
   const selEstado = document.getElementById('ordenes-filtro-estado');
-  const clienteId = selCliente && selCliente.value ? selCliente.value.trim() : '';
-  const intermediarioId = selIntermediario && selIntermediario.value ? selIntermediario.value.trim() : '';
+  const clienteId = selCliente && selCliente.value ? String(selCliente.value).trim() : '';
+  const intermediarioId = selIntermediario && selIntermediario.value ? String(selIntermediario.value).trim() : '';
   const estadoRaw = selEstado && selEstado.value != null ? String(selEstado.value).trim() : '__activas__';
   const filtroOrden = (o) => {
-    if (clienteId && o.cliente_id !== clienteId) return false;
-    if (intermediarioId && o.intermediario_id !== intermediarioId) return false;
+    if (clienteId && String(o.cliente_id || '') !== clienteId) return false;
+    if (intermediarioId && String(o.intermediario_id || '') !== intermediarioId) return false;
     const es = (o.estado || '').toString();
     if (o._pandiColaLocal) {
       if (estadoRaw === '__activas__' || estadoRaw === '') return true;

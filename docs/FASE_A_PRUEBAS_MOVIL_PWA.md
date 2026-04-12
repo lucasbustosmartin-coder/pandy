@@ -166,6 +166,7 @@ Esa tabla alimenta la **Fase B** (filtros / inline) y siguientes.
 ### Fase B (filtros Órdenes — implementado en código)
 
 - Vista **Órdenes** (`#ordenes-filtros-wrap`) y modal **Órdenes pendientes**: sin `min-width` inline en los `<select>`; layout y anchos en **`style.css`**; en **≤768** cada filtro en **columna** (etiqueta + control a ancho completo), alineado al checklist §7 «Órdenes».
+- **Modal Órdenes pendientes:** filtros comparan IDs con **`String(...)`** (los `<option value>` son texto; Supabase suele devolver UUID/número en JSON). Cuerpo del modal con **flex + `min-width: 0`** y tabla con scroll **X/Y** dentro del wrap (portrait / tabla ancha).
 
 **Siguiente tramo sugerido (Fase C en guías):** otros toolbars con mucho inline en **`index.html`** (p. ej. cabeceras de card con `style=` repetido) — priorizar los que el recorrido §6 marque como incómodos en **375px**.
 

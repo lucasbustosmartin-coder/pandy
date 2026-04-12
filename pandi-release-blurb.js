@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.28',
+  versionLabel: 'v3.7.29',
   lines: [
-    'Los filtros de Órdenes (y el modal de pendientes) en el celular pasan a una columna clara: cada desplegable a ancho completo, sin zoom incómodo al tocar.',
-    'Seguimos mejorando el panel en pantallas chicas; revisá la guía Fase A en docs si probás en preview o en tu red con dev:host.',
+    'Los filtros por cliente e intermediario en órdenes (lista principal y modal de pendientes) vuelven a coincidir bien con los datos.',
+    'En los modales de pendientes, la tabla se puede desplazar en horizontal y en vertical cuando hace falta, cómodo en el celular en vertical.',
   ],
 };

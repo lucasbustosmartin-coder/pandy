@@ -968,6 +968,52 @@
     #orden-step-detalles textarea:disabled { background: #eee; color: #555; cursor: default; }
     .modal.modal-transacciones-pendientes,
     .modal.modal-ordenes-pendientes { max-width: min(95vw, 1400px); width: 95%; margin-left: 4rem; }
+    /* Órdenes / transacciones pendientes: el cuerpo del modal acota el ancho (min-width:0) para que la tabla haga scroll X dentro del wrap, no se corte al costado en portrait */
+    .modal.modal-ordenes-pendientes .modal-body,
+    .modal.modal-transacciones-pendientes .modal-body {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.5rem;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .modal.modal-ordenes-pendientes .modal-body > .ordenes-filtros-wrap,
+    .modal.modal-transacciones-pendientes .modal-body > .vista-toolbar {
+      flex-shrink: 0;
+    }
+    .modal.modal-ordenes-pendientes .modal-body > #ordenes-pendientes-loading,
+    .modal.modal-transacciones-pendientes .modal-body > #transacciones-pendientes-loading {
+      flex-shrink: 0;
+    }
+    .modal.modal-ordenes-pendientes #ordenes-pendientes-tabla-wrap,
+    .modal.modal-transacciones-pendientes #transacciones-pendientes-tabla-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+      min-width: 0;
+      max-width: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal.modal-ordenes-pendientes #ordenes-pendientes-tabla-wrap > .tabla-clientes-wrap,
+    .modal.modal-transacciones-pendientes #transacciones-pendientes-tabla-wrap > .tabla-clientes-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+      min-width: 0;
+      max-width: 100%;
+      max-height: none;
+      overflow-x: auto;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+    }
+    /* Evitar que el select { width:100% } genérico del .modal-body aplaste los tres filtros en una sola columna ancha en escritorio */
+    .modal.modal-ordenes-pendientes .modal-body .ordenes-filtros-wrap .select-filtro {
+      width: auto;
+      flex: 1 1 6.5rem;
+      min-width: 0;
+      max-width: 100%;
+    }
     .form-actions { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .form-actions .btn-primary { padding: 0.5rem 1rem; background: #0d7d3d; color: #fff; border: 1px solid #0d7d3d; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
     .form-actions .btn-primary:hover { background: #0a5c2e; }
@@ -2176,6 +2222,9 @@
       .tabla-clientes-wrap, .tabla-movimientos-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
       #seguridad-tabla-wrap, #orden-inst-tabla-wrap, #transacciones-tabla-wrap, #ordenes-tabla-wrap, #ordenes-pendientes-tabla-wrap, #transacciones-pendientes-tabla-wrap, #cajas-tabla-wrap, #reglas-negocio-tabla-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; max-width: 100%; }
       .modal.modal-ordenes-pendientes { margin-left: 0 !important; }
+      .modal.modal-ordenes-pendientes .modal-body .ordenes-filtros-wrap .select-filtro {
+        width: 100%;
+      }
       .select-filtro { min-height: 44px; font-size: 16px; }
       .ordenes-filtros-wrap {
         flex-direction: column;
