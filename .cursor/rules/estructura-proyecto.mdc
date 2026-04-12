@@ -20,11 +20,10 @@ Mantener siempre esta organización para que sea **simple y eficiente** encontra
 | **Raíz** | Config (`package.json`, `config.example.js`), `.gitignore`, `index.html`, `main.js`, **`pandi-release-blurb.js`** (novedades modal «Nueva versión»; el build emite `dist/pandi-release.json`). | |
 | **`.cursor/rules/`** | Reglas del agente (incluye **`responsive-pwa-skill.mdc`** → skill en `.cursor/skills/responsive-pwa-web-design/`). | |
 
-## Cursor — skills compartidos (LyP)
+## Cursor — skill responsive/PWA en el repo
 
-- **Canónico:** carpeta hermana del repo, **`LyP/.cursor/skills/`** (no duplicar skills dentro de cada proyecto salvo excepción).
-- **En este repo:** **`.cursor/skills`** es un **symlink** a `../../.cursor/skills` (mismo árbol para Pandi, Fornitalia, etc. bajo `LyP/`). Detalle: **`LyP/.cursor/README.md`**.
-- **Uso del skill responsive/PWA:** regla **`responsive-pwa-skill.mdc`** (siempre activa): indica cuándo leer **`responsive-pwa-web-design/SKILL.md`** sin duplicar el contenido largo aquí.
+- **En este repo:** **`.cursor/skills/responsive-pwa-web-design/SKILL.md`** está **versionado** (clone autocontenido; la regla **`responsive-pwa-skill.mdc`** apunta ahí).
+- **LyP (opcional):** quien trabaje dentro del árbol **`LyP/`** puede mantener una copia compartida en **`LyP/.cursor/skills/`** y enlazar en **local** `Pandi/.cursor/skills` → `../../.cursor/skills`; **no** versionar ese symlink en Git. Ver **`LyP/.cursor/README.md`**. Tras editar en LyP, sincronizar cambios a la carpeta **`.cursor/skills/`** de Pandi antes de commitear.
 
 ## Estándares LyP (todos los repos raíz)
 
