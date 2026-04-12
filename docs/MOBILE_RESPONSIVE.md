@@ -18,7 +18,7 @@ Referencia rápida de cómo se comporta la app en pantallas estrechas (≤768px)
 ## CSS principal
 
 - **769px+:** sidebar en flujo normal; sin backdrop; `main-content` sin margen extra.
-- **≤768px:** `position: sticky` en `.page-header` (**grid**: logo+título arriba, bloque usuario debajo), safe areas, tablas con scroll horizontal, toolbar Cajas en columna, solapas CC/Cajas con scroll horizontal si hace falta, selects `font-size: 16px` (menos zoom iOS), modal orden “primeros datos” en una columna. **G/P Operativa:** fila de montos con ancho mínimo por moneda + scroll en wrap. **CC Saldos:** tabla con scroll horizontal si los importes son largos.
+- **≤768px:** `position: sticky` en `.page-header` (**grid**: logo+título arriba, bloque usuario debajo), safe areas, tablas con scroll horizontal, toolbar Cajas en columna, solapas CC/Cajas con scroll horizontal si hace falta, selects `font-size: 16px` (menos zoom iOS), modal orden “primeros datos” en una columna. **G/P Operativa:** fila de montos con ancho mínimo por moneda + scroll en wrap. **CC Saldos:** tabla con scroll horizontal si los importes son largos. **Órdenes:** filtros cliente/intermediario/estado (y los del modal pendientes) en **columna** con `.ordenes-filtros-wrap` y selects a ancho completo.
 - **≤480px:** ajustes extra de padding, toasts a ancho completo con safe area inferior.
 
 ## Tablas (estándar LyP)

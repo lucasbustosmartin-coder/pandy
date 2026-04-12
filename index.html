@@ -249,7 +249,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.27</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.28</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -487,10 +487,10 @@
           <button type="button" id="btn-orden-offline-sync" class="btn-secondary" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-30"></use></svg></span><span id="btn-orden-offline-sync-label">Enviar cola local</span></button>
           <button type="button" id="btn-orden-por-chat" class="btn-chat" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-25"></use></svg></span>Cargar por chat</button>
         </div>
-        <div class="vista-toolbar ordenes-filtros-wrap" id="ordenes-filtros-wrap" style="flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem; display:none;">
-          <label class="ordenes-filtro-label"><span>Cliente:</span><select id="ordenes-filtro-cliente" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select></label>
-          <label class="ordenes-filtro-label"><span>Intermediario:</span><select id="ordenes-filtro-intermediario" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select></label>
-          <label class="ordenes-filtro-label"><span>Estado:</span><select id="ordenes-filtro-estado" class="select-filtro" style="min-width:220px;"><option value="__activas__" selected>Activas (no ejecutadas ni anuladas)</option><option value="">Todas las órdenes</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option><option value="orden_ejecutada">Orden Ejecutada</option><option value="anulada">Anulada</option></select></label>
+        <div class="vista-toolbar ordenes-filtros-wrap" id="ordenes-filtros-wrap">
+          <label class="ordenes-filtro-label"><span>Cliente:</span><select id="ordenes-filtro-cliente" class="select-filtro select-filtro-ordenes-cat"><option value="">Todos</option></select></label>
+          <label class="ordenes-filtro-label"><span>Intermediario:</span><select id="ordenes-filtro-intermediario" class="select-filtro select-filtro-ordenes-cat"><option value="">Todos</option></select></label>
+          <label class="ordenes-filtro-label"><span>Estado:</span><select id="ordenes-filtro-estado" class="select-filtro select-filtro-ordenes-estado"><option value="__activas__" selected>Activas (no ejecutadas ni anuladas)</option><option value="">Todas las órdenes</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option><option value="orden_ejecutada">Orden Ejecutada</option><option value="anulada">Anulada</option></select></label>
         </div>
         <div id="ordenes-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
@@ -1989,18 +1989,18 @@
         <button type="button" class="modal-close" id="modal-ordenes-pendientes-close" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
-        <div class="vista-toolbar" id="ordenes-pendientes-filtros-wrap" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem; display:none;">
-          <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
+        <div class="vista-toolbar ordenes-filtros-wrap ordenes-filtros-wrap--pendientes" id="ordenes-pendientes-filtros-wrap">
+          <label class="ordenes-filtro-label">
             <span>Cliente:</span>
-            <select id="ordenes-pendientes-filtro-cliente" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select>
+            <select id="ordenes-pendientes-filtro-cliente" class="select-filtro select-filtro-ordenes-cat"><option value="">Todos</option></select>
           </label>
-          <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
+          <label class="ordenes-filtro-label">
             <span>Intermediario:</span>
-            <select id="ordenes-pendientes-filtro-intermediario" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select>
+            <select id="ordenes-pendientes-filtro-intermediario" class="select-filtro select-filtro-ordenes-cat"><option value="">Todos</option></select>
           </label>
-          <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
+          <label class="ordenes-filtro-label">
             <span>Estado:</span>
-            <select id="ordenes-pendientes-filtro-estado" class="select-filtro" style="min-width:180px;"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option></select>
+            <select id="ordenes-pendientes-filtro-estado" class="select-filtro select-filtro-ordenes-estado"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option></select>
           </label>
         </div>
         <div id="ordenes-pendientes-loading" class="clientes-loading vista-loading-spinner">Cargando…</div>

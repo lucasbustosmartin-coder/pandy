@@ -808,6 +808,30 @@
     .select-filtro { padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; font-size: 0.9rem; font-family: inherit; color: #374151; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 2rem; min-height: 2.25rem; box-sizing: border-box; }
     .select-filtro:hover { border-color: #9ca3af; }
     .select-filtro:focus { outline: none; border-color: #0d7d3d; box-shadow: 0 0 0 2px rgba(13,125,61,0.2); }
+    /* Fase B móvil: filtros Órdenes / pendientes — sin min-width inline (iOS 16px ya en ≤768) */
+    .ordenes-filtros-wrap {
+      display: none;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      align-items: center;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .ordenes-filtros-wrap.ordenes-filtros-wrap--pendientes {
+      margin-bottom: 1rem;
+    }
+    .ordenes-filtros-wrap .select-filtro-ordenes-cat {
+      min-width: 8.75rem;
+      max-width: 100%;
+    }
+    .ordenes-filtros-wrap .select-filtro-ordenes-estado {
+      min-width: 13.75rem;
+      max-width: 100%;
+    }
+    .ordenes-filtros-wrap.ordenes-filtros-wrap--pendientes .select-filtro-ordenes-estado {
+      min-width: 11.25rem;
+    }
     .inicio-accesos { margin-top: 1.5rem; }
     .link-inicio { text-decoration: none; color: inherit; }
     .modal.modal-ancho { max-width: 920px; width: 95%; }
@@ -2153,6 +2177,26 @@
       #seguridad-tabla-wrap, #orden-inst-tabla-wrap, #transacciones-tabla-wrap, #ordenes-tabla-wrap, #ordenes-pendientes-tabla-wrap, #transacciones-pendientes-tabla-wrap, #cajas-tabla-wrap, #reglas-negocio-tabla-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; max-width: 100%; }
       .modal.modal-ordenes-pendientes { margin-left: 0 !important; }
       .select-filtro { min-height: 44px; font-size: 16px; }
+      .ordenes-filtros-wrap {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.65rem;
+      }
+      .ordenes-filtros-wrap .ordenes-filtro-label {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.3rem;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+      }
+      .ordenes-filtros-wrap .select-filtro-ordenes-cat,
+      .ordenes-filtros-wrap .select-filtro-ordenes-estado {
+        min-width: 0;
+        width: 100%;
+        max-width: 100%;
+      }
       #cajas-panel-movimientos .cajas-mov-toolbar-fila-primera {
         flex-direction: column;
         align-items: stretch;

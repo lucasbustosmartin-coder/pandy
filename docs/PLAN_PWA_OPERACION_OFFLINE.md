@@ -80,7 +80,7 @@ Sigue siendo relevante para roadmap: último gana, versionado optimista, etc. Ho
 | 1 | PWA instalable + SW + actualización | **Hecho** |
 | 2 | Persistencia y cola (IndexedDB) | **Hecho** para órdenes + extensiones manuales |
 | 3 | Lectura offline acotada + indicadores | **Hecho** (órdenes, inicio, cajas, CC, instrumentación) |
-| 4 | Pruebas manuales, Lighthouse, doc | **Parcial:** sin E2E offline; Lighthouse vía `docs/LIGHTHOUSE_PWA.md` |
+| 4 | Pruebas manuales, Lighthouse, doc | **Parcial:** sin E2E offline; Lighthouse vía `docs/LIGHTHOUSE_PWA.md`; matriz móvil/PWA en curso (`docs/FASE_A_PRUEBAS_MOVIL_PWA.md`, fases A→B filtros Órdenes, etc.) |
 
 Detalle técnico de claves y TTL: **`docs/PWA_OFFLINE_TECNICO.md`**.
 

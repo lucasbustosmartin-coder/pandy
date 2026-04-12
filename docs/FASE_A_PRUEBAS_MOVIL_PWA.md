@@ -128,7 +128,7 @@ Si algo falla, anotá en la **plantilla §9** (no hace falta completar toda la m
 
 Solo para **saber dónde mirar** en el dispositivo; la verdad es el resultado en **preview**.
 
-- En **≤768** muchos filtros y modales fuerzan **`font-size: 16px`** y **`min-height: 44px`** en **`style.css`**; en **`index.html`** aún hay **estilos inline** en algunos filtros de órdenes (tamaños fijos en px): conviene **comparar** comportamiento Órdenes vs modales CC manual (ya con 16px explícito).  
+- En **≤768** muchos filtros y modales fuerzan **`font-size: 16px`** y **`min-height: 44px`** en **`style.css`**. **Fase B (código):** filtros de **Órdenes** (vista lista + modal pendientes) ya están en **CSS** (`.ordenes-filtros-wrap`, anchos por clase) y en columna en móvil; si encontrás otro bloque con inline en filtros, anotarlo en §9.  
 - **Drawer vs modales:** en CC/GP ya se subió z-index para que el modal no quede detrás del menú móvil; si algún **otro** modal “no recibe toques”, anotarlo.  
 - **Nueva orden:** regla **`.cursor/rules/nueva-orden-responsive.mdc`** — si un tipo de operación se ve mal, anotá **cuál** (código de tipo).
 
@@ -162,6 +162,12 @@ Esa tabla alimenta la **Fase B** (filtros / inline) y siguientes.
 - **G/P Operativa (≤768):** grilla de importes con `minmax` + `max-content` y `white-space: nowrap` en números para que el **scroll horizontal** del wrap muestre importes largos sin amontonar.  
 - **Cabecera usuario (≤768):** `page-header` en **CSS grid** (logo + título / fila siguiente: identidad + acciones); email y nombre a **ancho completo**; **Guardar** + **Actualizar** + **Cerrar sesión** agrupados en `.user-bar-acciones`.  
 - **CC Saldos (≤768):** tabla con `table-layout: auto` y `width: max-content` solo en `#cc-panel-saldos`, columnas de montos con `min-width` + scroll en `#cc-contenido`.
+
+### Fase B (filtros Órdenes — implementado en código)
+
+- Vista **Órdenes** (`#ordenes-filtros-wrap`) y modal **Órdenes pendientes**: sin `min-width` inline en los `<select>`; layout y anchos en **`style.css`**; en **≤768** cada filtro en **columna** (etiqueta + control a ancho completo), alineado al checklist §7 «Órdenes».
+
+**Siguiente tramo sugerido (Fase C en guías):** otros toolbars con mucho inline en **`index.html`** (p. ej. cabeceras de card con `style=` repetido) — priorizar los que el recorrido §6 marque como incómodos en **375px**.
 
 ---
 
