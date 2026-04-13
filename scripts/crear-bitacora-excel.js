@@ -21,6 +21,7 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Seguridad: token Supabase MCP fuera de mcp.json', '~/.cursor/mcp.json usa npx envmcp --env-file ~/.cursor/supabase-mcp.env + servidor oficial; PAT en archivo chmod 600; plantilla supabase-mcp.env.example. docs/CURSOR_SUPABASE_MCP.md; estructura-proyecto §docs.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Modal órdenes pendientes: filtros + scroll móvil', 'Filtros: comparar cliente_id/intermediario_id con String (option value vs JSON). Botones editar/transacciones: find por String(id). Vista Órdenes: aplicarFiltrosOrdenesVista + expand transacciones mismo criterio. Transacciones pendientes: filtros y find por String(id). CSS: modales pendientes body flex min-width 0; scroll X/Y tabla. main.js style.css FASE_A. v3.7.29.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Fase B móvil: filtros Órdenes (lista + pendientes)', 'Quitar inline min-width/display en #ordenes-filtros-wrap y modal pendientes; clases .ordenes-filtros-wrap, select-filtro-ordenes-cat/estado; ≤768 columna etiqueta+select ancho 100%. style.css + index.html; FASE_A §8/§10 Fase B; MOBILE_RESPONSIVE. Sidebar v3.7.28; pandi-release-blurb.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Despliegue v3.7.27 (prod + preview estable)', 'Móvil cabecera/GP/CC saldos + docs FASE_A y dev:host. sidebar v3.7.27; pandi-release-blurb. vercel --prod; npx vercel --yes; merge main→preview-empleado + verificación SHA.', 'Despliegue'],
