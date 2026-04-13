@@ -957,11 +957,15 @@ function pandiUpdateOfflineToolbarButtons() {
   const btnChat = document.getElementById('btn-orden-por-chat');
   const btnLocal = document.getElementById('btn-orden-offline-local');
   const btnSync = document.getElementById('btn-orden-offline-sync');
+  const btnExpOrd = document.getElementById('ordenes-btn-exportar-excel');
   const lbl = document.getElementById('btn-orden-offline-sync-label');
   const canIns = userPermissions && userPermissions.includes('ingresar_orden');
   const n = pandiOfflineQueueRead().length;
   if (btnNorm) {
     btnNorm.style.display = canIns && !pandiModoReducidoOffline ? '' : 'none';
+  }
+  if (btnExpOrd) {
+    btnExpOrd.style.display = canViewVista('vista-ordenes') ? '' : 'none';
   }
   if (btnChat) {
     btnChat.style.display = canIns && !pandiModoReducidoOffline ? '' : 'none';
@@ -1616,19 +1620,22 @@ async function pandiPrefetchOneOrdenInstrumentacionSnapshot(ordenRow, modosPagoG
     if (rI.error || !rI.data || !rI.data.id) return;
     const instrumentacionId = rI.data.id;
     const mcRow = rI.data;
-    const [rOrdFull, res] = await Promise.all([
-      client.from('ordenes').select('id, usuario_id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, estado, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)').eq('id', ordenId).single(),
+    const [rOrdFull, res, rComPre] = await Promise.all([
+      client.from('ordenes').select('id, usuario_id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, estado, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out), intermediarios(nombre)').eq('id', ordenId).single(),
       client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true }),
+      client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
     ]);
     if (res.error) return;
     const ordenTotales = rOrdFull.data || ordenRow;
     const lista = res.data || [];
+    const comisionesPre = (rComPre && !rComPre.error && rComPre.data) ? rComPre.data : [];
     const maps = await fetchMapsNombresParticipantesTransacciones(ordenTotales, lista);
     pandiPersistOrdenInstrumentacionSnapshot(ordenId, {
       instrumentacionId,
       mcRow,
       ordenTotales,
       transacciones: lista,
+      comisionesOrden: comisionesPre,
       modosPago: Array.isArray(modosPagoGlobal) ? modosPagoGlobal : [],
       participantesMaps: maps,
     });
@@ -2603,7 +2610,10 @@ function refreshPermisosYVista() {
       return fetchAppEmpresaIntoState();
     })
     .catch(() => {})
-    .then(() => aplicarMarcaEnTodaLaUI());
+    .then(() => {
+      pandiUpdateOfflineToolbarButtons();
+      return aplicarMarcaEnTodaLaUI();
+    });
 }
 
 function showView(vistaId, pageTitle) {
@@ -5696,6 +5706,216 @@ function exportarMovimientosCajaExcel() {
   });
 }
 
+const PANDI_MONEDAS_COMISION_EXPORT_ORDENES_BASE = ['USD', 'ARS', 'EUR'];
+
+/** Exporta la grilla actual de Órdenes (mismos filtros que en pantalla). Importes numéricos en columnas por moneda. */
+function exportarOrdenesExcel() {
+  const lista = ordenesVistaListadoFiltradoActual;
+  if (!lista || lista.length === 0) {
+    showToast('No hay órdenes para exportar con el filtro actual.', 'info');
+    return;
+  }
+  const marca = nombreMarcaSistema();
+  const tiposOpMap = ordenesVistaTiposOpMap;
+  const clientesMap = ordenesVistaClientesMap;
+  const intermediariosMap = ordenesVistaIntermediariosMap;
+  const usuarioMap = ordenesVistaUsuarioMap;
+  const monExtra = new Set();
+  lista.forEach((o) => {
+    if (o._pandiColaLocal) return;
+    const agg = ordenesVistaComisionesMap[String(o.id)];
+    if (!agg) return;
+    ['pandy', 'intermediario'].forEach((k) => {
+      const ob = agg[k] || {};
+      Object.keys(ob).forEach((m) => {
+        const mon = String(m || '').toUpperCase();
+        if (mon && !PANDI_MONEDAS_COMISION_EXPORT_ORDENES_BASE.includes(mon)) monExtra.add(mon);
+      });
+    });
+  });
+  const monsCom = [...PANDI_MONEDAS_COMISION_EXPORT_ORDENES_BASE, ...[...monExtra].sort()];
+  const hMarca = monsCom.map((m) => `Comisión ${marca} (${m})`);
+  const hInt = monsCom.map((m) => 'Comisión intermediario (' + m + ')');
+  const estadoLabelExp = (e) => ({
+    pendiente_instrumentar: 'Pendiente Instrumentar',
+    instrumentacion_parcial: 'Instrumentación Parcial',
+    instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución',
+    orden_ejecutada: 'Orden Ejecutada',
+    anulada: 'Anulada',
+    cotizacion: 'Cotización',
+    concertada: 'Concertada',
+    cola_local: 'Cola local (sin subir)',
+  }[e] || (e ? String(e) : '–'));
+  const header = [
+    'Nº',
+    'Fecha',
+    'Tipo op.',
+    'Cliente',
+    'Intermediario',
+    ...hMarca,
+    ...hInt,
+    'Estado',
+    'Usuario',
+    'Recibido',
+    'Mon. rec.',
+    'Entregado',
+    'Mon. ent.',
+  ];
+  const rows = lista.map((o) => {
+    const esColaLocal = !!o._pandiColaLocal;
+    const tipoRow = o.tipo_operacion_id && tiposOpMap[o.tipo_operacion_id]
+      ? String((tiposOpMap[o.tipo_operacion_id].nombre || tiposOpMap[o.tipo_operacion_id].codigo || '') || '').trim()
+      : '';
+    const clienteNom = o.cliente_id ? clientesMap[o.cliente_id] || '' : '';
+    const intNom = o.intermediario_id ? intermediariosMap[o.intermediario_id] || '' : '';
+    const uid = o.usuario_id != null ? String(o.usuario_id) : '';
+    const mailReg = uid ? (usuarioMap[uid] || '') : '';
+    const agg = esColaLocal ? null : ordenesVistaComisionesMap[String(o.id)];
+    const celdasMarca = monsCom.map((mon) => {
+      if (esColaLocal || !agg || !agg.pandy) return null;
+      const v = agg.pandy[mon];
+      return v != null && Math.abs(Number(v)) > 1e-9 ? Number(v) : null;
+    });
+    const celdasInt = monsCom.map((mon) => {
+      if (esColaLocal || !agg || !agg.intermediario) return null;
+      const v = agg.intermediario[mon];
+      return v != null && Math.abs(Number(v)) > 1e-9 ? Number(v) : null;
+    });
+    const nro = o.numero != null ? Number(o.numero) : null;
+    const fecha = (o.fecha || '').toString().slice(0, 10);
+    const estado = estadoLabelExp(o.estado || '');
+    const mr = o.monto_recibido != null ? Number(o.monto_recibido) : null;
+    const me = o.monto_entregado != null ? Number(o.monto_entregado) : null;
+    return [
+      nro,
+      fecha,
+      tipoRow || '–',
+      clienteNom || '–',
+      intNom || '–',
+      ...celdasMarca,
+      ...celdasInt,
+      estado,
+      mailReg || '–',
+      mr,
+      (o.moneda_recibida || '').toString() || '–',
+      me,
+      (o.moneda_entregada || '').toString() || '–',
+    ];
+  });
+  const aoa = aoaExcelConMetaExportacion(header, rows);
+  const nombreArchivo = 'ordenes_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
+  import('./excel-export.js').then((mExport) => {
+    mExport.generarArchivoExcel(nombreArchivo, { Órdenes: aoa });
+    showToast('Exportado: ' + nombreArchivo, 'success');
+  }).catch((e) => {
+    console.error('Error cargando módulo excel:', e);
+    showToast('Error al preparar exportación.', 'error');
+  });
+}
+
+/** Exporta el listado filtrado del modal Órdenes pendientes (misma metodología que `exportarOrdenesExcel`). */
+function exportarOrdenesPendientesExcel() {
+  const lista = ordenesPendientesListadoFiltradoActual;
+  if (!lista || lista.length === 0) {
+    showToast('No hay órdenes pendientes para exportar con el filtro actual.', 'info');
+    return;
+  }
+  const marca = nombreMarcaSistema();
+  const tiposOpMap = ordenesPendientesTiposOpMap;
+  const clientesMap = ordenesPendientesClientesMap;
+  const intermediariosMap = ordenesPendientesIntermediariosMap;
+  const comMapGlobal = ordenesPendientesComisionesMap;
+  const monExtra = new Set();
+  lista.forEach((o) => {
+    const agg = comMapGlobal[String(o.id)];
+    if (!agg) return;
+    ['pandy', 'intermediario'].forEach((k) => {
+      const ob = agg[k] || {};
+      Object.keys(ob).forEach((m) => {
+        const mon = String(m || '').toUpperCase();
+        if (mon && !PANDI_MONEDAS_COMISION_EXPORT_ORDENES_BASE.includes(mon)) monExtra.add(mon);
+      });
+    });
+  });
+  const monsCom = [...PANDI_MONEDAS_COMISION_EXPORT_ORDENES_BASE, ...[...monExtra].sort()];
+  const hMarca = monsCom.map((m) => `Comisión ${marca} (${m})`);
+  const hInt = monsCom.map((m) => 'Comisión intermediario (' + m + ')');
+  const estadoLabelExp = (e) => ({
+    pendiente_instrumentar: 'Pendiente Instrumentar',
+    instrumentacion_parcial: 'Instrumentación Parcial',
+    instrumentacion_cerrada_ejecucion: 'Cerrada en Ejecución',
+    orden_ejecutada: 'Orden Ejecutada',
+    anulada: 'Anulada',
+  }[e] || (e ? String(e) : '–'));
+  const header = [
+    'Nº',
+    'Fecha',
+    'Tipo op.',
+    'Cliente',
+    'Intermediario',
+    ...hMarca,
+    ...hInt,
+    'Estado',
+    'Usuario',
+    'Recibido',
+    'Mon. rec.',
+    'Entregado',
+    'Mon. ent.',
+  ];
+  const idsUsuario = lista.map((o) => o.usuario_id).filter(Boolean);
+  fetchMapaEtiquetaUsuarioPorIds(idsUsuario).then((usuarioMap) => {
+    const rows = lista.map((o) => {
+      const tipoRow = o.tipo_operacion_id && tiposOpMap[o.tipo_operacion_id]
+        ? String((tiposOpMap[o.tipo_operacion_id].nombre || tiposOpMap[o.tipo_operacion_id].codigo || '') || '').trim()
+        : '';
+      const clienteNom = o.cliente_id ? clientesMap[o.cliente_id] || '' : '';
+      const intNom = o.intermediario_id ? intermediariosMap[o.intermediario_id] || '' : '';
+      const uid = o.usuario_id != null ? String(o.usuario_id) : '';
+      const mailReg = uid ? (usuarioMap[uid] || '') : '';
+      const agg = comMapGlobal[String(o.id)];
+      const celdasMarca = monsCom.map((mon) => {
+        if (!agg || !agg.pandy) return null;
+        const v = agg.pandy[mon];
+        return v != null && Math.abs(Number(v)) > 1e-9 ? Number(v) : null;
+      });
+      const celdasInt = monsCom.map((mon) => {
+        if (!agg || !agg.intermediario) return null;
+        const v = agg.intermediario[mon];
+        return v != null && Math.abs(Number(v)) > 1e-9 ? Number(v) : null;
+      });
+      const nro = o.numero != null ? Number(o.numero) : null;
+      const fecha = (o.fecha || '').toString().slice(0, 10);
+      const estado = estadoLabelExp(o.estado || '');
+      const mr = o.monto_recibido != null ? Number(o.monto_recibido) : null;
+      const me = o.monto_entregado != null ? Number(o.monto_entregado) : null;
+      return [
+        nro,
+        fecha,
+        tipoRow || '–',
+        clienteNom || '–',
+        intNom || '–',
+        ...celdasMarca,
+        ...celdasInt,
+        estado,
+        mailReg || '–',
+        mr,
+        (o.moneda_recibida || '').toString() || '–',
+        me,
+        (o.moneda_entregada || '').toString() || '–',
+      ];
+    });
+    const aoa = aoaExcelConMetaExportacion(header, rows);
+    const nombreArchivo = 'ordenes_pendientes_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
+    import('./excel-export.js').then((mExport) => {
+      mExport.generarArchivoExcel(nombreArchivo, { 'Ordenes pendientes': aoa });
+      showToast('Exportado: ' + nombreArchivo, 'success');
+    }).catch((e) => {
+      console.error('Error cargando módulo excel:', e);
+      showToast('Error al preparar exportación.', 'error');
+    });
+  });
+}
+
 /**
  * Pinta cards + tabla de movimientos desde lista en memoria (sin sync ni fetch).
  * @param {object} ctx — omitirDelayYLoading: true al solo cambiar filtros (sin spinner ni espera).
@@ -7070,6 +7290,11 @@ let ordenesPendientesList = [];
 let ordenesPendientesClientesMap = {};
 let ordenesPendientesTiposOpMap = {};
 let ordenesPendientesIntermediariosMap = {};
+/** id orden → sumas comisión (misma forma que `ordenesVistaComisionesMap`). */
+let ordenesPendientesComisionesMap = {};
+/** Listado filtrado actual del modal (para Excel). */
+let ordenesPendientesListadoFiltradoActual = [];
+const PANDI_ORDENES_PENDIENTES_TABLA_COLSPAN = 12;
 
 function renderOrdenesPendientesFiltros(list, clientesMap, intermediariosMap) {
   const selCliente = document.getElementById('ordenes-pendientes-filtro-cliente');
@@ -7095,6 +7320,7 @@ function renderOrdenesPendientesTabla() {
   if (clienteId) list = list.filter((o) => String(o.cliente_id || '') === clienteId);
   if (intermediarioId) list = list.filter((o) => String(o.intermediario_id || '') === intermediarioId);
   if (estadoVal) list = list.filter((o) => String(o.estado || '') === estadoVal);
+  ordenesPendientesListadoFiltradoActual = list;
   const canEditarOrden = userPermissions.includes('editar_orden');
   const canIngresarTransacciones = userPermissions.includes('ingresar_transacciones');
   const canEditarTransacciones = userPermissions.includes('editar_transacciones');
@@ -7105,15 +7331,21 @@ function renderOrdenesPendientesTabla() {
   const clientesMap = ordenesPendientesClientesMap;
   const tiposOpMap = ordenesPendientesTiposOpMap;
   const intermediariosMap = ordenesPendientesIntermediariosMap;
+  const comMap = ordenesPendientesComisionesMap;
   tbody.innerHTML = list.length ? list.map((o) => {
     const estado = o.estado || '';
     const badgeClass = estadoBadgeClass(estado);
     const estadoHtml = badgeClass ? `<span class="${badgeClass}">${estadoLabel(estado)}</span>` : estadoLabel(estado);
+    const aggCom = comMap[String(o.id)];
+    const txtComMarca = pandiTextoComisionesListadoDesdeLado(aggCom, 'pandy');
+    const txtComInt = pandiTextoComisionesListadoDesdeLado(aggCom, 'intermediario');
     return `<tr data-id="${o.id}">
       <td class="td-orden-fecha">${(o.fecha || '').toString().slice(0, 10)}</td>
       <td class="td-tipo-op-iconos">${o.tipo_operacion_id ? htmlCeldaTipoOperacionDesdeMap(o.tipo_operacion_id, tiposOpMap) : htmlTipoOperacionIconos('')}</td>
       <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
       <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
+      <td class="td-orden-comisiones" style="font-size:0.88rem;white-space:normal;line-height:1.35;max-width:10rem;">${txtComMarca}</td>
+      <td class="td-orden-comisiones" style="font-size:0.88rem;white-space:normal;line-height:1.35;max-width:10rem;">${txtComInt}</td>
       <td>${estadoHtml}</td>
       <td class="td-orden-importe">${formatMonto(o.monto_recibido)}</td>
       <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(o.moneda_recibida)}</td>
@@ -7121,7 +7353,7 @@ function renderOrdenesPendientesTabla() {
       <td class="td-orden-moneda">${htmlIconoMonedaCeldaOrden(o.moneda_entregada)}</td>
       <td>${canVerAccionesOrden ? `${canEditarOrden ? `<button type="button" class="btn-editar btn-editar-orden-pendiente" data-id="${o.id}" title="Editar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones-pendiente" data-id="${o.id}" title="Transacciones"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>` : ''}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="10">No hay órdenes que coincidan con los filtros.</td></tr>';
+  }).join('') : `<tr><td colspan="${PANDI_ORDENES_PENDIENTES_TABLA_COLSPAN}">No hay órdenes que coincidan con los filtros.</td></tr>`;
   tbody.querySelectorAll('.btn-editar-orden-pendiente').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.getAttribute('data-id');
@@ -7150,6 +7382,8 @@ function openModalOrdenesPendientes(estadoFilter) {
   const tbody = document.getElementById('ordenes-pendientes-tbody');
   if (!backdrop || !loadingEl || !wrapEl || !tbody) return;
   if (pandiAvisoSiSinServidorParaEscritura('Abrir el listado de órdenes pendientes en vivo')) return;
+  ordenesPendientesComisionesMap = {};
+  ordenesPendientesListadoFiltradoActual = [];
   backdrop.classList.add('activo');
   loadingEl.style.display = 'block';
   if (filtrosWrap) filtrosWrap.style.display = 'none';
@@ -7161,14 +7395,14 @@ function openModalOrdenesPendientes(estadoFilter) {
   client.from('ordenes').select(selectOrdPend).neq('estado', 'orden_ejecutada').neq('estado', 'anulada').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((res) => {
       if (res.error) {
         loadingEl.style.display = 'none';
-        tbody.innerHTML = '<tr><td colspan="10">Error: ' + (res.error.message || '') + '</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${PANDI_ORDENES_PENDIENTES_TABLA_COLSPAN}">Error: ` + escapeHtml(res.error.message || '') + '</td></tr>';
         wrapEl.style.display = 'block';
         return;
       }
       const list = res.data || [];
       if (list.length === 0) {
         loadingEl.style.display = 'none';
-        tbody.innerHTML = '<tr><td colspan="10">No hay órdenes pendientes.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${PANDI_ORDENES_PENDIENTES_TABLA_COLSPAN}">No hay órdenes pendientes.</td></tr>`;
         wrapEl.style.display = 'block';
         return;
       }
@@ -7200,11 +7434,15 @@ function openModalOrdenesPendientes(estadoFilter) {
         ordenesPendientesClientesMap = clientesMap;
         ordenesPendientesTiposOpMap = tiposOpMap;
         ordenesPendientesIntermediariosMap = intermediariosMap;
-        renderOrdenesPendientesFiltros(list, clientesMap, intermediariosMap);
-        if (filtrosWrap) filtrosWrap.style.display = 'flex';
-        renderOrdenesPendientesTabla();
-        loadingEl.style.display = 'none';
-        wrapEl.style.display = 'block';
+        const ordenIdsCom = [...new Set(list.map((o) => o.id).filter(Boolean))];
+        return pandiFetchComisionesOrdenMapPorOrdenIds(ordenIdsCom).then((comMap) => {
+          ordenesPendientesComisionesMap = comMap && typeof comMap === 'object' ? comMap : {};
+          renderOrdenesPendientesFiltros(list, clientesMap, intermediariosMap);
+          if (filtrosWrap) filtrosWrap.style.display = 'flex';
+          renderOrdenesPendientesTabla();
+          loadingEl.style.display = 'none';
+          wrapEl.style.display = 'block';
+        });
       });
     });
 }
@@ -7216,6 +7454,11 @@ function setupOrdenesPendientesFiltrosListeners() {
   if (selCliente) selCliente.addEventListener('change', () => renderOrdenesPendientesTabla());
   if (selIntermediario) selIntermediario.addEventListener('change', () => renderOrdenesPendientesTabla());
   if (selEstado) selEstado.addEventListener('change', () => renderOrdenesPendientesTabla());
+  const btnExpPend = document.getElementById('ordenes-pendientes-btn-exportar-excel');
+  if (btnExpPend && btnExpPend.dataset.pandiBound !== '1') {
+    btnExpPend.dataset.pandiBound = '1';
+    btnExpPend.addEventListener('click', () => exportarOrdenesPendientesExcel());
+  }
 }
 
 /** Lista de transacciones pendientes con filtros (cliente, intermediario, solo Pandy). Guarda en ventana para filtrado. */
@@ -14273,6 +14516,12 @@ let ordenesVistaTiposOpMap = {};
 let ordenesVistaIntermediariosMap = {};
 /** id usuario → etiqueta (nombre visible o email) para columna Usuario en órdenes. */
 let ordenesVistaUsuarioMap = {};
+/** id orden (string) → { pandy: Record<moneda, number>, intermediario: Record<moneda, number> } desde `comisiones_orden`. */
+let ordenesVistaComisionesMap = {};
+/** Último listado mostrado en la grilla (filtros + cola local), para exportar Excel. */
+let ordenesVistaListadoFiltradoActual = [];
+/** Columnas de la tabla principal de Órdenes (incl. detalle expandido `colspan`). */
+const PANDI_ORDENES_VISTA_TABLA_COLSPAN = 14;
 let ordenesFiltrosListenersAttached = false;
 /** True cuando la grilla de órdenes se armó desde snapshot local (sin fetch en vivo). */
 let pandiOrdenesVistaDesdeCache = false;
@@ -14572,7 +14821,7 @@ function renderOrdenesTabla(list) {
       : '';
   };
   if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12">No hay órdenes con los filtros aplicados.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${PANDI_ORDENES_VISTA_TABLA_COLSPAN}">No hay órdenes con los filtros aplicados.</td></tr>`;
     wrapEl.style.display = 'block';
     return;
   }
@@ -14616,12 +14865,17 @@ function renderOrdenesTabla(list) {
         const celdaAcciones = esColaLocal
           ? (btnEditarColaV2 + accionesColaLocal)
           : (canVerAccionesOrden ? `${puedeEditarEstaOrden ? `<button type="button" class="btn-editar btn-editar-orden btn-icon-only" data-id="${o.id}" title="Editar orden" aria-label="Editar orden"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span></button> ` : ''}<button type="button" class="btn-secondary btn-transacciones btn-icon-only" data-id="${o.id}" title="Transacciones" aria-label="Transacciones" style="margin-left:0.25rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span></button>${btnAnularTabla}` : '');
+        const aggCom = esColaLocal ? null : ordenesVistaComisionesMap[String(o.id)];
+        const txtComMarca = esColaLocal ? '–' : pandiTextoComisionesListadoDesdeLado(aggCom, 'pandy');
+        const txtComInt = esColaLocal ? '–' : pandiTextoComisionesListadoDesdeLado(aggCom, 'intermediario');
         return `<tr data-id="${o.id}"${esColaLocal ? ' class="tr-orden-cola-local"' : ''}>
           <td>${o.numero != null ? o.numero : '–'}</td>
           <td class="td-orden-fecha">${(o.fecha || '').toString().slice(0, 10)}</td>
           <td class="td-tipo-op-iconos">${o.tipo_operacion_id ? htmlCeldaTipoOperacionDesdeMap(o.tipo_operacion_id, tiposOpMap) : htmlTipoOperacionIconos('')}</td>
           <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
           <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
+          <td class="td-orden-comisiones" style="font-size:0.88rem;white-space:normal;line-height:1.35;max-width:10rem;">${txtComMarca}</td>
+          <td class="td-orden-comisiones" style="font-size:0.88rem;white-space:normal;line-height:1.35;max-width:10rem;">${txtComInt}</td>
           <td>${estadoHtml}</td>
           <td>${escapeHtml(o.usuario_id ? usuarioMap[String(o.usuario_id)] || '–' : (o._pandiColaLocal ? '–' : '–'))}</td>
           <td class="td-orden-importe">${formatMonto(o.monto_recibido)}</td>
@@ -14631,7 +14885,7 @@ function renderOrdenesTabla(list) {
           <td>${celdaAcciones}</td>
         </tr>
         <tr class="orden-detalle-tr" id="orden-detalle-${o.id}" data-orden-id="${o.id}" style="display:none;">
-          <td colspan="12" class="orden-detalle-cell">
+          <td colspan="${PANDI_ORDENES_VISTA_TABLA_COLSPAN}" class="orden-detalle-cell">
             <div class="orden-detalle-panel" id="panel-orden-${o.id}" data-orden-id="${o.id}">
               <div class="orden-detalle-encabezado"></div>
               <div class="orden-detalle-loading vista-loading-spinner" style="display:none;">Cargando transacciones…</div>
@@ -14713,6 +14967,7 @@ function aplicarFiltrosOrdenesVista() {
     if (!a._pandiColaLocal && b._pandiColaLocal) return 1;
     return 0;
   });
+  ordenesVistaListadoFiltradoActual = merged;
   renderOrdenesTabla(merged);
 }
 
@@ -14854,6 +15109,7 @@ function pandiPersistOrdenesReadSnapshot() {
     tiposOpMap: ordenesVistaTiposOpMap,
     intermediariosMap: ordenesVistaIntermediariosMap,
     usuarioMap: ordenesVistaUsuarioMap,
+    comisionesMap: ordenesVistaComisionesMap,
     ordenesTieneNumeroColumn: ordenesTieneNumeroColumn,
   };
   openPandiOfflineDb()
@@ -14876,6 +15132,7 @@ async function pandiTryRestoreOrdenesDesdeSnapshot() {
     ordenesVistaIntermediariosMap =
       rec.intermediariosMap && typeof rec.intermediariosMap === 'object' ? rec.intermediariosMap : {};
     ordenesVistaUsuarioMap = rec.usuarioMap && typeof rec.usuarioMap === 'object' ? rec.usuarioMap : {};
+    ordenesVistaComisionesMap = rec.comisionesMap && typeof rec.comisionesMap === 'object' ? rec.comisionesMap : {};
     if (typeof rec.ordenesTieneNumeroColumn === 'boolean') ordenesTieneNumeroColumn = rec.ordenesTieneNumeroColumn;
     pandiOrdenesSnapshotSavedAtIso = rec.savedAt;
     return true;
@@ -14898,6 +15155,7 @@ function pandiPersistOrdenInstrumentacionSnapshot(ordenId, payload) {
     mcRow: payload.mcRow != null ? payload.mcRow : null,
     ordenTotales: payload.ordenTotales != null ? payload.ordenTotales : null,
     transacciones: Array.isArray(payload.transacciones) ? payload.transacciones : [],
+    comisionesOrden: Array.isArray(payload.comisionesOrden) ? payload.comisionesOrden : [],
     modosPago: Array.isArray(payload.modosPago) ? payload.modosPago : [],
     participantesMaps: {
       clientesById: maps.clientesById && typeof maps.clientesById === 'object' ? { ...maps.clientesById } : {},
@@ -15031,9 +15289,11 @@ function pandiPintarOrdenPanelTransaccionesDesdeSnapshot(panel, orden, snap, ctx
         (ctx.tienePendientePendiente ? ' Hay ediciones sin envío guardadas en el dispositivo.' : '') +
         '</span>';
     }
+    const comRowsSnap = Array.isArray(snap.comisionesOrden) ? snap.comisionesOrden : [];
+    const comHtmlSnap = htmlOrdenDetalleComisionesAcuerdo(comRowsSnap, ordenTotales || ordenRef);
     totalesEl.innerHTML =
       strip +
-      `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}${htmlOrdenResumenTasaTransferenciaIntermediario(ordenTotales || ordenRef, lista)}`;
+      `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}${htmlOrdenResumenTasaTransferenciaIntermediario(ordenTotales || ordenRef, lista)}${comHtmlSnap}`;
   }
   const estadoTexto = (t) => (String(t.estado || '').toLowerCase() === 'anulada' ? 'Anulada' : (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente'));
   const cobradorL = (t) => transaccionParticipanteCeldaHtml(t, ordenTotales, 'cobrador', maps);
@@ -15299,17 +15559,20 @@ async function pandiFlushPendingInstrumentacionOfflinePatches() {
       anyOk = true;
       const rInst = await client.from('instrumentacion').select('multicontraparte_manual').eq('id', instId).maybeSingle();
       const mcRow = rInst.data || null;
-      const rOrd = await client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, estado, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single();
+      const rOrd = await client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, estado, tipos_operacion(codigo, usa_intermediario), intermediarios(nombre)').eq('id', ordenId).single();
       const res = await client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instId).order('created_at', { ascending: true });
+      const rComOff = await client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId);
       if (!res.error && res.data) {
         const ordenTotales = rOrd.data || {};
         const maps = await fetchMapsNombresParticipantesTransacciones(ordenTotales, res.data || []);
         const rModos = await client.from('modos_pago').select('id, codigo, nombre');
+        const comisionesOff = (rComOff && !rComOff.error && rComOff.data) ? rComOff.data : [];
         pandiPersistOrdenInstrumentacionSnapshot(ordenId, {
           instrumentacionId: instId,
           mcRow,
           ordenTotales,
           transacciones: res.data || [],
+          comisionesOrden: comisionesOff,
           modosPago: rModos.data || [],
           participantesMaps: maps,
         });
@@ -15605,7 +15868,7 @@ function pandiFillOrdenesFiltrosDesdeMaps() {
 
 /** Mensaje en la grilla cuando falla el SELECT de órdenes (sin mostrar TypeError crudo en pantalla). */
 function pandiHtmlTablaOrdenesMensajeError(msgRaw, silentOrd) {
-  if (silentOrd) return '<tr><td colspan="12"></td></tr>';
+  if (silentOrd) return `<tr><td colspan="${PANDI_ORDENES_VISTA_TABLA_COLSPAN}"></td></tr>`;
   const msg = String(msgRaw || '');
   const esRed = pandiEsErrorRedOrdenesMessage(msg);
   const nCola = pandiOfflineQueueRead().length;
@@ -15620,9 +15883,67 @@ function pandiHtmlTablaOrdenesMensajeError(msgRaw, silentOrd) {
     } else {
       linea += ' Cuando vuelva la conexión, tocá Reintentar en el aviso superior o esperá el chequeo automático.';
     }
-    return '<tr><td colspan="12" style="padding:1rem 0.75rem;line-height:1.5;">' + escapeHtml(linea) + '</td></tr>';
+    return `<tr><td colspan="${PANDI_ORDENES_VISTA_TABLA_COLSPAN}" style="padding:1rem 0.75rem;line-height:1.5;">` + escapeHtml(linea) + '</td></tr>';
   }
-  return '<tr><td colspan="12">Error: ' + escapeHtml(msg) + '</td></tr>';
+  return `<tr><td colspan="${PANDI_ORDENES_VISTA_TABLA_COLSPAN}">Error: ` + escapeHtml(msg) + '</td></tr>';
+}
+
+/**
+ * Agrega filas `comisiones_orden` al mapa por orden_id (suma por beneficiario y moneda).
+ * @param {Array<{ orden_id?: string, moneda?: string, monto?: number|string, beneficiario?: string }>} filas
+ * @param {Record<string, { pandy: Record<string, number>, intermediario: Record<string, number> }>} mapa
+ */
+function pandiMergeComisionesOrdenEnMapa(filas, mapa) {
+  const out = mapa && typeof mapa === 'object' ? mapa : {};
+  (filas || []).forEach((row) => {
+    if (!row || row.orden_id == null) return;
+    const oid = String(row.orden_id);
+    if (!out[oid]) out[oid] = { pandy: {}, intermediario: {} };
+    const ben = String(row.beneficiario || '').toLowerCase();
+    const mon = String(row.moneda || 'USD').toUpperCase();
+    const m = Number(row.monto) || 0;
+    if (m < 1e-9) return;
+    if (ben === 'pandy') out[oid].pandy[mon] = (out[oid].pandy[mon] || 0) + m;
+    else if (ben === 'intermediario') out[oid].intermediario[mon] = (out[oid].intermediario[mon] || 0) + m;
+  });
+  return out;
+}
+
+/**
+ * @param {string[]} ordenIds
+ * @returns {Promise<Record<string, { pandy: Record<string, number>, intermediario: Record<string, number> }>>}
+ */
+function pandiFetchComisionesOrdenMapPorOrdenIds(ordenIds) {
+  const ids = [...new Set((ordenIds || []).filter((id) => id != null).map((id) => String(id)))];
+  if (!ids.length) return Promise.resolve({});
+  const CHUNK = 200;
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+  return Promise.all(
+    chunks.map((slice) =>
+      client.from('comisiones_orden').select('orden_id, moneda, monto, beneficiario').in('orden_id', slice),
+    ),
+  ).then((results) => {
+    const mapa = {};
+    results.forEach((res) => {
+      if (res.error) {
+        if (typeof console !== 'undefined' && console.warn) console.warn('comisiones_orden (listado órdenes):', res.error.message || res.error);
+        return;
+      }
+      pandiMergeComisionesOrdenEnMapa(res.data || [], mapa);
+    });
+    return mapa;
+  });
+}
+
+/** Texto compacto para celda de listado (importes ya formateados para pantalla). */
+function pandiTextoComisionesListadoDesdeLado(agg, lado) {
+  if (!agg || typeof agg !== 'object') return '–';
+  const ob = lado === 'pandy' ? agg.pandy : agg.intermediario;
+  if (!ob || typeof ob !== 'object') return '–';
+  const keys = Object.keys(ob).filter((mon) => (Number(ob[mon]) || 0) > 1e-9).sort();
+  if (!keys.length) return '–';
+  return keys.map((mon) => `${formatImporteDisplay(Number(ob[mon]))} ${escapeHtml(mon)}`).join(' · ');
 }
 
 function loadOrdenes() {
@@ -15714,6 +16035,7 @@ function loadOrdenes() {
               ordenesVistaTiposOpMap = {};
               ordenesVistaIntermediariosMap = {};
               ordenesVistaUsuarioMap = {};
+              ordenesVistaComisionesMap = {};
             }
             pandiOrdenesVistaDesdeCache = false;
             pandiOrdenesSnapshotSavedAtIso = null;
@@ -15752,31 +16074,35 @@ function loadOrdenes() {
           ordenesVistaClientesMap = clientesMap;
           ordenesVistaTiposOpMap = tiposOpMap;
           ordenesVistaIntermediariosMap = intermediariosMap;
-          const usuarioIdsOrdenes = [...new Set(list.map((o) => o.usuario_id).filter(Boolean))];
-          return fetchMapaEtiquetaUsuarioPorIds(usuarioIdsOrdenes).then((usuarioMap) => {
-            ordenesVistaUsuarioMap = usuarioMap;
-            pandiTrySaveOfflineCatalogosCache(crClientes.data || [], crInt.data || []);
+          const ordenIdsParaComisiones = [...new Set(list.map((o) => o.id).filter(Boolean))];
+          return pandiFetchComisionesOrdenMapPorOrdenIds(ordenIdsParaComisiones).then((comMap) => {
+            ordenesVistaComisionesMap = comMap && typeof comMap === 'object' ? comMap : {};
+            const usuarioIdsOrdenes = [...new Set(list.map((o) => o.usuario_id).filter(Boolean))];
+            return fetchMapaEtiquetaUsuarioPorIds(usuarioIdsOrdenes).then((usuarioMap) => {
+              ordenesVistaUsuarioMap = usuarioMap;
+              pandiTrySaveOfflineCatalogosCache(crClientes.data || [], crInt.data || []);
 
-            const selCliente = document.getElementById('ordenes-filtro-cliente');
-          const selIntermediario = document.getElementById('ordenes-filtro-intermediario');
-          if (selCliente) {
-            selCliente.innerHTML = '<option value="">Todos</option>' + (crClientes.data || []).map((c) => `<option value="${c.id}">${escapeHtml(c.nombre || '')}</option>`).join('');
-          }
-          if (selIntermediario) {
-            selIntermediario.innerHTML = '<option value="">Todos</option>' + (crInt.data || []).map((i) => `<option value="${i.id}">${escapeHtml(i.nombre || '')}</option>`).join('');
-          }
-          if (filtrosWrap) filtrosWrap.style.display = 'flex';
-          return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(() => {
-            loadingEl.style.display = 'none';
-            pandiBindOrdenesFiltrosSiFalta();
-            pandiOrdenesVistaDesdeCache = false;
-            pandiOrdenesSnapshotSavedAtIso = null;
-            aplicarFiltrosOrdenesVista();
-            updatePandiDatosNoVivosStrip();
-            pandiUpdateOfflineToolbarButtons();
-            void pandiPersistOrdenesReadSnapshot();
-            pandiPrefetchInstrumentacionSnapshotsForOrdenes(list);
-          });
+              const selCliente = document.getElementById('ordenes-filtro-cliente');
+              const selIntermediario = document.getElementById('ordenes-filtro-intermediario');
+              if (selCliente) {
+                selCliente.innerHTML = '<option value="">Todos</option>' + (crClientes.data || []).map((c) => `<option value="${c.id}">${escapeHtml(c.nombre || '')}</option>`).join('');
+              }
+              if (selIntermediario) {
+                selIntermediario.innerHTML = '<option value="">Todos</option>' + (crInt.data || []).map((i) => `<option value="${i.id}">${escapeHtml(i.nombre || '')}</option>`).join('');
+              }
+              if (filtrosWrap) filtrosWrap.style.display = 'flex';
+              return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(() => {
+                loadingEl.style.display = 'none';
+                pandiBindOrdenesFiltrosSiFalta();
+                pandiOrdenesVistaDesdeCache = false;
+                pandiOrdenesSnapshotSavedAtIso = null;
+                aplicarFiltrosOrdenesVista();
+                updatePandiDatosNoVivosStrip();
+                pandiUpdateOfflineToolbarButtons();
+                void pandiPersistOrdenesReadSnapshot();
+                pandiPrefetchInstrumentacionSnapshotsForOrdenes(list);
+              });
+            });
           });
         });
       });
@@ -15817,6 +16143,7 @@ function loadOrdenes() {
       ordenesVistaTiposOpMap = {};
       ordenesVistaIntermediariosMap = {};
       ordenesVistaUsuarioMap = {};
+      ordenesVistaComisionesMap = {};
       pandiOrdenesVistaDesdeCache = false;
       pandiOrdenesSnapshotSavedAtIso = null;
       updatePandiDatosNoVivosStrip();
@@ -16014,6 +16341,7 @@ function applyOrdenUsdIntPostPatronVisibility() {
   const ordenId = document.getElementById('orden-id')?.value?.trim();
   if (!esWizardUsdUsdConIntermediario()) {
     wrapTras.style.display = '';
+    ordenWizardActualizarComisionesRepartoInformativo();
     return;
   }
   const patronVal = String(document.getElementById('orden-int-patron')?.value || '').trim();
@@ -16022,6 +16350,7 @@ function applyOrdenUsdIntPostPatronVisibility() {
   } else {
     wrapTras.style.display = 'none';
   }
+  ordenWizardActualizarComisionesRepartoInformativo();
 }
 
 /** USD-USD + int orden nueva: obliga a elegir instrumentación sugerida antes del resto. */
@@ -16053,6 +16382,7 @@ function syncOrdenWizardUsdUsdIntComisionUi() {
   }
   const imp = document.getElementById('orden-importe-cheque');
   if (imp) imp.dispatchEvent(new Event('input', { bubbles: true }));
+  ordenWizardActualizarComisionesRepartoInformativo();
 }
 
 /** Si ya hay 2 transacciones, alinea radios con patrón detectado (solo UI; no persiste en orden). */
@@ -16538,6 +16868,7 @@ function openModalOrden(registro) {
           const codP = optP ? (optP.getAttribute('data-codigo') || '') : '';
           if (codP && selTipoEl) adaptarFormularioOrden(codP, tipos, selTipoEl.value || '');
           aplicarOrdenRegistroIntermediarioTransferenciaYTasa(registroActual);
+          ordenWizardActualizarComisionesRepartoInformativo();
           pandiOrdenWizardNotificarSiParVinculadoConIntermediario(vinculosRows);
         });
       } else {
@@ -16560,6 +16891,7 @@ function openModalOrden(registro) {
       setupInputImporte(document.getElementById('orden-intermediario-transferencia-tasa-pct'), PANDI_TASA_PCT_DECIMALES, true);
       setupInputImporte(document.getElementById('orden-importe-cheque'));
       setupInputImporte(document.getElementById('orden-tasa-descuento-cliente'), PANDI_TASA_PCT_DECIMALES, true);
+      ordenWizardActualizarComisionesRepartoInformativo();
     })
       .catch((err) => {
         if (modalLoadSeq !== ordenModalLoadSeq) return;
@@ -16797,6 +17129,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     const e = parseImporteInput(document.getElementById('orden-monto-entregado').value);
     const comision = (typeof r === 'number' && !isNaN(r) && typeof e === 'number' && !isNaN(e) && r > e) ? r - e : null;
     comisionDisplay.value = comision != null ? formatImporteDisplay(comision) : '';
+    ordenWizardActualizarComisionesRepartoInformativo();
   }
   function actualizarComisionUsdArs() {
     if (!isTcVendeUsd || !comisionDisplay) return;
@@ -16809,6 +17142,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
       if (r > usdEquivEntregado) comision = r - usdEquivEntregado;
     }
     comisionDisplay.value = comision != null ? formatImporteDisplay(comision) + ' USD' : '';
+    ordenWizardActualizarComisionesRepartoInformativo();
   }
   function actualizarComisionArsArs() {
     if (!isArsArs || !comisionDisplay) return;
@@ -16816,6 +17150,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     const e = parseImporteInput(document.getElementById('orden-monto-entregado').value);
     const comision = (typeof r === 'number' && !isNaN(r) && typeof e === 'number' && !isNaN(e) && r > e) ? r - e : null;
     comisionDisplay.value = comision != null ? formatImporteDisplay(comision) + ' ARS' : '';
+    ordenWizardActualizarComisionesRepartoInformativo();
   }
   const montoRecibidoEl = document.getElementById('orden-monto-recibido');
   const montoEntregadoEl = document.getElementById('orden-monto-entregado');
@@ -16873,6 +17208,8 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
         _actualizandoMontosTc = false;
       }
     }
+    actualizarComisionUsdArs();
+    ordenWizardActualizarComisionesRepartoInformativo();
   }
   if (isUsdUsd) {
     if (montoRecibidoEl) { montoRecibidoEl.addEventListener('input', actualizarComisionUsdUsd); montoRecibidoEl.addEventListener('change', actualizarComisionUsdUsd); }
@@ -17091,6 +17428,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     setRestoOrdenEditable(true);
     if (isUsdUsd) actualizarComisionUsdUsd();
     if (isArsArs) actualizarComisionArsArs();
+    if (isTipoConTc && !isUsdUsd && !isArsArs) ordenWizardActualizarComisionesRepartoInformativo();
     if (isArsArs) {
       const tasaInt = document.getElementById('orden-tasa-descuento-intermediario');
       if (tasaInt) tasaInt.disabled = false;
@@ -17315,6 +17653,111 @@ function insertOrdenConProximoNumero(payload) {
       });
     });
   });
+}
+
+/** Arma el mismo `comisionCtx` que cola/guardado para preview en UI; null si no aplica o faltan datos mínimos. */
+function pandiComisionCtxDesdeDomParaPreview() {
+  try {
+    const selTipoOpt = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+    if (!selTipoOpt) return null;
+    const tipoCodigo = selTipoOpt.getAttribute('data-codigo') || '';
+    const tipoCodigoU = String(tipoCodigo).trim().toUpperCase();
+    const esChequeArsOrden = esChequeArsDesdeSelectOption(selTipoOpt);
+    const usaIntermediarioTipo = selTipoOpt.getAttribute('data-usa-intermediario') === 'true';
+    let intermediarioId = document.getElementById('orden-intermediario')?.value?.trim() || null;
+    if (!usaIntermediarioTipo) intermediarioId = null;
+    const monedaRecibida = document.getElementById('orden-moneda-recibida')?.value || 'USD';
+    const monedaEntregada = document.getElementById('orden-moneda-entregada')?.value || 'USD';
+    const montoRecibido = parseImporteInput(document.getElementById('orden-monto-recibido')?.value);
+    const montoEntregado = parseImporteInput(document.getElementById('orden-monto-entregado')?.value);
+    const cotizacionRaw = document.getElementById('orden-cotizacion')?.value?.trim() || '';
+    const cotizacion = cotizacionRaw ? parseImporteInput(cotizacionRaw) : null;
+    const patronTcGuardar = patronTipoCambioOrden(monedaRecibida, monedaEntregada);
+    if (!(typeof montoRecibido === 'number' && !isNaN(montoRecibido) && montoRecibido > 0 && typeof montoEntregado === 'number' && !isNaN(montoEntregado) && montoEntregado > 0)) {
+      return null;
+    }
+    if (patronTcGuardar && (!cotizacion || !(cotizacion > 0))) return null;
+    const comisionUsd = tipoCodigoU === 'USD-USD' ? montoRecibido - montoEntregado
+      : (esChequeArsOrden ? montoRecibido - montoEntregado
+        : (esPatronCompraFiatConTc(patronTcGuardar) && cotizacion > 0 ? (montoRecibido / cotizacion) - montoEntregado
+          : (esPatronVendeFiatConTc(patronTcGuardar) && cotizacion > 0 ? montoRecibido - (montoEntregado / cotizacion) : null)));
+    const tasaDescuentoIntPct = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim();
+    const nNach = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
+    return {
+      tipoCodigoU,
+      tipoCodigo,
+      esChequeArsOrden,
+      intermediarioId,
+      comisionUsd,
+      patronTcGuardar: !!patronTcGuardar,
+      importeChequeWizard: parseImporteInput(document.getElementById('orden-importe-cheque')?.value),
+      nachoComisionFija: !!(tipoCodigoU === 'USD-USD' && intermediarioId && ordenComisionFijaNachoUsdParaPersistir(tipoCodigo, intermediarioId)),
+      nachoComisionFijaRadio: nNach ? Number(nNach.value) : null,
+      usdIntMostrarTasa: !!(tipoCodigoU === 'USD-USD' && intermediarioId && ordenUsdIntMostrarTasaIntermediarioEnWizard()),
+      tasaIntermediarioPct: tasaDescuentoIntPct ? parseImporteInput(tasaDescuentoIntPct) : null,
+      patronInstrumentacionInt: getOrdenPatronInstrumentacionInt(),
+      ordenSnap: {
+        moneda_recibida: monedaRecibida,
+        moneda_entregada: monedaEntregada,
+        monto_recibido: montoRecibido,
+        monto_entregado: montoEntregado,
+        cotizacion,
+      },
+      intermediarioPagoTransferencia: ordenIntermediarioPagoTransferenciaDesdeDom(),
+      intermediarioTransferenciaCobraTasa: ordenIntermediarioTransferenciaCobraTasaDesdeDom(),
+      intermediarioTransferenciaTasaFrac: ordenIntermediarioTransferenciaTasaFracDesdeDom(),
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Nueva orden: muestra reparto comisión empresa / intermediario (misma lógica que persistencia vía `pandiBuildComisionesOrdenOutboxRows`). */
+function ordenWizardActualizarComisionesRepartoInformativo() {
+  const wrap = document.getElementById('orden-wrap-comisiones-reparto');
+  const inner = document.getElementById('orden-comisiones-reparto-lineas');
+  if (!wrap || !inner) return;
+  const ctx = pandiComisionCtxDesdeDomParaPreview();
+  if (!ctx) {
+    wrap.style.display = 'none';
+    inner.innerHTML = '';
+    return;
+  }
+  const rows = pandiBuildComisionesOrdenOutboxRows(ctx);
+  if (!rows || !rows.length) {
+    wrap.style.display = 'none';
+    inner.innerHTML = '';
+    return;
+  }
+  const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
+  const marca = esc(nombreMarcaSistema());
+  const sumP = {};
+  const sumI = {};
+  rows.forEach((c) => {
+    const ben = String(c.beneficiario || '').toLowerCase();
+    const mon = String(c.moneda || 'USD').toUpperCase();
+    const m = Number(c.monto) || 0;
+    if (m < 1e-9) return;
+    if (ben === 'pandy') sumP[mon] = (sumP[mon] || 0) + m;
+    else if (ben === 'intermediario') sumI[mon] = (sumI[mon] || 0) + m;
+  });
+  const fmtObj = (o) => Object.keys(o).sort().map((m) => `${formatImporteDisplay(o[m])} ${esc(m)}`).join(' · ');
+  const pTxt = fmtObj(sumP);
+  const iTxt = fmtObj(sumI);
+  const lines = [];
+  if (pTxt) lines.push(`<div><strong>Comisión ${marca}:</strong> ${pTxt}</div>`);
+  if (iTxt) {
+    const selInt = document.getElementById('orden-intermediario');
+    const opt = selInt && selInt.selectedOptions && selInt.selectedOptions[0];
+    const nomInt = opt ? esc(String(opt.textContent || '').trim()) : '';
+    lines.push(
+      nomInt && nomInt !== '–'
+        ? `<div><strong>Comisión intermediario (${nomInt}):</strong> ${iTxt}</div>`
+        : `<div><strong>Comisión intermediario:</strong> ${iTxt}</div>`,
+    );
+  }
+  inner.innerHTML = lines.join('');
+  wrap.style.display = lines.length ? 'block' : 'none';
 }
 
 /** Filas `comisiones_orden` para outbox v2 (alineado a `guardarComision` del wizard). Sin `orden_id`. */
@@ -17982,6 +18425,11 @@ function renderOrdenWizardInstrumentacion(instId) {
   if (acuerdoTexto) acuerdoTexto.textContent = '…';
   if (instrumentadoTexto) instrumentadoTexto.textContent = '…';
   if (acuerdoAviso) acuerdoAviso.textContent = '';
+  const comWrapInit = document.getElementById('orden-inst-comisiones-wrap');
+  if (comWrapInit) {
+    comWrapInit.innerHTML = '';
+    comWrapInit.style.display = 'none';
+  }
   const tasaWrapWizInit = document.getElementById('orden-inst-tasa-transf-int-wrap');
   if (tasaWrapWizInit) {
     tasaWrapWizInit.innerHTML = '';
@@ -18001,7 +18449,9 @@ function renderOrdenWizardInstrumentacion(instId) {
       client.from('ordenes').select('id, usuario_id, cliente_id, tipo_operacion_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, estado, clientes(nombre), intermediarios(nombre), tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single(),
       client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instId).order('created_at', { ascending: true }),
       client.from('modos_pago').select('id, codigo, nombre'),
-    ]).then(([rOrd, resTr, rModos]) => {
+      client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
+    ]).then(([rOrd, resTr, rModos, rComInst]) => {
+      const comisionesWizardInst = (rComInst && !rComInst.error && rComInst.data) ? rComInst.data : [];
       loadingEl.style.display = 'none';
       wrapEl.style.display = 'block';
       const orden = rOrd.data || null;
@@ -18038,6 +18488,12 @@ function renderOrdenWizardInstrumentacion(instId) {
       if (resTr.error) {
         tbody.innerHTML = '<tr><td colspan="10">Error: ' + (resTr.error.message || '') + '</td></tr>';
         if (instrumentadoTexto) instrumentadoTexto.textContent = '–';
+        const comWrapErr = document.getElementById('orden-inst-comisiones-wrap');
+        if (comWrapErr && orden) {
+          const comHtmlErr = htmlOrdenDetalleComisionesAcuerdo(comisionesWizardInst, orden);
+          comWrapErr.innerHTML = comHtmlErr;
+          comWrapErr.style.display = comHtmlErr ? 'block' : 'none';
+        }
         return;
       }
       let list = resTr.data || [];
@@ -18152,6 +18608,15 @@ function renderOrdenWizardInstrumentacion(instId) {
             tasaWrapWiz.innerHTML = '';
             tasaWrapWiz.style.display = 'none';
           }
+        }
+        const comWrapWiz = document.getElementById('orden-inst-comisiones-wrap');
+        if (comWrapWiz && orden) {
+          const comHtmlWiz = htmlOrdenDetalleComisionesAcuerdo(comisionesWizardInst, orden);
+          comWrapWiz.innerHTML = comHtmlWiz;
+          comWrapWiz.style.display = comHtmlWiz ? 'block' : 'none';
+        } else if (comWrapWiz) {
+          comWrapWiz.innerHTML = '';
+          comWrapWiz.style.display = 'none';
         }
         const modosMap = {};
         (rModos.data || []).forEach((m) => { modosMap[m.id] = m; });
@@ -20889,10 +21354,12 @@ function syncOrdenIntermediarioTransferenciaTasaWrap() {
     const inp = document.getElementById('orden-intermediario-transferencia-tasa-pct');
     if (inp) inp.value = '';
     wrapPct.style.display = 'none';
+    ordenWizardActualizarComisionesRepartoInformativo();
     return;
   }
   const rSi = document.querySelector('input[name="orden-int-transf-cobra-tasa"][value="si"]');
   wrapPct.style.display = rSi && rSi.checked ? 'block' : 'none';
+  ordenWizardActualizarComisionesRepartoInformativo();
 }
 
 function ordenPayloadCamposTransferenciaTasa() {
@@ -20947,6 +21414,50 @@ function setupOrdenTransferenciaTasaRadiosOnce() {
   }
 }
 
+/**
+ * Panel órdenes / instrumentación: desglose de comisiones persistidas (`comisiones_orden`).
+ * @param {Array<{ moneda?: string, monto?: number|string, beneficiario?: string }>} filas
+ * @param {*} ordenTotalesOrden — fila orden (opcional join `intermediarios(nombre)`).
+ */
+function htmlOrdenDetalleComisionesAcuerdo(filas, ordenTotalesOrden) {
+  const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
+  const filasArr = Array.isArray(filas) ? filas : [];
+  const sumP = {};
+  const sumI = {};
+  filasArr.forEach((c) => {
+    const ben = String(c.beneficiario || '').toLowerCase();
+    const mon = String(c.moneda || 'USD').toUpperCase();
+    const m = Number(c.monto) || 0;
+    if (m < 1e-9) return;
+    if (ben === 'pandy') sumP[mon] = (sumP[mon] || 0) + m;
+    else if (ben === 'intermediario') sumI[mon] = (sumI[mon] || 0) + m;
+  });
+  const fmtObj = (o) => Object.keys(o).sort().map((m) => `${formatImporteDisplay(o[m])} ${esc(m)}`).join(' · ');
+  const pTxt = fmtObj(sumP);
+  const iTxt = fmtObj(sumI);
+  if (!pTxt && !iTxt) return '';
+  const marca = esc(nombreMarcaSistema());
+  let nomInt = '';
+  if (ordenTotalesOrden && ordenTotalesOrden.intermediario_id) {
+    const j = ordenTotalesOrden.intermediarios && (Array.isArray(ordenTotalesOrden.intermediarios) ? ordenTotalesOrden.intermediarios[0] : ordenTotalesOrden.intermediarios);
+    if (j && j.nombre != null) nomInt = esc(String(j.nombre).trim());
+  }
+  const parts = [];
+  if (pTxt) parts.push(`<strong>Comisión ${marca}:</strong> ${pTxt}`);
+  if (iTxt) {
+    parts.push(
+      nomInt && nomInt !== '–'
+        ? `<strong>Comisión intermediario (${nomInt}):</strong> ${iTxt}`
+        : `<strong>Comisión intermediario:</strong> ${iTxt}`,
+    );
+  }
+  return (
+    '<div class="orden-detalle-comisiones" style="margin-top:0.35rem;font-size:0.9rem;color:#444;line-height:1.45;">' +
+    parts.join(' &nbsp; ') +
+    '</div>'
+  );
+}
+
 /** Bloque HTML en panel/listado de orden: tasa transferencia intermediario (%, moneda de la pata del intermediario, monto estimado a cargo de Pandy). */
 function htmlOrdenResumenTasaTransferenciaIntermediario(ordenRow, listaTrxOpt) {
   if (!ordenRow || !coercePgBooleanStrict(ordenRow.intermediario_transferencia_cobra_tasa)) return '';
@@ -20968,13 +21479,16 @@ function htmlOrdenResumenTasaTransferenciaIntermediario(ordenRow, listaTrxOpt) {
   const extra =
     tasaFrac > 0 ? montoExtraTasaTransferenciaInterEnMonedaComision(snap, pat, tasaFrac, monedaPataInt) : 0;
   const montoTxt = extra > 0 ? `${formatImporteDisplay(extra)} ${monedaPataInt}` : '–';
+  const nomEmp = escapeHtml(nombreMarcaSistema());
   return (
     '<div class="orden-detalle-tasa-transf-int" style="margin-top:0.4rem;padding:0.35rem 0.5rem;background:#f0fdf4;border-radius:6px;font-size:0.88rem;color:#14532d;line-height:1.45;border:1px solid #bbf7d0;">' +
     '<strong>Tasa por transferencia al intermediario:</strong> ' +
     pct +
     '% · <strong>Moneda de la pata del intermediario:</strong> ' +
     monedaPataInt +
-    ' · <strong>Monto estimado (a cargo de Pandy):</strong> ' +
+    ' · <strong>Monto estimado (a cargo de ' +
+    nomEmp +
+    '):</strong> ' +
     montoTxt +
     '</div>'
   );
@@ -21104,13 +21618,15 @@ function expandOrdenTransacciones(ordenId, orden) {
       panel.dataset.instrumentacionId = instrumentacionId;
 
       Promise.all([
-        client.from('ordenes').select('id, usuario_id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, estado, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)').eq('id', ordenId).single(),
+        client.from('ordenes').select('id, usuario_id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, estado, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out), intermediarios(nombre)').eq('id', ordenId).single(),
         client
           .from('transacciones')
           .select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id')
           .eq('instrumentacion_id', instrumentacionId)
           .order('created_at', { ascending: true }),
-      ]).then(async ([rOrdFull, res]) => {
+        client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
+      ]).then(async ([rOrdFull, res, rCom]) => {
+        const comisionesRowsPanel = (rCom && !rCom.error && rCom.data) ? rCom.data : [];
           loadingEl.style.display = 'none';
           contentEl.style.display = 'block';
           const ordenTotales = rOrdFull.data || orden;
@@ -21150,7 +21666,8 @@ function expandOrdenTransacciones(ordenId, orden) {
                 ? `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`
                 : `Instrumentación: A recibir ${formatImporteDisplay(mr)} ${monR} - A entregar ${formatImporteDisplay(me)} ${monE}.`;
               const tasaHtmlOrd = htmlOrdenResumenTasaTransferenciaIntermediario(ordenTotales, lista);
-              totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}${tasaHtmlOrd}`;
+              const comHtmlOrd = htmlOrdenDetalleComisionesAcuerdo(comisionesRowsPanel, ordenTotales || orden);
+              totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}${tasaHtmlOrd}${comHtmlOrd}`;
               const encHdr = panel.querySelector('.orden-detalle-encabezado');
               if (encHdr && ordenTotales) {
                 encHdr.innerHTML = `<div class="orden-detalle-resumen"><strong>Orden ${ordenTotales.numero != null ? '#' + ordenTotales.numero : ''}</strong> ${(ordenTotales.fecha || '').toString().slice(0, 10)} · Estado: ${estadoBadgeOrd(ordenTotales.estado)} · ${ordenTotales.moneda_recibida} ${formatImporteDisplay(ordenTotales.monto_recibido)} → ${ordenTotales.moneda_entregada} ${formatImporteDisplay(ordenTotales.monto_entregado)}</div>`;
@@ -21251,6 +21768,7 @@ function expandOrdenTransacciones(ordenId, orden) {
                   mcRow,
                   ordenTotales,
                   transacciones: lista,
+                  comisionesOrden: comisionesRowsPanel,
                   modosPago: rModos.data || [],
                   participantesMaps: maps,
                 });
@@ -21326,9 +21844,11 @@ function refreshTransaccionesPanel(ordenId) {
   tbody.innerHTML = '';
   Promise.all([
     client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true }),
-    client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, estado, tipo_operacion_id, cotizacion, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single(),
+    client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, estado, tipo_operacion_id, cotizacion, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), intermediarios(nombre)').eq('id', ordenId).single(),
     client.from('instrumentacion').select('multicontraparte_manual').eq('id', instrumentacionId).maybeSingle(),
-  ]).then(([resTr, resOrd, rInstMc]) => {
+    client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
+  ]).then(([resTr, resOrd, rInstMc, rComRf]) => {
+    const comisionesRowsRf = (rComRf && !rComRf.error && rComRf.data) ? rComRf.data : [];
     const orden = resOrd?.data || null;
     const ordenAnuladaRf = orden && String(orden.estado || '') === 'anulada';
     const toJR = orden?.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
@@ -21352,7 +21872,8 @@ function refreshTransaccionesPanel(ordenId) {
       const textoInst = ejecutada
         ? `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`
         : `Instrumentación: A recibir ${formatImporteDisplay(mr)} ${monR} - A entregar ${formatImporteDisplay(me)} ${monE}.`;
-      totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}${htmlOrdenResumenTasaTransferenciaIntermediario(orden, list)}`;
+      const comHtmlRf = htmlOrdenDetalleComisionesAcuerdo(comisionesRowsRf, orden);
+      totalesEl.innerHTML = `<strong>Acuerdo:</strong> Recibir ${formatImporteDisplay(mr)} ${monR} · Entregar ${formatImporteDisplay(me)} ${monE}. &nbsp; <strong>${textoInst}</strong>${(!okRec || !okEnt) ? ' <span style="color:#b91c1c;">(Supera acuerdo)</span>' : ''}${htmlOrdenResumenTasaTransferenciaIntermediario(orden, list)}${comHtmlRf}`;
     }
     const btnNuevaRf = panel.querySelector('.btn-nueva-transaccion-panel');
     if (btnNuevaRf) btnNuevaRf.style.display = (userPermissions.includes('ingresar_transacciones') && !ordenAnuladaRf) ? '' : 'none';
@@ -21454,6 +21975,7 @@ function refreshTransaccionesPanel(ordenId) {
           mcRow: rInstMc && rInstMc.data ? rInstMc.data : null,
           ordenTotales: orden,
           transacciones: list,
+          comisionesOrden: comisionesRowsRf,
           modosPago: rModos.data || [],
           participantesMaps: maps,
         });
@@ -25853,6 +26375,11 @@ async function finalizeSessionUiSetup() {
   setupConfigEmpresaMarcaControles();
   setupModalReglasNegocio();
   setupModalOrden();
+  const btnOrdenesExportExcel = document.getElementById('ordenes-btn-exportar-excel');
+  if (btnOrdenesExportExcel && btnOrdenesExportExcel.dataset.pandiBound !== '1') {
+    btnOrdenesExportExcel.dataset.pandiBound = '1';
+    btnOrdenesExportExcel.addEventListener('click', () => exportarOrdenesExcel());
+  }
   setupModalOrdenOffline();
   setupModalColaV2Edit();
   if (typeof window !== 'undefined') {

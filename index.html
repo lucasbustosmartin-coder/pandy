@@ -249,7 +249,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.29</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.30</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -486,6 +486,7 @@
           <button type="button" id="btn-orden-offline-local" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-29"></use></svg></span>Orden en cola local</button>
           <button type="button" id="btn-orden-offline-sync" class="btn-secondary" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-30"></use></svg></span><span id="btn-orden-offline-sync-label">Enviar cola local</span></button>
           <button type="button" id="btn-orden-por-chat" class="btn-chat" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-25"></use></svg></span>Cargar por chat</button>
+          <button type="button" class="btn-excel" id="ordenes-btn-exportar-excel" style="display:none;" title="Exportar a Excel las órdenes visibles (filtros actuales)" aria-label="Exportar órdenes a Excel"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-35"></use></svg></span>Exportar</button>
         </div>
         <div class="vista-toolbar ordenes-filtros-wrap" id="ordenes-filtros-wrap">
           <label class="ordenes-filtro-label"><span>Cliente:</span><select id="ordenes-filtro-cliente" class="select-filtro select-filtro-ordenes-cat"><option value="">Todos</option></select></label>
@@ -495,7 +496,7 @@
         <div id="ordenes-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
           <table id="tabla-ordenes" class="tabla-listado-ordenes">
-            <thead><tr><th>Nº</th><th class="th-orden-fecha">Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th>Usuario</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
+            <thead><tr><th>Nº</th><th class="th-orden-fecha">Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th class="th-orden-comisiones">Comisión <span class="js-marca-sistema-nombre">Pandi</span></th><th class="th-orden-comisiones">Comisión int.</th><th>Estado</th><th>Usuario</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
             <tbody id="ordenes-tbody"></tbody>
           </table>
         </div>
@@ -1591,6 +1592,9 @@
                     <input type="text" id="orden-monto-entregado-display" readonly class="input-importe" placeholder="0" style="background:#eee; color:#555;" />
                   </div>
                 </div>
+                <div id="orden-wrap-comisiones-reparto" class="orden-comisiones-reparto-wrap" style="display:none; margin-top:0.65rem; padding:0.55rem 0.85rem; background:#f0f7ff; border-radius:8px; border:1px solid #cce0ff; font-size:0.88rem; color:#1e3a5f; line-height:1.5;">
+                  <div id="orden-comisiones-reparto-lineas"></div>
+                </div>
               </div>
               <div id="orden-form-resto">
           <div class="form-group" id="orden-wrap-cotizacion">
@@ -1674,6 +1678,7 @@
                   <strong>Acuerdo:</strong>
                   <span id="orden-inst-acuerdo-texto">–</span>
                 </div>
+                <div id="orden-inst-comisiones-wrap" class="orden-inst-comisiones-wrap" style="display:none; margin-top:0.35rem; font-size:0.88rem; color:#444; line-height:1.45;"></div>
                 <div id="orden-inst-tasa-transf-int-wrap" style="display:none; margin-top:0.45rem;"></div>
                 <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:0.5rem 1rem; margin-top:0.35rem;">
                   <strong id="orden-inst-instrumentado-label">Instrumentado:</strong>
@@ -1983,7 +1988,7 @@
         <div class="modal-header-titulo-wrap">
           <span class="modal-header-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-16"></use></svg></span>
           <h2 style="display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;">Órdenes pendientes
-            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: órdenes pendientes"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Listado de órdenes que <strong>no</strong> están en estado <strong>Orden ejecutada</strong>. Podés <strong>editar</strong> o abrir la <strong>instrumentación</strong>. Usá los filtros por cliente, intermediario o estado.</span></span>
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: órdenes pendientes"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Listado de órdenes que <strong>no</strong> están en estado <strong>Orden ejecutada</strong>. Podés <strong>editar</strong> o abrir la <strong>instrumentación</strong>. Usá los filtros por cliente, intermediario o estado. La tabla muestra <strong>comisiones</strong> (empresa e intermediario) y podés <strong>exportar</strong> a Excel lo filtrado.</span></span>
           </h2>
         </div>
         <button type="button" class="modal-close" id="modal-ordenes-pendientes-close" aria-label="Cerrar">×</button>
@@ -2002,12 +2007,13 @@
             <span>Estado:</span>
             <select id="ordenes-pendientes-filtro-estado" class="select-filtro select-filtro-ordenes-estado"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option></select>
           </label>
+          <button type="button" class="btn-excel" id="ordenes-pendientes-btn-exportar-excel" title="Exportar a Excel las órdenes pendientes visibles (filtros actuales)" aria-label="Exportar órdenes pendientes a Excel"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-35"></use></svg></span>Exportar</button>
         </div>
         <div id="ordenes-pendientes-loading" class="clientes-loading vista-loading-spinner">Cargando…</div>
         <div id="ordenes-pendientes-tabla-wrap" style="display:none;">
           <div class="tabla-clientes-wrap tabla-wrap-con-scroll">
             <table class="tabla-clientes tabla-listado-ordenes">
-              <thead><tr><th class="th-orden-fecha">Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th>Estado</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
+              <thead><tr><th class="th-orden-fecha">Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th class="th-orden-comisiones">Comisión <span class="js-marca-sistema-nombre">Pandi</span></th><th class="th-orden-comisiones">Comisión int.</th><th>Estado</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
               <tbody id="ordenes-pendientes-tbody"></tbody>
             </table>
           </div>

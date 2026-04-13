@@ -82,6 +82,8 @@ Desde **Órdenes**, botón para abrir el **formulario reducido** (tipo, fechas, 
 
 En el **wizard de Nueva orden**, tipo **USD-USD** (con o sin intermediario), en **Datos del acuerdo** podés elegir si la **tasa al cliente** se interpreta como **descuento sobre lo recibido** o como **incremento sobre lo entregado** (inclusiva); el importe sigue siendo lo que recibe el cliente y el sistema calcula el monto a entregar según esa elección.
 
+Cuando el acuerdo tiene **comisión** (spread o beneficio repartido entre la **empresa** —nombre configurado en Empresa / marca— y el **intermediario** si corresponde), debajo de los montos calculados podés ver el **desglose informativo** de esas comisiones antes de guardar. En el paso **Instrumentación** del mismo wizard (bloque gris bajo «Acuerdo:»), se muestra el mismo desglose según lo ya guardado en el servidor. En **Órdenes**, al desplegar **Transacciones** en una fila, el desglose aparece bajo el resumen del acuerdo (en caché offline se incluye si ya se había cargado con red). En el **listado principal** de Órdenes también hay columnas de **comisión a la empresa** y **comisión al intermediario** (totales por moneda según lo guardado en el servidor) y un botón **Exportar** para bajar un Excel con el mismo filtro que ves en pantalla. Lo mismo aplica al **modal Órdenes pendientes** (desde el panel de inicio): mismas columnas de comisión y exportación Excel con los filtros del modal.
+
 ### 6.2 Cola con instrumentación (wizard sin red) — plantilla v2
 
 En **Nueva orden**, si no hay conexión a la nube, el flujo **«Ir a instrumentación»** puede guardar en cola una **plantilla de transacciones** (y comisiones si corresponde), según el tipo:

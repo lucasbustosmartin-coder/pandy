@@ -36,7 +36,7 @@ Todas llevan `savedAt` (ISO) para TTL y franjas de “datos al …”.
 
 | Clave / prefijo | Uso |
 |-----------------|-----|
-| `read_ordenes_v1` | Listado de órdenes tras carga OK |
+| `read_ordenes_v1` | Listado de órdenes tras carga OK (incluye mapa agregado `comisionesMap` por `orden_id` para columnas de comisión en grilla y export Excel en caché) |
 | `read_orden_instrumentacion_v1:<ordenId>` | Snapshot del panel Transacciones (instrumentación + trx + modos + mapas participantes) |
 | `read_orden_instr_pending_v1:<ordenId>` | Parches locales (monto, modo_pago, estado/fecha) hasta flush |
 | `read_inicio_cajas_v1` | Movimientos caja cerrados + flags para tarjetas del Panel |
