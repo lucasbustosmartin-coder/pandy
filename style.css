@@ -1782,7 +1782,9 @@
     }
     #vista-cuenta-corriente #cc-filtro-tipo.toggle-moneda {
       display: inline-flex;
+      flex-wrap: wrap;
       align-self: center;
+      gap: 0;
     }
     #vista-cuenta-corriente #cc-filtro-tipo.toggle-moneda button {
       min-height: 2.25rem;

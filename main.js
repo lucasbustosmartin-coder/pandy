@@ -4983,7 +4983,18 @@ function obtenerFilasCcResumenFiltradas() {
     Math.abs(Number(r.saldos.USD) || 0) >= EPSILON_SALDO ||
     Math.abs(Number(r.saldos.EUR) || 0) >= EPSILON_SALDO ||
     Math.abs(Number(r.saldos.ARS) || 0) >= EPSILON_SALDO;
-  let filas = ccResumenRowsTodos.filter((r) => r.tipo === ccFiltroTipo).filter(conSaldo);
+  let filas;
+  if (ccFiltroTipo === 'total') {
+    /** Posición consolidada sin duplicar: fila intermediario (ya fusiona CC cliente vinculado) + clientes sin vínculo. */
+    filas = ccResumenRowsTodos.filter((r) => {
+      if (!conSaldo(r)) return false;
+      if (r.tipo === 'intermediario') return true;
+      if (r.tipo === 'cliente' && r.cc_cliente_vinculado_intermediario === true) return false;
+      return r.tipo === 'cliente';
+    });
+  } else {
+    filas = ccResumenRowsTodos.filter((r) => r.tipo === ccFiltroTipo).filter(conSaldo);
+  }
   const q = (ccResumenFiltroNombre || '').trim();
   if (q) {
     const nq = normalizarTextoBusquedaCc(q);
@@ -4997,10 +5008,21 @@ function obtenerFilasCcResumenFiltradas() {
 function syncCcResumenFiltroNombreAccesibilidad() {
   const el = document.getElementById('cc-resumen-filtro-nombre');
   if (!el) return;
-  const esInt = ccFiltroTipo === 'intermediario';
-  el.setAttribute('aria-label', esInt ? 'Filtrar saldos por nombre de intermediario' : 'Filtrar saldos por nombre de cliente');
+  let aria;
+  let labTxt;
+  if (ccFiltroTipo === 'intermediario') {
+    aria = 'Filtrar saldos por nombre de intermediario';
+    labTxt = 'Buscar intermediario';
+  } else if (ccFiltroTipo === 'total') {
+    aria = 'Filtrar saldos por nombre (cliente o intermediario)';
+    labTxt = 'Buscar nombre';
+  } else {
+    aria = 'Filtrar saldos por nombre de cliente';
+    labTxt = 'Buscar cliente';
+  }
+  el.setAttribute('aria-label', aria);
   const lab = document.getElementById('cc-resumen-filtro-nombre-label');
-  if (lab) lab.textContent = esInt ? 'Buscar intermediario' : 'Buscar cliente';
+  if (lab) lab.textContent = labTxt;
 }
 
 /** Montos por moneda de un movimiento CC (cliente o intermediario), misma lógica que buildCcResumenRows. */
@@ -5063,8 +5085,9 @@ function pandiOrdenarMovsCcDesc(movs) {
   });
 }
 
-/** Vista «Movimientos» CC: pestaña Intermediario incluye filas CC intermediario + CC cliente del mismo vínculo. */
+/** Vista «Movimientos» CC: pestaña Intermediario incluye filas CC intermediario + CC cliente del mismo vínculo. Total = todos los movimientos (cada fila del listado es única). */
 function pandiCcDetallePasaFiltroTipo(m, filtroTipo) {
+  if (filtroTipo === 'total') return true;
   if (filtroTipo === 'intermediario') {
     return m.tipo === 'intermediario' || m.cc_intermediario_consolidado_id != null;
   }
@@ -10324,7 +10347,8 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     let pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsC, trTipoById, trPagadorById, trCobradorById, c.id, ordenById, trParticipanteIdsByTrx);
     pendienteClasePorMoneda = mergePendienteClaseChequeArsCliente(c.id, saldos, pendienteEnMoneda, pendienteClasePorMoneda);
     pendienteClasePorMoneda = mergePendienteClaseUsdUsdIntCliente(c.id, saldos, pendienteEnMoneda, pendienteClasePorMoneda, usdUsdIntCliIngPendienteByCli, usdUsdIntCliEgresoPandyClientePendienteByCli);
-    rows.push({ tipo: 'cliente', id: c.id, nombre: c.nombre, saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendienteClienteAjuste: pendienteClienteAjusteForCli(c.id) });
+    const ccClienteVin = vinculoIntermediarioPorCliente[c.id] != null;
+    rows.push({ tipo: 'cliente', id: c.id, nombre: c.nombre, saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendienteClienteAjuste: pendienteClienteAjusteForCli(c.id), cc_cliente_vinculado_intermediario: ccClienteVin });
     addedCli.add(c.id);
   });
   Object.keys(movsCliById || {}).forEach((id) => {
@@ -10336,7 +10360,8 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     let pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsC, trTipoById, trPagadorById, trCobradorById, id, ordenById, trParticipanteIdsByTrx);
     pendienteClasePorMoneda = mergePendienteClaseChequeArsCliente(id, saldos, pendienteEnMoneda, pendienteClasePorMoneda);
     pendienteClasePorMoneda = mergePendienteClaseUsdUsdIntCliente(id, saldos, pendienteEnMoneda, pendienteClasePorMoneda, usdUsdIntCliIngPendienteByCli, usdUsdIntCliEgresoPandyClientePendienteByCli);
-    rows.push({ tipo: 'cliente', id, nombre: (c && c.nombre) || '–', saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendienteClienteAjuste: pendienteClienteAjusteForCli(id) });
+    const ccClienteVin2 = vinculoIntermediarioPorCliente[id] != null;
+    rows.push({ tipo: 'cliente', id, nombre: (c && c.nombre) || '–', saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendienteClienteAjuste: pendienteClienteAjusteForCli(id), cc_cliente_vinculado_intermediario: ccClienteVin2 });
     addedCli.add(id);
   });
   Object.keys(pendienteClienteAjusteByCli || {}).forEach((id) => {
@@ -10350,7 +10375,8 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
     let pendienteClasePorMoneda = ccPendienteClasePorMonedaDesdeMovs(movsC, trTipoById, trPagadorById, trCobradorById, id, ordenById, trParticipanteIdsByTrx);
     pendienteClasePorMoneda = mergePendienteClaseChequeArsCliente(id, saldos, pendienteEnMoneda, pendienteClasePorMoneda);
     pendienteClasePorMoneda = mergePendienteClaseUsdUsdIntCliente(id, saldos, pendienteEnMoneda, pendienteClasePorMoneda, usdUsdIntCliIngPendienteByCli, usdUsdIntCliEgresoPandyClientePendienteByCli);
-    rows.push({ tipo: 'cliente', id, nombre: (c && c.nombre) || '–', saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendienteClienteAjuste });
+    const ccClienteVin3 = vinculoIntermediarioPorCliente[id] != null;
+    rows.push({ tipo: 'cliente', id, nombre: (c && c.nombre) || '–', saldos, pendienteEnMoneda, pendienteClasePorMoneda, pendienteClienteAjuste, cc_cliente_vinculado_intermediario: ccClienteVin3 });
     addedCli.add(id);
   });
   function pendientePandyDebeForInt(intId) {
@@ -10533,20 +10559,38 @@ function poblarSelectCcDetalleEntidad() {
     if (ccFiltroTipo === 'cliente') {
       id = m.cliente_id;
       nombre = ((m.nombre || '') + '').trim() || '–';
-    } else {
+    } else if (ccFiltroTipo === 'intermediario') {
       id = m.tipo === 'intermediario' ? m.intermediario_id : m.cc_intermediario_consolidado_id;
       nombre =
         (m.tipo === 'intermediario'
           ? (m.nombre || '')
           : (m.cc_intermediario_consolidado_nombre || m.nombre || '')) + '';
       nombre = nombre.trim() || '–';
+    } else {
+      /** Total: clave estable `c:id` (cliente solo) o `i:id` (fila consolidada intermediario). */
+      if (m.tipo === 'intermediario') {
+        id = 'i:' + String(m.intermediario_id);
+        nombre = ((m.nombre || '') + '').trim() || '–';
+      } else if (m.tipo === 'cliente' && m.cc_intermediario_consolidado_id != null) {
+        id = 'i:' + String(m.cc_intermediario_consolidado_id);
+        nombre = ((m.cc_intermediario_consolidado_nombre || m.nombre || '') + '').trim() || '–';
+      } else {
+        id = 'c:' + String(m.cliente_id);
+        nombre = ((m.nombre || '') + '').trim() || '–';
+      }
     }
-    if (!id) return;
+    if (!id || id === 'c:undefined' || id === 'c:null' || id === 'i:undefined' || id === 'i:null') return;
     if (!map.has(id)) map.set(id, nombre);
   });
   const sorted = [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], 'es'));
   const prev = ccDetalleFiltroEntidadId;
-  sel.innerHTML = '<option value="">' + (ccFiltroTipo === 'cliente' ? 'Todos los clientes' : 'Todos los intermediarios') + '</option>'
+  const optTodos =
+    ccFiltroTipo === 'cliente'
+      ? 'Todos los clientes'
+      : ccFiltroTipo === 'intermediario'
+        ? 'Todos los intermediarios'
+        : 'Todas las posiciones';
+  sel.innerHTML = '<option value="">' + optTodos + '</option>'
     + sorted.map(([id, nom]) => '<option value="' + escapeHtml(String(id)) + '">' + escapeHtml(nom) + '</option>').join('');
   if (prev && sorted.some(([id]) => id === prev)) {
     sel.value = prev;
@@ -10555,7 +10599,12 @@ function poblarSelectCcDetalleEntidad() {
     ccDetalleFiltroEntidadId = '';
     sel.value = '';
   }
-  const ariaEnt = ccFiltroTipo === 'cliente' ? 'Filtrar movimientos por cliente' : 'Filtrar movimientos por intermediario';
+  const ariaEnt =
+    ccFiltroTipo === 'cliente'
+      ? 'Filtrar movimientos por cliente'
+      : ccFiltroTipo === 'intermediario'
+        ? 'Filtrar movimientos por intermediario'
+        : 'Filtrar movimientos por entidad (total consolidado)';
   sel.setAttribute('aria-label', ariaEnt);
 }
 
@@ -10592,12 +10641,26 @@ function aplicarFiltroCcResumen() {
       const fid = String(ccDetalleFiltroEntidadId);
       if (ccFiltroTipo === 'cliente') {
         filtrados = filtrados.filter((m) => String(m.cliente_id) === fid);
-      } else {
+      } else if (ccFiltroTipo === 'intermediario') {
         filtrados = filtrados.filter(
           (m) =>
             (m.tipo === 'intermediario' && String(m.intermediario_id) === fid) ||
             String(m.cc_intermediario_consolidado_id || '') === fid
         );
+      } else if (ccFiltroTipo === 'total') {
+        if (fid.startsWith('c:')) {
+          const cid = fid.slice(2);
+          filtrados = filtrados.filter(
+            (m) => m.tipo === 'cliente' && String(m.cliente_id) === cid && m.cc_intermediario_consolidado_id == null
+          );
+        } else if (fid.startsWith('i:')) {
+          const iid = fid.slice(2);
+          filtrados = filtrados.filter(
+            (m) =>
+              (m.tipo === 'intermediario' && String(m.intermediario_id) === iid) ||
+              String(m.cc_intermediario_consolidado_id || '') === iid
+          );
+        }
       }
     }
     if (!ccMovimientosMostrarTodoHistorial) {
@@ -10636,7 +10699,7 @@ function aplicarFiltroCcResumen() {
   renderCcResumenTable(filtrados);
 }
 
-/** Suma algebraica de saldos por moneda en la grilla Saldos (mismas filas que el tbody; respeta Cliente/Intermediario). */
+/** Suma algebraica de saldos por moneda en la grilla Saldos (mismas filas que el tbody; respeta Cliente / Intermediario / Total). */
 function actualizarCcResumenTotalesThead(rows) {
   const eps = 1e-6;
   const ids = { USD: 'cc-resumen-total-usd', EUR: 'cc-resumen-total-eur', ARS: 'cc-resumen-total-ars' };
@@ -10687,7 +10750,8 @@ function renderCcResumenTable(rows) {
     .join('');
 
   if (rows.length === 0) {
-    const tipoLabel = ccFiltroTipo === 'cliente' ? 'clientes' : 'intermediarios';
+    const tipoLabel =
+      ccFiltroTipo === 'cliente' ? 'clientes' : ccFiltroTipo === 'intermediario' ? 'intermediarios' : 'posiciones (total consolidado)';
     const colspan = ccColspanResumenSaldosVacio();
     const hayFiltroNombre = (ccResumenFiltroNombre || '').trim() !== '';
     const msg = hayFiltroNombre
@@ -10866,12 +10930,26 @@ function exportarCcResumenExcel() {
       const fid = String(ccDetalleFiltroEntidadId);
       if (ccFiltroTipo === 'cliente') {
         filtrados = filtrados.filter((m) => String(m.cliente_id) === fid);
-      } else {
+      } else if (ccFiltroTipo === 'intermediario') {
         filtrados = filtrados.filter(
           (m) =>
             (m.tipo === 'intermediario' && String(m.intermediario_id) === fid) ||
             String(m.cc_intermediario_consolidado_id || '') === fid
         );
+      } else if (ccFiltroTipo === 'total') {
+        if (fid.startsWith('c:')) {
+          const cid = fid.slice(2);
+          filtrados = filtrados.filter(
+            (m) => m.tipo === 'cliente' && String(m.cliente_id) === cid && m.cc_intermediario_consolidado_id == null
+          );
+        } else if (fid.startsWith('i:')) {
+          const iid = fid.slice(2);
+          filtrados = filtrados.filter(
+            (m) =>
+              (m.tipo === 'intermediario' && String(m.intermediario_id) === iid) ||
+              String(m.cc_intermediario_consolidado_id || '') === iid
+          );
+        }
       }
     }
     if (!ccMovimientosMostrarTodoHistorial) {
@@ -13074,7 +13152,7 @@ function setupCuentaCorriente() {
     ccFiltroTipoEl.querySelectorAll('button').forEach((btn) => {
       btn.addEventListener('click', () => {
         const tipo = btn.getAttribute('data-tipo');
-        if (!tipo) return;
+        if (!tipo || (tipo !== 'cliente' && tipo !== 'intermediario' && tipo !== 'total')) return;
         ccFiltroTipo = tipo;
         ccFiltroTipoEl.querySelectorAll('button').forEach((b) => b.classList.remove('activo'));
         btn.classList.add('activo');
@@ -15793,6 +15871,21 @@ function pandiSyncCcFiltrosDomDesdeEstado() {
   syncCcResumenFiltroNombreAccesibilidad();
 }
 
+/** Snapshots IDB antiguos sin `cc_cliente_vinculado_intermediario`: inferir clientes vinculados desde movimientos consolidados (vista Total sin duplicar). */
+function pandiCcEnriquecerResumenClienteVinculoDesdeDetalle() {
+  const linked = new Set();
+  (ccMovimientosDetalleList || []).forEach((m) => {
+    if (m.tipo === 'cliente' && m.cliente_id != null && m.cc_intermediario_consolidado_id != null) {
+      linked.add(String(m.cliente_id));
+    }
+  });
+  (ccResumenRowsTodos || []).forEach((r) => {
+    if (r.tipo !== 'cliente') return;
+    if (r.cc_cliente_vinculado_intermediario === true || r.cc_cliente_vinculado_intermediario === false) return;
+    r.cc_cliente_vinculado_intermediario = linked.has(String(r.id));
+  });
+}
+
 async function pandiTryRestoreCcVistaDesdeSnapshot() {
   try {
     const db = await openPandiOfflineDb();
@@ -15805,7 +15898,9 @@ async function pandiTryRestoreCcVistaDesdeSnapshot() {
     if (!Array.isArray(rec.ccResumenRowsTodos) || !Array.isArray(rec.ccMovimientosDetalleList)) return false;
     ccResumenRowsTodos = rec.ccResumenRowsTodos;
     ccMovimientosDetalleList = rec.ccMovimientosDetalleList;
-    ccFiltroTipo = rec.ccFiltroTipo === 'intermediario' ? 'intermediario' : 'cliente';
+    pandiCcEnriquecerResumenClienteVinculoDesdeDetalle();
+    ccFiltroTipo =
+      rec.ccFiltroTipo === 'intermediario' ? 'intermediario' : rec.ccFiltroTipo === 'total' ? 'total' : 'cliente';
     ccVistaToggle = rec.ccVistaToggle === 'detalle' ? 'detalle' : 'resumen';
     ccResumenFiltroNombre = rec.ccResumenFiltroNombre != null ? String(rec.ccResumenFiltroNombre) : '';
     ccDetalleFiltroEntidadId = rec.ccDetalleFiltroEntidadId ? String(rec.ccDetalleFiltroEntidadId) : '';

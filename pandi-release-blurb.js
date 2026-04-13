@@ -5,9 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.30',
+  versionLabel: 'v3.7.31',
   lines: [
-    'En Órdenes y en Órdenes pendientes (desde Inicio) ves en la tabla las comisiones de la empresa y del intermediario, por moneda, sin abrir cada acuerdo.',
-    'Nuevo botón Exportar: bajás un Excel con el mismo listado y filtros que tenés en pantalla, listo para sumar o filtrar importes.',
+    'En Cuenta corriente podés elegir Total además de Cliente e Intermediario: los saldos muestran la posición consolidada sin contar dos veces a quien tiene «Mismo registro que…».',
+    'En Movimientos, el listado incluye todo lo que corresponde y el filtro por entidad se adapta al modo Total.',
+    'La búsqueda por nombre en Saldos también sirve cuando tenés seleccionado Total.',
   ],
 };
