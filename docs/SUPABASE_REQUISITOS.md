@@ -22,7 +22,7 @@ En la carpeta Pandi creá `.env` (podés partir de **`.env.example`**: `cp .env.
 
 ```env
 SUPABASE_URL=https://TU_PROYECTO.supabase.co
-SUPABASE_ANON_KEY=eyJ...
+SUPABASE_ANON_KEY=<TU_ANON_PUBLIC_KEY>
 SUPABASE_SERVICE_ROLE_KEY=<TU_SERVICE_ROLE_KEY>
 ```
 

@@ -6,7 +6,7 @@ La configuración global de Cursor vive en **`~/.cursor/mcp.json`**. Para **no g
 2. **`~/.cursor/supabase-mcp.env`**: archivo **local**, **no versionado**, con una sola variable obligatoria para el servidor stdio de Supabase:
 
 ```bash
-SUPABASE_ACCESS_TOKEN=sbp_...
+SUPABASE_ACCESS_TOKEN=<TU_PERSONAL_ACCESS_TOKEN_SUPABASE>
 ```
 
 3. **Permisos**: el archivo real debería ser legible solo por tu usuario, p. ej. `chmod 600 ~/.cursor/supabase-mcp.env`.

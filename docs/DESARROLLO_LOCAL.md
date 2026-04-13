@@ -13,6 +13,8 @@ Si corrés **`vercel env pull`** o el CLI creó **`.env.local`**, ese archivo pu
 
 **Solución:** en local, **no** dejes `SUPABASE_*` en `.env.local` (solo token u otras vars de Vercel si las necesitás), o borrá `.env.local` y usá solo `.env`.
 
+**`.env.production` / `.env.preview`:** si **`vercel env pull`** creó esos archivos, **no los commitees** (están en `.gitignore`). Suelen traer `SUPABASE_ANON_KEY` y a veces tokens de Vercel; si llegaron a subirse al repo, **rotá** claves afectadas y limpiá historial si hace falta (ver `docs/SEGURIDAD_CHECKLIST_GITHUB_VERCEL_SUPABASE.md`).
+
 ## Opción A — `.env` (recomendada)
 
 1. Copiá el ejemplo:

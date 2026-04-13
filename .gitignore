@@ -15,6 +15,10 @@ dist-ssr
 # Env (claves Supabase)
 .env
 .env.local
+# Salida típica de `vercel env pull` — contiene anon y a veces otros secretos; no versionar
+.env.production
+.env.preview
+.env.development
 
 # Clave anon para el front (no subir)
 config.js
@@ -34,6 +38,15 @@ config.js
 
 # Credenciales para tests E2E (no subir)
 .env.test
+
+# Exploración / one-off local (no subir)
+scratch.js
+scratch*.js
+get_t.js
+
+# Salidas locales de CLI Vercel / pruebas (no subir)
+vercel_out*.txt
+vercel_pid*.txt
 
 # Playwright
 test-results

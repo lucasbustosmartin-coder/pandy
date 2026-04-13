@@ -10,7 +10,8 @@ Checklist operativo para mantener separado **desarrollo** y **producción** sin 
 
 ## 2) GitHub (repositorio)
 
-- [ ] `.env`, `.env.*` y `config.js` están ignorados en `.gitignore`.
+- [ ] `.env`, `.env.local`, **`.env.production`** (y otras salidas de `vercel env pull`), `.env.test` y `config.js` están ignorados en `.gitignore`.
+- [ ] No hay scripts de prueba con credenciales en el repo (`scratch*.js`, `get_t.js`, etc.): usarlos solo local y listados en `.gitignore`.
 - [ ] No hay claves reales en commits/historial.
 - [ ] En docs y ejemplos se usan placeholders (`<TU_SERVICE_ROLE_KEY>`, `eyJ...` recortado).
 - [ ] Pull requests revisan que no se agreguen secretos por error.

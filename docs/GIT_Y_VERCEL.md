@@ -47,7 +47,7 @@ En **Settings** → **Environment Variables** del proyecto:
   - **Preview** → proyecto Supabase **desarrollo** (misma app, otra base).
 - Las anon keys son JWT: los primeros caracteres suelen verse iguales entre proyectos; confirmar que URL y clave **completas** correspondan a cada Supabase.
 
-Opcional: `SUPABASE_SERVICE_ROLE_KEY` solo si la app en producción necesita operaciones con service role (usar con cuidado).
+**No** definir `SUPABASE_SERVICE_ROLE_KEY` en Vercel para este frontend: el build **no** la embebe en `config.js` (evita filtrar la clave al bundle). La service role queda solo en entornos locales o CI (p. ej. `.env.test` para E2E / scripts), nunca en variables del proyecto web en producción.
 
 Así `config.js` se genera en el build (`node scripts/build-config.js`) y la app no queda en blanco por falta de config.
 

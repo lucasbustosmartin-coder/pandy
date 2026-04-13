@@ -19,7 +19,6 @@ try {
 
 const url = process.env.SUPABASE_URL || '';
 const anonKey = process.env.SUPABASE_ANON_KEY || '';
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 /** Preview Vercel o build local con PANDI_DEV_ICON=1 → icono 192 panda celeste (diferenciar de prod). */
 const vercelEnv = process.env.VERCEL_ENV || '';
 const useDevIcon =
@@ -34,7 +33,7 @@ window.SUPABASE_URL = ${JSON.stringify(url)};
 window.PANDI_ICON_192_DEFAULT = ${JSON.stringify(icon192Default)};
 window.PANDI_FAVICON_32_DEFAULT = ${JSON.stringify(icon32Default)};
 window.PANDI_FAVICON_16_DEFAULT = ${JSON.stringify(icon16Default)};
-${serviceKey ? 'window.SUPABASE_SERVICE_ROLE_KEY = ' + JSON.stringify(serviceKey) + ';' : '// window.SUPABASE_SERVICE_ROLE_KEY no definida.'}
+// Nunca inyectar SUPABASE_SERVICE_ROLE_KEY aquí: iría al bundle del navegador. Usar solo en scripts Node (.env / .env.test) o SQL Editor.
 `;
 
 fs.writeFileSync(path.join(root, 'config.js'), content, 'utf8');
