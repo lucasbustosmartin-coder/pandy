@@ -82,6 +82,16 @@ Los archivos en `sql/` se ejecutan en el **SQL Editor** de Supabase. **Órdenes 
 
 Para no pegar keys a mano: guardá **`docs/Pandy_Dev_Supabase.xlsx`** (no se versiona; está en `.gitignore`) y ejecutá `npm run dev:supabase:volcar`. Detalle de columnas: **`docs/PANDY_DEV_SUPABASE.md`**.
 
+### 7. Security Advisor (avisos habituales)
+
+El dashboard **Advisors → Security Advisor** (splinter) puede mostrar lo siguiente; no todo exige cambio de producto:
+
+| Aviso | ¿Corregir en BD / app? | Qué hacer |
+|--------|-------------------------|-----------|
+| **Function Search Path Mutable** (`public.transaccion_pertenece_a_orden`) | **Sí.** Es buena práctica fijar `search_path` en funciones `SECURITY DEFINER` o expuestas; aquí aplica el mismo criterio. Ejecutá **`sql/migracion_transaccion_pertenece_a_orden_search_path.sql`** en el SQL Editor (prod y dev). En instalaciones nuevas que usen `sql/migracion_cc_caja_orden_robusto.sql` completo, la función ya queda con `SET search_path = public, pg_temp`. |
+| **Public Storage Buckets / listado** (`tipo-operacion-iconos`) | **Corregido en el script del repo.** El Advisor **0025** avisa si hay una política **SELECT** muy amplia en `storage.objects` (permite listar todo el bucket). Para bucket **público** no hace falta: el acceso por URL pública (`/object/public/...`) no depende de esa política; la app solo usa **upload** + **getPublicUrl** (sin `list()`). El script `sql/storage_bucket_tipo_operacion_iconos.sql` **no** crea política SELECT; si tu base tenía `tipo_op_iconos_select_public` heredada, ejecutá el `DROP POLICY` del mismo archivo o el bloque DROP del parche aplicado vía MCP. |
+| **Leaked Password Protection** (Auth) | **Recomendado activarlo** (no es SQL del repo). En el dashboard: **Authentication** → **Attack Protection** (o **Providers** / **Password** según versión del panel) → activar **Leaked password protection** (HaveIBeenPwned). Mejora el registro/login sin tocar la app. |
+
 ---
 
 **Resumen:** Crear proyecto → copiar URL y keys → `.env` y `config.js` → ejecutar scripts en `sql/` según la app.

@@ -53,6 +53,6 @@ El script **`sql/migracion_cc_caja_orden_robusto.sql`** refuerza el modelo en BD
 
 1. **movimientos_caja**: Se permite que un movimiento tenga a la vez `orden_id` y `transaccion_id` (origen por orden). Así cada fila de caja derivada de una transacción queda ligada a la orden; el sync puede seguir borrando por `transaccion_id in (...)` y desde la app se rellena `orden_id` al insertar. Se hace backfill de `orden_id` en filas existentes que ya tenían `transaccion_id`.
 
-2. **Integridad referencial**: Se agregan CHECK en `movimientos_cuenta_corriente` y `movimientos_cuenta_corriente_intermediario`: cuando están informados tanto `orden_id` como `transaccion_id`, la transacción debe pertenecer a esa orden (vía `instrumentacion`). Función auxiliar `transaccion_pertenece_a_orden(orden_id, transaccion_id)`.
+2. **Integridad referencial**: Se agregan CHECK en `movimientos_cuenta_corriente` y `movimientos_cuenta_corriente_intermediario`: cuando están informados tanto `orden_id` como `transaccion_id`, la transacción debe pertenecer a esa orden (vía `instrumentacion`). Función auxiliar `transaccion_pertenece_a_orden(orden_id, transaccion_id)` con `SET search_path = public, pg_temp` (Supabase Security Advisor). Si la base se creó con una versión anterior del script sin `search_path`, ejecutá además el parche idempotente **`sql/migracion_transaccion_pertenece_a_orden_search_path.sql`**.
 
 Ejecutar la migración en Supabase SQL Editor una vez; después el modelo queda consistente a nivel de esquema.

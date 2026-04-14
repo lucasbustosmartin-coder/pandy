@@ -35,6 +35,7 @@ CREATE OR REPLACE FUNCTION public.transaccion_pertenece_a_orden(p_orden_id uuid,
 RETURNS boolean
 LANGUAGE sql
 STABLE
+SET search_path = public, pg_temp
 AS $$
   SELECT (p_orden_id IS NULL OR p_transaccion_id IS NULL)
      OR EXISTS (
