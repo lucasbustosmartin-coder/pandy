@@ -967,7 +967,7 @@
     .orden-inst-form-actions-sticky { position: sticky; bottom: 0; background: #fff; z-index: 10; padding-top: 0.5rem; margin-bottom: -0.5rem; box-shadow: 0 -2px 8px rgba(0,0,0,0.06); pointer-events: auto; }
     /* Una sola zona de scroll vertical: casi todo el viewport menos cabecera modal + pie Listo/Cerrar + padding backdrop; sin tope 480px ni doble 70vh en la tabla */
     #orden-step-instrumentacion .orden-inst-contenido-scroll {
-      max-height: min(88dvh, calc(100vh - 9.5rem));
+      max-height: min(90dvh, calc(100vh - 8.25rem));
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior-y: contain;
@@ -2465,7 +2465,7 @@
       .modal { max-height: min(90dvh, 92vh); width: 96%; max-width: min(96vw, 1280px); }
       .modal.modal-orden.modal-orden-con-instrumentacion { max-height: min(94dvh, calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 0.75rem)); }
       #orden-step-instrumentacion .orden-inst-contenido-scroll {
-        max-height: min(86dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 10rem));
+        max-height: min(88dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 9.25rem));
       }
       .modal-body input, .modal-body select { font-size: 16px; }
       .modal-close { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }

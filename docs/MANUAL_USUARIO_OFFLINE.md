@@ -111,6 +111,7 @@ En el listado de Órdenes, las filas **«Cola local»** permiten abrir **Editar 
 - Con **instrumentación en caché** y permiso **editar transacciones**, al **desplegar Transacciones** en la orden podés usar la **tabla** para cambiar monto, modo de pago y estado; esos cambios quedan como **parches locales** y se **envían al reconectar** (con las validaciones del servidor, p. ej. caja al ejecutar).  
 - **Eliminar / dar de baja** una transacción en servidor: **no** disponible sin conexión.  
 - Con conexión y datos vivos, en el panel expandido puede mostrarse **Vista tabla** (misma idea que el editor de tabla de cola) para órdenes en estados de instrumentación pendiente / parcial / cerrada en ejecución.
+- **Con red**, si todavía no hay transacciones y el tipo de orden admite **plantilla automática**, el paso **Instrumentación** del wizard (y el panel **Transacciones** desplegado en la fila) muestran un **aviso de “generando instrumentación sugerida”** mientras el sistema crea las filas en el servidor; al terminar, la vista **se desplaza** para dejar bien visible la **tabla** dentro del alto útil del modal.
 
 ---
 

@@ -18498,6 +18498,26 @@ function guardarOrdenDesdeWizard() {
   return ejecutarGuardarOrdenWizardTrasVinculo();
 }
 
+/** Tras autocompletar instrumentación en el wizard, acerca la tabla al área visible del bloque con scroll vertical. */
+function pandiScrollOrdenWizardInstrumentacionTablaVisible() {
+  const scrollEl = document.querySelector('#orden-step-instrumentacion .orden-inst-contenido-scroll');
+  const target = document.getElementById('orden-inst-tabla-wrap');
+  if (!scrollEl || !target || target.style.display === 'none') return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      try {
+        const s = scrollEl.getBoundingClientRect();
+        const t = target.getBoundingClientRect();
+        const delta = t.top - s.top - 10;
+        if (Math.abs(delta) < 6) return;
+        scrollEl.scrollTop = Math.max(0, scrollEl.scrollTop + delta);
+      } catch (_) {
+        target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    });
+  });
+}
+
 function ensureInstrumentacionForOrden(ordenId) {
   if (!ordenId) return Promise.resolve(null);
   return pandiSupabaseQuerySafe(
@@ -18559,8 +18579,6 @@ function renderOrdenWizardInstrumentacion(instId) {
       client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
     ]).then(([rOrd, resTr, rModos, rComInst]) => {
       const comisionesWizardInst = (rComInst && !rComInst.error && rComInst.data) ? rComInst.data : [];
-      loadingEl.style.display = 'none';
-      wrapEl.style.display = 'block';
       const orden = rOrd.data || null;
       const ordenAnuladaWiz = orden && String(orden.estado || '') === 'anulada';
       const btnNuevaTrWiz = document.getElementById('orden-btn-nueva-transaccion');
@@ -18593,6 +18611,8 @@ function renderOrdenWizardInstrumentacion(instId) {
       }
 
       if (resTr.error) {
+        loadingEl.style.display = 'none';
+        wrapEl.style.display = 'block';
         tbody.innerHTML = '<tr><td colspan="10">Error: ' + (resTr.error.message || '') + '</td></tr>';
         if (instrumentadoTexto) instrumentadoTexto.textContent = '–';
         const comWrapErr = document.getElementById('orden-inst-comisiones-wrap');
@@ -18827,6 +18847,10 @@ function renderOrdenWizardInstrumentacion(instId) {
       }
 
       if (list.length === 0 && orden && orden.tipo_operacion_id && !ordenAnuladaWiz) {
+        loadingEl.textContent = 'El sistema está generando la instrumentación sugerida…';
+        loadingEl.style.display = 'block';
+        wrapEl.style.display = 'none';
+        loadingEl.setAttribute('aria-busy', 'true');
         client.from('tipos_operacion').select('codigo, moneda_in, moneda_out').eq('id', orden.tipo_operacion_id).single().then((rTipo) => {
           const row = rTipo.data || {};
           const codigo = row.codigo || '';
@@ -18861,9 +18885,24 @@ function renderOrdenWizardInstrumentacion(instId) {
           client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instId).order('created_at', { ascending: true })
         ).then((r2) => {
           list = r2.data || [];
+          loadingEl.style.display = 'none';
+          wrapEl.style.display = 'block';
+          loadingEl.textContent = 'Cargando instrumentación…';
+          loadingEl.removeAttribute('aria-busy');
+          renderWizardList(list);
+          pandiScrollOrdenWizardInstrumentacionTablaVisible();
+        }).catch((err) => {
+          loadingEl.style.display = 'none';
+          wrapEl.style.display = 'block';
+          loadingEl.textContent = 'Cargando instrumentación…';
+          loadingEl.removeAttribute('aria-busy');
+          pandiToastSupabaseErrorAmigable(err, 'No se pudo generar la instrumentación sugerida');
+          list = [];
           renderWizardList(list);
         });
       } else {
+        loadingEl.style.display = 'none';
+        wrapEl.style.display = 'block';
         renderWizardList(list);
       }
     });
@@ -20845,7 +20884,9 @@ function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
     fecha,
     ahora,
     instrumentacionId,
+    usuarioId: usuarioIdRegistro,
   } = opts;
+  const uidCc = usuarioIdRegistro || currentUserId;
   if (!ordenId || !intermediarioId) return Promise.resolve();
   return client.from('comisiones_orden').select('moneda, monto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario')
     .then((rCom) => {
@@ -20864,12 +20905,12 @@ function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
             monto: -comMonto,
             concepto: conceptoCcLeyenda('comision_acuerdo', ordenNumero, transaccionNumero),
             fecha,
-            usuario_id: usuarioId || currentUserId,
+            usuario_id: uidCc,
             estado: 'cerrado',
             estado_fecha: ahora,
             ...montosCcPorMoneda(monCom, -comMonto),
           }).then(() => (idx === 0 && instrumentacionId
-            ? asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, ordenNumero, transaccionNumero)
+            ? asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, ordenNumero, transaccionNumero, uidCc)
             : Promise.resolve()));
         }),
         Promise.resolve(),
@@ -20878,8 +20919,9 @@ function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
 }
 
 /** Comisión intermediario: solo caja (sin fila en `transacciones`). La CC de comisión ya la inserta el flujo que ejecuta la transacción cliente↔Pandy. Requiere migración `sql/migracion_orden_comisiones_movimiento_caja.sql` para `movimiento_caja_id` y `transaccion_id` nullable. */
-function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, montoCom, monCom, ordenNumero, transaccionNumeroRef) {
+function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, montoCom, monCom, ordenNumero, transaccionNumeroRef, usuarioIdMovimiento) {
   void instrumentacionId;
+  const uidCaja = usuarioIdMovimiento || currentUserId;
   if (!ordenId || !intermediarioId || !montoCom || montoCom < 1e-6) return Promise.resolve();
   const ordNum = ordenNumero != null ? ordenNumero : null;
   const nroRef = transaccionNumeroRef != null ? transaccionNumeroRef : null;
@@ -20898,7 +20940,7 @@ function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediario
         transaccion_numero: nroRef,
         concepto: conceptoCom,
         fecha,
-        usuario_id: usuarioId || currentUserId,
+        usuario_id: uidCaja,
       }).select('id').single()
         .then((rCaja) => {
           const mcId = rCaja.data && rCaja.data.id;
@@ -20963,7 +21005,7 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, transIngr
         monto_ars: numCc(monR === 'ARS' ? -mr : 0),
         monto_eur: numCc(monR === 'EUR' ? -mr : 0),
         fecha,
-        usuario_id: usuarioId || currentUserId,
+        usuario_id: currentUserId,
         estado: 'pendiente',
       };
       const row2 = {
@@ -20978,7 +21020,7 @@ function insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, transIngr
         monto_ars: numCc(monR === 'ARS' ? mr : 0),
         monto_eur: numCc(monR === 'EUR' ? mr : 0),
         fecha,
-        usuario_id: usuarioId || currentUserId,
+        usuario_id: currentUserId,
         estado: 'pendiente',
       };
       return Promise.all([
@@ -21734,9 +21776,7 @@ function expandOrdenTransacciones(ordenId, orden) {
         client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
       ]).then(async ([rOrdFull, res, rCom]) => {
         const comisionesRowsPanel = (rCom && !rCom.error && rCom.data) ? rCom.data : [];
-          loadingEl.style.display = 'none';
-          contentEl.style.display = 'block';
-          const ordenTotales = rOrdFull.data || orden;
+        const ordenTotales = rOrdFull.data || orden;
           const btnVistaTablaInst = panel.querySelector('.btn-instrumentacion-tabla-rapida-panel');
           if (btnVistaTablaInst) {
             const ordEst = String((ordenTotales && ordenTotales.estado) || (orden && orden.estado) || '');
@@ -21886,6 +21926,10 @@ function expandOrdenTransacciones(ordenId, orden) {
           }
 
           if (list.length === 0 && ordenTotales && ordenTotales.tipo_operacion_id && String(ordenTotales.estado || '') !== 'anulada') {
+            loadingEl.textContent = 'El sistema está generando la instrumentación sugerida…';
+            loadingEl.style.display = 'block';
+            contentEl.style.display = 'none';
+            loadingEl.setAttribute('aria-busy', 'true');
             return client.from('tipos_operacion').select('codigo, moneda_in, moneda_out').eq('id', ordenTotales.tipo_operacion_id).single().then((rTipo) => {
               const row = rTipo.data || {};
               const codigo = row.codigo || '';
@@ -21918,9 +21962,23 @@ function expandOrdenTransacciones(ordenId, orden) {
               client.from('transacciones').select('id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true })
             ).then((r2) => {
               list = (r2.data || []);
+              loadingEl.style.display = 'none';
+              contentEl.style.display = 'block';
+              loadingEl.textContent = 'Cargando transacciones…';
+              loadingEl.removeAttribute('aria-busy');
+              return renderTransaccionesList(list);
+            }).catch((err) => {
+              loadingEl.style.display = 'none';
+              contentEl.style.display = 'block';
+              loadingEl.textContent = 'Cargando transacciones…';
+              loadingEl.removeAttribute('aria-busy');
+              pandiToastSupabaseErrorAmigable(err, 'No se pudo generar la instrumentación sugerida');
+              list = [];
               return renderTransaccionesList(list);
             });
           }
+          loadingEl.style.display = 'none';
+          contentEl.style.display = 'block';
           return renderTransaccionesList(list);
         })
         .then(() => {

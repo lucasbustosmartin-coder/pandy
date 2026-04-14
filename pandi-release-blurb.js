@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.32',
+  versionLabel: 'v3.7.33',
   lines: [
-    'Cajas → Movimientos: la grilla se lee mejor con scroll horizontal; la columna Concepto ya no queda aplastada y las primeras columnas hasta Tipo quedan fijas al desplazar.',
-    'Órdenes: las primeras columnas (número, fecha, tipo de operación y cliente) quedan visibles al moverte de lado en tablas anchas.',
-    'En listados donde figura quién cargó o registró algo, todos los usuarios ven el nombre o el correo de la persona, no un código interno.',
+    'Al entrar a Instrumentación o desplegar Transacciones, si la app arma sola las filas sugeridas verás un aviso claro de espera y, al terminar, la pantalla se acomoda para que la tabla quede bien a la vista.',
+    'Más espacio vertical en el paso Instrumentación del modal de orden para leer mejor el acuerdo y las transacciones.',
+    'Corrección al generar la instrumentación sugerida en operaciones cheque en pesos con intermediario.',
   ],
 };
