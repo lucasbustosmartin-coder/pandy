@@ -3402,24 +3402,34 @@ function etiquetaUsuarioDesdePerfil(displayName, email) {
 }
 
 /**
- * Etiqueta para listados/exportaciones: `display_name` o email de `user_profiles` (RLS: propio + assign_roles).
+ * Etiqueta para listados/exportaciones: `display_name` o email de `user_profiles`.
+ * Prioridad: RPC `user_profiles_labels_for_ids` (todas las filas para usuarios autenticados; ejecutar migración SQL).
+ * Respaldo: SELECT directo (RLS: solo fila propia + admins con assign_roles → mapa incompleto para el resto).
  * @returns {Promise<Record<string, string>>}
  */
 function fetchMapaEtiquetaUsuarioPorIds(idsUnicos) {
-  const ids = [...new Set((idsUnicos || []).filter(Boolean))];
+  const ids = [...new Set((idsUnicos || []).filter(Boolean))].map((x) => String(x).trim()).filter(Boolean);
   if (ids.length === 0) return Promise.resolve({});
+  const buildMapFromRows = (rows) => {
+    const map = {};
+    (rows || []).forEach((row) => {
+      if (row.id) map[String(row.id)] = etiquetaUsuarioDesdePerfil(row.display_name, row.email);
+    });
+    return map;
+  };
   return client
-    .from('user_profiles')
-    .select('id, email, display_name')
-    .in('id', ids)
+    .rpc('user_profiles_labels_for_ids', { p_ids: ids })
     .then((r) => {
-      const map = {};
-      (r.data || []).forEach((row) => {
-        if (row.id) map[String(row.id)] = etiquetaUsuarioDesdePerfil(row.display_name, row.email);
-      });
-      return map;
+      if (r.error) throw r.error;
+      return buildMapFromRows(r.data);
     })
-    .catch(() => ({}));
+    .catch(() =>
+      client
+        .from('user_profiles')
+        .select('id, email, display_name')
+        .in('id', ids)
+        .then((r) => buildMapFromRows(r.data || []))
+    );
 }
 
 /** Une metadatos + fila en blanco + cabecera + filas de datos para SheetJS. */
@@ -10683,7 +10693,7 @@ function aplicarFiltroCcResumen() {
     const idsUsuario = [...new Set(filasVista.map((m) => m.usuario_id).filter(Boolean))];
     fetchMapaEtiquetaUsuarioPorIds(idsUsuario).then((mapaUsuarios) => {
       filasVista.forEach((m) => {
-        if (m.usuario_id) m.usuario_nombre = mapaUsuarios[m.usuario_id];
+        if (m.usuario_id) m.usuario_nombre = mapaUsuarios[String(m.usuario_id)] || '–';
       });
       renderCcVistaDetalle(filasVista);
     });
@@ -11480,7 +11490,7 @@ function renderCcDetalleTable() {
   const idsUsuario = [...new Set(filtrados.map((m) => m.usuario_id).filter(Boolean))];
   fetchMapaEtiquetaUsuarioPorIds(idsUsuario).then((mapaUsuarios) => {
     filtrados.forEach((m) => {
-      if (m.usuario_id) m.usuario_nombre = mapaUsuarios[m.usuario_id] || m.usuario_id;
+      if (m.usuario_id) m.usuario_nombre = mapaUsuarios[String(m.usuario_id)] || '–';
     });
     tbody.innerHTML = filtrados
       .map((m) => {
@@ -14946,11 +14956,13 @@ function renderOrdenesTabla(list) {
         const aggCom = esColaLocal ? null : ordenesVistaComisionesMap[String(o.id)];
         const txtComMarca = esColaLocal ? '–' : pandiTextoComisionesListadoDesdeLado(aggCom, 'pandy');
         const txtComInt = esColaLocal ? '–' : pandiTextoComisionesListadoDesdeLado(aggCom, 'intermediario');
+        const nombreClienteListado = o.cliente_id ? (clientesMap[o.cliente_id] || '').trim() : '';
+        const attrTitleCliente = nombreClienteListado ? ` title="${escapeHtml(nombreClienteListado)}"` : '';
         return `<tr data-id="${o.id}"${esColaLocal ? ' class="tr-orden-cola-local"' : ''}>
           <td>${o.numero != null ? o.numero : '–'}</td>
           <td class="td-orden-fecha">${(o.fecha || '').toString().slice(0, 10)}</td>
           <td class="td-tipo-op-iconos">${o.tipo_operacion_id ? htmlCeldaTipoOperacionDesdeMap(o.tipo_operacion_id, tiposOpMap) : htmlTipoOperacionIconos('')}</td>
-          <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
+          <td${attrTitleCliente}>${escapeHtml(nombreClienteListado || '–')}</td>
           <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
           <td class="td-orden-comisiones" style="font-size:0.88rem;white-space:normal;line-height:1.35;max-width:10rem;">${txtComMarca}</td>
           <td class="td-orden-comisiones" style="font-size:0.88rem;white-space:normal;line-height:1.35;max-width:10rem;">${txtComInt}</td>

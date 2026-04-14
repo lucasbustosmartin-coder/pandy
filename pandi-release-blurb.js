@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.31',
+  versionLabel: 'v3.7.32',
   lines: [
-    'En Cuenta corriente podés elegir Total además de Cliente e Intermediario: los saldos muestran la posición consolidada sin contar dos veces a quien tiene «Mismo registro que…».',
-    'En Movimientos, el listado incluye todo lo que corresponde y el filtro por entidad se adapta al modo Total.',
-    'La búsqueda por nombre en Saldos también sirve cuando tenés seleccionado Total.',
+    'Cajas → Movimientos: la grilla se lee mejor con scroll horizontal; la columna Concepto ya no queda aplastada y las primeras columnas hasta Tipo quedan fijas al desplazar.',
+    'Órdenes: las primeras columnas (número, fecha, tipo de operación y cliente) quedan visibles al moverte de lado en tablas anchas.',
+    'En listados donde figura quién cargó o registró algo, todos los usuarios ven el nombre o el correo de la persona, no un código interno.',
   ],
 };

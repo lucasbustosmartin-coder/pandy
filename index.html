@@ -249,7 +249,7 @@
         <span class="menu-label">Seguridad</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.31</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.32</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -494,8 +494,8 @@
           <label class="ordenes-filtro-label"><span>Estado:</span><select id="ordenes-filtro-estado" class="select-filtro select-filtro-ordenes-estado"><option value="__activas__" selected>Activas (no ejecutadas ni anuladas)</option><option value="">Todas las órdenes</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option><option value="orden_ejecutada">Orden Ejecutada</option><option value="anulada">Anulada</option></select></label>
         </div>
         <div id="ordenes-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando órdenes…</div>
-        <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none;">
-          <table id="tabla-ordenes" class="tabla-listado-ordenes">
+        <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll ordenes-tabla-outer" style="display:none;">
+          <table id="tabla-ordenes" class="tabla-listado-ordenes tabla-ordenes-sticky">
             <thead><tr><th>Nº</th><th class="th-orden-fecha">Fecha</th><th>Tipo op.</th><th>Cliente</th><th>Intermediario</th><th class="th-orden-comisiones">Comisión <span class="js-marca-sistema-nombre">Pandi</span></th><th class="th-orden-comisiones">Comisión int.</th><th>Estado</th><th>Usuario</th><th class="th-orden-importe">Recibido</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda recibida</span></th><th class="th-orden-importe">Entregado</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda entregada</span></th><th></th></tr></thead>
             <tbody id="ordenes-tbody"></tbody>
           </table>
@@ -605,9 +605,9 @@
             </div>
           </div>
           <div id="cajas-loading" class="cajas-loading vista-loading-spinner" style="display:none;">Cargando movimientos…</div>
-          <div id="cajas-tabla-wrap" class="tabla-movimientos-wrap tabla-wrap-con-scroll" style="display:none;">
-            <table class="tabla-movimientos" id="tabla-movimientos-caja">
-              <thead><tr><th class="th-caja-fecha">Fecha</th><th class="th-caja-origen">Origen</th><th class="th-caja-nro">Nro orden</th><th class="th-caja-nro">Nro Trx</th><th class="th-caja-movimiento-nombre">Movimiento</th><th class="th-caja-tipo-mov">Tipo</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda</span></th><th class="th-caja-monto">Monto</th><th class="th-caja-caja-tipo">Caja</th><th>Usuario</th><th>Concepto</th><th></th></tr></thead>
+          <div id="cajas-tabla-wrap" class="tabla-movimientos-wrap tabla-wrap-con-scroll cajas-mov-tabla-outer" style="display:none;">
+            <table class="tabla-movimientos tabla-cajas-mov" id="tabla-movimientos-caja">
+              <thead><tr><th class="th-caja-fecha th-caja-sticky">Fecha</th><th class="th-caja-origen th-caja-sticky">Origen</th><th class="th-caja-nro th-caja-sticky">Nro orden</th><th class="th-caja-nro th-caja-sticky">Nro Trx</th><th class="th-caja-movimiento-nombre th-caja-sticky">Movimiento</th><th class="th-caja-tipo-mov th-caja-sticky th-caja-sticky-last">Tipo</th><th class="th-orden-moneda-col" scope="col"><span class="sr-only">Moneda</span></th><th class="th-caja-monto">Monto</th><th class="th-caja-caja-tipo">Caja</th><th>Usuario</th><th>Concepto</th><th></th></tr></thead>
               <tbody id="movimientos-caja-tbody"></tbody>
             </table>
           </div>

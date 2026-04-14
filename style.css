@@ -363,6 +363,119 @@
       min-width: 100%;
       border-collapse: collapse;
     }
+    /* Órdenes — vista principal: scroll unificado + columnas fijas Nº…Cliente (sticky) */
+    #ordenes-tabla-wrap.ordenes-tabla-outer.tabla-clientes-wrap.tabla-wrap-con-scroll {
+      overflow: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 #f1f5f9;
+    }
+    #ordenes-tabla-wrap.ordenes-tabla-outer.tabla-wrap-con-scroll::-webkit-scrollbar {
+      height: 10px;
+      width: 10px;
+    }
+    #ordenes-tabla-wrap.ordenes-tabla-outer.tabla-wrap-con-scroll::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 6px;
+    }
+    #ordenes-tabla-wrap.ordenes-tabla-outer.tabla-wrap-con-scroll::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky {
+      table-layout: auto;
+      width: max-content;
+      min-width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky {
+      --ord-w-nro: 4.5rem;
+      --ord-w-fecha: 7.25rem;
+      --ord-w-tipo: 10.5rem;
+      --ord-w-cliente: 13rem;
+      --ord-l1: 0;
+      --ord-l2: var(--ord-w-nro);
+      --ord-l3: calc(var(--ord-l2) + var(--ord-w-fecha));
+      --ord-l4: calc(var(--ord-l3) + var(--ord-w-tipo));
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(1),
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky tbody > tr:not(.orden-detalle-tr) > td:nth-child(1) {
+      width: var(--ord-w-nro);
+      min-width: var(--ord-w-nro);
+      max-width: var(--ord-w-nro);
+      box-sizing: border-box;
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(2),
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky tbody > tr:not(.orden-detalle-tr) > td:nth-child(2) {
+      width: var(--ord-w-fecha);
+      min-width: var(--ord-w-fecha);
+      max-width: var(--ord-w-fecha);
+      box-sizing: border-box;
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(3),
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky tbody > tr:not(.orden-detalle-tr) > td:nth-child(3) {
+      width: var(--ord-w-tipo);
+      min-width: var(--ord-w-tipo);
+      max-width: var(--ord-w-tipo);
+      box-sizing: border-box;
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(4),
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky tbody > tr:not(.orden-detalle-tr) > td:nth-child(4) {
+      width: var(--ord-w-cliente);
+      min-width: var(--ord-w-cliente);
+      max-width: var(--ord-w-cliente);
+      box-sizing: border-box;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(-n+4),
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky tbody > tr:not(.orden-detalle-tr) > td:nth-child(-n+4) {
+      position: sticky;
+      background-clip: padding-box;
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(1) { left: var(--ord-l1); z-index: 5; }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(2) { left: var(--ord-l2); z-index: 5; }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(3) { left: var(--ord-l3); z-index: 5; }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(4) { left: var(--ord-l4); z-index: 6; }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky tbody > tr:not(.orden-detalle-tr) > td:nth-child(1) {
+      left: var(--ord-l1);
+      z-index: 3;
+      background: #fff;
+      box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1);
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky tbody > tr:not(.orden-detalle-tr) > td:nth-child(2) {
+      left: var(--ord-l2);
+      z-index: 3;
+      background: #fff;
+      box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1);
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky tbody > tr:not(.orden-detalle-tr) > td:nth-child(3) {
+      left: var(--ord-l3);
+      z-index: 3;
+      background: #fff;
+      box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1);
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky tbody > tr:not(.orden-detalle-tr) > td:nth-child(4) {
+      left: var(--ord-l4);
+      z-index: 3;
+      background: #fff;
+      box-shadow: 3px 0 6px -2px rgba(0, 0, 0, 0.12);
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(-n+4) {
+      top: 0;
+      background: #f9fafb;
+      box-shadow: 0 1px 0 0 #d1d5db, 2px 0 4px -2px rgba(0, 0, 0, 0.08);
+    }
+    #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky thead th:nth-child(4) {
+      box-shadow: 0 1px 0 0 #d1d5db, 3px 0 6px -2px rgba(0, 0, 0, 0.1);
+    }
+    @media (max-width: 768px) {
+      #ordenes-tabla-wrap #tabla-ordenes.tabla-ordenes-sticky {
+        --ord-w-tipo: min(9rem, 28vw);
+        --ord-w-cliente: min(12rem, 42vw);
+      }
+    }
     #tabla-ordenes thead th,
     #tabla-ordenes tbody > tr:not(.orden-detalle-tr) > td,
     #ordenes-pendientes-tabla-wrap table.tabla-listado-ordenes thead th,
@@ -1913,40 +2026,188 @@
     .cajas-loading { color: #666; }
     .cajas-loading.vista-loading-spinner { padding: 1.5rem; }
     .tabla-movimientos-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; margin-top: 0.75rem; }
+    /* Cajas — tabla movimientos: scroll vertical+horizontal unificado (mejor en Windows / scrollbars) */
+    #cajas-tabla-wrap.cajas-mov-tabla-outer.tabla-movimientos-wrap.tabla-wrap-con-scroll {
+      overflow: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+    }
+    #cajas-tabla-wrap.cajas-mov-tabla-outer.tabla-movimientos-wrap.tabla-wrap-con-scroll {
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 #f1f5f9;
+    }
+    #cajas-tabla-wrap.cajas-mov-tabla-outer.tabla-movimientos-wrap.tabla-wrap-con-scroll::-webkit-scrollbar {
+      height: 10px;
+      width: 10px;
+    }
+    #cajas-tabla-wrap.cajas-mov-tabla-outer.tabla-movimientos-wrap.tabla-wrap-con-scroll::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 6px;
+    }
+    #cajas-tabla-wrap.cajas-mov-tabla-outer.tabla-movimientos-wrap.tabla-wrap-con-scroll::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
     .tabla-movimientos .monto-positivo { color: #0d7d3d; }
     .tabla-movimientos .monto-negativo { color: #b91c1c; }
-    /* Cajas — movimientos: sin saltos raros en fecha/números; moneda como icono (misma convención que Órdenes) */
+    /* Cajas — movimientos: auto + max-content → scroll horizontal antes que aplastar Concepto; Fecha…Tipo sticky */
+    #tabla-movimientos-caja.tabla-cajas-mov {
+      table-layout: auto;
+      width: max-content;
+      min-width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+    #tabla-movimientos-caja.tabla-cajas-mov {
+      --caja-w-fecha: 7.25rem;
+      --caja-w-origen: 6rem;
+      --caja-w-nro: 4.75rem;
+      --caja-w-mov: 14rem;
+      --caja-w-tipo: 5.5rem;
+      --caja-l1: 0;
+      --caja-l2: var(--caja-w-fecha);
+      --caja-l3: calc(var(--caja-l2) + var(--caja-w-origen));
+      --caja-l4: calc(var(--caja-l3) + var(--caja-w-nro));
+      --caja-l5: calc(var(--caja-l4) + var(--caja-w-nro));
+      --caja-l6: calc(var(--caja-l5) + var(--caja-w-mov));
+    }
     #tabla-movimientos-caja .th-caja-fecha,
     #tabla-movimientos-caja .td-caja-fecha {
+      width: var(--caja-w-fecha);
+      min-width: var(--caja-w-fecha);
+      max-width: var(--caja-w-fecha);
+      box-sizing: border-box;
       white-space: nowrap;
-      min-width: 6.75rem;
       font-variant-numeric: tabular-nums;
     }
     #tabla-movimientos-caja .th-caja-origen,
-    #tabla-movimientos-caja .td-caja-origen { white-space: nowrap; }
+    #tabla-movimientos-caja .td-caja-origen {
+      width: var(--caja-w-origen);
+      min-width: var(--caja-w-origen);
+      max-width: var(--caja-w-origen);
+      box-sizing: border-box;
+      white-space: nowrap;
+    }
     #tabla-movimientos-caja .th-caja-nro,
     #tabla-movimientos-caja .td-caja-nro {
+      width: var(--caja-w-nro);
+      min-width: var(--caja-w-nro);
+      max-width: var(--caja-w-nro);
+      box-sizing: border-box;
       white-space: nowrap;
       font-variant-numeric: tabular-nums;
       text-align: center;
-      min-width: 4.25rem;
     }
     #tabla-movimientos-caja .th-caja-movimiento-nombre,
     #tabla-movimientos-caja .td-caja-movimiento-nombre {
-      max-width: 12rem;
-      overflow-wrap: break-word;
-      word-break: break-word;
+      width: var(--caja-w-mov);
+      min-width: var(--caja-w-mov);
+      max-width: var(--caja-w-mov);
+      box-sizing: border-box;
+      white-space: normal;
+      vertical-align: top;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+      word-break: normal;
+      hyphens: manual;
+      padding-top: 0.6rem;
+      padding-bottom: 0.6rem;
+    }
+    #tabla-movimientos-caja .th-caja-movimiento-nombre {
+      white-space: nowrap;
+      vertical-align: middle;
+      padding-top: inherit;
+      padding-bottom: inherit;
     }
     #tabla-movimientos-caja .th-caja-tipo-mov,
-    #tabla-movimientos-caja .td-caja-tipo-mov { white-space: nowrap; }
+    #tabla-movimientos-caja .td-caja-tipo-mov {
+      width: var(--caja-w-tipo);
+      min-width: var(--caja-w-tipo);
+      max-width: var(--caja-w-tipo);
+      box-sizing: border-box;
+      white-space: nowrap;
+    }
     #tabla-movimientos-caja .th-caja-monto,
     #tabla-movimientos-caja .td-caja-monto {
       text-align: right;
       white-space: nowrap;
       font-variant-numeric: tabular-nums;
+      min-width: 11rem;
+    }
+    /* Columnas después del bloque sticky: mínimos cómodos (evita filas altísimas por Concepto) */
+    #tabla-movimientos-caja thead th.th-orden-moneda-col,
+    #tabla-movimientos-caja tbody td.td-orden-moneda {
+      width: 2.5rem;
+      min-width: 2.5rem;
+      max-width: 2.75rem;
+      box-sizing: border-box;
     }
     #tabla-movimientos-caja .th-caja-caja-tipo,
-    #tabla-movimientos-caja .td-caja-caja-tipo { white-space: nowrap; }
+    #tabla-movimientos-caja .td-caja-caja-tipo {
+      white-space: nowrap;
+      min-width: 5.75rem;
+      width: 6.5rem;
+    }
+    #tabla-movimientos-caja thead th:nth-child(10),
+    #tabla-movimientos-caja tbody td.td-caja-usuario {
+      min-width: 4.5rem;
+      max-width: 8rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #tabla-movimientos-caja thead th:nth-child(11),
+    #tabla-movimientos-caja td.concepto-mov-caja {
+      min-width: 22rem;
+      vertical-align: top;
+      line-height: 1.4;
+      overflow-wrap: break-word;
+      word-break: normal;
+    }
+    #tabla-movimientos-caja thead th:last-child,
+    #tabla-movimientos-caja tbody td:last-child {
+      min-width: 11rem;
+      white-space: nowrap;
+    }
+    /* Sticky horizontal: columnas 1–6 (Fecha … Tipo) */
+    #tabla-movimientos-caja thead th:nth-child(-n+6),
+    #tabla-movimientos-caja tbody td:nth-child(-n+6) {
+      position: sticky;
+      background-clip: padding-box;
+    }
+    #tabla-movimientos-caja thead th:nth-child(1) { left: var(--caja-l1); z-index: 5; }
+    #tabla-movimientos-caja thead th:nth-child(2) { left: var(--caja-l2); z-index: 5; }
+    #tabla-movimientos-caja thead th:nth-child(3) { left: var(--caja-l3); z-index: 5; }
+    #tabla-movimientos-caja thead th:nth-child(4) { left: var(--caja-l4); z-index: 5; }
+    #tabla-movimientos-caja thead th:nth-child(5) { left: var(--caja-l5); z-index: 5; }
+    #tabla-movimientos-caja thead th:nth-child(6) { left: var(--caja-l6); z-index: 6; }
+    #tabla-movimientos-caja tbody td:nth-child(1) { left: var(--caja-l1); z-index: 3; background: #fff; box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1); }
+    #tabla-movimientos-caja tbody td:nth-child(2) { left: var(--caja-l2); z-index: 3; background: #fff; box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1); }
+    #tabla-movimientos-caja tbody td:nth-child(3) { left: var(--caja-l3); z-index: 3; background: #fff; box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1); }
+    #tabla-movimientos-caja tbody td:nth-child(4) { left: var(--caja-l4); z-index: 3; background: #fff; box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1); }
+    #tabla-movimientos-caja tbody td:nth-child(5) { left: var(--caja-l5); z-index: 3; background: #fff; box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1); }
+    #tabla-movimientos-caja tbody td:nth-child(6) {
+      left: var(--caja-l6);
+      z-index: 3;
+      background: #fff;
+      box-shadow: 3px 0 6px -2px rgba(0, 0, 0, 0.12);
+    }
+    #tabla-movimientos-caja thead th:nth-child(-n+6) {
+      top: 0;
+      background: #f9fafb;
+      box-shadow: 0 1px 0 0 #d1d5db, 2px 0 4px -2px rgba(0, 0, 0, 0.08);
+    }
+    #tabla-movimientos-caja thead th:nth-child(6) {
+      box-shadow: 0 1px 0 0 #d1d5db, 3px 0 6px -2px rgba(0, 0, 0, 0.1);
+    }
+    @media (max-width: 768px) {
+      #tabla-movimientos-caja.tabla-cajas-mov {
+        --caja-w-mov: min(12rem, 42vw);
+      }
+      #tabla-movimientos-caja thead th:nth-child(11),
+      #tabla-movimientos-caja td.concepto-mov-caja {
+        min-width: min(20rem, 90vw);
+      }
+    }
     .orden-detalle-cell { vertical-align: top; padding: 0 !important; border-left: 3px solid #0d7d3d; background: #f8faf8; }
     .orden-detalle-panel { padding: 1rem 1.25rem; }
     .orden-detalle-encabezado { margin-bottom: 0.75rem; }

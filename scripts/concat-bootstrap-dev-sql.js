@@ -27,6 +27,7 @@ const BOOTSTRAP_FILES = [
   'supabase_tablas_negocio.sql',
   'supabase_seguridad.sql',
   'migracion_user_profiles_display_name.sql',
+  'migracion_user_profiles_labels_for_ids_rpc.sql',
   'supabase_rls_negocio.sql',
   'supabase_complejidad_ordenes.sql',
   'supabase_seguridad_complejidad.sql',
