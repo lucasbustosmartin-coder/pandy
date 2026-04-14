@@ -21,6 +21,7 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Regla Cursor: supabase-mcp (alwaysApply)', 'Nueva .cursor/rules/supabase-mcp.mdc: uso proactivo del MCP Supabase (execute_sql, get_advisors, list_projects Pandy/Pandy-Dev); límites Auth-only; alinear sql/docs. estructura-proyecto §.cursor/rules; docs/CURSOR_SUPABASE_MCP.md § agente.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Supabase MCP: Storage iconos sin SELECT + search_path', 'execute_sql en Pandy (prod) y Pandy-Dev: transaccion_pertenece_a_orden con SET search_path; DROP policies tipo_op_iconos_select_* (lint 0025 listado). sql/storage_bucket_tipo_operacion_iconos.sql y SUPABASE_REQUISITOS §7.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Supabase Security Advisor: función transaccion_pertenece_a_orden', 'SET search_path en migracion_cc_caja_orden_robusto.sql; parche migracion_transaccion_pertenece_a_orden_search_path.sql. docs SUPABASE_REQUISITOS §7 (bucket público iconos, leaked password protection).', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Despliegue v3.7.31', 'Cuenta corriente: modo Total (Saldos sin duplicar par cliente–intermediario vinculado; Movimientos y export alineados; ayuda MANUAL CUENTA_CORRIENTE). sidebar v3.7.31; pandi-release-blurb. vercel --prod; npx vercel --yes; merge main→preview-empleado + verificación SHA.', 'Despliegue'],

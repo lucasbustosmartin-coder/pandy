@@ -30,3 +30,7 @@ Si el PAT pudo verse en un chat, log o captura: en **Supabase Dashboard → Acco
 ## Alternativa oficial (HTTP + OAuth)
 
 Supabase documenta también el servidor MCP por URL **`https://mcp.supabase.com/mcp`** con flujo de login en el cliente, sin PAT en archivo local. Si migrás a ese modo, seguí la guía en [Supabase MCP](https://supabase.com/docs/guides/getting-started/mcp).
+
+## Uso en Cursor (agente)
+
+Con el MCP enlazado, el agente debe seguir la regla **`.cursor/rules/supabase-mcp.mdc`** (siempre activa): usar el MCP de forma proactiva para SQL, advisors y proyectos **Pandy** / **Pandy-Dev**, y mantener `sql/` + `docs/` alineados tras cambios en la base.

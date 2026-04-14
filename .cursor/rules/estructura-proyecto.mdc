@@ -18,7 +18,7 @@ Mantener siempre esta organización para que sea **simple y eficiente** encontra
 | **`Base/`** | Archivo(s) Excel de origen si la app los usa. No modificar estructura sin actualizar script y documentación. | (opcional) |
 | **`assets/`** | Logos e iconos: favicon, logo de app, iconos de monedas (USD, ARS, EUR), iconos de cajas (cash, Banco), SP_logo para presentación. | `favicon-*.png`, `cash.png`, `Banco.webp`, `Icono_*.avif/webp`, `SP_logo.svg` |
 | **Raíz** | Config (`package.json`, `config.example.js`), `.gitignore`, `index.html`, `main.js`, **`pandi-release-blurb.js`** (novedades modal «Nueva versión»; el build emite `dist/pandi-release.json`). | |
-| **`.cursor/rules/`** | Reglas del agente (incluye **`responsive-pwa-skill.mdc`** → skill en `.cursor/skills/responsive-pwa-web-design/`). | |
+| **`.cursor/rules/`** | Reglas del agente (incluye **`responsive-pwa-skill.mdc`** → skill en `.cursor/skills/responsive-pwa-web-design/`; **`supabase-mcp.mdc`** → uso proactivo del MCP de Supabase cuando aplique). | |
 
 ## Cursor — skill responsive/PWA en el repo
 
