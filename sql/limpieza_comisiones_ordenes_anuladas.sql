@@ -2,6 +2,10 @@
 -- `comisiones_orden` y/o `orden_comisiones_generadas` (p. ej. anuladas antes
 -- del DELETE en `ejecutarAnulacionOrdenCompleta` o si el DELETE falló por RLS).
 --
+-- Si el problema visible es **CC en pendiente** para esa orden, usá en su lugar
+-- `sql/limpieza_cc_pendiente_ordenes_anuladas.sql` (UPDATE) o el parche amplio
+-- `sql/fix_cc_anulado_estado.sql`.
+--
 -- Ejecutar en Supabase SQL Editor (producción y/o dev) tras revisar el SELECT
 -- de inspección. Misma semántica que el flujo actual de anulación en la app.
 
