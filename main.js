@@ -6440,7 +6440,8 @@ function setupInicioGpOperativo() {
   inicioGpOperativoListenersAttached = true;
 }
 
-function inicioGpSumarCuatroBolsas(cajaMan, cajaOrd, ccC, ccI) {
+/** Total G/P por moneda: seis bolsas coherentes (flujo operativo + comisiones del acuerdo aisladas). */
+function inicioGpSumarSeisBolsas(cajaMan, cajaOrd, ccC, ccI, comP, comI) {
   const monedas = ['USD', 'ARS', 'EUR'];
   const tot = {};
   monedas.forEach((m) => {
@@ -6448,7 +6449,9 @@ function inicioGpSumarCuatroBolsas(cajaMan, cajaOrd, ccC, ccI) {
     const o = Number(cajaOrd[m] != null ? cajaOrd[m] : 0);
     const b = Number(ccC[m] != null ? ccC[m] : 0);
     const c = Number(ccI[m] != null ? ccI[m] : 0);
-    tot[m] = a + o + b + c;
+    const p = Number(comP && comP[m] != null ? comP[m] : 0);
+    const i = Number(comI && comI[m] != null ? comI[m] : 0);
+    tot[m] = a + o + b + c + p + i;
   });
   return tot;
 }
@@ -6466,9 +6469,11 @@ const GP_OPERATIVA_DETALLE_BOLSAS = [
   { key: 'caja_ordenes', titulo: 'Movimientos de caja por órdenes' },
   { key: 'cc_cliente', titulo: 'Cuenta corriente — clientes' },
   { key: 'cc_intermediario', titulo: 'Cuenta corriente — intermediarios' },
+  { key: 'comisiones_acuerdo_pandy', titulo: 'Comisión del acuerdo (empresa)' },
+  { key: 'comisiones_acuerdo_intermediario', titulo: 'Comisión del acuerdo (intermediario)' },
 ];
 
-/** Filas planas del último desglose «total» (cuatro tablas); para ver solo una moneda en todas las filas. */
+/** Filas planas del último desglose «total» (seis bolsas); para ver solo una moneda en todas las filas. */
 let pandiGpDetalleCacheTotalFilas = null;
 
 const GP_DETALLE_EYE_SVG =
@@ -6621,7 +6626,7 @@ function pandiHtmlGpDetalleSeccionConsolidado(allRows) {
   return (
     '<section class="gp-detalle-seccion gp-detalle-seccion-consolidado" aria-label="Total consolidado">' +
     '<div class="gp-detalle-consolidado-titulo-fila">' +
-    '<h4 class="gp-detalle-seccion-titulo">Total consolidado (suma de las cuatro filas)</h4>' +
+    '<h4 class="gp-detalle-seccion-titulo">Total consolidado (suma de las seis bolsas)</h4>' +
     inicioGpHtmlBotonVerDetalleMovimientos('total', 'Actualizar desglose completo') +
     '</div>' +
     '<div class="gp-detalle-consolidado-grid">' +
@@ -6793,7 +6798,7 @@ function openModalGpOperativaDetalle(bolsa, opt) {
     }
     actionsHtml += inicioGpHtmlBotonVerDetalleMovimientos(
       'total',
-      'Ver desglose de las cuatro filas',
+      'Ver desglose de las seis bolsas',
     );
     headerActions.innerHTML = actionsHtml;
   }
@@ -6873,10 +6878,16 @@ function setupModalGpOperativaDetalle() {
   });
 }
 
-function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
+function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI, comisionPandy, comisionIntermediario) {
   if (!elMatriz) return;
   const monedas = MONEDAS_GP_PANEL;
-  const tot = inicioGpSumarCuatroBolsas(cajaMan, cajaOrd, ccC, ccI);
+  const comP =
+    comisionPandy && typeof comisionPandy === 'object' && !Array.isArray(comisionPandy) ? comisionPandy : {};
+  const comI =
+    comisionIntermediario && typeof comisionIntermediario === 'object' && !Array.isArray(comisionIntermediario)
+      ? comisionIntermediario
+      : {};
+  const tot = inicioGpSumarSeisBolsas(cajaMan, cajaOrd, ccC, ccI, comP, comI);
   function numBolsa(bolsa, mon) {
     const v = bolsa[mon];
     return v != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
@@ -6957,7 +6968,7 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
   const totalLabelHtml =
     '<span class="inicio-gp-matriz-label-total-wrap">' +
     '<span class="inicio-gp-matriz-label-total">Total</span>' +
-    (totalTodoCero ? '' : inicioGpHtmlBotonVerDetalleMovimientos('total', 'Ver desglose: movimientos de las cuatro filas')) +
+    (totalTodoCero ? '' : inicioGpHtmlBotonVerDetalleMovimientos('total', 'Ver desglose: las seis bolsas')) +
     '</span>';
   const rowTotal = gpFila(
     totalLabelHtml,
@@ -6976,7 +6987,7 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-ordenes">Movimientos de caja por órdenes</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja por órdenes en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). En el <strong>detalle</strong>, la columna <strong>Medio de pago</strong> repite el modo elegido en cada transacción (Efectivo, Transferencia banco, Cheque, etc.). Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
+      '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). <strong>No incluye</strong> en esta bolsa los movimientos cuya leyenda es comisión del acuerdo (van en la fila de comisión más abajo). En el <strong>detalle</strong>, la columna <strong>Medio de pago</strong> repite el modo elegido en cada transacción (Efectivo, Transferencia banco, Cheque, etc.). Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
       escapeHtml(nombreMarcaSistema()) +
       '</span> cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de los movimientos de caja manuales filtrados por tipo.</span></span>',
     monedas.map((m) => celMonedaPareja(cajaOrd, m, false, 'caja_ordenes')).join(''),
@@ -6985,21 +6996,49 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI) {
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-clientes">Cuenta Corriente Clientes</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Clientes en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Cuenta Corriente Clientes</strong> (esta fila): suma algebraica de todas las líneas de la cuenta corriente de clientes con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>). En el <strong>detalle</strong>, <strong>Medio de pago</strong> se muestra cuando la línea está ligada a una <strong>transacción</strong> con modo de pago; líneas sin transacción (p. ej. manuales o ajustes) pueden quedar en «–».<br><br>En <strong>Cuenta corriente → Cliente → Saldos</strong> sí entran también los pendientes; por eso el total allí puede diferir de esta fila sin que sea un error.</span></span>',
+      '</button><span class="help-popover"><strong>Cuenta Corriente Clientes</strong> (esta fila): suma algebraica de líneas con <strong>estado cerrado</strong> y fecha dentro del período, <strong>excluyendo</strong> las que son <strong>comisión del acuerdo</strong> (esas van en la fila de comisión empresa o, si aplicara huérfana de tabla, en el mismo desglose de comisión). No incluye pendientes de ejecución. En el <strong>detalle</strong>, <strong>Medio de pago</strong> se muestra cuando la línea tiene <strong>transacción</strong> con modo de pago.<br><br>En <strong>Cuenta corriente → Cliente → Saldos</strong> entran también pendientes; el total allí puede diferir sin que sea un error.</span></span>',
     monedas.map((m) => celMonedaPareja(ccC, m, false, 'cc_cliente')).join(''),
   );
   const rowInt = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-intermediarios">Cuenta Corriente Intermediarios</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Intermediarios en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): mismo criterio que clientes, sobre la cuenta corriente de intermediarios: suma algebraica de todas las líneas con <strong>estado cerrado</strong> y fecha dentro del período elegido. No incluye transacciones pendientes de ejecución ni las comisiones derivadas de esas transacciones pendientes (ni otros movimientos que sigan en <strong>pendiente</strong>). En el <strong>detalle</strong>, <strong>Medio de pago</strong> aparece cuando la línea tiene <strong>transacción</strong> con modo de pago; si no aplica, «–».<br><br>En <strong>Cuenta corriente → Intermediario → Saldos</strong> sí entran también los pendientes; el total puede diferir de esta fila por el mismo motivo.</span></span>',
+      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): suma de líneas cerradas en el período, <strong>excluyendo comisión del acuerdo</strong> (van en la fila de comisión intermediario o en su desglose). No incluye pendientes. En el <strong>detalle</strong>, <strong>Medio de pago</strong> cuando hay transacción con modo de pago.<br><br>En <strong>Cuenta corriente → Intermediario → Saldos</strong> entran pendientes; el total puede diferir.</span></span>',
     monedas.map((m) => celMonedaPareja(ccI, m, false, 'cc_intermediario')).join(''),
   );
-  elMatriz.innerHTML = filaCabecera + rowTotal + rowCaja + rowCajaOrd + rowCli + rowInt;
+  const marcaNombre = escapeHtml(nombreMarcaSistema());
+  const rowComisionMarca = gpFila(
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-comision-acuerdo">Comisión del acuerdo (' +
+      marcaNombre +
+      ')</div>',
+    '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: comisión del acuerdo empresa en G/P Operativa">' +
+      helpIconSvg +
+      '</button><span class="help-popover"><strong>Comisión del acuerdo (' +
+      marcaNombre +
+      ')</strong>: suma desde <strong>comisiones_orden</strong> (beneficiario empresa, <strong>fecha de la orden</strong> en el período, sin anuladas) y, si hiciera falta, líneas de CC cliente con texto de comisión del acuerdo <strong>sin</strong> fila equivalente en esa tabla (legacy). <strong>Sí entra en el Total</strong> de arriba junto con las otras cinco bolsas: el flujo operativo de caja/CC <strong>no duplica</strong> esas comisiones porque ya las excluye de sus filas.</span></span>',
+    monedas.map((m) => celMonedaPareja(comP, m, false, 'comisiones_acuerdo_pandy')).join(''),
+  );
+  const rowComisionInt = gpFila(
+    '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-comision-acuerdo">Comisión del acuerdo (intermediario)</div>',
+    '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: comisión del acuerdo intermediario en G/P Operativa">' +
+      helpIconSvg +
+      '</button><span class="help-popover"><strong>Comisión del acuerdo (intermediario)</strong>: igual que la fila de la empresa, con beneficiario intermediario y, si aplica, líneas huérfanas en <strong>CC intermediario</strong>. La parte por <strong>tasa de transferencia</strong> fuera del acuerdo sigue la lógica de negocio del tipo de operación (suele ir por CC). <strong>Sí entra en el Total</strong> con el resto de bolsas, sin duplicar lo que ya se sacó del flujo operativo.</span></span>',
+    monedas.map((m) => celMonedaPareja(comI, m, false, 'comisiones_acuerdo_intermediario')).join(''),
+  );
+  elMatriz.innerHTML =
+    filaCabecera +
+    rowTotal +
+    rowCaja +
+    rowCajaOrd +
+    rowCli +
+    rowInt +
+    '<div class="inicio-gp-matriz-sep-comision" aria-hidden="true"></div>' +
+    rowComisionMarca +
+    rowComisionInt;
   elMatriz.style.display = 'flex';
 }
 
-/** Normaliza el JSON devuelto por `gp_operativa_resumen` a las cuatro bolsas por moneda. */
+/** Normaliza el JSON devuelto por `gp_operativa_resumen` a las seis bolsas por moneda. */
 function pandiGpBolsasDesdeRpcPayload(raw) {
   let data = raw;
   if (typeof data === 'string') {
@@ -7024,6 +7063,8 @@ function pandiGpBolsasDesdeRpcPayload(raw) {
     cajaOrd: bolsaNum(o.caja_ordenes),
     ccC: bolsaNum(o.cc_cliente),
     ccI: bolsaNum(o.cc_intermediario),
+    comisionPandy: bolsaNum(o.comisiones_acuerdo_pandy),
+    comisionIntermediario: bolsaNum(o.comisiones_acuerdo_intermediario),
   };
 }
 
@@ -7106,11 +7147,18 @@ function loadInicioGpOperativo() {
         }
         return;
       }
-      const { cajaMan, cajaOrd, ccC, ccI } = pandiGpBolsasDesdeRpcPayload(res.data);
+      const { cajaMan, cajaOrd, ccC, ccI, comisionPandy, comisionIntermediario } = pandiGpBolsasDesdeRpcPayload(res.data);
       pandiInicioGpDesdeCache = false;
       pandiInicioGpSnapshotSavedAtIso = null;
-      pintarInicioGpMatriz(matrizEl, cajaMan, cajaOrd, ccC, ccI);
-      void pandiPersistInicioGpSnapshotMerge(inicioGpOperativoPeriodo, { cajaMan, cajaOrd, ccC, ccI });
+      pintarInicioGpMatriz(matrizEl, cajaMan, cajaOrd, ccC, ccI, comisionPandy, comisionIntermediario);
+      void pandiPersistInicioGpSnapshotMerge(inicioGpOperativoPeriodo, {
+        cajaMan,
+        cajaOrd,
+        ccC,
+        ccI,
+        comisionPandy,
+        comisionIntermediario,
+      });
       updatePandiDatosNoVivosStrip();
     })
     .catch(async () => {
@@ -15727,6 +15775,8 @@ async function pandiPersistInicioGpSnapshotMerge(period, bags) {
       cajaOrd: { ...(bags.cajaOrd || {}) },
       ccC: { ...(bags.ccC || {}) },
       ccI: { ...(bags.ccI || {}) },
+      comisionPandy: { ...(bags.comisionPandy || {}) },
+      comisionIntermediario: { ...(bags.comisionIntermediario || {}) },
     };
     await idbReadSnapshotPut(db, next);
   } catch (e) {
@@ -15746,7 +15796,15 @@ async function pandiTryRestoreInicioGpDesdeSnapshot() {
     if (Number.isNaN(t)) return false;
     const age = Date.now() - t;
     if (age > PANDI_SNAPSHOT_INICIO_CAJAS_MAX_AGE_MS || age < 0) return false;
-    pintarInicioGpMatriz(matrizEl, ent.cajaMan || {}, ent.cajaOrd || {}, ent.ccC || {}, ent.ccI || {});
+    pintarInicioGpMatriz(
+      matrizEl,
+      ent.cajaMan || {},
+      ent.cajaOrd || {},
+      ent.ccC || {},
+      ent.ccI || {},
+      ent.comisionPandy || {},
+      ent.comisionIntermediario || {},
+    );
     pandiInicioGpSnapshotSavedAtIso = ent.savedAt;
     return true;
   } catch (e) {
@@ -18406,8 +18464,11 @@ function guardarOrdenDesdeWizard() {
       const comisionMoneda = esChequeArsOrden ? 'ARS' : 'USD';
       const comisionUsdNum = comisionUsd != null && !isNaN(Number(comisionUsd)) ? Math.max(0, Number(comisionUsd)) : 0;
       const extraTrEst = wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion);
-      if (!((tipoCodigoU === 'USD-USD' || esChequeArsOrden || patronTcGuardar) && (comisionUsdNum > 1e-12 || extraTrEst >= 1e-6))) return Promise.resolve();
+      const ambitoComision = tipoCodigoU === 'USD-USD' || esChequeArsOrden || patronTcGuardar;
+      if (!ambitoComision) return Promise.resolve();
+      const shouldPersistComision = comisionUsdNum > 1e-12 || extraTrEst >= 1e-6;
       return client.from('comisiones_orden').delete().eq('orden_id', ordenId).then(() => {
+        if (!shouldPersistComision) return Promise.resolve();
         let montoPandy;
         let montoInter;
         if (tipoCodigoU === 'USD-USD' && intermediarioId) {
@@ -18475,7 +18536,9 @@ function guardarOrdenDesdeWizard() {
             });
           }
         });
-        return client.from('comisiones_orden').insert(rows).then(() => {});
+        const rowsComisionOk = rows.filter((r) => Number(r.monto) >= 1e-6);
+        if (!rowsComisionOk.length) return Promise.resolve();
+        return client.from('comisiones_orden').insert(rowsComisionOk).then(() => {});
       });
     }
     if (esChequeArsOrden && intermediarioId && tasaDescuentoIntermediario != null) {
@@ -19135,8 +19198,17 @@ function saveOrden() {
       const comisionMonedaSave = esChequeArsSave ? 'ARS' : 'USD';
       const comisionUsdNumSave = comisionUsd != null && !isNaN(Number(comisionUsd)) ? Math.max(0, Number(comisionUsd)) : 0;
       const extraTrEstSave = wizardEstimadoExtraTasaTransferenciaInterComisionMoneda(monedaRecibida, monedaEntregada, montoRecibido, montoEntregado, cotizacion);
-      if ((tipoCodigoU === 'USD-USD' || esChequeArsSave || patronTcSaveOrd) && (comisionUsdNumSave > 1e-12 || extraTrEstSave >= 1e-6)) {
-        client.from('comisiones_orden').delete().eq('orden_id', ordenId).then(() => {
+      const ambitoComisionSave = tipoCodigoU === 'USD-USD' || esChequeArsSave || patronTcSaveOrd;
+      if (!ambitoComisionSave) {
+        continuar();
+        return;
+      }
+      const shouldPersistComisionSave = comisionUsdNumSave > 1e-12 || extraTrEstSave >= 1e-6;
+      return client.from('comisiones_orden').delete().eq('orden_id', ordenId).then(() => {
+        if (!shouldPersistComisionSave) {
+          continuar();
+          return;
+        }
           let montoPandy;
           let montoInter;
           if (tipoCodigoU === 'USD-USD' && intermediarioId) {
@@ -19206,12 +19278,16 @@ function saveOrden() {
               });
             }
           });
-          client.from('comisiones_orden').insert(rows).then((rCom) => {
+          const rowsComisionSaveOk = rows.filter((r) => Number(r.monto) >= 1e-6);
+          if (!rowsComisionSaveOk.length) {
+            continuar();
+            return;
+          }
+          return client.from('comisiones_orden').insert(rowsComisionSaveOk).then((rCom) => {
             if (rCom.error) console.warn('Comisión no guardada:', rCom.error.message);
             continuar();
           });
         });
-      } else continuar();
     }
 
     // Orden nueva: crear instrumentación (1:1 con la orden)
@@ -20871,8 +20947,27 @@ function revertirGananciaPandy(ordenId, orden, clienteId, comisionPandyMonto) {
 }
 
 /**
+ * Tasa por transferencia al intermediario (fuera del acuerdo con el cliente): no debe imputarse a **caja física** (billetes);
+ * solo libro **CC Pandy–intermediario**. En **USD-USD** con spread de acuerdo `mr > me` se mantiene el egreso en caja legacy para la comisión persistida en la misma convención que antes.
+ */
+function ordenOmitirMovimientoCajaComisionIntPorTasaTransferenciaFueraAcuerdo(ordenRow, codigoTipoUpper) {
+  if (!ordenRow) return false;
+  if (ordenRow.intermediario_pago_transferencia !== true) return false;
+  if (!coercePgBooleanStrict(ordenRow.intermediario_transferencia_cobra_tasa)) return false;
+  const tFrac = Number(ordenRow.intermediario_transferencia_tasa) || 0;
+  if (!(tFrac > 0)) return false;
+  const cod = String(codigoTipoUpper || '').trim().toUpperCase();
+  if (cod === 'USD-USD') {
+    const mr = Number(ordenRow.monto_recibido) || 0;
+    const me = Number(ordenRow.monto_entregado) || 0;
+    if (mr - me > 1e-6) return false;
+  }
+  return true;
+}
+
+/**
  * Tras ejecutar una trx Pandy↔Intermediario: inserta en CC int. una línea «Comisión del acuerdo» por cada fila `comisiones_orden` con beneficiario intermediario.
- * `asegurarComisionIntermediario` (caja) solo se invoca para la **primera** fila: la tabla `orden_comisiones_generadas` sigue siendo una fila por orden y tipo.
+ * `asegurarComisionIntermediario` solo se invoca para la **primera** fila: la tabla `orden_comisiones_generadas` sigue siendo una fila por orden y tipo. La caja física se omite si aplica tasa transferencia fuera del acuerdo (ver `ordenOmitirMovimientoCajaComisionIntPorTasaTransferenciaFueraAcuerdo`).
  */
 function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
   const {
@@ -20888,40 +20983,54 @@ function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
   } = opts;
   const uidCc = usuarioIdRegistro || currentUserId;
   if (!ordenId || !intermediarioId) return Promise.resolve();
-  return client.from('comisiones_orden').select('moneda, monto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario')
-    .then((rCom) => {
-      const filas = (rCom.data || []).filter((row) => (Number(row.monto) || 0) >= 1e-6);
-      if (!filas.length) return Promise.resolve();
-      return filas.reduce(
-        (p, row, idx) => p.then(() => {
-          const comMonto = Number(row.monto) || 0;
-          const monCom = (row.moneda || 'ARS').toUpperCase();
-          return client.from('movimientos_cuenta_corriente_intermediario').insert({
-            intermediario_id: intermediarioId,
-            orden_id: ordenId,
-            transaccion_id: transaccionId,
-            transaccion_numero: transaccionNumero != null ? transaccionNumero : null,
-            moneda: monCom,
-            monto: -comMonto,
-            concepto: conceptoCcLeyenda('comision_acuerdo', ordenNumero, transaccionNumero),
-            fecha,
-            usuario_id: uidCc,
-            estado: 'cerrado',
-            estado_fecha: ahora,
-            ...montosCcPorMoneda(monCom, -comMonto),
-          }).then(() => (idx === 0 && instrumentacionId
-            ? asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, ordenNumero, transaccionNumero, uidCc)
-            : Promise.resolve()));
-        }),
-        Promise.resolve(),
-      );
+  return client.from('ordenes')
+    .select('monto_recibido, monto_entregado, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, tipo_operacion_id, tipos_operacion(codigo)')
+    .eq('id', ordenId)
+    .maybeSingle()
+    .then((rOrd) => {
+      const ordenSnap = rOrd.data || {};
+      const toJoin = ordenSnap.tipos_operacion;
+      const codRaw = toJoin && (Array.isArray(toJoin) ? (toJoin[0] && toJoin[0].codigo) : toJoin.codigo);
+      const codTipo = String(codRaw || '').trim().toUpperCase();
+      const omitirCajaEfectivo = Boolean(codTipo) && ordenOmitirMovimientoCajaComisionIntPorTasaTransferenciaFueraAcuerdo(ordenSnap, codTipo);
+      return client.from('comisiones_orden').select('moneda, monto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario')
+        .then((rCom) => {
+          const filas = (rCom.data || []).filter((row) => (Number(row.monto) || 0) >= 1e-6);
+          if (!filas.length) return Promise.resolve();
+          return filas.reduce(
+            (p, row, idx) => p.then(() => {
+              const comMonto = Number(row.monto) || 0;
+              const monCom = (row.moneda || 'ARS').toUpperCase();
+              return client.from('movimientos_cuenta_corriente_intermediario').insert({
+                intermediario_id: intermediarioId,
+                orden_id: ordenId,
+                transaccion_id: transaccionId,
+                transaccion_numero: transaccionNumero != null ? transaccionNumero : null,
+                moneda: monCom,
+                monto: -comMonto,
+                concepto: conceptoCcLeyenda('comision_acuerdo', ordenNumero, transaccionNumero),
+                fecha,
+                usuario_id: uidCc,
+                estado: 'cerrado',
+                estado_fecha: ahora,
+                ...montosCcPorMoneda(monCom, -comMonto),
+              }).then(() => (idx === 0 && instrumentacionId
+                ? asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, ordenNumero, transaccionNumero, uidCc, omitirCajaEfectivo)
+                : Promise.resolve()));
+            }),
+            Promise.resolve(),
+          );
+        });
     });
 }
 
-/** Comisión intermediario: solo caja (sin fila en `transacciones`). La CC de comisión ya la inserta el flujo que ejecuta la transacción cliente↔Pandy. Requiere migración `sql/migracion_orden_comisiones_movimiento_caja.sql` para `movimiento_caja_id` y `transaccion_id` nullable. */
-function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, montoCom, monCom, ordenNumero, transaccionNumeroRef, usuarioIdMovimiento) {
+/**
+ * Comisión intermediario: por defecto un egreso en `movimientos_caja` efectivo (legacy). Si `omitirMovimientoCajaEfectivo`, solo `orden_comisiones_generadas` sin `movimientos_caja` (tasa transferencia fuera del acuerdo con el cliente: libro CC, no billetes). La línea CC «Comisión del acuerdo» ya inserta el caller. Requiere migración `sql/migracion_orden_comisiones_movimiento_caja.sql` para `movimiento_caja_id` y `transaccion_id` nullable.
+ */
+function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, montoCom, monCom, ordenNumero, transaccionNumeroRef, usuarioIdMovimiento, omitirMovimientoCajaEfectivo) {
   void instrumentacionId;
   const uidCaja = usuarioIdMovimiento || currentUserId;
+  const omitirCaja = omitirMovimientoCajaEfectivo === true;
   if (!ordenId || !intermediarioId || !montoCom || montoCom < 1e-6) return Promise.resolve();
   const ordNum = ordenNumero != null ? ordenNumero : null;
   const nroRef = transaccionNumeroRef != null ? transaccionNumeroRef : null;
@@ -20929,6 +21038,10 @@ function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediario
     .then((r) => {
       if (r.data && r.data.id) return Promise.resolve();
       const fecha = fechaHoyYYYYMMDDArgentina();
+      const rowBase = { orden_id: ordenId, tipo: 'comision_intermediario', transaccion_id: null };
+      if (omitirCaja) {
+        return client.from('orden_comisiones_generadas').insert(rowBase);
+      }
       const conceptoCom = conceptoCajaTransaccionEspecial('Comisión del acuerdo', monCom, montoCom, ordNum, nroRef);
       return client.from('movimientos_caja').insert({
         orden_id: ordenId,
@@ -20944,7 +21057,7 @@ function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediario
       }).select('id').single()
         .then((rCaja) => {
           const mcId = rCaja.data && rCaja.data.id;
-          const row = { orden_id: ordenId, tipo: 'comision_intermediario', transaccion_id: null };
+          const row = { ...rowBase };
           if (mcId) row.movimiento_caja_id = mcId;
           return client.from('orden_comisiones_generadas').insert(row);
         });

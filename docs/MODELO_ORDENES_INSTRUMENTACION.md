@@ -49,6 +49,12 @@ No hace falta volver a ejecutar `tablas_negocio`, `seguridad`, `rls_negocio` ni 
 | **transacciones** | Ingreso/Egreso, modo_pago, moneda, owner (Pandy/Cliente/Intermediario), monto, estado (Pendiente/Ejecutada), tipo_cambio (si ARS). Al ejecutarse genera movimientos de caja y CC. |
 | **comisiones_orden** | Registro de comisiones por orden (monto, moneda). |
 | **Cajas** | Por tipo: efectivo, banco (transferencias), cheque (solo ARS). Saldo por (caja_tipo, moneda). |
+
+### `comisiones_orden` al guardar orden (wizard / modal)
+
+En tipos que usan tabla de comisión (**USD-USD**, **CHEQUE-ARS** con lógica de spread, cruces con **patrón TC** en el formulario), al **guardar** la orden la app **siempre** ejecuta `DELETE` de `comisiones_orden` para ese `orden_id` y **solo** vuelve a insertar filas si sigue habiendo spread en moneda comisión **o** extra por **tasa de transferencia del intermediario** (`wizardEstimadoExtraTasaTransferenciaInterComisionMoneda`). Así, si el usuario **activó** “cobra tasa” y después **lo quitó** (y el spread queda en cero), **no quedan filas huérfanas** ni filas con monto 0. Implementación: `guardarComision` / `guardarComisionYContinuar` en `main.js`.
+
+**Al ejecutar la pata Pandy↔Intermediario**, la comisión al intermediario por esa tasa (fuera del acuerdo con el cliente) se refleja en **CC intermediario**; **no** se registra como egreso en **caja física** (billetes), para no mezclar G/P operativo con el cajón real. Detalle: `ordenOmitirMovimientoCajaComisionIntPorTasaTransferenciaFueraAcuerdo` y `asegurarComisionIntermediario` en `main.js`; excepción legacy **USD-USD** con spread `mr > me` en el acuerdo.
 | **Cuenta corriente cliente** | Igual que hoy (por cliente y moneda). |
 | **Cuenta corriente intermediario** | Nueva: por intermediario y moneda. |
 

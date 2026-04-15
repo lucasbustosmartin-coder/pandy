@@ -61,10 +61,10 @@ El saldo en la vista **excluye** movimientos con `estado === 'anulado'` e **incl
 
 Para que la cuenta corriente cierre y no se dupliquen transacciones al pasar ejecutada→pendiente→ejecutada:
 
-- **Tabla `orden_comisiones_generadas`**: una fila por `(orden_id, tipo)` con `tipo` en `ganancia_pandy` o `comision_intermediario` y el `transaccion_id` de la transacción creada. Opcionalmente `transaccion_id_reducida` para Ganancia (ingreso cliente del que se descontó la comisión; se restaura al revertir).
-- **Crear Ganancia / Comisión**: se usan `asegurarGananciaPandy` y `asegurarComisionIntermediario`, que consultan la tabla y solo crean (transacción + caja + CC + fila) si aún no existe.
+- **Tabla `orden_comisiones_generadas`**: una fila por `(orden_id, tipo)` con `tipo` en `ganancia_pandy` o `comision_intermediario` y el `transaccion_id` de la transacción creada. Opcionalmente `transaccion_id_reducida` para Ganancia (ingreso cliente del que se descontó la comisión; se restaura al revertir). En **comision_intermediario**, `movimiento_caja_id` puede quedar **nulo** cuando la comisión corresponde a **tasa por transferencia al intermediario** fuera del acuerdo con el cliente: solo CC intermediario + fila de control, **sin** `movimientos_caja` efectivo (separar G/P operativo de billetes).
+- **Crear Ganancia / Comisión**: se usan `asegurarGananciaPandy` y `asegurarComisionIntermediario`, que consultan la tabla y solo crean movimientos si aún no existe la fila. **Comisión intermediario:** por defecto un egreso en `movimientos_caja` efectivo (legacy); si aplica tasa transferencia fuera del acuerdo (`ordenOmitirMovimientoCajaComisionIntPorTasaTransferenciaFueraAcuerdo` en `main.js`), solo se inserta la fila en `orden_comisiones_generadas` sin caja física. La línea «Comisión del acuerdo» en CC intermediario la inserta el flujo previo (`insertarFilasComisionIntermediarioCcPorTransaccion`).
 - **Reversa (ejecutada→pendiente)**:
-  - Si se revierte **egreso Pandy→Int**: `revertirComisionIntermediario(ordenId)` borra la transacción de comisión, sus movimientos de caja y CC y la fila en la tabla.
+  - Si se revierte **egreso Pandy→Int**: `revertirComisionIntermediario(ordenId)` borra el movimiento de caja si existía (`movimiento_caja_id`), las filas CC de comisión asociadas y la fila en la tabla.
   - Si se revierte **ingreso Int→Pandy**: se borran los movimientos CC de esa transacción (cobro y descuento) y se reabre la fila Compensación a pendiente.
   - Si se revierte una transacción **cliente** y el cliente deja de estar “completo” (suma ejecutada &lt; mr/me): `revertirGananciaPandy` restaura el ingreso reducido, borra la transacción Ganancia, caja y CC y la fila en la tabla.
 

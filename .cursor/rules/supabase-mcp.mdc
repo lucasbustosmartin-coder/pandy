@@ -1,5 +1,5 @@
 ---
-description: Usar el MCP de Supabase cuando aplique (SQL, advisors, proyectos Pandy/Pandy-Dev); límites y coherencia con sql/ y docs
+description: MCP Supabase (server user-supabase): SQL/advisors; siempre considerar Pandy prod + Pandy-Dev salvo alcance explícito del usuario
 alwaysApply: true
 ---
 
@@ -7,15 +7,32 @@ alwaysApply: true
 
 En este entorno el agente **puede invocar el servidor MCP de Supabase** (configuración local del usuario: `~/.cursor/mcp.json`, token en `~/.cursor/supabase-mcp.env` — ver **`docs/CURSOR_SUPABASE_MCP.md`**). No asumir que el MCP esté deshabilitado: **usarlo de forma proactiva** cuando la tarea sea ejecutar SQL en Supabase, comprobar avisos del Security Advisor, listar proyectos o tareas equivalentes que el MCP cubra.
 
-## Cómo invocarlo (Cursor)
+## Dos bases (regla estricta — **prod y dev**)
 
-- Herramienta del host: **`call_mcp_tool`** con el servidor que exponga Cursor (suele figurar como **`user-supabase`** en los descriptores del proyecto; el `mcp.json` puede nombrarlo `supabase`).
-- Si una llamada falla por nombre de servidor, probar el identificador que liste la UI de MCP de Cursor para Supabase.
+Hay **dos** proyectos Supabase del producto; **la misma regla de trabajo aplica a los dos**, salvo que el usuario acote el alcance en el mensaje (p. ej. «solo Pandy-Dev», «solo producción»).
+
+| Rol | Nombre en Supabase | `project_id` (ref) habitual | Uso en el producto |
+|-----|--------------------|---------------------------|-------------------|
+| **Producción** | **Pandy** | `bxwxuzbahewvptarlnxm` | `pandi.company`, datos reales |
+| **Desarrollo** | **Pandy-Dev** | `ozsofsmnuzliczfphqze` | Preview / pruebas (`preview.pandi.company` + Supabase dev) |
+
+- Antes de asumir refs viejos, conviene **`list_projects`** y elegir el **Pandy-Dev** con estado **ACTIVE_HEALTHY** (puede haber otro homónimo inactivo en la misma org).
+- **Por defecto** al tocar esquema, funciones, RLS, políticas, índices o datos de referencia vía MCP: **ejecutar el mismo SQL (o migración equivalente) en Pandy y en Pandy-Dev**, en ese orden o en el que el usuario indique, y **dejar constancia en la respuesta** de que ambos quedaron aplicados (o cuál falló).
+- Si el usuario pide **solo uno**, limitar a ese `project_id` y decirlo explícitamente.
+- **`get_advisors`** u otras verificaciones globales: si el cambio fue de esquema/seguridad, **revisar ambos proyectos** cuando tenga sentido (o el que haya sido modificado más el otro para paridad).
+
+## Cómo invocarlo (Cursor) — **identificador del servidor**
+
+- En **`call_mcp_tool`**, el parámetro **`server`** debe ser el **identificador interno** que expone Cursor, **no** necesariamente la clave de `~/.cursor/mcp.json`.
+- **Valor habitual en este repo / máquina:** **`user-supabase`** (prefijo `user-` + clave del servidor; ver `mcps/user-supabase/SERVER_METADATA.json` en el proyecto de Cursor: `serverIdentifier` = `user-supabase`, `serverName` = `supabase`).
+- **Error típico:** usar `server: "supabase"` → *MCP server does not exist* aunque el MCP esté activo en Ajustes, porque el host registra el proceso como **`user-supabase`**.
+- **Si falla el nombre:** abrir **Cursor → Settings → MCP**, copiar el identificador que figure junto al servidor Supabase, o leer `SERVER_METADATA.json` bajo `.cursor/projects/<workspace>/mcps/user-supabase/`.
+- **Antes de `execute_sql` / `apply_migration`:** leer el descriptor del tool en esa carpeta (`tools/execute_sql.json`, etc.) para nombres exactos de parámetros (`project_id`, `query`, …).
 
 ## Identificación de proyectos
 
-- Antes de `execute_sql` u otras herramientas que pidan **`project_id`**, usar **`list_projects`** y elegir el ref correcto (en la organización habitual: **Pandy** = producción, **Pandy-Dev** = desarrollo/preview de datos).
-- Si el usuario pide solo uno de los entornos, limitar los cambios a ese `project_id`; si pide “prod y dev” o es un parche de esquema/RLS que debe ser idéntico, aplicar en **ambos** salvo indicación contraria.
+- Antes de `execute_sql` u otras herramientas que pidan **`project_id`**, usar **`list_projects`** y confirmar nombre + estado **ACTIVE_HEALTHY**.
+- Criterio por defecto: **paridad prod + dev** (ver tabla arriba). Solo un entorno si el mensaje del usuario lo restringe.
 
 ## Cuándo usar el MCP (sí)
 

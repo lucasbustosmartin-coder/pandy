@@ -67,6 +67,12 @@ docs/Pandy_Dev_Supabase.xlsx
 # SQL concatenado para bootstrap (regenerar con npm run sql:bootstrap:dev)
 sql/_generado_bootstrap_pandy_dev.sql
 
+# Particiones / payloads temporales MCP (no versionar)
+sql/_mcp_gp_panel_part*.sql
+.tmp_mcp_*.json
+.tmp_exec_*.json
+.tmp_gp_mcp_payload.json
+
 # Informes Lighthouse (regenerar con npm run lighthouse)
 docs/lighthouse-report.html
 docs/lighthouse-report-mobile.html

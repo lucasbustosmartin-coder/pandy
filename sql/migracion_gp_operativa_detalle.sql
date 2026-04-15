@@ -12,7 +12,14 @@ DECLARE
   b text;
 BEGIN
   b := lower(trim(COALESCE(p_bolsa, '')));
-  IF b NOT IN ('caja_manual', 'caja_ordenes', 'cc_cliente', 'cc_intermediario') THEN
+  IF b NOT IN (
+    'caja_manual',
+    'caja_ordenes',
+    'cc_cliente',
+    'cc_intermediario',
+    'comisiones_acuerdo_pandy',
+    'comisiones_acuerdo_intermediario'
+  ) THEN
     RETURN '[]'::jsonb;
   END IF;
 
@@ -90,6 +97,7 @@ BEGIN
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
       WHERE m.orden_id IS NOT NULL
         AND m.estado = 'cerrado'
+        AND NOT public.gp_concepto_es_comision_caja_ordenes_gp(COALESCE(m.concepto, ''))
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
     ) sub;
@@ -128,51 +136,198 @@ BEGIN
       LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
       WHERE m.estado = 'cerrado'
+        AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
     ) sub;
     RETURN COALESCE(v, '[]'::jsonb);
   END IF;
 
-  -- cc_intermediario
-  SELECT COALESCE(
-    jsonb_agg(row_json ORDER BY fecha_sort DESC, id_sort DESC),
-    '[]'::jsonb
-  )
-  INTO v
-  FROM (
-    SELECT
-      jsonb_build_object(
-        'id', m.id::text,
-        'fecha', m.fecha::text,
-        'moneda', m.moneda,
-        'monto', m.monto,
-        'concepto', COALESCE(m.concepto, ''),
-        'tipo_movimiento', NULL,
-        'modo_pago', COALESCE(
-          NULLIF(TRIM(COALESCE(mp.nombre, '')), ''),
-          NULLIF(TRIM(COALESCE(mp.codigo, '')), ''),
-          ''
-        ),
-        'orden_numero', o.numero,
-        'transaccion_numero', m.transaccion_numero,
-        'entidad', i.nombre
-      ) AS row_json,
-      m.fecha AS fecha_sort,
-      m.id::text AS id_sort
-    FROM public.movimientos_cuenta_corriente_intermediario m
-    LEFT JOIN public.intermediarios i ON i.id = m.intermediario_id
-    LEFT JOIN public.ordenes o ON o.id = m.orden_id
-    LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
-    LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
-    WHERE m.estado = 'cerrado'
-      AND (p_desde IS NULL OR m.fecha >= p_desde)
-      AND (p_hasta IS NULL OR m.fecha <= p_hasta)
-  ) sub;
-  RETURN COALESCE(v, '[]'::jsonb);
+  IF b = 'cc_intermediario' THEN
+    SELECT COALESCE(
+      jsonb_agg(row_json ORDER BY fecha_sort DESC, id_sort DESC),
+      '[]'::jsonb
+    )
+    INTO v
+    FROM (
+      SELECT
+        jsonb_build_object(
+          'id', m.id::text,
+          'fecha', m.fecha::text,
+          'moneda', m.moneda,
+          'monto', m.monto,
+          'concepto', COALESCE(m.concepto, ''),
+          'tipo_movimiento', NULL,
+          'modo_pago', COALESCE(
+            NULLIF(TRIM(COALESCE(mp.nombre, '')), ''),
+            NULLIF(TRIM(COALESCE(mp.codigo, '')), ''),
+            ''
+          ),
+          'orden_numero', o.numero,
+          'transaccion_numero', m.transaccion_numero,
+          'entidad', i.nombre
+        ) AS row_json,
+        m.fecha AS fecha_sort,
+        m.id::text AS id_sort
+      FROM public.movimientos_cuenta_corriente_intermediario m
+      LEFT JOIN public.intermediarios i ON i.id = m.intermediario_id
+      LEFT JOIN public.ordenes o ON o.id = m.orden_id
+      LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
+      LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
+      WHERE m.estado = 'cerrado'
+        AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+        AND (p_desde IS NULL OR m.fecha >= p_desde)
+        AND (p_hasta IS NULL OR m.fecha <= p_hasta)
+    ) sub;
+    RETURN COALESCE(v, '[]'::jsonb);
+  END IF;
+
+  IF b = 'comisiones_acuerdo_pandy' THEN
+    SELECT COALESCE(
+      jsonb_agg(row_json ORDER BY fecha_sort DESC, id_sort DESC),
+      '[]'::jsonb
+    )
+    INTO v
+    FROM (
+      SELECT
+        jsonb_build_object(
+          'id', ('co-' || c.id::text),
+          'fecha', o.fecha::text,
+          'moneda', c.moneda,
+          'monto', c.monto,
+          'concepto', 'Comisión del acuerdo (tabla comisiones_orden · empresa)',
+          'tipo_movimiento', NULL,
+          'modo_pago', '',
+          'orden_numero', o.numero,
+          'transaccion_numero', NULL,
+          'entidad', cl.nombre
+        ) AS row_json,
+        o.fecha AS fecha_sort,
+        ('co-' || c.id::text) AS id_sort
+      FROM public.comisiones_orden c
+      INNER JOIN public.ordenes o ON o.id = c.orden_id
+      LEFT JOIN public.clientes cl ON cl.id = o.cliente_id
+      WHERE c.beneficiario = 'pandy'
+        AND lower(COALESCE(o.estado, '')) <> 'anulada'
+        AND (p_desde IS NULL OR o.fecha >= p_desde)
+        AND (p_hasta IS NULL OR o.fecha <= p_hasta)
+      UNION ALL
+      SELECT
+        jsonb_build_object(
+          'id', m.id::text,
+          'fecha', m.fecha::text,
+          'moneda', m.moneda,
+          'monto', m.monto,
+          'concepto', COALESCE(m.concepto, ''),
+          'tipo_movimiento', NULL,
+          'modo_pago', COALESCE(
+            NULLIF(TRIM(COALESCE(mp.nombre, '')), ''),
+            NULLIF(TRIM(COALESCE(mp.codigo, '')), ''),
+            ''
+          ),
+          'orden_numero', o.numero,
+          'transaccion_numero', m.transaccion_numero,
+          'entidad', c.nombre
+        ) AS row_json,
+        m.fecha AS fecha_sort,
+        m.id::text AS id_sort
+      FROM public.movimientos_cuenta_corriente m
+      LEFT JOIN public.clientes c ON c.id = m.cliente_id
+      LEFT JOIN public.ordenes o ON o.id = m.orden_id
+      LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
+      LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
+      WHERE m.estado = 'cerrado'
+        AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+        AND (p_desde IS NULL OR m.fecha >= p_desde)
+        AND (p_hasta IS NULL OR m.fecha <= p_hasta)
+        AND (
+          m.orden_id IS NULL
+          OR NOT EXISTS (
+            SELECT 1
+            FROM public.comisiones_orden c2
+            WHERE c2.orden_id = m.orden_id
+              AND c2.beneficiario = 'pandy'
+          )
+        )
+    ) sub;
+    RETURN COALESCE(v, '[]'::jsonb);
+  END IF;
+
+  IF b = 'comisiones_acuerdo_intermediario' THEN
+    SELECT COALESCE(
+      jsonb_agg(row_json ORDER BY fecha_sort DESC, id_sort DESC),
+      '[]'::jsonb
+    )
+    INTO v
+    FROM (
+      SELECT
+        jsonb_build_object(
+          'id', ('co-' || c.id::text),
+          'fecha', o.fecha::text,
+          'moneda', c.moneda,
+          'monto', c.monto,
+          'concepto', 'Comisión del acuerdo (tabla comisiones_orden · intermediario)',
+          'tipo_movimiento', NULL,
+          'modo_pago', '',
+          'orden_numero', o.numero,
+          'transaccion_numero', NULL,
+          'entidad', i.nombre
+        ) AS row_json,
+        o.fecha AS fecha_sort,
+        ('co-' || c.id::text) AS id_sort
+      FROM public.comisiones_orden c
+      INNER JOIN public.ordenes o ON o.id = c.orden_id
+      LEFT JOIN public.intermediarios i ON i.id = o.intermediario_id
+      WHERE c.beneficiario = 'intermediario'
+        AND lower(COALESCE(o.estado, '')) <> 'anulada'
+        AND (p_desde IS NULL OR o.fecha >= p_desde)
+        AND (p_hasta IS NULL OR o.fecha <= p_hasta)
+      UNION ALL
+      SELECT
+        jsonb_build_object(
+          'id', m.id::text,
+          'fecha', m.fecha::text,
+          'moneda', m.moneda,
+          'monto', m.monto,
+          'concepto', COALESCE(m.concepto, ''),
+          'tipo_movimiento', NULL,
+          'modo_pago', COALESCE(
+            NULLIF(TRIM(COALESCE(mp.nombre, '')), ''),
+            NULLIF(TRIM(COALESCE(mp.codigo, '')), ''),
+            ''
+          ),
+          'orden_numero', o.numero,
+          'transaccion_numero', m.transaccion_numero,
+          'entidad', intm.nombre
+        ) AS row_json,
+        m.fecha AS fecha_sort,
+        m.id::text AS id_sort
+      FROM public.movimientos_cuenta_corriente_intermediario m
+      LEFT JOIN public.intermediarios intm ON intm.id = m.intermediario_id
+      LEFT JOIN public.ordenes o ON o.id = m.orden_id
+      LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
+      LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
+      WHERE m.estado = 'cerrado'
+        AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+        AND (p_desde IS NULL OR m.fecha >= p_desde)
+        AND (p_hasta IS NULL OR m.fecha <= p_hasta)
+        AND (
+          m.orden_id IS NULL
+          OR NOT EXISTS (
+            SELECT 1
+            FROM public.comisiones_orden c2
+            WHERE c2.orden_id = m.orden_id
+              AND c2.beneficiario = 'intermediario'
+          )
+        )
+    ) sub;
+    RETURN COALESCE(v, '[]'::jsonb);
+  END IF;
+
+  RETURN '[]'::jsonb;
 END;
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON de movimientos que entran en una fila de G/P Operativa para el período: caja_manual, caja_ordenes, cc_cliente, cc_intermediario. Mismos filtros que gp_operativa_resumen (cerrados, fechas inclusive AR, tipos caja con incluye_gp_operativo en manual). Campo modo_pago (medio de pago en UI): caja_manual = Efectivo/Banco/Cheque desde movimientos_caja.caja_tipo; caja_ordenes y filas CC con transaccion_id = nombre o código modos_pago vía transacciones.modo_pago_id; CC sin transacción o sin modo = vacío. SECURITY INVOKER / RLS.';
+COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON que entra en cada bolsa de G/P Operativa (mismo criterio que gp_operativa_resumen): caja_manual; caja_ordenes sin comisión del acuerdo en concepto; cc_cliente / cc_intermediario sin líneas «Comisión del acuerdo…»; comisiones_acuerdo_pandy / comisiones_acuerdo_intermediario (comisiones_orden por fecha de orden + líneas CC huérfanas). modo_pago: caja_manual desde caja_tipo; caja_ordenes y CC con transacción desde modos_pago; resto vacío. SECURITY INVOKER / RLS.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_detalle(date, date, text) TO authenticated;

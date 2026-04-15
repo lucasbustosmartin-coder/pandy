@@ -23,6 +23,7 @@ Este documento define los principios que **siempre** deben cumplirse. El sistema
 
 - La **caja** refleja **dinero real**. Es lo que Pandy tiene en efectivo, banco, etc.
 - Si al final del día Pandy va y cuenta los billetes (o concilia con el banco), **tiene que dar lo que el sistema dice**. Solo entran movimientos que representan entradas o salidas reales de dinero (transacciones ejecutadas, movimientos manuales). Referencia: `docs/CONVENCION_MOVIMIENTOS_CAJA.md` y lógica en `main.js` (sync, caja por transacción).
+- **Tasa por transferencia al intermediario** (cargo fuera del acuerdo con el cliente): la obligación y el pago contable van por **cuenta corriente Pandy–intermediario**; **no** debe imputarse a **caja de billetes** (`movimientos_caja` efectivo). En la app, cuando aplica esa casuística, `asegurarComisionIntermediario` solo registra `orden_comisiones_generadas` sin insertar fila en caja física (ver `ordenOmitirMovimientoCajaComisionIntPorTasaTransferenciaFueraAcuerdo` en `main.js`). Excepción legacy: **USD-USD** con spread de acuerdo `mr > me` sigue usando egreso en caja para la comisión persistida en la convención anterior.
 
 ---
 

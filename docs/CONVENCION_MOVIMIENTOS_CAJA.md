@@ -33,6 +33,10 @@ Los movimientos de caja **manuales** (sin `transaccion_id`) no usan esta convenc
 
 Los movimientos creados al concertar una orden (origen por `orden_id` sin `transaccion_id`) siguen usando el concepto "Orden concertada"; no llevan número de transacción.
 
+## Comisión intermediario y caja física
+
+En **comisión del intermediario** por **tasa de transferencia** (cargo fuera del acuerdo con el cliente, flags en `ordenes`), la app **no** crea fila en `movimientos_caja` efectivo: el impacto queda en **CC intermediario** y en `orden_comisiones_generadas` con `movimiento_caja_id` nulo. Sigue existiendo el formato de concepto especial **Comisión del acuerdo** cuando sí se inserta caja (p. ej. legacy **USD-USD** con spread `mr > me` en el acuerdo). Ver `main.js` (`ordenOmitirMovimientoCajaComisionIntPorTasaTransferenciaFueraAcuerdo`, `asegurarComisionIntermediario`).
+
 ## Estructura en base de datos (una sola tabla)
 
 La tabla `movimientos_caja` acepta ambos orígenes (manual y acuerdos) en una única tabla:

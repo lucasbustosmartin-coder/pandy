@@ -1345,6 +1345,15 @@
       color: #1a1a1a;
       line-height: 1.2;
     }
+    .inicio-gp-matriz-sep-comision {
+      border-top: 1px dashed #cbd5e1;
+      margin: 0.35rem 0 0.15rem;
+      width: 100%;
+    }
+    .inicio-gp-matriz-label-comision-acuerdo {
+      color: #475569;
+      font-weight: 600;
+    }
     .inicio-gp-matriz-label-sub {
       font-size: 0.875rem;
       font-weight: 500;

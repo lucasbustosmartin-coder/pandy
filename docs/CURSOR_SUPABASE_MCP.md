@@ -34,3 +34,24 @@ Supabase documenta también el servidor MCP por URL **`https://mcp.supabase.com/
 ## Uso en Cursor (agente)
 
 Con el MCP enlazado, el agente debe seguir la regla **`.cursor/rules/supabase-mcp.mdc`** (siempre activa): usar el MCP de forma proactiva para SQL, advisors y proyectos **Pandy** / **Pandy-Dev**, y mantener `sql/` + `docs/` alineados tras cambios en la base.
+
+### Dos proyectos (producción y desarrollo)
+
+Mismo criterio para **ambos**: migraciones / `CREATE OR REPLACE` / RLS / parches idempotentes deben aplicarse a **Pandy (prod)** y **Pandy-Dev** salvo que el usuario diga explícitamente solo uno. Confirmar refs vigentes con **`list_projects`** (puede haber homónimos inactivos).
+
+| Entorno | Nombre Supabase | `project_id` (ref) habitual |
+|---------|-----------------|----------------------------|
+| Producción | **Pandy** | `bxwxuzbahewvptarlnxm` |
+| Desarrollo | **Pandy-Dev** | `ozsofsmnuzliczfphqze` |
+
+Desarrollo en Vercel Preview usa la base **dev**; producción usa **prod** — ver `docs/GIT_Y_VERCEL.md`.
+
+### Nombre del servidor en `call_mcp_tool` (importante)
+
+La herramienta del host es **`call_mcp_tool`**. El argumento **`server`** debe coincidir con el **`serverIdentifier`** que Cursor genera para ese proceso MCP, no siempre con la clave del JSON.
+
+- En configuraciones típicas con `~/.cursor/mcp.json` bajo la clave `"supabase"`, el identificador suele ser **`user-supabase`** (prefijo `user-` + nombre de la entrada).
+- Si aparece *MCP server does not exist: supabase*, probá **`user-supabase`**.
+- Referencia local al workspace: carpeta **`.cursor/projects/.../mcps/user-supabase/SERVER_METADATA.json`** (`serverIdentifier` / `serverName`).
+
+Para DDL grande, el propio MCP recomienda **`apply_migration`** en lugar de `execute_sql` cuando aplique; revisar el descriptor en `mcps/user-supabase/tools/`.
