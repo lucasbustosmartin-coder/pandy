@@ -5872,6 +5872,7 @@ function exportarOrdenesExcel() {
     'Tipo op.',
     'Cliente',
     'Intermediario',
+    'Multicontraparte',
     ...hMarca,
     ...hInt,
     'Estado',
@@ -5912,6 +5913,7 @@ function exportarOrdenesExcel() {
       tipoRow || '–',
       clienteNom || '–',
       intNom || '–',
+      esColaLocal ? '–' : ordenEtiquetaMulticontraparte(o),
       ...celdasMarca,
       ...celdasInt,
       estado,
@@ -5973,6 +5975,7 @@ function exportarOrdenesPendientesExcel() {
     'Tipo op.',
     'Cliente',
     'Intermediario',
+    'Multicontraparte',
     ...hMarca,
     ...hInt,
     'Estado',
@@ -6014,6 +6017,7 @@ function exportarOrdenesPendientesExcel() {
         tipoRow || '–',
         clienteNom || '–',
         intNom || '–',
+        ordenEtiquetaMulticontraparte(o),
         ...celdasMarca,
         ...celdasInt,
         estado,
@@ -7503,7 +7507,7 @@ let ordenesPendientesIntermediariosMap = {};
 let ordenesPendientesComisionesMap = {};
 /** Listado filtrado actual del modal (para Excel). */
 let ordenesPendientesListadoFiltradoActual = [];
-const PANDI_ORDENES_PENDIENTES_TABLA_COLSPAN = 12;
+const PANDI_ORDENES_PENDIENTES_TABLA_COLSPAN = 13;
 
 function renderOrdenesPendientesFiltros(list, clientesMap, intermediariosMap) {
   const selCliente = document.getElementById('ordenes-pendientes-filtro-cliente');
@@ -7553,6 +7557,7 @@ function renderOrdenesPendientesTabla() {
       <td class="td-tipo-op-iconos">${o.tipo_operacion_id ? htmlCeldaTipoOperacionDesdeMap(o.tipo_operacion_id, tiposOpMap) : htmlTipoOperacionIconos('')}</td>
       <td>${escapeHtml(o.cliente_id ? clientesMap[o.cliente_id] || '–' : '–')}</td>
       <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
+      <td class="td-orden-multi-col" style="text-align:center;white-space:nowrap;">${ordenHtmlBadgeMulticontraparte(o)}</td>
       <td class="td-orden-comisiones" style="font-size:0.88rem;white-space:normal;line-height:1.35;max-width:10rem;">${txtComMarca}</td>
       <td class="td-orden-comisiones" style="font-size:0.88rem;white-space:normal;line-height:1.35;max-width:10rem;">${txtComInt}</td>
       <td>${estadoHtml}</td>
@@ -7600,7 +7605,9 @@ function openModalOrdenesPendientes(estadoFilter) {
   tbody.innerHTML = '';
   const selEstado = document.getElementById('ordenes-pendientes-filtro-estado');
   if (selEstado) selEstado.value = estadoFilter || '';
-  const selectOrdPend = ordenesTieneNumeroColumn ? 'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones' : 'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones';
+  const selectOrdPend = ordenesTieneNumeroColumn
+    ? 'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones, instrumentacion(multicontraparte_manual)'
+    : 'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones, instrumentacion(multicontraparte_manual)';
   client.from('ordenes').select(selectOrdPend).neq('estado', 'orden_ejecutada').neq('estado', 'anulada').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((res) => {
       if (res.error) {
         loadingEl.style.display = 'none';
@@ -14788,7 +14795,7 @@ let ordenesVistaListadoFiltradoActual = [];
 let ordenesVistaSortCol = null;
 let ordenesVistaSortDir = 1;
 /** Columnas de la tabla principal de Órdenes (incl. detalle expandido `colspan`). */
-const PANDI_ORDENES_VISTA_TABLA_COLSPAN = 14;
+const PANDI_ORDENES_VISTA_TABLA_COLSPAN = 15;
 let ordenesFiltrosListenersAttached = false;
 /** True cuando la grilla de órdenes se armó desde snapshot local (sin fetch en vivo). */
 let pandiOrdenesVistaDesdeCache = false;
@@ -15093,6 +15100,11 @@ function compareOrdenesVistaRow(a, b, col, dir) {
       va = (a.intermediario_id ? inte[a.intermediario_id] || '' : '').toString().trim();
       vb = (b.intermediario_id ? inte[b.intermediario_id] || '' : '').toString().trim();
       return dir * va.localeCompare(vb);
+    case 'multicontraparte': {
+      const ma = ordenEsMulticontraparteManual(a) ? 1 : 0;
+      const mb = ordenEsMulticontraparteManual(b) ? 1 : 0;
+      return dir * (ma - mb);
+    }
     case 'comision_marca': {
       const aa = a._pandiColaLocal ? '' : pandiTextoComisionesListadoDesdeLado(aggMap[String(a.id)], 'pandy');
       const bb = b._pandiColaLocal ? '' : pandiTextoComisionesListadoDesdeLado(aggMap[String(b.id)], 'pandy');
@@ -15259,6 +15271,7 @@ function renderOrdenesTabla(list) {
           <td class="td-tipo-op-iconos">${o.tipo_operacion_id ? htmlCeldaTipoOperacionDesdeMap(o.tipo_operacion_id, tiposOpMap) : htmlTipoOperacionIconos('')}</td>
           <td${attrTitleCliente}>${escapeHtml(nombreClienteListado || '–')}</td>
           <td>${escapeHtml(o.intermediario_id ? intermediariosMap[o.intermediario_id] || '–' : '–')}</td>
+          <td class="td-orden-multi-col" style="text-align:center;white-space:nowrap;">${ordenHtmlBadgeMulticontraparte(o)}</td>
           <td class="td-orden-comisiones" style="font-size:0.88rem;white-space:normal;line-height:1.35;max-width:10rem;">${txtComMarca}</td>
           <td class="td-orden-comisiones" style="font-size:0.88rem;white-space:normal;line-height:1.35;max-width:10rem;">${txtComInt}</td>
           <td>${estadoHtml}</td>
@@ -16363,6 +16376,34 @@ function pandiTextoComisionesListadoDesdeLado(agg, lado) {
   return keys.map((mon) => `${formatImporteDisplay(Number(ob[mon]))} ${escapeHtml(mon)}`).join(' · ');
 }
 
+/** Instrumentación multicontraparte manual: flag en `instrumentacion` (embed Supabase en filas de `ordenes`). */
+function ordenEsMulticontraparteManual(o) {
+  if (!o || o._pandiColaLocal) return false;
+  const inst = o.instrumentacion;
+  if (inst == null) return false;
+  if (Array.isArray(inst)) {
+    const row = inst[0];
+    return !!(row && row.multicontraparte_manual === true);
+  }
+  return inst.multicontraparte_manual === true;
+}
+
+function ordenEtiquetaMulticontraparte(o) {
+  return ordenEsMulticontraparteManual(o) ? 'Sí' : 'No';
+}
+
+/** HTML seguro (solo Sí/No/–) para la columna Multi en tablas de órdenes. */
+function ordenHtmlBadgeMulticontraparte(o) {
+  if (o && o._pandiColaLocal) {
+    return '<span class="orden-badge-multi orden-badge-multi--na" title="Cola local">–</span>';
+  }
+  const si = ordenEsMulticontraparteManual(o);
+  if (si) {
+    return '<span class="orden-badge-multi orden-badge-multi--si">Sí</span>';
+  }
+  return '<span class="orden-badge-multi orden-badge-multi--no">No</span>';
+}
+
 function loadOrdenes() {
   // No recargar la lista mientras el modal de orden está abierto: evita que la vista atrás cargue y el modal pierda el foco.
   if (document.getElementById('modal-orden-backdrop')?.classList?.contains('activo')) return Promise.resolve();
@@ -16385,8 +16426,10 @@ function loadOrdenes() {
     tbody.innerHTML = '';
   }
 
-  const selectBase = 'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id';
-  const selectConNumero = 'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id';
+  const selectBase =
+    'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id, instrumentacion(multicontraparte_manual)';
+  const selectConNumero =
+    'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id, instrumentacion(multicontraparte_manual)';
 
   function runLoadOrdenes(selectCols) {
     return client
@@ -16424,6 +16467,13 @@ function loadOrdenes() {
           ) {
             const sinM = selectCols.replace(', usd_usd_tasa_cliente_modo', '');
             return runLoadOrdenes(sinM);
+          }
+          if (
+            (msg.includes('instrumentacion') || msg.includes('multicontraparte')) &&
+            selectCols.includes('instrumentacion(multicontraparte_manual)')
+          ) {
+            const sinMc = selectCols.replace(', instrumentacion(multicontraparte_manual)', '');
+            return runLoadOrdenes(sinMc);
           }
           return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(async () => {
             loadingEl.style.display = 'none';

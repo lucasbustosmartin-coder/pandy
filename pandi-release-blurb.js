@@ -5,10 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.37',
+  versionLabel: 'v3.7.38',
   lines: [
-    'Las ayudas de G/P Operativa en el panel de inicio cuentan con más detalle cuando la comisión del acuerdo se reparte entre la empresa y el intermediario en la misma orden y moneda.',
-    'Los textos «?» junto a las filas de comisión del acuerdo aclaran qué queda en la fila de la empresa y qué puede seguir figurando para el intermediario (por ejemplo otra moneda o tasa).',
-    'El manual de usuario describe el mismo criterio para leer el total sin confusiones.',
+    'En Órdenes y en el listado de órdenes pendientes del inicio aparece la columna Multi: ves de un vistazo si la orden usa multicontraparte manual (Sí o No) con etiquetas de color y una ayuda «?» en el encabezado.',
+    'Podés ordenar por Multi y exportar a Excel con la misma información; si la base aún no expone el dato enlazado, la lista sigue cargando sin bloquearse.',
   ],
 };
