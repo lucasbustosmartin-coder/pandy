@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.39',
+  versionLabel: 'v3.7.40',
   lines: [
-    'Cuenta corriente alineada al guardar o refrescar órdenes con multicontraparte manual y reglas: las filas pendientes que ya no corresponden deberían actualizarse bien cuando todas las transacciones están ejecutadas.',
-    'Ajuste fino en cómo se interpreta el estado de cada transacción al sincronizar, para que «ejecutada» se reconozca de forma uniforme en toda la app.',
+    'Al anular una orden se quitan también las comisiones del acuerdo guardadas para esa orden, para que no sigan figurando como pendientes en listados o paneles.',
+    'El aviso de confirmación al anular aclara que se eliminan esas comisiones y las marcas de comisiones ya generadas vinculadas a la orden.',
   ],
 };

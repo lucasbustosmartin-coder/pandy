@@ -7,24 +7,24 @@ En la tabla de reglas, cada tipo de transacción tiene filas según `(estado_tra
 
 **Criterios clave:**
 - **Cliente – Comisión Pandy (+5k):** cuando **Tx1 o Tx2** está ejecutada (`estadoEfectivoComision` `par_cliente` = ejecutada). Con solo Tx1 E y Tx2 P: detalle **−200k** (cheque) **+5k** (comisión) → saldo neto **−195k** (= −me).
-- **Intermediario – saldo 0:** cuando Tx3 y Tx4 están **ambas P**, las reglas tienen `suma_saldo` e `incluir` en false para esas filas → no se escribe ningún movimiento → saldo int **0**, detalle int **[]**.
+- **Comisiones al guardar la orden:** aunque el par cliente (Tx1/Tx2) o el par Pandy–intermediario (Tx3/Tx4) sigan **pendientes**, el sync CC (`aplicarMotorCcDesdeReglasDeNegocio`) **persiste** líneas de comisión en estado **`pendiente`** (plantilla de regla con `incluir_en_detalle` desde la fila canónica de par cerrado) para conciliación y detalle; al ejecutarse las patas correspondientes pasan a **`cerrado`** como antes.
 - **Intermediario – signos en movimientos (CHEQUE-ARS + int):** en detalle modal se persisten **+** monto del cheque (Tx3), **−** comisión intermediario, **−** efectivo Tx4 al ejecutarse. El **saldo numérico** esperado en E2E sigue en **−197k** donde corresponde (lectura `saldoResumenANumero` con intermediario). Ver `docs/CHEQUE_ARS_INTERMEDIARIO.md`.
 
 ---
 
 ## 1. P,P,P,P
 
-Todo pendiente = nadie le debe a nadie.
+Transacciones todas pendientes: **no** hay filas CC por cobro/compromiso (lookups Tx con `incluir` en false). Sí se persisten **comisiones** en **pendiente** (spread acuerdo + comisión intermediario desde `comisiones_orden` / motor).
 
-| Tipo        | Lookup     | cc_cliente (suma_saldo, incluir) | cc_int |
-|-------------|------------|----------------------------------|--------|
-| Tx1 / Tx2   | (P, false) | N, N                              | -      |
-| Tx3 / Tx4   | (P, false) | -                                 | N, N   |
-| Com. Pandy  | (P, false) | N, N                              | -      |
-| Com. Int    | (P, false) | -                                 | N, N   |
+| Tipo        | Lookup     | cc_cliente (mov. comisión) | cc_int (mov. comisión) |
+|-------------|------------|----------------------------|-------------------------|
+| Tx1 / Tx2   | (P, false) | N, N                       | -                       |
+| Tx3 / Tx4   | (P, false) | -                          | N, N                    |
+| Com. Pandy  | pendiente  | +5.000 (pendiente)         | -                       |
+| Com. Int    | pendiente  | -                          | −3.000 (pendiente)      |
 
-- **Saldo cliente:** **0** | **Detalle cliente:** **[]**
-- **Saldo int:** **0** | **Detalle int:** **[]**
+- **Saldo cliente:** **+5.000** | **Detalle cliente:** **[+5.000]**
+- **Saldo int:** **−3.000** | **Detalle int:** **[−3.000]**
 
 ---
 
@@ -39,10 +39,10 @@ Solo Tx4 ejecutada. Cliente: sin movimientos. Int: comisión y filas según regl
 
 ## 3. P,E,P,P
 
-Par cliente (Tx1 P, Tx2 E): Tx2 suma +195k, Com. Pandy +5k. Par int (Tx3 P, Tx4 P): **suma_saldo / incluir en false** → no se escribe nada en int.
+Par cliente (Tx1 P, Tx2 E): Tx2 suma +195k, Com. Pandy +5k. Par int (Tx3 P, Tx4 P): sin filas por Tx3/Tx4; **sí** comisión intermediario en **pendiente** (−3k).
 
 - **Saldo cliente:** **200.000** (195.000 + 5.000) | **Detalle cliente:** **[195.000, 5.000]**
-- **Saldo int:** **0** | **Detalle int:** **[]**
+- **Saldo int:** **−3.000** | **Detalle int:** **[−3.000]**
 
 ---
 
@@ -57,10 +57,10 @@ Cliente igual que P,E,P,P. Int: detalle **[+200.000, −3.000]** → saldo -197.
 
 ## 5. E,P,P,P
 
-**Par cliente:** Tx1 E, Tx2 P → comisión Pandy **sí** (Tx1 ejecutada). Cliente: Tx1 −200k + comisión +5k → saldo **-195.000**, detalle **[-200.000, 5.000]**. **Int:** Tx3 y Tx4 ambas P → no se escribe nada → saldo **0**, detalle **[]**.
+**Par cliente:** Tx1 E, Tx2 P → comisión Pandy **sí** (Tx1 ejecutada). Cliente: Tx1 −200k + comisión +5k → saldo **-195.000**, detalle **[-200.000, 5.000]**. **Int:** Tx3 y Tx4 ambas P → solo comisión intermediario **pendiente** −3k.
 
 - **Saldo cliente:** **-195.000** | **Detalle cliente:** **[-200.000, 5.000]**
-- **Saldo int:** **0** | **Detalle int:** **[]**
+- **Saldo int:** **−3.000** | **Detalle int:** **[−3.000]**
 
 ---
 
@@ -93,10 +93,10 @@ Cliente: −195.000, [-200.000, 5.000]. Int: par cerrado → **+200k −197k −
 
 ## 9. E,E,P,P
 
-Par cliente ejecutado → -200k + 195k + 5k = 0, detalle [-200.000, 195.000, 5.000]. **Int:** Tx3 y Tx4 ambas P → **no se escribe nada** → saldo **0**, detalle **[]**.
+Par cliente ejecutado → -200k + 195k + 5k = 0, detalle [-200.000, 195.000, 5.000]. **Int:** Tx3 y Tx4 ambas P → comisión intermediario **pendiente** −3k.
 
 - **Saldo cliente:** **0** | **Detalle cliente:** **[-200.000, 195.000, 5.000]**
-- **Saldo int:** **0** | **Detalle int:** **[]**
+- **Saldo int:** **−3.000** | **Detalle int:** **[−3.000]**
 
 ---
 
@@ -131,20 +131,20 @@ Todo ejecutado. Cliente: 0, [-200.000, 195.000, 5.000]. Int: 0, detalle **[200.0
 
 | Combinación | Saldo Cliente | Saldo Int | Detalle Cliente              | Detalle Int                |
 |-------------|---------------|-----------|------------------------------|----------------------------|
-| P,P,P,P     | 0             | 0         | []                           | []                         |
+| P,P,P,P     | 5.000         | −3.000    | [5.000]                      | [−3.000]                   |
 | P,P,P,E     | 0             | -197.000  | []                           | [200.000, −3.000]          |
-| P,E,P,P     | 200.000       | 0         | [195.000, 5.000]             | []                         |
+| P,E,P,P     | 200.000       | −3.000    | [195.000, 5.000]             | [−3.000]                   |
 | P,E,P,E     | 200.000       | -197.000  | [195.000, 5.000]             | [200.000, −3.000]          |
-| E,P,P,P     | -195.000      | 0         | [-200.000, 5.000]            | []                         |
+| E,P,P,P     | -195.000      | −3.000    | [-200.000, 5.000]            | [−3.000]                   |
 | E,P,P,E     | -195.000      | -197.000  | [-200.000, 5.000]            | [200.000, −3.000]          |
 | E,P,E,P     | -195.000      | -197.000  | [-200.000, 5.000]            | [200.000, −3.000]          |
 | E,P,E,E     | -195.000      | 0         | [-200.000, 5.000]            | [200.000, −197.000, −3.000] |
-| E,E,P,P     | 0             | 0         | [-200.000, 195.000, 5.000]   | []                         |
+| E,E,P,P     | 0             | −3.000    | [-200.000, 195.000, 5.000]   | [−3.000]                   |
 | E,E,P,E     | 0             | -197.000  | [-200.000, 195.000, 5.000]   | [200.000, −3.000]          |
 | E,E,E,P     | 0             | -197.000  | [-200.000, 195.000, 5.000]   | [200.000, −3.000]          |
 | E,E,E,E     | 0             | 0         | [-200.000, 195.000, 5.000]   | [200.000, −197.000, −3.000] |
 
-- **Intermediario saldo 0 y detalle []:** cuando Tx3 y Tx4 están **ambas P** (P,P,P,P; P,E,P,P; E,P,P,P; E,E,P,P).
+- **Intermediario saldo 0 y detalle [] (solo patas Tx3/Tx4):** cuando Tx3 y Tx4 están **ambas P** no hay movimientos de **pago/cobro** del circuito int.; **sí** puede figurar la **comisión** intermediario en **pendiente** (−3k) salvo que otras patas ya hayan absorbido el mismo criterio en el detalle final (combinaciones con más Tx ejecutadas).
 - **Cliente con Tx1 ejecutada y Tx2 pendiente (E,P,*,*):** saldo **−195.000** (200k nominal − comisión Pandy 5k); detalle **[-200.000, 5.000]** (cobro nominal + línea de comisión).
 
 Este documento es la fuente para auditar **tests/e2e/cc-combinaciones-esperado.js** y el log Excel del test E2E.

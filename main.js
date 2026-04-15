@@ -3791,7 +3791,8 @@ function anularMovimientosCcYCajaNoManualPorOrden(ordenId, ahora) {
 }
 
 /**
- * Persiste anulación: orden → anulada, transacciones → anulada, luego **siempre** `sincronizarCcYCajaDesdeOrden`
+ * Persiste anulación: orden → anulada; elimina `comisiones_orden` y `orden_comisiones_generadas` de la orden;
+ * transacciones → anulada; luego **siempre** `sincronizarCcYCajaDesdeOrden`
  * (regenera CC/caja derivada: filas CC con `estado` anulado ligadas a trx anuladas; caja solo por trx ejecutadas).
  * Incluye órdenes en estado orden_ejecutada (acción grave; confirmación en UI).
  */
@@ -3822,6 +3823,7 @@ function ejecutarAnulacionOrdenCompleta(ordenId) {
               'Orden anulada' +
               (ord.numero != null ? ' #' + ord.numero : '') +
               (eraEjecutada ? ' (estaba Orden ejecutada).' : '. ') +
+              ' Comisiones del acuerdo (comisiones_orden) y marcas orden_comisiones_generadas eliminadas.' +
               ' Transacciones de instrumentación marcadas anulada.' +
               ' CC y caja de la orden recalculadas por sincronización (CC en anulado donde corresponde; no suman al saldo).';
             function finAuditoria() {
@@ -3833,12 +3835,29 @@ function ejecutarAnulacionOrdenCompleta(ordenId) {
                 orden_estaba_ejecutada: eraEjecutada,
               });
             }
-            return anularTodasTransaccionesInstrumentacion(instrumentacionId, ahora).then(() =>
-              sincronizarCcYCajaDesdeOrden(ordenId, { silenciarAvisosInvarianteCc: false, propagarError: true }),
-            ).then(() => {
-              finAuditoria();
-              return { ok: true, todasPendientes };
-            });
+            return client
+              .from('comisiones_orden')
+              .delete()
+              .eq('orden_id', ordenId)
+              .then((rDelCo) => {
+                if (rDelCo.error) {
+                  return Promise.reject(new Error(rDelCo.error.message || 'No se pudieron eliminar las comisiones de la orden'));
+                }
+                return client.from('orden_comisiones_generadas').delete().eq('orden_id', ordenId);
+              })
+              .then((rDelOcg) => {
+                if (rDelOcg.error) {
+                  return Promise.reject(new Error(rDelOcg.error.message || 'No se pudieron eliminar las marcas de comisiones generadas'));
+                }
+                return anularTodasTransaccionesInstrumentacion(instrumentacionId, ahora);
+              })
+              .then(() =>
+                sincronizarCcYCajaDesdeOrden(ordenId, { silenciarAvisosInvarianteCc: false, propagarError: true }),
+              )
+              .then(() => {
+                finAuditoria();
+                return { ok: true, todasPendientes };
+              });
           });
       });
     });
@@ -3864,6 +3883,7 @@ function solicitarConfirmacionYAnularOrden(ordenId, callbacks) {
       const esEjecutada = st === 'orden_ejecutada';
       const base =
         'La orden pasará a estado Anulada.\n\n' +
+        'Se eliminan las filas de **comisiones del acuerdo** (`comisiones_orden`) y las marcas de comisiones generadas asociadas a la orden, para que no queden importes en pendiente.\n\n' +
         'Después se recalculan la cuenta corriente (cliente e intermediario) y la caja **derivadas** de esta orden: las filas CC ligadas a transacciones anuladas quedan visibles con estado **Anulada** y **no suman** al saldo. La caja solo refleja transacciones que estuvieron ejecutadas. Los movimientos CC **manuales** no se regeneran con el sync.\n\n' +
         'Es una operación sensible.\n\n' +
         '¿Confirmás la anulación?';
