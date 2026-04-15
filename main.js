@@ -20573,6 +20573,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
  * Regla única: orden + instrumentación son la fuente de verdad; CC y caja se recalculan por derivación.
  * Se borran todos los movimientos de esta orden y se vuelven a insertar según el estado actual de las transacciones.
  * Fecha contable y estado_fecha de cada fila derivada se anclan a la transacción (`fecha_ejecucion`, `updated_at`); ver `fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion`.
+ * Si `ordenes.estado` es **anulada** y alguna transacción de la instrumentación no está **anulada**, antes del cálculo se intenta **UPDATE** en `transacciones` (coherencia orden↔instrumentación); si falla el UPDATE, se alinean estados en memoria para el sync y se deja traza en consola.
  * **Invariante neteo CC cliente del acuerdo:** si el acuerdo está “cerrado” para este criterio (par ingreso+egreso clásico ejecutados, o multicontraparte manual con todas las transacciones ejecutadas o anuladas), la suma por moneda de las filas CC cerradas de ese cliente y orden debe ser cero, salvo en moneda recibida el residual explicado por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata». Si no cumple, **no** se llama a `sync_cc_caja_orden` (no se persiste CC/caja derivada de este cálculo).
  * @param {string} ordenId
  * @param {{ silenciarAvisosInvarianteCc?: boolean, propagarError?: boolean }} [optsSyncCc] Si `silenciarAvisosInvarianteCc`, no muestra toasts de diagnóstico del motor ni del neteo (p. ej. sync global encadenado); el bloqueo por neteo igual evita la RPC. Si `propagarError`, el `.catch` final **rechaza** la promesa (p. ej. tras anular orden) en lugar de resolver en silencio.
@@ -20629,13 +20630,50 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
         if (!rInst.data || !rInst.data.id) return Promise.resolve();
         const instId = rInst.data.id;
         const multicontraparteManual = !!(rInst.data && rInst.data.multicontraparte_manual);
+        const selectColsTrxInstrumentacionSync =
+          'id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at';
         return Promise.all([
-          client.from('transacciones').select('id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at').eq('instrumentacion_id', instId),
+          client.from('transacciones').select(selectColsTrxInstrumentacionSync).eq('instrumentacion_id', instId),
           client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
           client.from('modos_pago').select('id, codigo'),
           orden.intermediario_id ? client.from('intermediarios').select('nombre').eq('id', orden.intermediario_id).maybeSingle() : Promise.resolve({ data: null }),
-        ]).then(([rTr, rCom, rModos, rIntNom]) => {
-          const transacciones = (rTr.data || []).map((x) => transaccionNormalizarPagCobVacios(x));
+        ])
+          .then(([rTr, rCom, rModos, rIntNom]) => {
+            const transacciones = (rTr.data || []).map((x) => transaccionNormalizarPagCobVacios(x));
+            const alinearTransaccionesSiOrdenAnuladaSync = () => {
+              if (!ordenAnuladaSync || !instId) return Promise.resolve(transacciones);
+              if (!transacciones.some((t) => transaccionEstadoTextoNormalizado(t) !== 'anulada')) {
+                return Promise.resolve(transacciones);
+              }
+              return client
+                .from('transacciones')
+                .update({ estado: 'anulada', fecha_ejecucion: null, updated_at: ahora })
+                .eq('instrumentacion_id', instId)
+                .neq('estado', 'anulada')
+                .then((rUp) => {
+                  if (rUp.error) {
+                    if (typeof console !== 'undefined' && console.warn) {
+                      console.warn(
+                        'sincronizarCcYCajaDesdeOrden: orden anulada; no se pudieron persistir transacciones como anulada:',
+                        rUp.error.message || rUp.error,
+                      );
+                    }
+                    return transacciones.map((x) =>
+                      Object.assign({}, x, { estado: 'anulada', fecha_ejecucion: null, updated_at: ahora }),
+                    );
+                  }
+                  return client
+                    .from('transacciones')
+                    .select(selectColsTrxInstrumentacionSync)
+                    .eq('instrumentacion_id', instId)
+                    .then((r2) => (r2.data || []).map((x) => transaccionNormalizarPagCobVacios(x)));
+                });
+            };
+            return alinearTransaccionesSiOrdenAnuladaSync().then((trxFinal) =>
+              Promise.resolve([rTr, rCom, rModos, rIntNom, trxFinal]),
+            );
+          })
+          .then(([rTr, rCom, rModos, rIntNom, transacciones]) => {
           const orderUId = usuarioIdRegistroCajaFallbackUltimaEjecutadaConUsuario(transacciones) || orden.usuario_id;
           const comisiones = rCom.data || [];
           const modosMap = {};
