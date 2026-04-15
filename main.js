@@ -6440,7 +6440,7 @@ function setupInicioGpOperativo() {
   inicioGpOperativoListenersAttached = true;
 }
 
-/** Total G/P por moneda: seis bolsas coherentes (flujo operativo + comisiones del acuerdo aisladas). */
+/** Total G/P por moneda (P&L operativo empresa): suma algebraica de seis bolsas; comisión intermediario ya viene negativa desde el RPC. */
 function inicioGpSumarSeisBolsas(cajaMan, cajaOrd, ccC, ccI, comP, comI) {
   const monedas = ['USD', 'ARS', 'EUR'];
   const tot = {};
@@ -6473,7 +6473,7 @@ const GP_OPERATIVA_DETALLE_BOLSAS = [
   { key: 'comisiones_acuerdo_intermediario', titulo: 'Comisión del acuerdo (intermediario)' },
 ];
 
-/** Filas planas del último desglose «total» (seis bolsas); para ver solo una moneda en todas las filas. */
+/** Filas planas del último desglose «total» (P&L: seis bolsas); para ver solo una moneda en todas las filas. */
 let pandiGpDetalleCacheTotalFilas = null;
 
 const GP_DETALLE_EYE_SVG =
@@ -6626,7 +6626,7 @@ function pandiHtmlGpDetalleSeccionConsolidado(allRows) {
   return (
     '<section class="gp-detalle-seccion gp-detalle-seccion-consolidado" aria-label="Total consolidado">' +
     '<div class="gp-detalle-consolidado-titulo-fila">' +
-    '<h4 class="gp-detalle-seccion-titulo">Total consolidado (suma de las seis bolsas)</h4>' +
+    '<h4 class="gp-detalle-seccion-titulo">Total consolidado (P&L empresa: suma algebraica de las seis bolsas)</h4>' +
     inicioGpHtmlBotonVerDetalleMovimientos('total', 'Actualizar desglose completo') +
     '</div>' +
     '<div class="gp-detalle-consolidado-grid">' +
@@ -6968,13 +6968,16 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI, comisionPand
   const totalLabelHtml =
     '<span class="inicio-gp-matriz-label-total-wrap">' +
     '<span class="inicio-gp-matriz-label-total">Total</span>' +
-    (totalTodoCero ? '' : inicioGpHtmlBotonVerDetalleMovimientos('total', 'Ver desglose: las seis bolsas')) +
+    (totalTodoCero ? '' : inicioGpHtmlBotonVerDetalleMovimientos('total', 'Ver desglose P&L (seis bolsas)')) +
     '</span>';
+  const rowTotalHelp =
+    '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Total G/P Operativa">' +
+    helpIconSvg +
+    '</button><span class="help-popover"><strong>Total</strong> (ganancia o pérdida operativa de la empresa en el período): <strong>suma algebraica</strong> de las seis filas de abajo, sin contar dos veces lo mismo. <strong>Caja</strong> (manual y por órdenes) sigue solo con movimientos <strong>cerrados</strong>. <strong>CC</strong> clientes e intermediarios usan líneas <strong>pendiente o cerrado</strong> (no anuladas), igual que <strong>Cuenta corriente → Saldos</strong>. La comisión del intermediario en su fila aparece con <strong>signo negativo</strong> y <strong>resta</strong> del total porque es la parte del acuerdo que no es ganancia de la marca.</span></span>';
   const rowTotal = gpFila(
     totalLabelHtml,
-    '',
+    rowTotalHelp,
     monedas.map((m) => celMonedaPareja(tot, m, true, null)).join(''),
-    { helpPlaceholder: true },
   );
   const rowCaja = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-manual">Movimientos de caja manuales</div>',
@@ -6996,14 +6999,14 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI, comisionPand
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-clientes">Cuenta Corriente Clientes</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Clientes en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Cuenta Corriente Clientes</strong> (esta fila): suma algebraica de líneas con <strong>estado cerrado</strong> y fecha dentro del período, <strong>excluyendo</strong> las que son <strong>comisión del acuerdo</strong> (esas van en la fila de comisión empresa o, si aplicara huérfana de tabla, en el mismo desglose de comisión). No incluye pendientes de ejecución. En el <strong>detalle</strong>, <strong>Medio de pago</strong> se muestra cuando la línea tiene <strong>transacción</strong> con modo de pago.<br><br>En <strong>Cuenta corriente → Cliente → Saldos</strong> entran también pendientes; el total allí puede diferir sin que sea un error.</span></span>',
+      '</button><span class="help-popover"><strong>Cuenta Corriente Clientes</strong> (esta fila): suma algebraica de líneas <strong>pendiente o cerrado</strong> (no anuladas) con fecha en el período, <strong>excluyendo</strong> las que son <strong>comisión del acuerdo</strong> (esas van en la fila de comisión empresa o en su desglose huérfano). Mismo criterio de inclusión en saldo que <strong>Cuenta corriente → Cliente → Saldos</strong>. En el <strong>detalle</strong>, <strong>Medio de pago</strong> cuando la línea tiene <strong>transacción</strong> con modo de pago.</span></span>',
     monedas.map((m) => celMonedaPareja(ccC, m, false, 'cc_cliente')).join(''),
   );
   const rowInt = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-intermediarios">Cuenta Corriente Intermediarios</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Intermediarios en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): suma de líneas cerradas en el período, <strong>excluyendo comisión del acuerdo</strong> (van en la fila de comisión intermediario o en su desglose). No incluye pendientes. En el <strong>detalle</strong>, <strong>Medio de pago</strong> cuando hay transacción con modo de pago.<br><br>En <strong>Cuenta corriente → Intermediario → Saldos</strong> entran pendientes; el total puede diferir.</span></span>',
+      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): suma de líneas <strong>pendiente o cerrado</strong> (no anuladas) en el período, <strong>excluyendo comisión del acuerdo</strong> en concepto (esa parte va en la bolsa de comisión intermediario más abajo, con signo que <strong>resta</strong> del Total). Alineado a <strong>Cuenta corriente → Intermediario → Saldos</strong>. En el <strong>detalle</strong>, <strong>Medio de pago</strong> cuando hay transacción con modo de pago.</span></span>',
     monedas.map((m) => celMonedaPareja(ccI, m, false, 'cc_intermediario')).join(''),
   );
   const marcaNombre = escapeHtml(nombreMarcaSistema());
@@ -7015,14 +7018,14 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI, comisionPand
       helpIconSvg +
       '</button><span class="help-popover"><strong>Comisión del acuerdo (' +
       marcaNombre +
-      ')</strong>: suma desde <strong>comisiones_orden</strong> (beneficiario empresa, <strong>fecha de la orden</strong> en el período, sin anuladas) y, si hiciera falta, líneas de CC cliente con texto de comisión del acuerdo <strong>sin</strong> fila equivalente en esa tabla (legacy). <strong>Sí entra en el Total</strong> de arriba junto con las otras cinco bolsas: el flujo operativo de caja/CC <strong>no duplica</strong> esas comisiones porque ya las excluye de sus filas.</span></span>',
+      ')</strong>: suma desde <strong>comisiones_orden</strong> (beneficiario empresa, <strong>fecha de la orden</strong> en el período, sin anuladas) y, si hiciera falta, líneas de CC cliente con texto de comisión del acuerdo <strong>sin</strong> fila equivalente en esa tabla (legacy; incluye pendiente+cerrado). <strong>Suma</strong> al <strong>Total</strong> (ganancia o pérdida de la empresa en esa bolsa). El flujo operativo de CC arriba <strong>no duplica</strong> esas líneas.</span></span>',
     monedas.map((m) => celMonedaPareja(comP, m, false, 'comisiones_acuerdo_pandy')).join(''),
   );
   const rowComisionInt = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-comision-acuerdo">Comisión del acuerdo (intermediario)</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: comisión del acuerdo intermediario en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Comisión del acuerdo (intermediario)</strong>: igual que la fila de la empresa, con beneficiario intermediario y, si aplica, líneas huérfanas en <strong>CC intermediario</strong>. La parte por <strong>tasa de transferencia</strong> fuera del acuerdo sigue la lógica de negocio del tipo de operación (suele ir por CC). <strong>Sí entra en el Total</strong> con el resto de bolsas, sin duplicar lo que ya se sacó del flujo operativo.</span></span>',
+      '</button><span class="help-popover"><strong>Comisión del acuerdo (intermediario)</strong>: lo asignado al intermediario en <strong>comisiones_orden</strong> (fecha de orden en el período) y, si aplica, líneas huérfanas en <strong>CC intermediario</strong> (pendiente+cerrado). En el panel y en el Total se muestra con <strong>signo negativo</strong>: <strong>resta</strong> del resultado de la empresa porque es la parte del acuerdo que corresponde al intermediario, no ganancia de la marca. No se duplica con las filas de CC de arriba.</span></span>',
     monedas.map((m) => celMonedaPareja(comI, m, false, 'comisiones_acuerdo_intermediario')).join(''),
   );
   elMatriz.innerHTML =

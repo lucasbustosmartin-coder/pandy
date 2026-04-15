@@ -41,7 +41,7 @@ ALTER TABLE public.tipos_movimiento_caja
 COMMENT ON COLUMN public.tipos_movimiento_caja.incluye_gp_operativo IS 'Si true, movimientos de caja manuales con este tipo suman en G/P Operativa del Panel (junto a sumas de CC cliente e intermediario en el período).';
 
 INSERT INTO public.app_permission (permission, description) VALUES
-  ('ver_inicio_gp_operativo', 'Panel de Control: ver tarjeta G/P Operativa (caja manual filtrada + CC cliente + CC intermediario por período)')
+  ('ver_inicio_gp_operativo', 'Panel de Control: ver tarjeta G/P Operativa (caja manual + caja por órdenes + CC cliente/intermediario pendiente+cerrado + comisiones del acuerdo por período)')
 ON CONFLICT (permission) DO UPDATE SET description = EXCLUDED.description;
 
 INSERT INTO public.app_role_permission (role, permission) VALUES
@@ -95,7 +95,7 @@ AS $$
        FROM (
          SELECT m.moneda, SUM(m.monto)::numeric AS s
          FROM public.movimientos_cuenta_corriente m
-         WHERE m.estado = 'cerrado'
+         WHERE m.estado IN ('pendiente', 'cerrado')
            AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
            AND (p_desde IS NULL OR m.fecha >= p_desde)
            AND (p_hasta IS NULL OR m.fecha <= p_hasta)
@@ -109,7 +109,7 @@ AS $$
        FROM (
          SELECT m.moneda, SUM(m.monto)::numeric AS s
          FROM public.movimientos_cuenta_corriente_intermediario m
-         WHERE m.estado = 'cerrado'
+         WHERE m.estado IN ('pendiente', 'cerrado')
            AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
            AND (p_desde IS NULL OR m.fecha >= p_desde)
            AND (p_hasta IS NULL OR m.fecha <= p_hasta)
@@ -135,7 +135,7 @@ AS $$
            UNION ALL
            SELECT m.moneda, m.monto::numeric AS monto
            FROM public.movimientos_cuenta_corriente m
-           WHERE m.estado = 'cerrado'
+           WHERE m.estado IN ('pendiente', 'cerrado')
              AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
              AND (p_desde IS NULL OR m.fecha >= p_desde)
              AND (p_hasta IS NULL OR m.fecha <= p_hasta)
@@ -153,11 +153,12 @@ AS $$
        ) q),
       '{}'::jsonb
     ),
+    /* Comisión intermediario: mismo origen que arriba pero el valor por moneda va NEGADO — resta del Total (P&L empresa: lo asignado al intermediario no es ganancia de la empresa). */
     'comisiones_acuerdo_intermediario',
     COALESCE(
       (SELECT jsonb_object_agg(q.moneda, q.s)
        FROM (
-         SELECT u.moneda, SUM(u.monto)::numeric AS s
+         SELECT u.moneda, (-SUM(u.monto))::numeric AS s
          FROM (
            SELECT c.moneda, c.monto::numeric AS monto
            FROM public.comisiones_orden c
@@ -169,7 +170,7 @@ AS $$
            UNION ALL
            SELECT m.moneda, m.monto::numeric AS monto
            FROM public.movimientos_cuenta_corriente_intermediario m
-           WHERE m.estado = 'cerrado'
+           WHERE m.estado IN ('pendiente', 'cerrado')
              AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
              AND (p_desde IS NULL OR m.fecha >= p_desde)
              AND (p_hasta IS NULL OR m.fecha <= p_hasta)
@@ -190,6 +191,6 @@ AS $$
   );
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'Suma monto por moneda en seis bolsas coherentes (sin doble conteo): caja manual; caja por órdenes excl. comisión del acuerdo en concepto; CC cliente e intermediario excl. líneas «Comisión del acuerdo…»; comisiones_acuerdo_pandy e intermediario desde comisiones_orden (fecha de orden) más líneas CC de comisión huérfanas (sin comisiones_orden para ese orden/beneficiario). El total G/P por moneda = suma de las seis claves. Fechas inclusive; NULL = sin límite.';
+COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'P&L operativo de la empresa por moneda (seis bolsas, sin doble conteo): caja manual y caja por órdenes solo cerrado no anulado; CC cliente e intermediario pendiente+cerrado (excl. anulado), excl. líneas «Comisión del acuerdo…» en el flujo; comisiones_acuerdo_pandy desde comisiones_orden+CC huérfanas; comisiones_acuerdo_intermediario mismo origen pero NEGADO para restar del total. Total = suma de las seis claves (alineado a CC Saldos en pendiente+cerrado). Fechas inclusive; NULL = sin límite.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_resumen(date, date) TO authenticated;

@@ -135,7 +135,7 @@ BEGIN
       LEFT JOIN public.ordenes o ON o.id = m.orden_id
       LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
-      WHERE m.estado = 'cerrado'
+      WHERE m.estado IN ('pendiente', 'cerrado')
         AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
@@ -174,7 +174,7 @@ BEGIN
       LEFT JOIN public.ordenes o ON o.id = m.orden_id
       LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
-      WHERE m.estado = 'cerrado'
+      WHERE m.estado IN ('pendiente', 'cerrado')
         AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
@@ -236,7 +236,7 @@ BEGIN
       LEFT JOIN public.ordenes o ON o.id = m.orden_id
       LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
-      WHERE m.estado = 'cerrado'
+      WHERE m.estado IN ('pendiente', 'cerrado')
         AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
@@ -265,7 +265,7 @@ BEGIN
           'id', ('co-' || c.id::text),
           'fecha', o.fecha::text,
           'moneda', c.moneda,
-          'monto', c.monto,
+          'monto', (-(c.monto)::numeric),
           'concepto', 'Comisión del acuerdo (tabla comisiones_orden · intermediario)',
           'tipo_movimiento', NULL,
           'modo_pago', '',
@@ -288,7 +288,7 @@ BEGIN
           'id', m.id::text,
           'fecha', m.fecha::text,
           'moneda', m.moneda,
-          'monto', m.monto,
+          'monto', (-(m.monto)::numeric),
           'concepto', COALESCE(m.concepto, ''),
           'tipo_movimiento', NULL,
           'modo_pago', COALESCE(
@@ -307,7 +307,7 @@ BEGIN
       LEFT JOIN public.ordenes o ON o.id = m.orden_id
       LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
-      WHERE m.estado = 'cerrado'
+      WHERE m.estado IN ('pendiente', 'cerrado')
         AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
@@ -328,6 +328,6 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON que entra en cada bolsa de G/P Operativa (mismo criterio que gp_operativa_resumen): caja_manual; caja_ordenes sin comisión del acuerdo en concepto; cc_cliente / cc_intermediario sin líneas «Comisión del acuerdo…»; comisiones_acuerdo_pandy / comisiones_acuerdo_intermediario (comisiones_orden por fecha de orden + líneas CC huérfanas). modo_pago: caja_manual desde caja_tipo; caja_ordenes y CC con transacción desde modos_pago; resto vacío. SECURITY INVOKER / RLS.';
+COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON por bolsa (mismo criterio que gp_operativa_resumen): caja manual/órdenes cerrado no anulado; CC cliente/intermediario pendiente+cerrado sin líneas «Comisión del acuerdo…»; comisiones empresa; comisión intermediario con montos negados en JSON (restan del P&L en panel). modo_pago: caja_tipo o modos_pago vía transacción. SECURITY INVOKER / RLS.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_detalle(date, date, text) TO authenticated;

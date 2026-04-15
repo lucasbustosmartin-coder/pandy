@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.34',
+  versionLabel: 'v3.7.35',
   lines: [
-    'En el Panel, G/P Operativa ahora muestra seis bloques claros (caja manual, caja por órdenes, CC clientes, CC intermediarios y comisión del acuerdo para la empresa y para el intermediario) y el Total los suma sin mezclar lo mismo dos veces.',
-    'Las ayudas de cada fila explican qué entra en cada bloque y por qué la comisión del acuerdo va aparte del resto del flujo.',
-    'Si usás comisión del intermediario solo por transferencia (sin billetes), el sistema ya no inventa un movimiento de caja físico por esa comisión.',
+    'G/P Operativa muestra el resultado de la empresa en el período: el Total suma caja ejecutada, cuenta corriente alineada a lo que ves en Saldos (incluye pendientes) y las comisiones del acuerdo sin contar lo mismo dos veces.',
+    'La parte del acuerdo que corresponde al intermediario se resta del Total y las ayudas (incluida la fila Total) lo explican en simple.',
+    'Actualizamos textos del manual y de la ayuda del Panel para que coincida con lo que hace la app al recargar.',
   ],
 };
