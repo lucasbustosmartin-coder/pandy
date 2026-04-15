@@ -1,5 +1,6 @@
--- CC con filas que siguen en `pendiente` pese a orden `anulada` (p. ej. sync no
--- regeneró o quedó inconsistente). Solo **UPDATE** a `anulado` — no borra filas.
+-- CC con filas que siguen en `pendiente` pese a orden `anulada` (p. ej. datos viejos
+-- o sync previo a la corrección en `main.js`: orden `anulada` fuerza `anulado` en
+-- toda la CC derivada al persistir). Solo **UPDATE** a `anulado` — no borra filas.
 -- Excluye movimientos **manuales** (misma regla que `anularMovimientosCcYCajaNoManualPorOrden` en main.js).
 --
 -- Si además hay filas en `cerrado` que deberían estar anuladas para esa orden,

@@ -8713,7 +8713,10 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
   const { pag: pagMc, cob: cobMc } = pagCobEfectivosTransaccionSync(tNorm);
   const tipoMc = (tNorm.tipo || '').toLowerCase();
   const estadoMc = transaccionEstadoTextoNormalizado(tNorm);
-  const estadoFilaCc = estadoMc === 'ejecutada' ? 'cerrado' : estadoMc === 'pendiente' ? 'pendiente' : 'cerrado';
+  const ordenAnuladaMcTrx = String(orden && orden.estado || '').toLowerCase() === 'anulada';
+  const estadoFilaCc = ordenAnuladaMcTrx
+    ? 'anulado'
+    : (estadoMc === 'ejecutada' ? 'cerrado' : estadoMc === 'pendiente' ? 'pendiente' : (estadoMc === 'anulada' ? 'anulado' : 'cerrado'));
   const cidAc = orden.cliente_id || null;
   const cidPag = idClientePagadorEfectivoMulticontraparte(tNorm, orden);
   const cidCob = idClienteCobradorEfectivoMulticontraparte(tNorm, orden);
@@ -9568,6 +9571,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     soloComisiones = false,
   } = opts;
   if (!reglasDeNegocio || !reglasDeNegocio.length) return;
+  const ordenAnuladaMotor = String(orden && orden.estado || '').toLowerCase() === 'anulada';
   const filasIntParaComision =
     Array.isArray(filasComisionIntermediario) && filasComisionIntermediario.length
       ? filasComisionIntermediario.filter((f) => (Number(f.monto) || 0) >= 1e-6)
@@ -9655,7 +9659,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
               usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(t, orden),
               moneda: monTrx,
               monto: montoT,
-              estado: 'cerrado',
+              estado: ordenAnuladaMotor ? 'anulado' : 'cerrado',
               estado_fecha: feT.estado_fecha,
               incluir_en_detalle: true,
               ...montosCcPorMoneda(monTrx, montoT),
@@ -9702,7 +9706,9 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       }
       return;
     }
-    const estadoMov = (estado === 'ejecutada' ? 'cerrado' : 'pendiente');
+    const estadoMov = ordenAnuladaMotor
+      ? 'anulado'
+      : (estado === 'ejecutada' ? 'cerrado' : (estado === 'anulada' ? 'anulado' : 'pendiente'));
     const codOp = String(tipoOperacionCodigo || '').toUpperCase();
     for (const regla of reglasTx) {
       let entidad = (regla.entidad_cc == null || String(regla.entidad_cc).trim() === '')
@@ -9868,7 +9874,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
           usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
           moneda,
           monto: montoCc,
-          estado: cerrado ? 'cerrado' : 'pendiente',
+          estado: ordenAnuladaMotor ? 'anulado' : (cerrado ? 'cerrado' : 'pendiente'),
           estado_fecha: feComUsd.estado_fecha,
           incluir_en_detalle: incluirEnDetalleCcDesdeCampoRegla(reglaCom.incluir_en_detalle),
           ...montosCcPorMoneda(moneda, montoCc),
@@ -9951,7 +9957,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
               usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
               moneda: monedaInt,
               monto: montoCcInt,
-              estado: cerradoInt ? 'cerrado' : 'pendiente',
+              estado: ordenAnuladaMotor ? 'anulado' : (cerradoInt ? 'cerrado' : 'pendiente'),
               estado_fecha: feComInt.estado_fecha,
               incluir_en_detalle: incluirEnDetalleCcDesdeCampoRegla(reglaComIntUsd.incluir_en_detalle),
               ...montosCcPorMoneda(monedaInt, montoCcInt),
@@ -10017,7 +10023,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
         moneda,
         monto: signo * montoComisionLineaCcClienteCheque,
-        estado: cerrado ? 'cerrado' : 'pendiente',
+        estado: ordenAnuladaMotor ? 'anulado' : (cerrado ? 'cerrado' : 'pendiente'),
         estado_fecha: feComChequeArs.estado_fecha,
         incluir_en_detalle: incluirEnDetalleCcDesdeCampoRegla(reglaComPandy.incluir_en_detalle),
         ...montosCcPorMoneda(moneda, signo * montoComisionLineaCcClienteCheque)
@@ -10056,7 +10062,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
           usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
           moneda: monCom,
           monto: signo * comInt,
-          estado: parIntCerrado ? 'cerrado' : 'pendiente',
+          estado: ordenAnuladaMotor ? 'anulado' : (parIntCerrado ? 'cerrado' : 'pendiente'),
           estado_fecha: feComChequeArs.estado_fecha,
           incluir_en_detalle: incluirEnDetalleCcDesdeCampoRegla(reglaComInt.incluir_en_detalle),
           ...montosCcPorMoneda(monCom, signo * comInt)
@@ -20583,6 +20589,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
     .then((rOrd) => {
       if (rOrd.error || !rOrd.data) return Promise.resolve();
       const orden = rOrd.data;
+      const ordenAnuladaSync = String(orden.estado || '').toLowerCase() === 'anulada';
       const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
       const codigoOrdenRaw = (toJoin && toJoin.codigo) || null;
       const codigoOrden = normalizarCodigoTipoOperacion(codigoOrdenRaw) || codigoOrdenRaw;
@@ -20751,7 +20758,9 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           transacciones.forEach((t) => {
             const estT = String(t.estado || '').toLowerCase();
             const esEjecutada = estT === 'ejecutada';
-            let estadoFilaCc = esEjecutada ? 'cerrado' : (estT === 'anulada' ? 'anulado' : 'pendiente');
+            let estadoFilaCc = ordenAnuladaSync
+              ? 'anulado'
+              : (esEjecutada ? 'cerrado' : (estT === 'anulada' ? 'anulado' : 'pendiente'));
             const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
             const transaccionId = t.id;
             const monto = Number(t.monto) || 0;
@@ -21004,7 +21013,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
                 moneda: comisionPandyMon,
                 monto: montoComisionCcClienteChequeFb,
-                estado: 'pendiente',
+                estado: ordenAnuladaSync ? 'anulado' : 'pendiente',
                 estado_fecha: feSynthChequeFb.estado_fecha,
                 incluir_en_detalle: true,
                 ...montosCcPorMoneda(comisionPandyMon, montoComisionCcClienteChequeFb),
@@ -21012,7 +21021,9 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             }
             const hayTx3Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && transaccionEstadoTextoNormalizado(t) === 'ejecutada');
             const hayTx4Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'intermediario' && String(t.cobrador || '').toLowerCase() === 'pandy' && transaccionEstadoTextoNormalizado(t) === 'ejecutada');
-            const estComIntFb = (hayTx3Ejecutada || hayTx4Ejecutada || parClienteCerradoFb) ? 'cerrado' : 'pendiente';
+            const estComIntFb = ordenAnuladaSync
+              ? 'anulado'
+              : ((hayTx3Ejecutada || hayTx4Ejecutada || parClienteCerradoFb) ? 'cerrado' : 'pendiente');
             if (intermediarioId && filasComisionIntermediarioMotor.length) {
               filasComisionIntermediarioMotor.forEach((filaIntFb) => {
                 const mIfb = Number(filaIntFb.monto) || 0;
@@ -21140,7 +21151,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(egresoRef, orden),
                 moneda: monR,
                 monto: montoRecibido,
-                estado: 'cerrado',
+                estado: ordenAnuladaSync ? 'anulado' : 'cerrado',
                 estado_fecha: feCierre.estado_fecha,
                 ...montosCcPorMoneda(monR, montoRecibido),
               });
@@ -21154,7 +21165,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(egresoRef, orden),
                 moneda: monE,
                 monto: -montoEntregado,
-                estado: 'cerrado',
+                estado: ordenAnuladaSync ? 'anulado' : 'cerrado',
                 estado_fecha: feCierre.estado_fecha,
                 ...montosCcPorMoneda(monE, -montoEntregado),
               });
@@ -21210,6 +21221,20 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               if (r.transaccion_id && rxAnuladasIdStrings.includes(String(r.transaccion_id))) {
                 r.estado = 'anulado';
               }
+            });
+          }
+
+          // Orden anulada: toda CC derivada de esta corrida debe persistir como anulada (p. ej. transacciones
+          // aún `pendiente` en BD por datos viejos, comisiones sintéticas con `transaccion_id` null, o motor MC).
+          // Evita que un UPDATE manual a `anulado` se pierda al resync.
+          if (ordenAnuladaSync) {
+            rowsCcClienteUnicos.forEach((r) => {
+              if (!r || r.es_movimiento_manual === true) return;
+              r.estado = 'anulado';
+            });
+            rowsCcIntUnicos.forEach((r) => {
+              if (!r || r.es_movimiento_manual === true) return;
+              r.estado = 'anulado';
             });
           }
 
