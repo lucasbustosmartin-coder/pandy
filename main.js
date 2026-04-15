@@ -7141,14 +7141,16 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI, comisionPand
       helpIconSvg +
       '</button><span class="help-popover"><strong>Comisión del acuerdo (' +
       marcaNombre +
-      ')</strong>: suma desde <strong>comisiones_orden</strong> (beneficiario empresa, <strong>fecha de la orden</strong> en el período, sin anuladas) y, si hiciera falta, líneas de CC cliente con texto de comisión del acuerdo <strong>sin</strong> fila equivalente en esa tabla (legacy; incluye pendiente+cerrado). <strong>Suma</strong> al <strong>Total</strong> (ganancia o pérdida de la empresa en esa bolsa). El flujo operativo de CC arriba <strong>no duplica</strong> esas líneas.</span></span>',
+      ')</strong>: suma desde <strong>comisiones_orden</strong> (beneficiario empresa, <strong>fecha de la orden</strong> en el período, sin anuladas) y, si hiciera falta, líneas de CC cliente con texto de comisión del acuerdo <strong>sin</strong> fila equivalente en esa tabla (legacy; incluye pendiente+cerrado). Con <strong>reparto</strong> empresa+intermediario en la <strong>misma orden y moneda</strong>, la fila empresa refleja el <strong>neto</strong> de la marca en ese acuerdo (no se suma dos veces la parte intermediario). <strong>Suma</strong> al <strong>Total</strong> (ganancia o pérdida de la empresa en esa bolsa). El flujo operativo de CC arriba <strong>no duplica</strong> esas líneas.</span></span>',
     monedas.map((m) => celMonedaPareja(comP, m, false, 'comisiones_acuerdo_pandy')).join(''),
   );
   const rowComisionInt = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-comision-acuerdo">Comisión del acuerdo (intermediario)</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: comisión del acuerdo intermediario en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Comisión del acuerdo (intermediario)</strong>: lo asignado al intermediario en <strong>comisiones_orden</strong> (fecha de orden en el período) y, si aplica, líneas huérfanas en <strong>CC intermediario</strong> (pendiente+cerrado). En el panel y en el Total se muestra con <strong>signo negativo</strong>: <strong>resta</strong> del resultado de la empresa porque es la parte del acuerdo que corresponde al intermediario, no ganancia de la marca. No se duplica con las filas de CC de arriba.</span></span>',
+      '</button><span class="help-popover"><strong>Comisión del acuerdo (intermediario)</strong>: lo asignado al intermediario en <strong>comisiones_orden</strong> (fecha de orden en el período) y, si aplica, líneas huérfanas en <strong>CC intermediario</strong> (pendiente+cerrado). Si para la <strong>misma orden y moneda</strong> ya hay en <strong>comisiones_orden</strong> una fila para <strong>' +
+      marcaNombre +
+      '</strong> y otra para el intermediario (<strong>reparto</strong> del acuerdo), la fila intermediario de ese reparto <strong>no se cuenta otra vez</strong> aquí: el costo ya queda <strong>neteado en la fila empresa</strong>; pueden seguir entrando <strong>otras</strong> filas intermediario (p. ej. en <strong>otra moneda</strong> o <strong>tasa por transferencia</strong>). En el panel y en el Total se muestra con <strong>signo negativo</strong>: <strong>resta</strong> del resultado de la empresa porque es la parte del acuerdo que corresponde al intermediario, no ganancia de la marca. No se duplica con las filas de CC de arriba.</span></span>',
     monedas.map((m) => celMonedaPareja(comI, m, false, 'comisiones_acuerdo_intermediario')).join(''),
   );
   elMatriz.innerHTML =

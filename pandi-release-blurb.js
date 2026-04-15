@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.36',
+  versionLabel: 'v3.7.37',
   lines: [
-    'En Órdenes y en Cajas → Movimientos podés ordenar la tabla tocando el título de cada columna, igual que en Cuenta corriente.',
-    'Al exportar movimientos de caja a Excel, el archivo respeta el mismo orden que ves en pantalla.',
-    'Corregimos el orden en el listado de órdenes para que el clic en los encabezados funcione bien.',
+    'Las ayudas de G/P Operativa en el panel de inicio cuentan con más detalle cuando la comisión del acuerdo se reparte entre la empresa y el intermediario en la misma orden y moneda.',
+    'Los textos «?» junto a las filas de comisión del acuerdo aclaran qué queda en la fila de la empresa y qué puede seguir figurando para el intermediario (por ejemplo otra moneda o tasa).',
+    'El manual de usuario describe el mismo criterio para leer el total sin confusiones.',
   ],
 };

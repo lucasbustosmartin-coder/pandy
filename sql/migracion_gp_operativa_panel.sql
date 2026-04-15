@@ -153,7 +153,8 @@ AS $$
        ) q),
       '{}'::jsonb
     ),
-    /* Comisión intermediario: mismo origen que arriba pero el valor por moneda va NEGADO — resta del Total (P&L empresa: lo asignado al intermediario no es ganancia de la empresa). */
+    /* Comisión intermediario: filas huérfanas o solo intermediario en comisiones_orden (NEGADO en Total).
+       Si para la misma orden+moneda ya existe fila Pandy, los montos son reparto (Pandy = ganancia neta marca; intermediario = parte del acuerdo): NO volver a restar intermediario o el Total queda 49 en vez de 74,50 sobre 100 de spread (orden 49). */
     'comisiones_acuerdo_intermediario',
     COALESCE(
       (SELECT jsonb_object_agg(q.moneda, q.s)
@@ -167,6 +168,13 @@ AS $$
              AND lower(COALESCE(o.estado, '')) <> 'anulada'
              AND (p_desde IS NULL OR o.fecha >= p_desde)
              AND (p_hasta IS NULL OR o.fecha <= p_hasta)
+             AND NOT EXISTS (
+               SELECT 1
+               FROM public.comisiones_orden c_p
+               WHERE c_p.orden_id = c.orden_id
+                 AND c_p.moneda = c.moneda
+                 AND c_p.beneficiario = 'pandy'
+             )
            UNION ALL
            SELECT m.moneda, m.monto::numeric AS monto
            FROM public.movimientos_cuenta_corriente_intermediario m
@@ -191,6 +199,6 @@ AS $$
   );
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'P&L operativo de la empresa por moneda (seis bolsas, sin doble conteo): caja manual y caja por órdenes solo cerrado no anulado; CC cliente e intermediario pendiente+cerrado (excl. anulado), excl. líneas «Comisión del acuerdo…» en el flujo; comisiones_acuerdo_pandy desde comisiones_orden+CC huérfanas; comisiones_acuerdo_intermediario mismo origen pero NEGADO para restar del total. Total = suma de las seis claves (alineado a CC Saldos en pendiente+cerrado). Fechas inclusive; NULL = sin límite.';
+COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'P&L operativo de la empresa por moneda (seis bolsas, sin doble conteo): caja manual y caja por órdenes solo cerrado no anulado; CC cliente e intermediario pendiente+cerrado (excl. anulado), excl. líneas «Comisión del acuerdo…» en el flujo; comisiones_acuerdo_pandy desde comisiones_orden+CC huérfanas; comisiones_acuerdo_intermediario: NEGADO solo para filas intermediario sin par Pandy misma orden+moneda (reparto ya neteado en fila Pandy). Total = suma de las seis claves. Fechas inclusive; NULL = sin límite.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_resumen(date, date) TO authenticated;
