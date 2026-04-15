@@ -2,7 +2,7 @@
 -- con **usa_intermediario = false**.
 --
 -- Definición de producto (canónico = `sql/reglas_de_negocio_tabla.sql`):
--- - **10 filas** por cada tipo: USD-ARS, ARS-USD, EUR-USD, USD-EUR, EUR-ARS, ARS-EUR.
+-- - **12 filas** por cada tipo: USD-ARS, ARS-USD, EUR-USD, USD-EUR, EUR-ARS, ARS-EUR (incluye P,P con `contrapartida_ejecutada = false`).
 -- - **E,P (ingreso ejecutado + egreso pendiente), cruces dos monedas:** el cobro en **moneda recibida**
 --   del acuerdo se netea en la Trx de ingreso ejecutada (cobro_realizado + contra_cobro_entrega_pendiente
 --   en esa moneda); el compromiso abierto queda **solo** en **moneda entregada** en la Trx de egreso pendiente.
@@ -23,7 +23,7 @@
 --     'USD-ARS','ARS-USD','EUR-USD','USD-EUR','EUR-ARS','ARS-EUR'
 --   )
 -- GROUP BY 1 ORDER BY 1;
--- → 6 filas de resultado, todas **n = 10**.
+-- → 6 filas de resultado, todas **n = 12**.
 --
 -- SELECT tipo_operacion_codigo, COUNT(*) AS mal
 -- FROM public.reglas_de_negocio
@@ -48,7 +48,7 @@ WHERE usa_intermediario = false
   );
 
 -- =============================================================================
--- 2) USD-ARS sin int — 10 filas (fuente para USD-EUR y EUR-ARS)
+-- 2) USD-ARS sin int — 12 filas (fuente para USD-EUR y EUR-ARS)
 -- =============================================================================
 
 INSERT INTO public.reglas_de_negocio (
@@ -77,10 +77,13 @@ INSERT INTO public.reglas_de_negocio (
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'USD', 1, 'mr_prorrateado', true, 'compromiso_pago'),
-  ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago');
+  ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  -- P,P: ninguna pata ejecutada → `contrapartidaEjecutada` en app = false (no matchea pendiente+true).
+  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago');
 
 -- =============================================================================
--- 3) ARS-USD sin int — 10 filas (fuente para EUR-USD y ARS-EUR)
+-- 3) ARS-USD sin int — 12 filas (fuente para EUR-USD y ARS-EUR)
 -- =============================================================================
 
 INSERT INTO public.reglas_de_negocio (
@@ -109,10 +112,12 @@ INSERT INTO public.reglas_de_negocio (
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'ARS', 1, 'mr_prorrateado', true, 'compromiso_pago'),
-  ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago');
+  ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago');
 
 -- =============================================================================
--- 4) Cruces EUR sin int — 10 filas cada uno (derivados siempre desde USD-ARS / ARS-USD)
+-- 4) Cruces EUR sin int — 12 filas cada uno (derivados siempre desde USD-ARS / ARS-USD)
 -- =============================================================================
 
 INSERT INTO public.reglas_de_negocio (

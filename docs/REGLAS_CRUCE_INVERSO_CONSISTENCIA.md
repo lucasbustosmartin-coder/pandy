@@ -39,12 +39,12 @@ En muchas bases “crecidas” a mano, **ARS-USD+int** acumula más filas que **
 
 1. **Antes de EUR:** igualar **USD-ARS + int** y **ARS-USD + int** al canónico (**20 + 20** en `reglas_de_negocio_tabla.sql` + migraciones que apliquen a tu esquema).
 2. **Opción recomendada para EUR (+ intermediario):** ejecutar `sql/migracion_reglas_eur_usd_desde_usd_ars_ars_usd_int.sql` (después de revisar el comentario del script). Eso **borra** reglas EUR-USD/USD-EUR+int y las **vuelve a generar** desde las filas actuales de **USD-ARS+int** y **ARS-USD+int**, mapeando `moneda` **ARS → EUR**. Así **EUR-USD** y **USD-EUR** quedan con el **mismo** reparto 20/20 que el par ARS origen.
-3. **Sin intermediario (un solo SQL, 10×6):** ejecutar **`sql/migracion_reglas_todos_cruces_dos_monedas_sin_int_canonico.sql`**: borra y recarga **USD-ARS, ARS-USD, EUR-USD, USD-EUR, EUR-ARS, ARS-EUR** con `usa_intermediario = false` (**10 filas** cada tipo; EUR siempre derivado de USD-ARS/ARS-USD). **No toca USD-USD ni reglas con intermediario.**
+3. **Sin intermediario (un solo SQL, 12×6):** ejecutar **`sql/migracion_reglas_todos_cruces_dos_monedas_sin_int_canonico.sql`**: borra y recarga **USD-ARS, ARS-USD, EUR-USD, USD-EUR, EUR-ARS, ARS-EUR** con `usa_intermediario = false` (**12 filas** cada tipo, incluye P,P con `contrapartida_ejecutada = false`; EUR siempre derivado de USD-ARS/ARS-USD). **No toca USD-USD ni reglas con intermediario.**
 4. **Sin int parcial o +int EUR-ARS/ARS-EUR:** **`sql/migracion_reglas_eur_cruces_desde_usd_ars_ars_usd_sin_int_y_eur_ars_int.sql`** (bloques A/B/C según necesidad). **No toca USD-USD.**
 
 ## Referencia de conteos en `reglas_de_negocio_tabla.sql` (canónico)
 
-- **USD-ARS** / **ARS-USD** + `usa_intermediario = false`: **10** filas cada uno (cruces dos monedas; script unificado: `sql/migracion_reglas_todos_cruces_dos_monedas_sin_int_canonico.sql`).
+- **USD-ARS** / **ARS-USD** + `usa_intermediario = false`: **12** filas cada uno (cruces dos monedas; script unificado: `sql/migracion_reglas_todos_cruces_dos_monedas_sin_int_canonico.sql`).
 - **USD-ARS** + `usa_intermediario = true`: **20** filas.
 - **ARS-USD** + `usa_intermediario = true`: **20** filas.
 

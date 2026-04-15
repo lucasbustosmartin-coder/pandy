@@ -27,7 +27,8 @@ Reglas explícitas que la sync traduce en **movimientos de cuenta corriente** (y
 
 ## Script SQL
 
-- **`sql/reglas_de_negocio_tabla.sql`** — crea tabla, **USD-ARS** y **ARS-USD** (sin int y **con int**), **USD-USD** (sin int y con int), **CHEQUE-ARS** con int, RLS. Ya **no** incluye limpieza sobre `cc_modelo_reglas` (tabla legacy eliminada; backup en **`sql/archive/cc_modelo_legacy/`**).
+- **`sql/reglas_de_negocio_tabla.sql`** — crea tabla, **USD-ARS** y **ARS-USD** (sin int y **con int**), **USD-USD** (sin int y con int), **CHEQUE-ARS** con int, RLS. Ya **no** incluye limpieza sobre `cc_modelo_reglas` (tabla legacy eliminada; backup en **`sql/archive/cc_modelo_legacy/`**). USD-ARS / ARS-USD sin int. incluyen **P,P** (`pendiente` + `contrapartida_ejecutada = false`).
+- **`sql/migracion_reglas_usd_ars_ar_usd_pp_contrapartida_false.sql`** — bases existentes: agrega P,P sin int. para USD-ARS, ARS-USD y cruces EUR espejo (idempotente).
 - Carga puntual ARS-USD: **`sql/migracion_reglas_ars_usd_sin_int.sql`**.
 - Carga puntual USD-USD sin int (entornos que ya tenían `reglas_de_negocio` sin `mr_menos_me`): **`sql/migracion_reglas_usd_usd_sin_int.sql`**.
 - Si existía la tabla previa **`cc_reglas_usd_ars`**: ver **`sql/migracion_cc_reglas_usd_ars_a_reglas_de_negocio.sql`**.
@@ -48,6 +49,8 @@ Para no duplicar mr/me **enteros** por cada transacción:
 | `monto_efectivo_intermediario` | **CHEQUE-ARS** con intermediario: efectivo neto Int→Pandy (**mr × (1 − tasa)**) en Tx4. |
 
 Cada transacción que matchee la clave `(pagador, cobrador, tipo, estado, contrapartida)` genera **sus** líneas CC; la **suma** en cada moneda coincide con el acuerdo si las trx suman bien.
+
+**USD-ARS / ARS-USD P,P (ambas patas pendientes, sin intermediario):** mientras **ninguna** transacción del par está ejecutada, en la app `contrapartidaEjecutada` es **`false`**. Hacen falta filas en `reglas_de_negocio` con **`estado_transaccion = 'pendiente'`** y **`contrapartida_ejecutada = false`** (además de las filas `pendiente` + `true` usadas cuando la contraparte ya ejecutó). Sin esas filas, el sync muestra el aviso de transacciones sin regla. Carga puntual idempotente: **`sql/migracion_reglas_usd_ars_ar_usd_pp_contrapartida_false.sql`** (incluye cruces EUR derivados). El script canónico **`sql/migracion_reglas_todos_cruces_dos_monedas_sin_int_canonico.sql`** y el bootstrap **`sql/reglas_de_negocio_tabla.sql`** incorporan estas filas en instalaciones nuevas o al reemplazar el bloque sin int.
 
 **USD-ARS P,E (ingreso pendiente + egreso ejecutado):** con `contrapartida_ejecutada = false` en el egreso (ingreso Tx1 aún pendiente), el egreso ejecutado lleva **dos líneas** en **ARS** (`linea` 0 y 1, signos −1 / +1, `monto_transaccion`) que **anulan** el efecto del pago en CC, en el mismo criterio que **ARS-USD P,E** (dos USD) y **USD-USD P,E** (dos USD). El **USD** queda solo en el **compromiso a cobrar** del ingreso pendiente (Tx1). Definición de producto: **ejecutado** → par ± que netea en esa moneda; **pendiente** → una línea con su signo.
 

@@ -2167,13 +2167,13 @@ async function pandiGuardarModalInstrumentacionOnline() {
     for (const c of cambios) {
       const om = Number(c.orig.monto) || 0;
       if (Math.abs(c.monto - om) > 1e-6) {
-        await guardarSoloMontoTransaccion(c.id, formatImporteParaInput(c.monto), () => {});
+        await guardarSoloMontoTransaccion(c.id, formatImporteParaInput(c.monto), () => {}, { omitSincronizarCc: true });
       }
     }
     for (const c of cambios) {
       if (String(c.modo_pago_id) !== String(c.orig.modo_pago_id != null ? c.orig.modo_pago_id : '')) {
         await new Promise((resolve) => {
-          guardarSoloModoPagoTransaccion(c.id, c.modo_pago_id, resolve, resolve);
+          guardarSoloModoPagoTransaccion(c.id, c.modo_pago_id, resolve, resolve, { omitSincronizarCc: true });
         });
       }
     }
@@ -2203,6 +2203,15 @@ async function pandiGuardarModalInstrumentacionOnline() {
         }
       }
     }
+    await sincronizarCcYCajaDesdeOrden(ordenId).catch((err) => {
+      console.warn('pandiGuardarModalInstrumentacionOnline: sync CC', err);
+      showToast(
+        'Cambios guardados; no se pudo actualizar la cuenta corriente: ' + (err && (err.message || err.details) ? String(err.message || err.details) : String(err)),
+        'error',
+        10000,
+      );
+    });
+    await actualizarEstadoOrden(ordenId).catch(() => {});
     showToast('Instrumentación actualizada.', 'success');
     pandiCloseModalEditarColaV2Borrador();
     if (typeof loadOrdenes === 'function') loadOrdenes();
@@ -8445,11 +8454,11 @@ function pushMcClienteRow(rowsCcCliente, cid, ordenId, fecha, ahora, partial, fi
 
 /**
  * Multicontraparte manual: CC desde el **momento 0** (cada transacción pendiente o ejecutada en el estado que corresponda); caja sigue solo con ejecutadas + Pandy efectivo en el bucle de sync.
- * Cliente del acuerdo frente a Pandy: ingresos ARS pendientes (pagador = acuerdo) → −m; ingreso ejecutado acuerdo→otro cliente → par −m/+m (no cambia obligación neta con Pandy) + línea +m al cobrador tercero; ingreso ejecutado **Pandy→acuerdo** en monR (Pandy cumple pata del cliente) → +m «compromiso» con leyenda explícita, sin par −/+ de neteo (**regla B**); ingreso ejecutado **otro cliente→acuerdo** en monR → +m «Compromiso de pago» con leyenda **tercero cumple pata** en CC del acuerdo y **−m cobro** en el tercero (paridad con motor cuando no hay fila cliente→cliente en `reglas_de_negocio`);
+ * Cliente del acuerdo frente a Pandy: ingresos ARS pendientes (pagador = acuerdo) → −m; ingreso ejecutado acuerdo→otro cliente → par −m/+m (no cambia obligación neta con Pandy) + línea +m al cobrador tercero; ingreso **Pandy→acuerdo** en monR ejecutado **o pendiente** (Pandy cumple pata del cliente) → +m «compromiso» con leyenda explícita, sin par −/+ de neteo (**regla B**); ingreso ejecutado **otro cliente→acuerdo** en monR → +m «Compromiso de pago» con leyenda **tercero cumple pata** en CC del acuerdo y **−m cobro** en el tercero (paridad con motor cuando no hay fila cliente→cliente en `reglas_de_negocio`);
  * ingreso ejecutado acuerdo→Pandy en monR: par **−m (Cobro realizado) +m (Ajuste libro acuerdo)** en CC del acuerdo — **neteo cero** de esa transacción en el libro del acuerdo (distinto de regla B);
  * egreso en moneda entregada pendiente: cobrador cliente (acuerdo u otro) → +m «Entrega … pendiente»; **pagador** cliente (acuerdo u otro, p. ej. Cliente→Pandy o C→C) → −m «Instrumentación pendiente» en la CC de ese pagador (simétrico al ingreso monR);
  * ingreso en moneda recibida pendiente con pagador cliente (acuerdo u **otro** cliente, p. ej. Lucas→Pandy) → −m en la **CC de ese pagador** (misma fila «Instrumentación pendiente» que si fuera el acuerdo);
- * egreso ejecutado con cobrador = cliente del acuerdo en monE (pagador Pandy u otro cliente): −m (Pago realizado) +m (ajuste libro acuerdo) en CC del acuerdo; si pagador es otro cliente, también −m (Cobro realizado) en su CC.
+ * egreso ejecutado con cobrador = cliente del acuerdo en monE (pagador Pandy u otro cliente): −m (Pago realizado) +m (ajuste libro acuerdo) en CC del acuerdo, **salvo** cruce USD-ARS/ARS-USD sin int. con ingreso Pandy→cliente en monR (ejecutado o pendiente) + este egreso Pandy→cliente en monE → una sola fila **−m** «Pago realizado» con leyenda «Pandy cumple pata en moneda entregada» (equivale a la pata **−m** del par sin el +m de ajuste libro); si pagador es otro cliente, también −m (Cobro realizado) en su CC.
  * Resto de clientes y egresos/ingresos ejecutados: movimientos por entidad. Intermediario: delega en aplicarCcMulticontraparteManualTrx.
  */
 function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt, fallbackUId) {
@@ -8490,6 +8499,27 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
           estado: 'pendiente',
           estado_fecha: feMc.estado_fecha,
           ...montosCcPorMoneda(mon, -monto),
+        }, finalUId);
+      }
+      /** Ingreso pendiente Pandy→cliente del acuerdo en monR (regla B): +m compromiso en CC acuerdo; sin esto solo queda la pata monE. Paridad con `aplicarMotorCcDesdeReglasDeNegocio` pendiente. */
+      if (
+        tipo === 'ingreso' &&
+        mon === monR &&
+        pag === 'pandy' &&
+        cob === 'cliente' &&
+        cidAcuerdo &&
+        cidCob &&
+        String(cidCob) === String(cidAcuerdo)
+      ) {
+        pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, feMc.fecha, feMc.estado_fecha, {
+          transaccion_id: t.id,
+          transaccion_numero: nro,
+          concepto: conceptoCcLeyenda('compromiso_pago', ordenNumero, nro) + ' (' + SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR + ')',
+          moneda: mon,
+          monto,
+          estado: 'pendiente',
+          estado_fecha: feMc.estado_fecha,
+          ...montosCcPorMoneda(mon, monto),
         }, finalUId);
       }
       // Cualquier cliente cobrador en monE (acuerdo u otro): +m «Entrega … pendiente» (p. ej. Pandy/Int→Lucas).
@@ -8648,6 +8678,24 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
     if (tipo === 'egreso') {
       const esAcuerdoCob = cidAcuerdo && cidCob && String(cidCob) === String(cidAcuerdo);
       if (esAcuerdoCob && mon === monE) {
+        if (
+          transaccionesCruceReglaBpandyDoblePataSinNeteoCliente(lista, orden) ||
+          transaccionesHayIngresoPandyClienteMonRAcuerdoActivo(lista, orden)
+        ) {
+          pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, feMc.fecha, feMc.estado_fecha, {
+            transaccion_id: t.id,
+            transaccion_numero: nro,
+            concepto:
+              conceptoCcLeyenda('pago_realizado', ordenNumero, nro) +
+              ' (' +
+              SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONE +
+              ')',
+            moneda: mon,
+            monto: -monto,
+            ...montosCcPorMoneda(mon, -monto),
+          }, finalUId);
+          return;
+        }
         pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, feMc.fecha, feMc.estado_fecha, {
           transaccion_id: t.id,
           transaccion_numero: nro,
@@ -9355,6 +9403,9 @@ const EPS_CC_NETEO_CLIENTE_ORDEN = 1e-6;
 /** Subcadena en `concepto` de movimientos CC generados por regla B (MC manual o motor); permite saldo ≠ 0 solo en esa moneda recibida. */
 const SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR = 'Pandy cumple pata en moneda recibida';
 
+/** Par con regla B + egreso Pandy→cliente en monE: una sola fila gross en moneda entregada (sin par −/+ «ajuste libro»). Exenta neteo en invariante como monR. */
+const SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONE = 'Pandy cumple pata en moneda entregada';
+
 /** Ingreso otro cliente → cliente del acuerdo en monR (misma familia contable que B; leyenda distinta para auditoría). */
 const SUBSTRING_LEYENDA_CC_TERcERO_PATA_MONR = 'Tercero cumple pata en moneda recibida';
 
@@ -9405,10 +9456,77 @@ function sumaMovimientosPataMonRExentosNeteo(rowsCliente, clienteId, ordenId, mo
   return s;
 }
 
+/** Suma montos en monE de filas «regla B moneda entregada» (Pandy→cliente en monE, sin neteo en libro); exentas de exigencia de neteo cero en esa moneda. */
+function sumaMovimientosPataMonEExentosNeteo(rowsCliente, clienteId, ordenId, monE) {
+  const mon = String(monE || '').toUpperCase();
+  let s = 0;
+  const subP = SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONE;
+  for (const r of rowsCliente || []) {
+    if (!r || String(r.estado || '').toLowerCase() !== 'cerrado') continue;
+    if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
+    if (String(r.moneda || '').toUpperCase() !== mon) continue;
+    if (!String(r.concepto || '').includes(subP)) continue;
+    const m = Number(r.monto);
+    if (Number.isFinite(m)) s += m;
+  }
+  return s;
+}
+
+/**
+ * Cruce USD-ARS / ARS-USD sin int.: ingreso ejecutado Pandy→cliente del acuerdo en **monR** y egreso ejecutado Pandy→cliente del acuerdo en **monE**. No netear la pata en monE (MC + motor).
+ */
+function transaccionesCruceReglaBpandyDoblePataSinNeteoCliente(transacciones, orden) {
+  if (!orden || String(orden.estado || '').toLowerCase() === 'anulada') return false;
+  const monR = String(orden.moneda_recibida || 'USD').toUpperCase();
+  const monE = String(orden.moneda_entregada || 'USD').toUpperCase();
+  if (!monR || !monE || monR === monE) return false;
+  const cidAc = orden.cliente_id != null && String(orden.cliente_id).trim() !== '' ? String(orden.cliente_id).trim() : '';
+  if (!cidAc) return false;
+  let hayBMonR = false;
+  let hayEgresoMonE = false;
+  for (const tRaw of transacciones || []) {
+    if (!tRaw || (tRaw.concepto || '').includes('Ganancia del acuerdo')) continue;
+    const t = transaccionNormalizarPagCobVacios(tRaw);
+    if (transaccionEstadoTextoNormalizado(t) !== 'ejecutada') continue;
+    const tipo = (t.tipo || '').toLowerCase();
+    const mon = String(t.moneda || '').toUpperCase();
+    const { pag, cob } = pagCobEfectivosTransaccionSync(t);
+    const cidCob = idClienteCobradorEfectivoMulticontraparte(t, orden);
+    if (!cidCob || String(cidCob) !== cidAc) continue;
+    if (tipo === 'ingreso' && pag === 'pandy' && cob === 'cliente' && mon === monR) hayBMonR = true;
+    if (tipo === 'egreso' && pag === 'pandy' && cob === 'cliente' && mon === monE) hayEgresoMonE = true;
+  }
+  return hayBMonR && hayEgresoMonE;
+}
+
+/**
+ * Hay ingreso Pandy→cliente del acuerdo en monR en **pendiente o ejecutada** (no anulada).
+ * Permite atajo gross monE (motor/MC) cuando el egreso monE ya está ejecutado y la pata monR aún no cerró.
+ */
+function transaccionesHayIngresoPandyClienteMonRAcuerdoActivo(transacciones, orden) {
+  if (!orden || String(orden.estado || '').toLowerCase() === 'anulada') return false;
+  const monR = String(orden.moneda_recibida || 'USD').toUpperCase();
+  const cidAc = orden.cliente_id != null && String(orden.cliente_id).trim() !== '' ? String(orden.cliente_id).trim() : '';
+  if (!cidAc) return false;
+  for (const tRaw of transacciones || []) {
+    if (!tRaw || (tRaw.concepto || '').includes('Ganancia del acuerdo')) continue;
+    const t = transaccionNormalizarPagCobVacios(tRaw);
+    const st = transaccionEstadoTextoNormalizado(t);
+    if (st !== 'ejecutada' && st !== 'pendiente') continue;
+    const tipo = (t.tipo || '').toLowerCase();
+    const mon = String(t.moneda || '').toUpperCase();
+    const { pag, cob } = pagCobEfectivosTransaccionSync(t);
+    const cidCob = idClienteCobradorEfectivoMulticontraparte(t, orden);
+    if (!cidCob || String(cidCob) !== cidAc) continue;
+    if (tipo === 'ingreso' && pag === 'pandy' && cob === 'cliente' && mon === monR) return true;
+  }
+  return false;
+}
+
 /**
  * Invariante dura: solo cuando **no queda ninguna transacción pendiente** (todas ejecutada o anulada, al menos una ejecutada) **y** además: multicontraparte manual completo, **o** (sin MC) par clásico ingreso C→P/I + egreso entrega ambos ejecutados, **o** la orden está en `orden_ejecutada` / `instrumentacion_cerrada_ejecucion`.
  * Entonces la CC del cliente del acuerdo (filas **cerradas** de esta orden) debe netear a cero por moneda,
- * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata».
+ * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata», y en moneda entregada la fila «Pandy cumple pata en moneda entregada» (doble pata empresa→cliente en monR+monE).
  * @returns {{ ok: true } | { ok: false, msg: string, sums: Record<string, number>, mon?: string }}
  */
 function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
@@ -9453,7 +9571,9 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
     const offsetPata =
       String(mon) === String(monR)
         ? sumaMovimientosPataMonRExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, monR)
-        : 0;
+        : String(mon) === String(monE)
+          ? sumaMovimientosPataMonEExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, monE)
+          : 0;
     const residual = sum - offsetPata;
     if (Math.abs(residual) <= EPS_CC_NETEO_CLIENTE_ORDEN) continue;
 
@@ -9627,7 +9747,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     const estado = transaccionEstadoTextoNormalizado(tNorm);
     const contrapartida = contrapartidaEjecutada(transacciones, pag, cob, t.tipo);
     // Ingreso monR al cliente del acuerdo sin matriz en reglas (Cliente→Cliente tercero, o Pandy→Cliente): mismo modelo que multicontraparte manual regla B / pata sustituta.
-    if (tipo === 'ingreso' && estado === 'ejecutada' && clienteId && orden && orden.cliente_id && montoT >= 1e-9) {
+    if (tipo === 'ingreso' && (estado === 'ejecutada' || estado === 'pendiente') && clienteId && orden && orden.cliente_id && montoT >= 1e-9) {
       const monROrd = String(orden.moneda_recibida || 'USD').toUpperCase();
       const monTrx = String(t.moneda || '').toUpperCase();
       if (monTrx === monROrd) {
@@ -9643,7 +9763,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         const esPandyPagCobAcuerdo = pag === 'pandy' && cob === 'cliente' && cidCob === cidAc;
         const esTerceroPagAcuerdo =
           pag === 'cliente' && cob === 'cliente' && cidPag && cidCob && cidCob === cidAc && cidPag !== cidCob;
-        if (esPandyPagCobAcuerdo || esTerceroPagAcuerdo) {
+        if ((esPandyPagCobAcuerdo || esTerceroPagAcuerdo) && !(esTerceroPagAcuerdo && estado === 'pendiente')) {
           const reglasTry = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, false, estado, contrapartida);
           if (!reglasTry.length) {
             const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
@@ -9659,7 +9779,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
               usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(t, orden),
               moneda: monTrx,
               monto: montoT,
-              estado: ordenAnuladaMotor ? 'anulado' : 'cerrado',
+              estado: ordenAnuladaMotor ? 'anulado' : (estado === 'ejecutada' ? 'cerrado' : 'pendiente'),
               estado_fecha: feT.estado_fecha,
               incluir_en_detalle: true,
               ...montosCcPorMoneda(monTrx, montoT),
@@ -9682,6 +9802,46 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       contrapartida,
       estado,
     );
+    const estadoMov = ordenAnuladaMotor
+      ? 'anulado'
+      : (estado === 'ejecutada' ? 'cerrado' : (estado === 'anulada' ? 'anulado' : 'pendiente'));
+    const codOp = String(tipoOperacionCodigo || '').toUpperCase();
+    const monEOrdMotor = String(orden.moneda_entregada || 'USD').toUpperCase();
+    const crucesSinIntDoblePataBp =
+      (codOp === 'USD-ARS' || codOp === 'ARS-USD') &&
+      !intermediarioId &&
+      !soloComisiones &&
+      tipo === 'egreso' &&
+      estado === 'ejecutada' &&
+      pag === 'pandy' &&
+      cob === 'cliente' &&
+      String(t.moneda || '').toUpperCase() === monEOrdMotor &&
+      (transaccionesCruceReglaBpandyDoblePataSinNeteoCliente(transacciones, orden) ||
+        transaccionesHayIngresoPandyClienteMonRAcuerdoActivo(transacciones, orden));
+    if (crucesSinIntDoblePataBp && clienteId) {
+      const feTg = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
+      const nroG = t.numero != null ? t.numero : null;
+      rowsCcCliente.push({
+        cliente_id: clienteId,
+        orden_id: ordenId,
+        transaccion_id: t.id,
+        transaccion_numero: nroG,
+        concepto:
+          conceptoCcLeyenda('pago_realizado', orden.numero, nroG) +
+          ' (' +
+          SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONE +
+          ')',
+        fecha: feTg.fecha,
+        usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(t, orden),
+        moneda: monEOrdMotor,
+        monto: -montoT,
+        estado: estadoMov,
+        estado_fecha: feTg.estado_fecha,
+        incluir_en_detalle: true,
+        ...montosCcPorMoneda(monEOrdMotor, -montoT),
+      });
+      return;
+    }
     if (!reglasTx.length) {
       const reglasEsComision = lookupReglasDeNegocioMotorContrapartidaAnulada(
         reglasDeNegocio,
@@ -9706,10 +9866,6 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       }
       return;
     }
-    const estadoMov = ordenAnuladaMotor
-      ? 'anulado'
-      : (estado === 'ejecutada' ? 'cerrado' : (estado === 'anulada' ? 'anulado' : 'pendiente'));
-    const codOp = String(tipoOperacionCodigo || '').toUpperCase();
     for (const regla of reglasTx) {
       let entidad = (regla.entidad_cc == null || String(regla.entidad_cc).trim() === '')
         ? 'cliente'
@@ -14343,8 +14499,8 @@ function parseImporteInput(str) {
   return isNaN(n) ? NaN : n;
 }
 
-/** Guarda solo el monto de una transacción. Si está ejecutada, reajusta CC y caja. Órdenes con filas en `reglas_de_negocio`: solo actualiza la trx y `sincronizarCcYCajaDesdeOrden` (sin insertar “Cancelación de deuda” legacy). Resto: lógica momento cero / Cancelación / caja heredada. Llama onSuccess() tras guardar. */
-function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
+/** Guarda solo el monto de una transacción. Si está ejecutada, reajusta CC y caja. Órdenes con filas en `reglas_de_negocio`: solo actualiza la trx y `sincronizarCcYCajaDesdeOrden` (sin insertar “Cancelación de deuda” legacy). Resto: lógica momento cero / Cancelación / caja heredada. Si está **pendiente**, tras el UPDATE persiste CC con `sincronizarCcYCajaDesdeOrden` salvo `opts.omitSincronizarCc` (p. ej. lote en modal cola: un solo sync al final). Llama onSuccess() tras guardar. */
+function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess, opts) {
   const newMonto = parseImporteInput(typeof valorInput === 'string' ? valorInput : (valorInput && valorInput.value));
   if (isNaN(newMonto) || newMonto <= 0) {
     showToast('Monto inválido.', 'error');
@@ -14365,8 +14521,46 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
     const esEjecutada = transaccionEstadoTextoNormalizado(t) === 'ejecutada';
     if (!esEjecutada) {
       return client.from('transacciones').update({ monto: newMonto, updated_at: new Date().toISOString() }).eq('id', transaccionId).then((r) => {
-        if (r.error) { showToast('Error al actualizar monto: ' + (r.error?.message || ''), 'error'); return; }
-        if (onSuccess) onSuccess();
+        if (r.error) {
+          showToast('Error al actualizar monto: ' + (r.error?.message || ''), 'error');
+          return Promise.resolve();
+        }
+        const fin = () => {
+          if (onSuccess) onSuccess();
+        };
+        if (opts && opts.omitSincronizarCc) {
+          fin();
+          return Promise.resolve();
+        }
+        const instId = t.instrumentacion_id;
+        if (!instId) {
+          fin();
+          return Promise.resolve();
+        }
+        return client
+          .from('instrumentacion')
+          .select('orden_id')
+          .eq('id', instId)
+          .single()
+          .then((rInst) => {
+            const oid = rInst.data && rInst.data.orden_id;
+            if (!oid) {
+              fin();
+              return Promise.resolve();
+            }
+            return sincronizarCcYCajaDesdeOrden(oid)
+              .catch((err) => {
+                console.warn('guardarSoloMontoTransaccion (pendiente): sync CC', err);
+                showToast(
+                  'Monto guardado; no se pudo actualizar la cuenta corriente: ' + (err && (err.message || err.details) ? String(err.message || err.details) : String(err)),
+                  'error',
+                  9000,
+                );
+              })
+              .then(() => {
+                fin();
+              });
+          });
       });
     }
     const instrumentacionId = t.instrumentacion_id;
@@ -14566,8 +14760,8 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess) {
   });
 }
 
-/** Guarda solo el modo de pago de una transacción. Si está ejecutada, reajusta caja (borra movimiento anterior e inserta uno con el nuevo modo). Llama onSuccess() tras guardar. onFailure() opcional si no se puede guardar (ej. operación CHEQUE con modo Cheque). */
-function guardarSoloModoPagoTransaccion(transaccionId, modoPagoId, onSuccess, onFailure) {
+/** Guarda solo el modo de pago de una transacción. Si está ejecutada, reajusta caja (borra movimiento anterior e inserta uno con el nuevo modo). Si está **pendiente**, tras el UPDATE sincroniza CC/caja derivada salvo `opts.omitSincronizarCc`. Llama onSuccess() tras guardar. onFailure() opcional si no se puede guardar (ej. operación CHEQUE con modo Cheque). */
+function guardarSoloModoPagoTransaccion(transaccionId, modoPagoId, onSuccess, onFailure, opts) {
   if (!modoPagoId || !transaccionId || !currentUserId) return Promise.resolve();
   if (pandiSinConexionServidorViva()) {
     showToast(
@@ -14601,32 +14795,49 @@ function guardarSoloModoPagoTransaccion(transaccionId, modoPagoId, onSuccess, on
         }
         const esEjecutada = transaccionEstadoTextoNormalizado(t) === 'ejecutada';
         return client.from('transacciones').update({ modo_pago_id: modoPagoId, updated_at: new Date().toISOString() }).eq('id', transaccionId).then((r) => {
-      if (r.error) {
-        showToast('Error al actualizar modo de pago: ' + (r.error?.message || ''), 'error');
-        return;
-      }
-      if (!esEjecutada) {
-        if (onSuccess) onSuccess();
-        return;
-      }
-      const fecha = fechaHoyYYYYMMDDArgentina();
-      const nroOrden = rOrd.data && rOrd.data.numero;
-      return client.from('movimientos_caja').delete().eq('transaccion_id', transaccionId).then(() =>
-        client.from('modos_pago').select('codigo').eq('id', modoPagoId).single()
-      ).then((rModo) => {
-        const codigo = (rModo.data && rModo.data.codigo) || '';
-        const cajaTipo = codigoCajaTipoDesdeCodigo(codigo);
-        const signoCaja = (t.cobrador || '') === 'pandy' ? 1 : -1;
-        const concepto = conceptoCajaTransaccion((t.cobrador || '') === 'pandy', t.moneda || 'USD', Number(t.monto) || 0, nroOrden, t.numero);
-        return client.from('movimientos_caja').insert({
-          moneda: t.moneda || 'USD', monto: signoCaja * (Number(t.monto) || 0), caja_tipo: cajaTipo, transaccion_id: transaccionId,
-          orden_numero: nroOrden != null ? nroOrden : null, transaccion_numero: t.numero != null ? t.numero : null,
-          concepto, fecha, usuario_id: currentUserId,
-        });
-      }).then((rIns) => {
-        if (rIns.error) showToast('Error al actualizar caja: ' + (rIns.error?.message || ''), 'error');
-        if (onSuccess) onSuccess();
-      });
+          if (r.error) {
+            showToast('Error al actualizar modo de pago: ' + (r.error?.message || ''), 'error');
+            return Promise.resolve();
+          }
+          if (!esEjecutada) {
+            const fin = () => {
+              if (onSuccess) onSuccess();
+            };
+            if (opts && opts.omitSincronizarCc) {
+              fin();
+              return Promise.resolve();
+            }
+            return sincronizarCcYCajaDesdeOrden(ordenId)
+              .catch((err) => {
+                console.warn('guardarSoloModoPagoTransaccion (pendiente): sync CC', err);
+                showToast(
+                  'Modo de pago guardado; no se pudo actualizar la cuenta corriente: ' + (err && (err.message || err.details) ? String(err.message || err.details) : String(err)),
+                  'error',
+                  9000,
+                );
+              })
+              .then(() => {
+                fin();
+              });
+          }
+          const fecha = fechaHoyYYYYMMDDArgentina();
+          const nroOrden = rOrd.data && rOrd.data.numero;
+          return client.from('movimientos_caja').delete().eq('transaccion_id', transaccionId).then(() =>
+            client.from('modos_pago').select('codigo').eq('id', modoPagoId).single()
+          ).then((rModo) => {
+            const codigo = (rModo.data && rModo.data.codigo) || '';
+            const cajaTipo = codigoCajaTipoDesdeCodigo(codigo);
+            const signoCaja = (t.cobrador || '') === 'pandy' ? 1 : -1;
+            const concepto = conceptoCajaTransaccion((t.cobrador || '') === 'pandy', t.moneda || 'USD', Number(t.monto) || 0, nroOrden, t.numero);
+            return client.from('movimientos_caja').insert({
+              moneda: t.moneda || 'USD', monto: signoCaja * (Number(t.monto) || 0), caja_tipo: cajaTipo, transaccion_id: transaccionId,
+              orden_numero: nroOrden != null ? nroOrden : null, transaccion_numero: t.numero != null ? t.numero : null,
+              concepto, fecha, usuario_id: currentUserId,
+            });
+          }).then((rIns) => {
+            if (rIns.error) showToast('Error al actualizar caja: ' + (rIns.error?.message || ''), 'error');
+            if (onSuccess) onSuccess();
+          });
         });
       });
     });
@@ -22022,9 +22233,13 @@ function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId
       const rows = buildPlantillaRowsTransaccionesSinIntermediario(orden, instrumentacionId, row, modoPagoEfectivoId);
       if (!rows.length) return Promise.resolve();
       // Orden por pagador (Cliente, Pandy). Insertar en secuencia para que numero quede 1, 2.
-      return rows.reduce((prom, insRow) => prom.then(() => client.from('transacciones').insert(insRow).select('id').single()), Promise.resolve()).then(() => {
-        return actualizarEstadoOrden(ordenId);
-      });
+      return rows.reduce((prom, insRow) => prom.then(() => client.from('transacciones').insert(insRow).select('id').single()), Promise.resolve()).then(() =>
+        actualizarEstadoOrden(ordenId).then(() =>
+          sincronizarCcYCajaDesdeOrden(ordenId).catch((err) => {
+            console.warn('autoCompletarInstrumentacionSinIntermediario: sync CC', err);
+          }),
+        ),
+      );
     });
   });
 }
@@ -22346,7 +22561,13 @@ function autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instrumenta
       const modoInt = usarTr ? modoPagoTransferenciaId : modoPagoEfectivoId;
       const rows = buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionId, rowTipo, modoPagoEfectivoId, pat, modoInt);
       if (!rows.length) return Promise.resolve();
-      return rows.reduce((prom, row) => prom.then(() => client.from('transacciones').insert(row).select('id').single()), Promise.resolve()).then(() => actualizarEstadoOrden(ordenId));
+      return rows.reduce((prom, row) => prom.then(() => client.from('transacciones').insert(row).select('id').single()), Promise.resolve()).then(() =>
+        actualizarEstadoOrden(ordenId).then(() =>
+          sincronizarCcYCajaDesdeOrden(ordenId).catch((err) => {
+            console.warn('autoCompletarInstrumentacionUsdUsdConIntermediario: sync CC', err);
+          }),
+        ),
+      );
     });
   });
 }
@@ -24510,38 +24731,58 @@ function saveTransaccion() {
       if (ordenWizardInstrumentacionIdActual && instrumentacionId && ordenWizardInstrumentacionIdActual === instrumentacionId) {
         renderOrdenWizardInstrumentacion(instrumentacionId);
       }
+      function refrescarEstadoYVistasCc() {
+        if (ordenId) {
+          actualizarEstadoOrden(ordenId)
+            .then((res) => {
+              mostrarMensajeSiInstrumentacionCerrada(res);
+              return res;
+            })
+            .then((res) => {
+              if (res && res.estado === 'instrumentacion_cerrada_ejecucion') {
+                return client.from('ordenes').select('intermediario_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
+                  const orden = rOrd.data || {};
+                  const toSt = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+                  const usaIntermediarioTipo = !!(toSt && toSt.usa_intermediario);
+                  const miSt = (toSt && toSt.moneda_in || '').toString().toUpperCase().trim();
+                  const moSt = (toSt && toSt.moneda_out || '').toString().toUpperCase().trim();
+                  const esDosMonedasConIntermediario = !!patronTipoCambioOrden(miSt, moSt) && usaIntermediarioTipo;
+                  if (esDosMonedasConIntermediario) return res;
+                  // No generar transacciones automáticas Pandy↔Intermediario (compensación/comisiones en instrumentación): va por CC y carga manual si aplica.
+                  return res;
+                });
+              }
+              return res;
+            })
+            .then((res) => {
+              // Con la lógica nueva de CC no se generan movimientos "Conversión de moneda"
+              return res;
+            })
+            .then(() => {
+              if (ordenWizardInstrumentacionIdActual && instrumentacionId && ordenWizardInstrumentacionIdActual === instrumentacionId) renderOrdenWizardInstrumentacion(instrumentacionId);
+              refreshCcView();
+            });
+        } else {
+          refreshCcView();
+        }
+      }
       if (ordenId) {
-        actualizarEstadoOrden(ordenId)
-          .then((res) => {
-            mostrarMensajeSiInstrumentacionCerrada(res);
-            return res;
-          })
-          .then((res) => {
-            if (res && res.estado === 'instrumentacion_cerrada_ejecucion') {
-              return client.from('ordenes').select('intermediario_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
-                const orden = rOrd.data || {};
-                const toSt = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
-                const usaIntermediarioTipo = !!(toSt && toSt.usa_intermediario);
-                const miSt = (toSt && toSt.moneda_in || '').toString().toUpperCase().trim();
-                const moSt = (toSt && toSt.moneda_out || '').toString().toUpperCase().trim();
-                const esDosMonedasConIntermediario = !!patronTipoCambioOrden(miSt, moSt) && usaIntermediarioTipo;
-                if (esDosMonedasConIntermediario) return res;
-                // No generar transacciones automáticas Pandy↔Intermediario (compensación/comisiones en instrumentación): va por CC y carga manual si aplica.
-                return res;
-              });
+        sincronizarCcYCajaDesdeOrden(ordenId)
+          .catch((err) => {
+            console.warn('saveTransaccion → sincronizarCcYCajaDesdeOrden:', err && (err.message || err.code));
+            if (!(err && err.code === PANDI_CC_NETEO_INVARIANT_CODE)) {
+              showToast(
+                'Transacción guardada; no se pudo actualizar la cuenta corriente desde la orden: ' + (err && (err.message || err.details) ? String(err.message || err.details) : String(err)),
+                'error',
+                12000,
+              );
             }
-            return res;
-          })
-          .then((res) => {
-            // Con la lógica nueva de CC no se generan movimientos "Conversión de moneda"
-            return res;
           })
           .then(() => {
-            if (ordenWizardInstrumentacionIdActual && instrumentacionId && ordenWizardInstrumentacionIdActual === instrumentacionId) renderOrdenWizardInstrumentacion(instrumentacionId);
-            refreshCcView();
+            refrescarEstadoYVistasCc();
           });
       } else {
-        refreshCcView();
+        refrescarEstadoYVistasCc();
       }
     } // continuarCambioEstado
 

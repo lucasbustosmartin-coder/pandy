@@ -8,7 +8,7 @@
 --
 -- NO toca USD-USD ni CHEQUE-ARS.
 --
--- **Sin int, todo junto (USD-ARS + ARS-USD + EUR-USD + USD-EUR + EUR-ARS + ARS-EUR, 10×6):**
+-- **Sin int, todo junto (USD-ARS + ARS-USD + EUR-USD + USD-EUR + EUR-ARS + ARS-EUR, 12×6):**
 -- preferí `sql/migracion_reglas_todos_cruces_dos_monedas_sin_int_canonico.sql` (un solo DELETE+INSERT).
 -- Este archivo sirve si solo querés parches parciales o el bloque **C) +int** EUR-ARS/ARS-EUR.
 --
