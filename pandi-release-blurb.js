@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.35',
+  versionLabel: 'v3.7.36',
   lines: [
-    'G/P Operativa muestra el resultado de la empresa en el período: el Total suma caja ejecutada, cuenta corriente alineada a lo que ves en Saldos (incluye pendientes) y las comisiones del acuerdo sin contar lo mismo dos veces.',
-    'La parte del acuerdo que corresponde al intermediario se resta del Total y las ayudas (incluida la fila Total) lo explican en simple.',
-    'Actualizamos textos del manual y de la ayuda del Panel para que coincida con lo que hace la app al recargar.',
+    'En Órdenes y en Cajas → Movimientos podés ordenar la tabla tocando el título de cada columna, igual que en Cuenta corriente.',
+    'Al exportar movimientos de caja a Excel, el archivo respeta el mismo orden que ves en pantalla.',
+    'Corregimos el orden en el listado de órdenes para que el clic en los encabezados funcione bien.',
   ],
 };

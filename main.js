@@ -3479,6 +3479,9 @@ let cajasMovFechaDesde = '';
 let cajasMovFechaHasta = '';
 /** 'todo' | 'efectivo' | 'banco' | 'cheque' — filtro de la tabla (no afecta saldos de las cards). */
 let cajasMovCajaTipoTab = 'todo';
+/** Ordenamiento de la tabla Movimientos de caja (mismo patrón que CC → detalle). */
+let cajasMovSortCol = null;
+let cajasMovSortDir = 1;
 let cajasMovFiltrosListenersAttached = false;
 /** Solapa principal vista Cajas: 'movimientos' | 'tipos' (mismo patrón que CC). */
 let cajasVistaSolapa = 'movimientos';
@@ -5640,6 +5643,84 @@ function aplicarVisibilidadBotonesFiltroCajaMovimientos() {
 }
 
 /** Filtra la lista completa para la tabla (moneda, tipo caja, rango fechas). Los saldos usan `list` sin este filtro. */
+/** Comparador para ordenar filas de movimientos de caja por columna (tiposMap + mapa usuario para etiqueta). */
+function compareCajasMovimientoRow(a, b, col, dir, tiposMap, userMap) {
+  const mapU = userMap || {};
+  const origenVal = (m) => {
+    if (m.tipo_movimiento_id) return 'Manual';
+    if (m.transaccion_id) return 'Acuerdo';
+    if (m.orden_id) return 'Orden concertada';
+    return '–';
+  };
+  const tipoIe = (m) => (Number(m.monto) >= 0 ? 'Ingreso' : 'Egreso');
+  const cajaTipo = (m) => {
+    const t = (m.caja_tipo || 'efectivo').toLowerCase();
+    if (t === 'banco') return 'Banco';
+    if (t === 'cheque') return 'Cheque';
+    return 'Efectivo';
+  };
+  const conceptoOrd = (m) => {
+    const cRaw = (m.concepto || '').toString().trim();
+    const cDisp = cRaw ? textoVistaCajaSinPorcentajesComision(cRaw) : '';
+    return (cDisp || '–').toString();
+  };
+  const usuarioOrd = (m) => {
+    const uid = m.usuario_id != null ? String(m.usuario_id) : '';
+    return uid ? (mapU[uid] || '').toString() : '';
+  };
+  let va;
+  let vb;
+  switch (col) {
+    case 'fecha':
+      va = (a.fecha || '').toString().slice(0, 10);
+      vb = (b.fecha || '').toString().slice(0, 10);
+      return dir * (va < vb ? -1 : va > vb ? 1 : 0);
+    case 'origen':
+      va = origenVal(a);
+      vb = origenVal(b);
+      return dir * va.localeCompare(vb);
+    case 'orden_numero':
+      va = a.orden_numero != null ? Number(a.orden_numero) : -Infinity;
+      vb = b.orden_numero != null ? Number(b.orden_numero) : -Infinity;
+      return dir * (va - vb);
+    case 'transaccion_numero':
+      va = a.transaccion_numero != null ? Number(a.transaccion_numero) : -Infinity;
+      vb = b.transaccion_numero != null ? Number(b.transaccion_numero) : -Infinity;
+      return dir * (va - vb);
+    case 'movimiento': {
+      const na = nombreTipoMovimientoCajaEnFila(a, tiposMap);
+      const nb = nombreTipoMovimientoCajaEnFila(b, tiposMap);
+      return dir * na.localeCompare(nb);
+    }
+    case 'tipo_ie':
+      va = tipoIe(a);
+      vb = tipoIe(b);
+      return dir * va.localeCompare(vb);
+    case 'moneda':
+      va = (a.moneda || '').toString().toUpperCase();
+      vb = (b.moneda || '').toString().toUpperCase();
+      return dir * va.localeCompare(vb);
+    case 'monto':
+      va = a.monto != null ? Number(a.monto) : -Infinity;
+      vb = b.monto != null ? Number(b.monto) : -Infinity;
+      return dir * (va - vb);
+    case 'caja_tipo':
+      va = cajaTipo(a);
+      vb = cajaTipo(b);
+      return dir * va.localeCompare(vb);
+    case 'usuario':
+      va = usuarioOrd(a);
+      vb = usuarioOrd(b);
+      return dir * va.localeCompare(vb);
+    case 'concepto':
+      va = conceptoOrd(a);
+      vb = conceptoOrd(b);
+      return dir * va.localeCompare(vb);
+    default:
+      return 0;
+  }
+}
+
 function filtrarMovimientosCajaVista(list) {
   const { verEfectivo, verBanco, verCheque, tieneAlgunoSubPerm } = getPermisosVerCajaTipoMovimientos();
   let filtrados = (cajasMonedaActual === 'TODO' ? list : list.filter((m) => m.moneda === cajasMonedaActual))
@@ -5704,8 +5785,14 @@ function exportarMovimientosCajaExcel() {
         if (t === 'cheque') return 'Cheque';
         return 'Efectivo';
       };
+      let listaExp = filtrados;
+      if (cajasMovSortCol) {
+        listaExp = [...filtrados].sort((a, b) =>
+          compareCajasMovimientoRow(a, b, cajasMovSortCol, cajasMovSortDir, tiposMap, etiquetaPorUsuario),
+        );
+      }
       const header = ['Fecha', 'Origen', 'Nro orden', 'Nro Trx', 'Movimiento', 'Tipo', 'Moneda', 'Monto', 'Caja', 'Concepto', 'Usuario'];
-      const rows = filtrados.map((m) => {
+      const rows = listaExp.map((m) => {
         const nroOrden = m.orden_numero != null ? Number(m.orden_numero) : null;
         const nroTrans = m.transaccion_numero != null ? Number(m.transaccion_numero) : null;
         const fecha = (m.fecha || '').toString().slice(0, 10);
@@ -6013,7 +6100,13 @@ function pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, ctx) {
     const canAltaCaja = tienePermisoAltaMovimientoCaja();
     const canEditarCaja = tienePermisoEditarMovimientoCaja();
     const canAnularCaja = tienePermisoAnularMovimientoCaja();
-    tbody.innerHTML = filtrados
+    let paraTabla = filtrados;
+    if (cajasMovSortCol && filtrados.length) {
+      paraTabla = [...filtrados].sort((a, b) =>
+        compareCajasMovimientoRow(a, b, cajasMovSortCol, cajasMovSortDir, tiposMap, mapUsuarioCaja),
+      );
+    }
+    tbody.innerHTML = paraTabla
       .map((m) => {
         const celdaAcciones = (() => {
           if (m.pandi_caja_offline_pending) {
@@ -6118,9 +6211,39 @@ function pintarCajasMovimientosUi(list, resTipos, monUsd, monArs, monEur, ctx) {
         });
       });
     }
+    setupCajasMovSortHeaders();
     wrapEl.style.display = 'block';
     aplicarVisibilidadBotonNuevoMovimientoCaja();
     });
+  });
+}
+
+function setupCajasMovSortHeaders() {
+  const table = document.getElementById('tabla-movimientos-caja');
+  if (!table || !document.getElementById('cajas-panel-movimientos')?.contains(table)) return;
+  const thead = table.querySelector('thead tr');
+  if (!thead) return;
+  thead.querySelectorAll('th[data-sort]').forEach((th) => {
+    const col = th.getAttribute('data-sort');
+    const indicator =
+      th.querySelector('.sort-indicator') ||
+      (() => {
+        const s = document.createElement('span');
+        s.className = 'sort-indicator';
+        th.appendChild(s);
+        return s;
+      })();
+    indicator.textContent = cajasMovSortCol === col ? (cajasMovSortDir === 1 ? ' ▲' : ' ▼') : '';
+    th.onclick = () => {
+      const tbody = document.getElementById('movimientos-caja-tbody');
+      if (!tbody || tbody.querySelector('td[colspan]')) return;
+      if (cajasMovSortCol === col) cajasMovSortDir *= -1;
+      else {
+        cajasMovSortCol = col;
+        cajasMovSortDir = 1;
+      }
+      void loadCajas({ soloFiltros: true });
+    };
   });
 }
 
@@ -14659,6 +14782,9 @@ let ordenesVistaUsuarioMap = {};
 let ordenesVistaComisionesMap = {};
 /** Último listado mostrado en la grilla (filtros + cola local), para exportar Excel. */
 let ordenesVistaListadoFiltradoActual = [];
+/** Ordenamiento del listado de órdenes (mismo patrón que CC → detalle). */
+let ordenesVistaSortCol = null;
+let ordenesVistaSortDir = 1;
 /** Columnas de la tabla principal de Órdenes (incl. detalle expandido `colspan`). */
 const PANDI_ORDENES_VISTA_TABLA_COLSPAN = 14;
 let ordenesFiltrosListenersAttached = false;
@@ -14929,6 +15055,121 @@ function pandiAvisoSiSinServidorParaEscritura(etiquetaAcción, opts) {
   return false;
 }
 
+/** Comparador para ordenar filas del listado de órdenes por columna (usa mapas globales de la vista). */
+function compareOrdenesVistaRow(a, b, col, dir) {
+  const tips = ordenesVistaTiposOpMap;
+  const cli = ordenesVistaClientesMap;
+  const inte = ordenesVistaIntermediariosMap;
+  const usr = ordenesVistaUsuarioMap;
+  const aggMap = ordenesVistaComisionesMap;
+  const tipoTexto = (o) => {
+    const id = o.tipo_operacion_id;
+    if (!id) return '';
+    const t = tips[String(id)];
+    return t ? String((t.nombre || t.codigo || '') || '').trim() : String(id);
+  };
+  let va;
+  let vb;
+  switch (col) {
+    case 'numero':
+      va = a.numero != null ? Number(a.numero) : -Infinity;
+      vb = b.numero != null ? Number(b.numero) : -Infinity;
+      return dir * (va - vb);
+    case 'fecha':
+      va = (a.fecha || '').toString().slice(0, 10);
+      vb = (b.fecha || '').toString().slice(0, 10);
+      return dir * (va < vb ? -1 : va > vb ? 1 : 0);
+    case 'tipo_operacion':
+      va = tipoTexto(a);
+      vb = tipoTexto(b);
+      return dir * va.localeCompare(vb);
+    case 'cliente':
+      va = (a.cliente_id ? cli[a.cliente_id] || '' : '').toString().trim();
+      vb = (b.cliente_id ? cli[b.cliente_id] || '' : '').toString().trim();
+      return dir * va.localeCompare(vb);
+    case 'intermediario':
+      va = (a.intermediario_id ? inte[a.intermediario_id] || '' : '').toString().trim();
+      vb = (b.intermediario_id ? inte[b.intermediario_id] || '' : '').toString().trim();
+      return dir * va.localeCompare(vb);
+    case 'comision_marca': {
+      const aa = a._pandiColaLocal ? '' : pandiTextoComisionesListadoDesdeLado(aggMap[String(a.id)], 'pandy');
+      const bb = b._pandiColaLocal ? '' : pandiTextoComisionesListadoDesdeLado(aggMap[String(b.id)], 'pandy');
+      va = (aa || '').toString();
+      vb = (bb || '').toString();
+      return dir * va.localeCompare(vb);
+    }
+    case 'comision_int': {
+      const aa = a._pandiColaLocal ? '' : pandiTextoComisionesListadoDesdeLado(aggMap[String(a.id)], 'intermediario');
+      const bb = b._pandiColaLocal ? '' : pandiTextoComisionesListadoDesdeLado(aggMap[String(b.id)], 'intermediario');
+      va = (aa || '').toString();
+      vb = (bb || '').toString();
+      return dir * va.localeCompare(vb);
+    }
+    case 'estado':
+      va = (a.estado || '').toString();
+      vb = (b.estado || '').toString();
+      return dir * va.localeCompare(vb);
+    case 'usuario':
+      va = (a.usuario_id != null ? String(usr[String(a.usuario_id)] || '') : '').toString();
+      vb = (b.usuario_id != null ? String(usr[String(b.usuario_id)] || '') : '').toString();
+      return dir * va.localeCompare(vb);
+    case 'monto_recibido':
+      va = a.monto_recibido != null ? Number(a.monto_recibido) : -Infinity;
+      vb = b.monto_recibido != null ? Number(b.monto_recibido) : -Infinity;
+      return dir * (va - vb);
+    case 'moneda_recibida':
+      va = (a.moneda_recibida || '').toString().toUpperCase();
+      vb = (b.moneda_recibida || '').toString().toUpperCase();
+      return dir * va.localeCompare(vb);
+    case 'monto_entregado':
+      va = a.monto_entregado != null ? Number(a.monto_entregado) : -Infinity;
+      vb = b.monto_entregado != null ? Number(b.monto_entregado) : -Infinity;
+      return dir * (va - vb);
+    case 'moneda_entregada':
+      va = (a.moneda_entregada || '').toString().toUpperCase();
+      vb = (b.moneda_entregada || '').toString().toUpperCase();
+      return dir * va.localeCompare(vb);
+    default:
+      return 0;
+  }
+}
+
+function setupOrdenesVistaSortHeaders() {
+  const table = document.getElementById('tabla-ordenes');
+  if (!table || !document.getElementById('vista-ordenes')?.contains(table)) return;
+  const thead = table.querySelector('thead tr');
+  if (!thead) return;
+  thead.querySelectorAll('th[data-sort]').forEach((th) => {
+    const col = th.getAttribute('data-sort');
+    const indicator =
+      th.querySelector('.sort-indicator') ||
+      (() => {
+        const s = document.createElement('span');
+        s.className = 'sort-indicator';
+        th.appendChild(s);
+        return s;
+      })();
+    indicator.textContent = ordenesVistaSortCol === col ? (ordenesVistaSortDir === 1 ? ' ▲' : ' ▼') : '';
+    th.onclick = () => {
+      const tbody = document.getElementById('ordenes-tbody');
+      if (!tbody) return;
+      // No confundir con filas de detalle expandidas: cada orden tiene un <tr class="orden-detalle-tr"> con td[colspan].
+      const filasPrincipales = tbody.querySelectorAll('tr:not(.orden-detalle-tr)');
+      const soloMensajeVacio =
+        filasPrincipales.length === 1 &&
+        !filasPrincipales[0].getAttribute('data-id') &&
+        filasPrincipales[0].querySelector('td[colspan]');
+      if (soloMensajeVacio) return;
+      if (ordenesVistaSortCol === col) ordenesVistaSortDir *= -1;
+      else {
+        ordenesVistaSortCol = col;
+        ordenesVistaSortDir = 1;
+      }
+      aplicarFiltrosOrdenesVista();
+    };
+  });
+}
+
 function renderOrdenesTabla(list) {
   const tbody = document.getElementById('ordenes-tbody');
   const wrapEl = document.getElementById('ordenes-tabla-wrap');
@@ -14962,6 +15203,7 @@ function renderOrdenesTabla(list) {
   if (list.length === 0) {
     tbody.innerHTML = `<tr><td colspan="${PANDI_ORDENES_VISTA_TABLA_COLSPAN}">No hay órdenes con los filtros aplicados.</td></tr>`;
     wrapEl.style.display = 'block';
+    setupOrdenesVistaSortHeaders();
     return;
   }
   tbody.innerHTML = list
@@ -15073,6 +15315,7 @@ function renderOrdenesTabla(list) {
       if (id) solicitarConfirmacionYAnularOrden(id);
     });
   });
+  setupOrdenesVistaSortHeaders();
   wrapEl.style.display = 'block';
 }
 
@@ -15108,8 +15351,12 @@ function aplicarFiltrosOrdenesVista() {
     if (!a._pandiColaLocal && b._pandiColaLocal) return 1;
     return 0;
   });
-  ordenesVistaListadoFiltradoActual = merged;
-  renderOrdenesTabla(merged);
+  let toRender = merged;
+  if (ordenesVistaSortCol) {
+    toRender = [...merged].sort((a, b) => compareOrdenesVistaRow(a, b, ordenesVistaSortCol, ordenesVistaSortDir));
+  }
+  ordenesVistaListadoFiltradoActual = toRender;
+  renderOrdenesTabla(toRender);
 }
 
 function pandiEsErrorRedOrdenesMessage(msgRaw) {

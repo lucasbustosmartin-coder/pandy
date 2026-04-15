@@ -1696,6 +1696,13 @@
     .tabla-cc-detalle-sortable th.th-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
     .tabla-cc-detalle-sortable th.th-sortable:hover { background: #f0f0f0; }
     .tabla-cc-detalle-sortable th.th-sortable .sort-indicator { margin-left: 0.25rem; opacity: 0.6; font-size: 0.75em; }
+    /* Órdenes y Cajas: orden por columna (mismo patrón que CC detalle) */
+    .tabla-ordenes-sortable th.th-sortable,
+    .tabla-cajas-mov-sortable th.th-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+    .tabla-ordenes-sortable th.th-sortable:hover,
+    .tabla-cajas-mov-sortable th.th-sortable:hover { background: #f0f0f0; }
+    .tabla-ordenes-sortable th.th-sortable .sort-indicator,
+    .tabla-cajas-mov-sortable th.th-sortable .sort-indicator { margin-left: 0.25rem; opacity: 0.6; font-size: 0.75em; }
     /* Columnas fijas (Fecha y Tipo op.) en scroll horizontal — modal y vista detalle CC */
     .tabla-cc-movimientos .cc-col-fija.cc-col-fija-1,
     .tabla-cc-resumen.tabla-cc-detalle-sortable .cc-col-fija.cc-col-fija-1 { position: sticky; left: 0; z-index: 2; background: #fff; box-shadow: 2px 0 4px -2px rgba(0,0,0,0.08); min-width: 5.5rem; }
