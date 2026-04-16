@@ -2637,7 +2637,7 @@ function showView(vistaId, pageTitle) {
     pageTitle = 'Órdenes';
   }
   currentVistaId = vistaId;
-  ['vista-inicio', 'vista-ordenes', 'vista-cajas', 'vista-clientes', 'vista-intermediarios', 'vista-tipos-operacion', 'vista-cuenta-corriente', 'vista-reglas-negocio', 'vista-configuracion-empresa', 'vista-seguridad'].forEach((id) => {
+  ['vista-inicio', 'vista-ordenes', 'vista-cajas', 'vista-clientes', 'vista-intermediarios', 'vista-tipos-operacion', 'vista-cuenta-corriente', 'vista-reglas-negocio', 'vista-configuracion-empresa', 'vista-seguridad', 'vista-auditoria'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.display = id === vistaId ? 'block' : 'none';
   });
@@ -2671,6 +2671,7 @@ function showView(vistaId, pageTitle) {
   if (vistaId === 'vista-tipos-operacion') loadTiposOperacion();
   if (vistaId === 'vista-reglas-negocio') loadReglasNegocioVista();
   if (vistaId === 'vista-configuracion-empresa') loadConfiguracionEmpresa();
+  if (vistaId === 'vista-auditoria') void loadAuditoriaVista({ append: false });
   pandiCollapseMobileSidebarAfterNav();
   if (pandiIsMobileNavLayout()) {
     const mc = document.querySelector('.main-content');
@@ -3759,6 +3760,129 @@ function registrarAuditoriaApp(categoria, accion, detalle, metadata) {
   });
 }
 
+/** Valor serializable en metadata JSON (auditoría de cambios). */
+function auditoriaValorJsonable(v) {
+  if (v === undefined) return null;
+  if (v === null) return null;
+  if (typeof v === 'number' && !Number.isFinite(v)) return String(v);
+  if (typeof v === 'number' || typeof v === 'boolean') return v;
+  if (v instanceof Date) return v.toISOString();
+  return v;
+}
+
+function auditoriaIgualValores(a, b) {
+  if (a === b) return true;
+  const na = a === null || a === undefined || a === '';
+  const nb = b === null || b === undefined || b === '';
+  if (na && nb) return true;
+  const fa = Number(a);
+  const fb = Number(b);
+  if (!Number.isNaN(fa) && !Number.isNaN(fb) && Math.abs(fa - fb) < 1e-9) return true;
+  return String(a) === String(b);
+}
+
+/**
+ * Compara dos objetos planos y devuelve [{ campo, anterior, nuevo }] para `metadata.cambios`.
+ * El usuario queda en la columna `usuario_id` de la fila; en metadata se agrega `usuario_snapshot` (email / nombre).
+ */
+function auditoriaDiffPorCampos(anterior, nuevo, campos) {
+  const cambios = [];
+  if (!campos || !campos.length) return cambios;
+  const ant = anterior || {};
+  const neu = nuevo || {};
+  campos.forEach((campo) => {
+    const va = ant[campo];
+    const vb = neu[campo];
+    if (!auditoriaIgualValores(va, vb)) {
+      cambios.push({
+        campo,
+        anterior: auditoriaValorJsonable(va),
+        nuevo: auditoriaValorJsonable(vb),
+      });
+    }
+  });
+  return cambios;
+}
+
+function auditoriaUsuarioSnapshotMeta() {
+  const em = (currentUserEmail && String(currentUserEmail).trim()) || '';
+  const dn = (currentUserDisplayName && String(currentUserDisplayName).trim()) || '';
+  if (!em && !dn) return null;
+  return { usuario_email: em || null, usuario_display_name: dn || null };
+}
+
+/**
+ * Auditoría con lista de cambios (campo / anterior / nuevo). Requiere `usuario_id` en sesión.
+ */
+function registrarAuditoriaAppCambios(categoria, accion, detalle, opts) {
+  const {
+    entidad, registro_id, orden_id, transaccion_id, instrumentacion_id, movimiento_caja_id, cambios, extra,
+  } = opts || {};
+  if (!currentUserId || !Array.isArray(cambios) || cambios.length === 0) return Promise.resolve();
+  const snap = auditoriaUsuarioSnapshotMeta();
+  const meta = {
+    entidad: entidad || null,
+    registro_id: registro_id != null ? String(registro_id) : null,
+    orden_id: orden_id != null ? String(orden_id) : null,
+    transaccion_id: transaccion_id != null ? String(transaccion_id) : null,
+    instrumentacion_id: instrumentacion_id != null ? String(instrumentacion_id) : null,
+    movimiento_caja_id: movimiento_caja_id != null ? String(movimiento_caja_id) : null,
+    cambios,
+    usuario_snapshot: snap,
+    ...(extra && typeof extra === 'object' ? extra : {}),
+  };
+  return registrarAuditoriaApp(categoria, accion, detalle, meta);
+}
+
+const ORDEN_CAMPOS_AUDITORIA = [
+  'cliente_id', 'fecha', 'estado', 'tipo_operacion_id', 'operacion_directa', 'intermediario_id',
+  'moneda_recibida', 'moneda_entregada', 'monto_recibido', 'monto_entregado', 'cotizacion',
+  'tasa_descuento_intermediario', 'intermediario_pago_transferencia', 'intermediario_transferencia_cobra_tasa',
+  'intermediario_transferencia_tasa', 'observaciones', 'usd_usd_tasa_cliente_modo', 'usuario_id',
+];
+
+function auditoriaFetchOrdenSnapshot(ordenId) {
+  const cols = `${ORDEN_CAMPOS_AUDITORIA.join(',')},numero`;
+  return client.from('ordenes').select(cols).eq('id', ordenId).maybeSingle();
+}
+
+/** Tras UPDATE exitoso de orden: compara snapshot previo vs fila actual y registra si hubo difs. */
+function registrarAuditoriaOrdenSiHuboCambios(ordenId, prevRow) {
+  if (!ordenId || !prevRow || !currentUserId) return;
+  void auditoriaFetchOrdenSnapshot(ordenId).then((rPost) => {
+    const post = rPost.data;
+    if (!post) return;
+    const cambios = auditoriaDiffPorCampos(prevRow, post, ORDEN_CAMPOS_AUDITORIA);
+    if (!cambios.length) return;
+    const nro = post.numero != null ? String(post.numero) : String(ordenId).slice(0, 8);
+    void registrarAuditoriaAppCambios('orden', 'editar', `Edición de orden (nº ${nro}).`, {
+      entidad: 'orden',
+      registro_id: ordenId,
+      orden_id: ordenId,
+      cambios,
+    });
+  });
+}
+
+function registrarAuditoriaTransaccionMonto(transaccionId, t, ordenId, oldMonto, newMonto) {
+  if (Math.abs(Number(oldMonto) - Number(newMonto)) < 1e-9) return;
+  const num = t && t.numero != null ? String(t.numero) : String(transaccionId).slice(0, 8);
+  void registrarAuditoriaAppCambios('transaccion', 'editar_monto', `Transacción nº ${num}: monto.`, {
+    entidad: 'transaccion',
+    registro_id: transaccionId,
+    transaccion_id: transaccionId,
+    orden_id: ordenId || null,
+    instrumentacion_id: (t && t.instrumentacion_id) || null,
+    cambios: [{ campo: 'monto', anterior: Number(oldMonto), nuevo: Number(newMonto) }],
+  });
+}
+
+const TRANSACCION_CAMPOS_EDICION_MODAL = [
+  'instrumentacion_id', 'tipo', 'modo_pago_id', 'moneda', 'monto', 'cobrador', 'pagador', 'owner', 'estado', 'concepto', 'tipo_cambio',
+  'pagador_cliente_id', 'cobrador_cliente_id', 'pagador_intermediario_id', 'cobrador_intermediario_id',
+  'fecha_ejecucion', 'usuario_id',
+];
+
 /** Instrumentación 1:1 con orden: transacciones e id de instrumentación para anulación. */
 function fetchTransaccionesParaAnulacionOrden(ordenId) {
   return client
@@ -4537,15 +4661,64 @@ function ejecutarReemplazoCompletoCcManualEditar() {
       const detalle = 'CC manual reemplazado (pagador/cobrador/monto/moneda/modalidad/concepto/fecha). Líneas previas: '
         + oldCtx.filas.map((f) => f.tabla + ':' + f.id).join(', ')
         + (oldCtx.cajaId ? '. Caja previa: ' + oldCtx.cajaId : '');
-      registrarAuditoriaApp('cc_manual', 'editar', detalle, {
+      const CC_MANUAL_CAMPOS_AUDIT = [
+        'pagador_rol', 'cobrador_rol', 'pagador_cliente_id', 'pagador_intermediario_id',
+        'cobrador_cliente_id', 'cobrador_intermediario_id', 'moneda', 'monto_abs',
+        'modo_pago', 'concepto_usuario', 'fecha', 'grupo_id',
+      ];
+      const antesCc = {
+        pagador_rol: oldCtx.pagRol,
+        cobrador_rol: oldCtx.cobRol,
+        pagador_cliente_id: oldCtx.pagCli || null,
+        pagador_intermediario_id: oldCtx.pagInt || null,
+        cobrador_cliente_id: oldCtx.cobCli || null,
+        cobrador_intermediario_id: oldCtx.cobInt || null,
+        moneda: (oldCtx.moneda || 'USD').toUpperCase(),
+        monto_abs: oldCtx.montoAbs,
+        modo_pago: oldCtx.modoPago,
+        concepto_usuario: oldCtx.conceptoUsuario != null ? String(oldCtx.conceptoUsuario) : '',
+        fecha: oldCtx.fecha || '',
         grupo_id: oldCtx.grupoId,
-        caja_id: oldCtx.cajaId,
-        concepto: conceptoCc,
-        fecha,
+      };
+      const despuesCc = {
+        pagador_rol: pagRol,
+        cobrador_rol: cobRol,
+        pagador_cliente_id: pagCli || null,
+        pagador_intermediario_id: pagInt || null,
+        cobrador_cliente_id: cobCli || null,
+        cobrador_intermediario_id: cobInt || null,
         moneda,
-        montoAbs,
-        modoPago,
-      });
+        monto_abs: montoAbs,
+        modo_pago: modoPago,
+        concepto_usuario: conceptoUsuario,
+        fecha,
+        grupo_id: grupoId,
+      };
+      const cambiosCcMan = auditoriaDiffPorCampos(antesCc, despuesCc, CC_MANUAL_CAMPOS_AUDIT);
+      if (cambiosCcMan.length) {
+        void registrarAuditoriaAppCambios('cc_manual', 'editar', detalle, {
+          entidad: 'cc_manual',
+          registro_id: (oldCtx.filas[0] && oldCtx.filas[0].id) || oldCtx.grupoId || null,
+          cambios: cambiosCcMan,
+          extra: {
+            grupo_id_previo: oldCtx.grupoId,
+            caja_id_previo: oldCtx.cajaId,
+            filas_previas: oldCtx.filas,
+            concepto_cc_nuevo: conceptoCc,
+          },
+        });
+      } else {
+        void registrarAuditoriaApp('cc_manual', 'editar', detalle, {
+          grupo_id: oldCtx.grupoId,
+          caja_id: oldCtx.cajaId,
+          concepto: conceptoCc,
+          fecha,
+          moneda,
+          montoAbs,
+          modoPago,
+          usuario_snapshot: auditoriaUsuarioSnapshotMeta(),
+        });
+      }
       closeModalCcManualEditar();
       if (!opts || !opts.skipOkToast) showToast('Movimiento manual actualizado.', 'success');
       loadCuentaCorriente();
@@ -14405,7 +14578,7 @@ function saveMovimientoCaja() {
         const aplicarUpdateCajaManual = () => {
           client
             .from('movimientos_caja')
-            .select('id, orden_id, transaccion_id')
+            .select('id, orden_id, transaccion_id, moneda, monto, tipo_movimiento_id, concepto, fecha, caja_tipo, usuario_id')
             .eq('id', id)
             .maybeSingle()
             .then((r0) => {
@@ -14426,6 +14599,24 @@ function saveMovimientoCaja() {
                   if (res.error) {
                     showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
                     return;
+                  }
+                  const CAMPOS_CAJA_MANUAL_EDICION = ['moneda', 'monto', 'tipo_movimiento_id', 'caja_tipo', 'concepto', 'fecha'];
+                  const despues = {
+                    moneda: payloadBase.moneda,
+                    monto: payloadBase.monto,
+                    tipo_movimiento_id: payloadBase.tipo_movimiento_id,
+                    caja_tipo: payloadBase.caja_tipo,
+                    concepto: payloadBase.concepto,
+                    fecha: payloadBase.fecha,
+                  };
+                  const cambiosCaja = auditoriaDiffPorCampos(row0, despues, CAMPOS_CAJA_MANUAL_EDICION);
+                  if (cambiosCaja.length) {
+                    void registrarAuditoriaAppCambios('caja_manual', 'editar', `Movimiento de caja manual id ${id}.`, {
+                      entidad: 'movimiento_caja',
+                      registro_id: id,
+                      movimiento_caja_id: id,
+                      cambios: cambiosCaja,
+                    });
                   }
                   closeModalMovimientoCaja();
                   loadCajas();
@@ -14738,6 +14929,7 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess, opts)
           showToast('Error al actualizar monto: ' + (r.error?.message || ''), 'error');
           return Promise.resolve();
         }
+        registrarAuditoriaTransaccionMonto(transaccionId, t, null, oldMonto, newMonto);
         const fin = () => {
           if (onSuccess) onSuccess();
         };
@@ -14814,6 +15006,7 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess, opts)
                     showToast('Error al actualizar monto: ' + (rUp.error?.message || ''), 'error');
                     return Promise.resolve();
                   }
+                  registrarAuditoriaTransaccionMonto(transaccionId, t, ordenId, oldMonto, newMonto);
                   return sincronizarCcYCajaDesdeOrden(ordenId);
                 })
                 .then(() => {
@@ -14841,7 +15034,10 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess, opts)
           let prom = Promise.resolve();
           if (cancelacionIds.length > 0) prom = prom.then(() => Promise.all(cancelacionIds.map((id) => client.from('movimientos_cuenta_corriente').delete().eq('id', id))));
           prom = prom.then(() => client.from('movimientos_caja').delete().eq('transaccion_id', transaccionId));
-          prom = prom.then(() => client.from('transacciones').update({ monto: newMonto, updated_at: ahora }).eq('id', transaccionId));
+          prom = prom.then(() => client.from('transacciones').update({ monto: newMonto, updated_at: ahora }).eq('id', transaccionId).then((rUp) => {
+            if (!rUp.error) registrarAuditoriaTransaccionMonto(transaccionId, t, ordenId, oldMonto, newMonto);
+            return rUp;
+          }));
           const esIngreso = t.tipo === 'ingreso';
           const delta = oldMonto - newMonto;
           if (tieneMomentoCero && clienteId) {
@@ -15012,45 +15208,69 @@ function guardarSoloModoPagoTransaccion(transaccionId, modoPagoId, onSuccess, on
             showToast('Error al actualizar modo de pago: ' + (r.error?.message || ''), 'error');
             return Promise.resolve();
           }
-          if (!esEjecutada) {
-            const fin = () => {
-              if (onSuccess) onSuccess();
-            };
-            if (opts && opts.omitSincronizarCc) {
-              fin();
-              return Promise.resolve();
-            }
-            return sincronizarCcYCajaDesdeOrden(ordenId)
-              .catch((err) => {
-                console.warn('guardarSoloModoPagoTransaccion (pendiente): sync CC', err);
-                showToast(
-                  'Modo de pago guardado; no se pudo actualizar la cuenta corriente: ' + (err && (err.message || err.details) ? String(err.message || err.details) : String(err)),
-                  'error',
-                  9000,
-                );
-              })
-              .then(() => {
-                fin();
+          return client
+            .from('modos_pago')
+            .select('codigo')
+            .eq('id', modoPagoId)
+            .single()
+            .then((rModoNuevo) => {
+              const codigoNuevo = (!rModoNuevo.error && rModoNuevo.data && rModoNuevo.data.codigo) || '';
+              const antHum = modoActualCodigo || (t.modo_pago_id ? `id…${String(t.modo_pago_id).slice(0, 8)}` : '—');
+              const neuHum = codigoNuevo || (modoPagoId ? `id…${String(modoPagoId).slice(0, 8)}` : '—');
+              void registrarAuditoriaAppCambios('transaccion', 'editar_modo_pago', `Transacción nº ${t.numero != null ? t.numero : transaccionId}: modo de pago (${modoActualCodigo || '?'} → ${codigoNuevo || '?'}).`, {
+                entidad: 'transaccion',
+                registro_id: transaccionId,
+                transaccion_id: transaccionId,
+                orden_id: ordenId || null,
+                instrumentacion_id: t.instrumentacion_id || null,
+                cambios: [{ campo: 'modo de pago', anterior: antHum, nuevo: neuHum }],
+                extra: {
+                  modo_pago_codigo_anterior: modoActualCodigo || null,
+                  modo_pago_codigo_nuevo: codigoNuevo || null,
+                  modo_pago_id_anterior: t.modo_pago_id != null ? String(t.modo_pago_id) : null,
+                  modo_pago_id_nuevo: modoPagoId != null ? String(modoPagoId) : null,
+                },
               });
-          }
-          const fecha = fechaHoyYYYYMMDDArgentina();
-          const nroOrden = rOrd.data && rOrd.data.numero;
-          return client.from('movimientos_caja').delete().eq('transaccion_id', transaccionId).then(() =>
-            client.from('modos_pago').select('codigo').eq('id', modoPagoId).single()
-          ).then((rModo) => {
-            const codigo = (rModo.data && rModo.data.codigo) || '';
-            const cajaTipo = codigoCajaTipoDesdeCodigo(codigo);
-            const signoCaja = (t.cobrador || '') === 'pandy' ? 1 : -1;
-            const concepto = conceptoCajaTransaccion((t.cobrador || '') === 'pandy', t.moneda || 'USD', Number(t.monto) || 0, nroOrden, t.numero);
-            return client.from('movimientos_caja').insert({
-              moneda: t.moneda || 'USD', monto: signoCaja * (Number(t.monto) || 0), caja_tipo: cajaTipo, transaccion_id: transaccionId,
-              orden_numero: nroOrden != null ? nroOrden : null, transaccion_numero: t.numero != null ? t.numero : null,
-              concepto, fecha, usuario_id: currentUserId,
+              if (!esEjecutada) {
+                const fin = () => {
+                  if (onSuccess) onSuccess();
+                };
+                if (opts && opts.omitSincronizarCc) {
+                  fin();
+                  return Promise.resolve();
+                }
+                return sincronizarCcYCajaDesdeOrden(ordenId)
+                  .catch((err) => {
+                    console.warn('guardarSoloModoPagoTransaccion (pendiente): sync CC', err);
+                    showToast(
+                      'Modo de pago guardado; no se pudo actualizar la cuenta corriente: ' + (err && (err.message || err.details) ? String(err.message || err.details) : String(err)),
+                      'error',
+                      9000,
+                    );
+                  })
+                  .then(() => {
+                    fin();
+                  });
+              }
+              const fecha = fechaHoyYYYYMMDDArgentina();
+              const nroOrden = rOrd.data && rOrd.data.numero;
+              return client.from('movimientos_caja').delete().eq('transaccion_id', transaccionId).then(() =>
+                client.from('modos_pago').select('codigo').eq('id', modoPagoId).single()
+              ).then((rModo) => {
+                const codigo = (rModo.data && rModo.data.codigo) || '';
+                const cajaTipo = codigoCajaTipoDesdeCodigo(codigo);
+                const signoCaja = (t.cobrador || '') === 'pandy' ? 1 : -1;
+                const concepto = conceptoCajaTransaccion((t.cobrador || '') === 'pandy', t.moneda || 'USD', Number(t.monto) || 0, nroOrden, t.numero);
+                return client.from('movimientos_caja').insert({
+                  moneda: t.moneda || 'USD', monto: signoCaja * (Number(t.monto) || 0), caja_tipo: cajaTipo, transaccion_id: transaccionId,
+                  orden_numero: nroOrden != null ? nroOrden : null, transaccion_numero: t.numero != null ? t.numero : null,
+                  concepto, fecha, usuario_id: currentUserId,
+                });
+              }).then((rIns) => {
+                if (rIns.error) showToast('Error al actualizar caja: ' + (rIns.error?.message || ''), 'error');
+                if (onSuccess) onSuccess();
+              });
             });
-          }).then((rIns) => {
-            if (rIns.error) showToast('Error al actualizar caja: ' + (rIns.error?.message || ''), 'error');
-            if (onSuccess) onSuccess();
-          });
         });
       });
     });
@@ -19246,28 +19466,32 @@ function guardarOrdenDesdeWizard() {
   }
 
   function ejecutarGuardarOrdenWizardTrasVinculo() {
+    let ordenAuditoriaPrevWizard = null;
     const prom = id
-      ? client.from('instrumentacion').select('id, multicontraparte_manual').eq('orden_id', id).maybeSingle().then((rInst) => {
-          const instId = rInst.data && rInst.data.id;
-          const mcFlag = !!(rInst.data && rInst.data.multicontraparte_manual);
-          const promTr = instId ? client.from('transacciones').select('id, usuario_id, estado, tipo, moneda, monto, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id').eq('instrumentacion_id', instId) : Promise.resolve({ data: [] });
-          const promTipo = tipoOperacionId ? client.from('tipos_operacion').select('codigo, usa_intermediario').eq('id', tipoOperacionId).single() : Promise.resolve({ data: null });
-          return Promise.all([promTr, promTipo]).then(([rTr, rTipo]) => {
-            const list = rTr.data || [];
-            const toJ = rTipo.data;
-            const ordenParaCalc = {
-              tipo_operacion_id: tipoOperacionId || null,
-              cliente_id: clienteId,
-              intermediario_id: intermediarioId,
-              moneda_recibida: monedaRecibida,
-              monto_recibido: montoRecibido,
-              moneda_entregada: monedaEntregada,
-              monto_entregado: montoEntregado,
-              cotizacion,
-            };
-            const totMc = mcFlag && instrumentacionMulticontraparteManualPermitida(ordenParaCalc, toJ);
-            const { estado: estadoCalculado } = calcularEstadoOrden(list, ordenParaCalc, { totalesMulticontraparte: totMc });
-            return hacerUpdate(estadoCalculado);
+      ? auditoriaFetchOrdenSnapshot(id).then((rSnap) => {
+          ordenAuditoriaPrevWizard = rSnap.data;
+          return client.from('instrumentacion').select('id, multicontraparte_manual').eq('orden_id', id).maybeSingle().then((rInst) => {
+            const instId = rInst.data && rInst.data.id;
+            const mcFlag = !!(rInst.data && rInst.data.multicontraparte_manual);
+            const promTr = instId ? client.from('transacciones').select('id, usuario_id, estado, tipo, moneda, monto, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id').eq('instrumentacion_id', instId) : Promise.resolve({ data: [] });
+            const promTipo = tipoOperacionId ? client.from('tipos_operacion').select('codigo, usa_intermediario').eq('id', tipoOperacionId).single() : Promise.resolve({ data: null });
+            return Promise.all([promTr, promTipo]).then(([rTr, rTipo]) => {
+              const list = rTr.data || [];
+              const toJ = rTipo.data;
+              const ordenParaCalc = {
+                tipo_operacion_id: tipoOperacionId || null,
+                cliente_id: clienteId,
+                intermediario_id: intermediarioId,
+                moneda_recibida: monedaRecibida,
+                monto_recibido: montoRecibido,
+                moneda_entregada: monedaEntregada,
+                monto_entregado: montoEntregado,
+                cotizacion,
+              };
+              const totMc = mcFlag && instrumentacionMulticontraparteManualPermitida(ordenParaCalc, toJ);
+              const { estado: estadoCalculado } = calcularEstadoOrden(list, ordenParaCalc, { totalesMulticontraparte: totMc });
+              return hacerUpdate(estadoCalculado);
+            });
           });
         })
       : insertOrdenConProximoNumero(payload);
@@ -19280,6 +19504,9 @@ function guardarOrdenDesdeWizard() {
     }
     const ordenId = id || (res.data && res.data[0] && res.data[0].id);
     if (!ordenId) return null;
+    if (id && ordenAuditoriaPrevWizard) {
+      registrarAuditoriaOrdenSiHuboCambios(ordenId, ordenAuditoriaPrevWizard);
+    }
     if (ordenIdBorradorParaEliminar === ordenId) ordenIdBorradorParaEliminar = null;
     if (!idEl.value) idEl.value = ordenId;
     ordenWizardOrdenIdActual = ordenId;
@@ -19963,8 +20190,11 @@ function saveOrden() {
   }
 
   function ejecutarPromGuardadoOrdenSaveOrden() {
+    let ordenAuditoriaPrevSave = null;
     const prom = id
-      ? client
+      ? auditoriaFetchOrdenSnapshot(id).then((rSnap) => {
+          ordenAuditoriaPrevSave = rSnap.data;
+          return client
           .from('ordenes')
           .select('estado')
           .eq('id', id)
@@ -20001,7 +20231,8 @@ function saveOrden() {
                 return hacerUpdateOrden(estadoCalculado);
               });
             });
-          })
+          });
+        })
       : insertOrdenConProximoNumero(payload);
 
     prom.then((res) => {
@@ -20014,6 +20245,9 @@ function saveOrden() {
       ejecutarCierreModalOrden();
       loadOrdenes();
       return;
+    }
+    if (id && ordenAuditoriaPrevSave) {
+      registrarAuditoriaOrdenSiHuboCambios(ordenId, ordenAuditoriaPrevSave);
     }
     if (ordenIdBorradorParaEliminar === ordenId) ordenIdBorradorParaEliminar = null;
     const conceptoComision = tipoCodigo === 'USD-ARS' ? 'Comisión USD-ARS' : (esChequeArsSave ? 'Comisión ARS-ARS' : 'Comisión USD-USD');
@@ -24023,7 +24257,7 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
     const rInst = await client.from('instrumentacion').select('orden_id').eq('id', instrumentacionId).single();
     const ordenId = rInst.data && rInst.data.orden_id;
     if (!ordenId) return Promise.resolve();
-    const rTr = await client.from('transacciones').select('tipo, numero, modo_pago_id, moneda, monto, cobrador, pagador, owner, concepto, estado, revertida_una_vez').eq('id', transaccionId).single();
+    const rTr = await client.from('transacciones').select('tipo, numero, modo_pago_id, moneda, monto, cobrador, pagador, owner, concepto, estado, revertida_una_vez, fecha_ejecucion, usuario_id').eq('id', transaccionId).single();
     const t = rTr.data;
     if (!t) return Promise.resolve();
     if (String(t.estado || '').toLowerCase() === 'anulada') {
@@ -24154,6 +24388,31 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
           if (rUp && rUp.error) {
             showToast('Error al actualizar estado: ' + (rUp.error.message || ''), 'error');
             return;
+          }
+          const cambiosEstadoAud = [];
+          if (!auditoriaIgualValores(t.estado, nuevoEstado)) {
+            cambiosEstadoAud.push({ campo: 'estado', anterior: auditoriaValorJsonable(t.estado), nuevo: auditoriaValorJsonable(nuevoEstado) });
+          }
+          if (nuevoEstado === 'ejecutada') {
+            if (!auditoriaIgualValores(t.fecha_ejecucion, payload.fecha_ejecucion)) {
+              cambiosEstadoAud.push({ campo: 'fecha_ejecucion', anterior: auditoriaValorJsonable(t.fecha_ejecucion), nuevo: auditoriaValorJsonable(payload.fecha_ejecucion) });
+            }
+            if (!auditoriaIgualValores(t.usuario_id, payload.usuario_id)) {
+              cambiosEstadoAud.push({ campo: 'usuario_id', anterior: auditoriaValorJsonable(t.usuario_id), nuevo: auditoriaValorJsonable(payload.usuario_id) });
+            }
+          }
+          if (nuevoEstado === 'pendiente' && String(t.estado || '').toLowerCase() === 'ejecutada') {
+            cambiosEstadoAud.push({ campo: 'revertida_una_vez', anterior: auditoriaValorJsonable(t.revertida_una_vez), nuevo: true });
+          }
+          if (cambiosEstadoAud.length) {
+            void registrarAuditoriaAppCambios('transaccion', 'cambiar_estado', `Transacción nº ${t.numero != null ? t.numero : transaccionId}: estado (tabla / wizard).`, {
+              entidad: 'transaccion',
+              registro_id: transaccionId,
+              transaccion_id: transaccionId,
+              orden_id: ordenId,
+              instrumentacion_id: instrumentacionId,
+              cambios: cambiosEstadoAud,
+            });
           }
           let promesaSiguiente = Promise.resolve(null);
           if (debeDividir) {
@@ -24877,8 +25136,37 @@ function saveTransaccion() {
   if (estado === 'ejecutada') payload.fecha_ejecucion = fechaHoyYYYYMMDDArgentina();
   if (estado === 'ejecutada') payload.usuario_id = currentUserId;
 
+  const TRANSACCION_SELECT_PREV_MODAL =
+    'id, instrumentacion_id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, usuario_id, numero';
   const prom = id
-    ? client.from('transacciones').update(payload).eq('id', id)
+    ? client
+      .from('transacciones')
+      .select(TRANSACCION_SELECT_PREV_MODAL)
+      .eq('id', id)
+      .single()
+      .then((rPrev) => {
+        const prevRow = rPrev.data;
+        return client.from('transacciones').update(payload).eq('id', id).then((res) => {
+          if (!res.error && prevRow) {
+            const merged = { ...prevRow };
+            Object.keys(payload).forEach((k) => {
+              merged[k] = payload[k];
+            });
+            const cambios = auditoriaDiffPorCampos(prevRow, merged, TRANSACCION_CAMPOS_EDICION_MODAL);
+            if (cambios.length) {
+              const numTxt = prevRow.numero != null ? `nº ${prevRow.numero}` : String(id).slice(0, 8);
+              void registrarAuditoriaAppCambios('transaccion', 'editar', `Transacción ${numTxt} (modal formulario).`, {
+                entidad: 'transaccion',
+                registro_id: id,
+                transaccion_id: id,
+                instrumentacion_id: instrumentacionId || null,
+                cambios,
+              });
+            }
+          }
+          return res;
+        });
+      })
     : client.from('transacciones').insert(payload).select('id, usuario_id, numero').single();
 
   function insertarCompensatoria() {
@@ -27445,6 +27733,648 @@ function setupModalReglasNegocio() {
 }
 
 
+const AUDITORIA_PAGE_SIZE = 80;
+let pandiAuditoriaAcumulado = [];
+let pandiAuditoriaRowIndexPorId = Object.create(null);
+let pandiAuditoriaHayMas = false;
+
+/** Etiquetas en español para columnas técnicas en el modal de auditoría. */
+const AUDITORIA_CAMPO_ETIQUETA = {
+  cliente_id: 'Cliente',
+  intermediario_id: 'Intermediario',
+  tipo_operacion_id: 'Tipo de operación',
+  modo_pago_id: 'Modo de pago',
+  'modo de pago': 'Modo de pago',
+  instrumentacion_id: 'Instrumentación',
+  orden_id: 'Orden',
+  usuario_id: 'Usuario (ejecución / responsable)',
+  tipo_movimiento_id: 'Tipo de movimiento de caja',
+  pagador_cliente_id: 'Cliente (pagador)',
+  cobrador_cliente_id: 'Cliente (cobrador)',
+  pagador_intermediario_id: 'Intermediario (pagador)',
+  cobrador_intermediario_id: 'Intermediario (cobrador)',
+  pagador_rol: 'Rol pagador (CC)',
+  cobrador_rol: 'Rol cobrador (CC)',
+  pagador: 'Pagador',
+  cobrador: 'Cobrador',
+  owner: 'Titular',
+  tipo: 'Tipo de movimiento (ingreso/egreso)',
+  estado: 'Estado',
+  moneda: 'Moneda',
+  monto: 'Monto',
+  monto_abs: 'Importe',
+  monto_recibido: 'Monto recibido',
+  monto_entregado: 'Monto entregado',
+  moneda_recibida: 'Moneda recibida',
+  moneda_entregada: 'Moneda entregada',
+  cotizacion: 'Cotización',
+  tipo_cambio: 'Tipo de cambio',
+  concepto: 'Concepto',
+  concepto_usuario: 'Concepto (texto usuario)',
+  fecha: 'Fecha',
+  fecha_ejecucion: 'Fecha de ejecución',
+  observaciones: 'Observaciones',
+  operacion_directa: 'Operación directa',
+  modo_pago: 'Modalidad (CC manual)',
+  grupo_id: 'Grupo',
+  caja_tipo: 'Caja',
+  revertida_una_vez: 'Revertida una vez',
+  tasa_descuento_intermediario: 'Tasa descuento intermediario',
+  intermediario_pago_transferencia: 'Intermediario pago transferencia',
+  intermediario_transferencia_cobra_tasa: 'Transferencia cobra tasa',
+  intermediario_transferencia_tasa: 'Tasa transferencia intermediario',
+  usd_usd_tasa_cliente_modo: 'Modo tasa USD cliente',
+};
+
+function auditoriaEtiquetaCampo(campo) {
+  const k = String(campo || '').trim();
+  if (!k) return '—';
+  if (AUDITORIA_CAMPO_ETIQUETA[k]) return AUDITORIA_CAMPO_ETIQUETA[k];
+  const low = k.toLowerCase();
+  if (AUDITORIA_CAMPO_ETIQUETA[low]) return AUDITORIA_CAMPO_ETIQUETA[low];
+  return k.replace(/_/g, ' ');
+}
+
+function auditoriaUuidProbable(v) {
+  if (v === null || v === undefined) return false;
+  const s = String(v).trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
+function auditoriaColectarBucketsDesdeCambios(cambios) {
+  const clienteIds = [];
+  const intermediarioIds = [];
+  const tipoOperacionIds = [];
+  const modoPagoIds = [];
+  const usuarioIds = [];
+  const tipoMovimientoCajaIds = [];
+  const instrumentacionIds = [];
+  const ordenIds = [];
+  const add = (arr, val) => {
+    if (!auditoriaUuidProbable(val)) return;
+    const id = String(val).trim();
+    if (!arr.includes(id)) arr.push(id);
+  };
+  (cambios || []).forEach((c) => {
+    const cl = String(c.campo || '').trim().toLowerCase();
+    [c.anterior, c.nuevo].forEach((val) => {
+      if (!auditoriaUuidProbable(val)) return;
+      if (cl === 'cliente_id' || cl.endsWith('_cliente_id')) add(clienteIds, val);
+      else if (cl === 'intermediario_id' || (cl.includes('intermediario_id') && !cl.startsWith('instrument'))) add(intermediarioIds, val);
+      else if (cl === 'tipo_operacion_id') add(tipoOperacionIds, val);
+      else if (cl === 'modo_pago_id') add(modoPagoIds, val);
+      else if (cl === 'usuario_id') add(usuarioIds, val);
+      else if (cl === 'tipo_movimiento_id') add(tipoMovimientoCajaIds, val);
+      else if (cl === 'instrumentacion_id') add(instrumentacionIds, val);
+      else if (cl === 'orden_id') add(ordenIds, val);
+    });
+  });
+  return {
+    clienteIds,
+    intermediarioIds,
+    tipoOperacionIds,
+    modoPagoIds,
+    usuarioIds,
+    tipoMovimientoCajaIds,
+    instrumentacionIds,
+    ordenIds,
+  };
+}
+
+/**
+ * Resuelve UUIDs de catálogos a texto legible para el modal de auditoría.
+ * @returns {Promise<Record<string, string>>}
+ */
+function auditoriaResolverMapaEtiquetasAuditoria(buckets) {
+  const map = Object.create(null);
+  const tasks = [];
+  if (buckets.clienteIds.length) {
+    tasks.push(
+      client
+        .from('clientes')
+        .select('id, nombre')
+        .in('id', buckets.clienteIds)
+        .then((r) => {
+          (r.data || []).forEach((row) => {
+            if (row.id) map[String(row.id)] = row.nombre ? String(row.nombre) : 'Cliente';
+          });
+        })
+        .catch(() => {}),
+    );
+  }
+  if (buckets.intermediarioIds.length) {
+    tasks.push(
+      client
+        .from('intermediarios')
+        .select('id, nombre')
+        .in('id', buckets.intermediarioIds)
+        .then((r) => {
+          (r.data || []).forEach((row) => {
+            if (row.id) map[String(row.id)] = row.nombre ? String(row.nombre) : 'Intermediario';
+          });
+        })
+        .catch(() => {}),
+    );
+  }
+  if (buckets.tipoOperacionIds.length) {
+    tasks.push(
+      client
+        .from('tipos_operacion')
+        .select('id, codigo, nombre')
+        .in('id', buckets.tipoOperacionIds)
+        .then((r) => {
+          (r.data || []).forEach((row) => {
+            if (!row.id) return;
+            const cod = row.codigo != null ? String(row.codigo) : '';
+            const nom = row.nombre != null ? String(row.nombre) : '';
+            map[String(row.id)] = cod && nom ? `${cod} · ${nom}` : cod || nom || 'Tipo de operación';
+          });
+        })
+        .catch(() => {}),
+    );
+  }
+  if (buckets.modoPagoIds.length) {
+    tasks.push(
+      client
+        .from('modos_pago')
+        .select('id, codigo')
+        .in('id', buckets.modoPagoIds)
+        .then((r) => {
+          (r.data || []).forEach((row) => {
+            if (row.id) map[String(row.id)] = row.codigo != null ? String(row.codigo) : 'Modo de pago';
+          });
+        })
+        .catch(() => {}),
+    );
+  }
+  if (buckets.usuarioIds.length) {
+    tasks.push(
+      fetchMapaEtiquetaUsuarioPorIds(buckets.usuarioIds).then((um) => {
+        Object.keys(um || {}).forEach((k) => {
+          map[k] = um[k];
+        });
+      }),
+    );
+  }
+  if (buckets.tipoMovimientoCajaIds.length) {
+    tasks.push(
+      client
+        .from('tipos_movimiento_caja')
+        .select('id, nombre')
+        .in('id', buckets.tipoMovimientoCajaIds)
+        .then((r) => {
+          (r.data || []).forEach((row) => {
+            if (row.id) map[String(row.id)] = row.nombre ? String(row.nombre) : 'Tipo mov. caja';
+          });
+        })
+        .catch(() => {}),
+    );
+  }
+  if (buckets.ordenIds.length) {
+    tasks.push(
+      client
+        .from('ordenes')
+        .select('id, numero')
+        .in('id', buckets.ordenIds)
+        .then((r) => {
+          (r.data || []).forEach((row) => {
+            if (row.id) map[String(row.id)] = row.numero != null ? `Orden nº ${row.numero}` : 'Orden';
+          });
+        })
+        .catch(() => {}),
+    );
+  }
+  if (buckets.instrumentacionIds.length) {
+    tasks.push(
+      client
+        .from('instrumentacion')
+        .select('id, orden_id')
+        .in('id', buckets.instrumentacionIds)
+        .then((rInst) => {
+          const rows = rInst.data || [];
+          const ordIds = [...new Set(rows.map((x) => x.orden_id).filter(Boolean))];
+          if (!ordIds.length) {
+            rows.forEach((inst) => {
+              if (inst.id) map[String(inst.id)] = 'Instrumentación';
+            });
+            return;
+          }
+          return client
+            .from('ordenes')
+            .select('id, numero')
+            .in('id', ordIds)
+            .then((rOrd) => {
+              const numById = Object.create(null);
+              (rOrd.data || []).forEach((o) => {
+                if (o.id) numById[String(o.id)] = o.numero;
+              });
+              rows.forEach((inst) => {
+                if (!inst.id) return;
+                const n = inst.orden_id != null ? numById[String(inst.orden_id)] : undefined;
+                map[String(inst.id)] = n != null ? `Instrumentación (orden nº ${n})` : 'Instrumentación';
+              });
+            });
+        })
+        .catch(() => {}),
+    );
+  }
+  if (!tasks.length) return Promise.resolve(map);
+  return Promise.all(tasks).then(() => map);
+}
+
+function auditoriaLegibleRolParte(val) {
+  const s = String(val || '').toLowerCase();
+  const m = { pandy: 'Pandy', cliente: 'Cliente', intermediario: 'Intermediario', empresa: 'Empresa' };
+  return m[s] != null ? m[s] : val != null && val !== '' ? String(val) : '—';
+}
+
+function auditoriaLegibleEstadoTrx(val) {
+  const s = String(val || '').toLowerCase();
+  const m = { pendiente: 'Pendiente', ejecutada: 'Ejecutada', anulada: 'Anulada' };
+  return m[s] != null ? m[s] : val != null && val !== '' ? String(val) : '—';
+}
+
+function auditoriaLegibleTipoTrx(val) {
+  const s = String(val || '').toLowerCase();
+  const m = { ingreso: 'Ingreso', egreso: 'Egreso' };
+  return m[s] != null ? m[s] : val != null && val !== '' ? String(val) : '—';
+}
+
+function auditoriaLegibleCajaTipo(val) {
+  const s = String(val || '').toLowerCase();
+  const m = { efectivo: 'Efectivo', banco: 'Banco', cheque: 'Cheque' };
+  return m[s] != null ? m[s] : val != null && val !== '' ? String(val) : '—';
+}
+
+/** Convierte un valor de `cambios` a texto para la tabla del modal (sin UUIDs crudos si hay resolución). */
+function auditoriaFormatearValorCambio(campo, valor, mapaResolucion, metadata) {
+  const md = metadata && typeof metadata === 'object' ? metadata : {};
+  const mapa = mapaResolucion || {};
+  const cl = String(campo || '').trim().toLowerCase();
+
+  if (valor === undefined) return '—';
+  if (valor === null || valor === '') return '—';
+
+  if (typeof valor === 'boolean') return valor ? 'Sí' : 'No';
+
+  if (typeof valor === 'number' && Number.isFinite(valor)) {
+    if (cl.includes('monto') || cl === 'cotizacion' || cl === 'tipo_cambio') return formatImporteDisplay(valor);
+    return String(valor);
+  }
+
+  if (typeof valor === 'object') {
+    try {
+      return JSON.stringify(valor);
+    } catch (_) {
+      return '—';
+    }
+  }
+
+  const str = String(valor);
+
+  if (cl === 'modo_pago_id') {
+    const idStr = str.trim();
+    if (md.modo_pago_id_anterior && idStr === String(md.modo_pago_id_anterior) && md.modo_pago_codigo_anterior != null) {
+      return String(md.modo_pago_codigo_anterior);
+    }
+    if (md.modo_pago_id_nuevo && idStr === String(md.modo_pago_id_nuevo) && md.modo_pago_codigo_nuevo != null) {
+      return String(md.modo_pago_codigo_nuevo);
+    }
+  }
+
+  if (cl === 'pagador' || cl === 'cobrador' || cl === 'owner') return auditoriaLegibleRolParte(str);
+  if (cl === 'estado') return auditoriaLegibleEstadoTrx(str);
+  if (cl === 'tipo') return auditoriaLegibleTipoTrx(str);
+  if (cl === 'pagador_rol' || cl === 'cobrador_rol') return auditoriaLegibleRolParte(str);
+  if (cl === 'caja_tipo') return auditoriaLegibleCajaTipo(str);
+
+  if (cl === 'fecha' || cl === 'fecha_ejecucion') {
+    const m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      try {
+        const y = Number(m[1]);
+        const mo = Number(m[2]);
+        const d = Number(m[3]);
+        return new Date(y, mo - 1, d).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
+      } catch (_) {
+        /* seguir */
+      }
+    }
+  }
+
+  if (auditoriaUuidProbable(str)) {
+    const lab = mapa[str.trim()];
+    if (lab) return lab;
+    return '—';
+  }
+
+  return str;
+}
+
+function formatAuditoriaFechaHoraArt(iso) {
+  if (!iso) return '–';
+  try {
+    return new Date(iso).toLocaleString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      dateStyle: 'short',
+      timeStyle: 'medium',
+    });
+  } catch (_) {
+    return String(iso);
+  }
+}
+
+function cerrarModalAuditoriaDetalle() {
+  const b = document.getElementById('modal-auditoria-detalle-backdrop');
+  if (b) b.classList.remove('activo');
+}
+
+function abrirModalAuditoriaDetallePorId(id) {
+  const row = pandiAuditoriaRowIndexPorId[id];
+  if (!row) return;
+  const uid = row.usuario_id != null ? String(row.usuario_id) : '';
+  let usuarioLabel = uid ? (pandiAuditoriaUltimoMapaUsuarios[uid] || '') : '';
+  const md = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  const snap = md.usuario_snapshot;
+  if (!usuarioLabel && snap) {
+    usuarioLabel =
+      (snap.usuario_display_name && String(snap.usuario_display_name).trim()) ||
+      (snap.usuario_email && String(snap.usuario_email).trim()) ||
+      '';
+  }
+  if (!usuarioLabel && uid) usuarioLabel = uid;
+  if (!usuarioLabel) usuarioLabel = '–';
+
+  const backdrop = document.getElementById('modal-auditoria-detalle-backdrop');
+  if (!backdrop) return;
+  const titulo = document.getElementById('modal-auditoria-detalle-titulo');
+  const resumen = document.getElementById('modal-auditoria-detalle-resumen');
+  const meta = document.getElementById('modal-auditoria-detalle-meta');
+  const preTexto = document.getElementById('modal-auditoria-detalle-texto');
+  const preJson = document.getElementById('modal-auditoria-detalle-json');
+  const wrapCambios = document.getElementById('modal-auditoria-cambios-wrap');
+  const tbodyCam = document.getElementById('modal-auditoria-cambios-tbody');
+  const jsonWrap = document.getElementById('modal-auditoria-detalle-json-wrap');
+
+  if (titulo) titulo.textContent = 'Detalle de auditoría';
+  const cuando = formatAuditoriaFechaHoraArt(row.creado_en);
+  const emailSnap = snap && snap.usuario_email && String(snap.usuario_email).trim();
+  const mailLine =
+    emailSnap && emailSnap !== usuarioLabel
+      ? `<div style="font-size:0.88em;opacity:0.88;margin-top:0.2rem;">${escapeHtml(emailSnap)}</div>`
+      : '';
+  if (resumen) {
+    resumen.innerHTML =
+      `<p><strong>Cuándo:</strong> ${escapeHtml(cuando)}</p>` +
+      `<p style="margin-bottom:0;"><strong>Quién:</strong> ${escapeHtml(usuarioLabel)}</p>${mailLine}`;
+  }
+  if (meta) {
+    meta.textContent = `Categoría: ${row.categoria || '–'} · Acción: ${row.accion || '–'}`;
+  }
+  if (preTexto) preTexto.textContent = row.detalle && String(row.detalle).trim() ? row.detalle : '—';
+
+  if (wrapCambios && tbodyCam) {
+    const cambios = Array.isArray(md.cambios) ? md.cambios : [];
+    if (cambios.length) {
+      wrapCambios.style.display = 'block';
+      tbodyCam.innerHTML =
+        '<tr><td colspan="3" style="padding:0.75rem;color:#6b7280;">Resolviendo nombres…</td></tr>';
+      const buckets = auditoriaColectarBucketsDesdeCambios(cambios);
+      void auditoriaResolverMapaEtiquetasAuditoria(buckets).then((mapa) => {
+        tbodyCam.innerHTML = cambios
+          .map((c) => {
+            const lab = auditoriaEtiquetaCampo(c.campo);
+            const ant = auditoriaFormatearValorCambio(c.campo, c.anterior, mapa, md);
+            const neu = auditoriaFormatearValorCambio(c.campo, c.nuevo, mapa, md);
+            return `<tr><td>${escapeHtml(lab)}</td><td>${escapeHtml(ant)}</td><td>${escapeHtml(neu)}</td></tr>`;
+          })
+          .join('');
+      });
+    } else {
+      wrapCambios.style.display = 'none';
+      tbodyCam.innerHTML = '';
+    }
+  }
+  if (preJson) preJson.textContent = row.metadata != null ? JSON.stringify(row.metadata, null, 2) : 'null';
+  if (jsonWrap) jsonWrap.removeAttribute('open');
+  backdrop.classList.add('activo');
+}
+
+let pandiAuditoriaUltimoMapaUsuarios = {};
+
+function renderAuditoriaVistaFilas(rows, usuarioMap, append) {
+  const tbody = document.getElementById('auditoria-tbody');
+  const outer = document.getElementById('auditoria-tabla-outer');
+  if (!tbody || !outer) return;
+  if (!append) tbody.innerHTML = '';
+  (rows || []).forEach((r) => {
+    if (r && r.id) pandiAuditoriaRowIndexPorId[r.id] = r;
+  });
+  const frag = (rows || [])
+    .map((r) => {
+      const uid = r.usuario_id != null ? String(r.usuario_id) : '';
+      const snapR = r.metadata && r.metadata.usuario_snapshot;
+      let uLab = uid ? (usuarioMap[uid] || '') : '';
+      if (!uLab && snapR) {
+        uLab =
+          (snapR.usuario_display_name && String(snapR.usuario_display_name).trim()) ||
+          (snapR.usuario_email && String(snapR.usuario_email).trim()) ||
+          '';
+      }
+      if (!uLab && uid) uLab = uid.slice(0, 8) + '…';
+      if (!uLab) uLab = '–';
+      const det = r.detalle || '';
+      const detShort = det.length > 200 ? `${det.slice(0, 200)}…` : det;
+      const nCam = r.metadata && Array.isArray(r.metadata.cambios) ? r.metadata.cambios.length : 0;
+      const badge = nCam ? `<span class="auditoria-badge-cambios" title="${nCam} cambio(s)">${nCam}</span>` : '–';
+      const rid = r.id ? escapeHtml(String(r.id)) : '';
+      return `<tr data-auditoria-id="${rid}">
+        <td>${escapeHtml(formatAuditoriaFechaHoraArt(r.creado_en))}</td>
+        <td>${escapeHtml(uLab)}</td>
+        <td>${escapeHtml(r.categoria || '')}</td>
+        <td>${escapeHtml(r.accion || '')}</td>
+        <td class="auditoria-col-detalle">${escapeHtml(detShort)}</td>
+        <td style="text-align:center;">${badge}</td>
+        <td><button type="button" class="btn-secondary btn-auditoria-ver" data-auditoria-open="${rid}" title="Ver detalle y metadata"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/></svg></span>Ver</button></td>
+      </tr>`;
+    })
+    .join('');
+  tbody.insertAdjacentHTML('beforeend', frag);
+  outer.style.display = 'block';
+}
+
+function aplicarFiltrosQueryAuditoria(qb) {
+  const desde = (document.getElementById('auditoria-filtro-desde')?.value || '').trim();
+  const hasta = (document.getElementById('auditoria-filtro-hasta')?.value || '').trim();
+  const cat = (document.getElementById('auditoria-filtro-categoria')?.value || '').trim();
+  const acc = (document.getElementById('auditoria-filtro-accion')?.value || '').trim();
+  const detTxt = (document.getElementById('auditoria-filtro-detalle')?.value || '').trim();
+  const art = '-03:00';
+  if (desde) qb = qb.gte('creado_en', `${desde}T00:00:00${art}`);
+  if (hasta) qb = qb.lte('creado_en', `${hasta}T23:59:59.999${art}`);
+  if (cat) qb = qb.eq('categoria', cat);
+  const accSafe = acc.replace(/%/g, '').slice(0, 120);
+  if (accSafe) qb = qb.ilike('accion', `%${accSafe}%`);
+  const detSafe = detTxt.replace(/%/g, '').slice(0, 240);
+  if (detSafe) qb = qb.ilike('detalle', `%${detSafe}%`);
+  return qb;
+}
+
+function loadAuditoriaVista(opts) {
+  opts = opts || {};
+  const append = !!opts.append;
+  const sinPerm = document.getElementById('auditoria-sin-permiso');
+  const ctr = document.getElementById('auditoria-controles');
+  const loading = document.getElementById('auditoria-loading');
+  const outer = document.getElementById('auditoria-tabla-outer');
+  const tbody = document.getElementById('auditoria-tbody');
+  const resumen = document.getElementById('auditoria-resumen-lote');
+  const btnMas = document.getElementById('auditoria-btn-mas');
+  if (!loading || !tbody) return Promise.resolve();
+  if (isPandiBackgroundRefresh()) return Promise.resolve();
+
+  if (!userPermissions.includes('ver_auditoria')) {
+    if (sinPerm) sinPerm.style.display = 'block';
+    if (ctr) ctr.style.display = 'none';
+    loading.style.display = 'none';
+    if (outer) outer.style.display = 'none';
+    tbody.innerHTML = '';
+    if (btnMas) btnMas.style.display = 'none';
+    if (resumen) resumen.textContent = '';
+    return Promise.resolve();
+  }
+  if (sinPerm) sinPerm.style.display = 'none';
+  if (ctr) ctr.style.display = '';
+
+  if (!append) {
+    pandiAuditoriaAcumulado = [];
+    pandiAuditoriaRowIndexPorId = Object.create(null);
+    pandiAuditoriaHayMas = false;
+    tbody.innerHTML = '';
+    if (outer) outer.style.display = 'none';
+  }
+
+  if (pandiSinConexionServidorViva()) {
+    loading.style.display = 'none';
+    if (resumen) resumen.textContent = 'Sin conexión: la auditoría se consulta en el servidor.';
+    return Promise.resolve();
+  }
+
+  const offset = append ? pandiAuditoriaAcumulado.length : 0;
+  if (!append) loading.style.display = 'block';
+
+  let qb = client
+    .from('auditoria_app')
+    .select('id, creado_en, usuario_id, categoria, accion, detalle, metadata')
+    .order('creado_en', { ascending: false })
+    .range(offset, offset + AUDITORIA_PAGE_SIZE - 1);
+  qb = aplicarFiltrosQueryAuditoria(qb);
+
+  return qb.then((r) => {
+    loading.style.display = 'none';
+    if (r.error) {
+      if (resumen) resumen.textContent = '';
+      showToast('Error al cargar auditoría: ' + (r.error.message || ''), 'error');
+      return;
+    }
+    const rows = r.data || [];
+    pandiAuditoriaHayMas = rows.length >= AUDITORIA_PAGE_SIZE;
+    pandiAuditoriaAcumulado = append ? pandiAuditoriaAcumulado.concat(rows) : rows;
+    const ids = pandiAuditoriaAcumulado.map((x) => x.usuario_id).filter(Boolean);
+    return fetchMapaEtiquetaUsuarioPorIds(ids).then((map) => {
+      pandiAuditoriaUltimoMapaUsuarios = map || {};
+      if (rows.length === 0 && !append) {
+        tbody.innerHTML =
+          '<tr><td colspan="7" style="padding:1.25rem;text-align:center;color:#6b7280;">Sin resultados con los filtros actuales.</td></tr>';
+        if (outer) outer.style.display = 'block';
+        if (btnMas) btnMas.style.display = 'none';
+      } else {
+        renderAuditoriaVistaFilas(rows, pandiAuditoriaUltimoMapaUsuarios, append);
+        if (btnMas) btnMas.style.display = pandiAuditoriaHayMas ? '' : 'none';
+      }
+      if (resumen) {
+        resumen.textContent = `Mostrando ${pandiAuditoriaAcumulado.length} registro(s)${pandiAuditoriaHayMas ? ' · podés cargar más' : ''}.`;
+      }
+    });
+  });
+}
+
+function exportarAuditoriaVistaExcel() {
+  if (!pandiAuditoriaAcumulado.length) {
+    showToast('No hay filas cargadas. Buscá primero o cargá más resultados.', 'info');
+    return;
+  }
+  const header = ['Fecha (ART)', 'Usuario', 'Categoría', 'Acción', 'Detalle', 'Nº cambios', 'Metadata JSON'];
+  const rows = pandiAuditoriaAcumulado.map((r) => {
+    const uid = r.usuario_id != null ? String(r.usuario_id) : '';
+    const uLab = uid ? (pandiAuditoriaUltimoMapaUsuarios[uid] || uid) : '';
+    const nCam = r.metadata && Array.isArray(r.metadata.cambios) ? r.metadata.cambios.length : 0;
+    const metaStr = r.metadata != null ? JSON.stringify(r.metadata) : '';
+    return [
+      formatAuditoriaFechaHoraArt(r.creado_en),
+      uLab,
+      r.categoria || '',
+      r.accion || '',
+      r.detalle || '',
+      nCam,
+      metaStr,
+    ];
+  });
+  const aoa = aoaExcelConMetaExportacion(header, rows);
+  const nombreArchivo = `auditoria_${fechaHoyYYYYMMDDArgentina()}.xlsx`;
+  import('./excel-export.js')
+    .then((mExport) => {
+      mExport.generarArchivoExcel(nombreArchivo, { Auditoría: aoa });
+      showToast('Exportado: ' + nombreArchivo, 'success');
+    })
+    .catch((e) => {
+      console.error('excel auditoría', e);
+      showToast('Error al preparar exportación.', 'error');
+    });
+}
+
+function setupAuditoriaVistaUi() {
+  const root = document.getElementById('vista-auditoria');
+  if (!root || root.dataset.pandiAuditoriaUiBound === '1') return;
+  root.dataset.pandiAuditoriaUiBound = '1';
+
+  const btnBuscar = document.getElementById('auditoria-btn-buscar');
+  const btnMas = document.getElementById('auditoria-btn-mas');
+  const btnExp = document.getElementById('auditoria-btn-exportar');
+  const tbody = document.getElementById('auditoria-tbody');
+  const back = document.getElementById('modal-auditoria-detalle-backdrop');
+  const close = document.getElementById('modal-auditoria-detalle-close');
+
+  if (btnBuscar) {
+    btnBuscar.addEventListener('click', () => {
+      void loadAuditoriaVista({ append: false });
+    });
+  }
+  if (btnMas) {
+    btnMas.addEventListener('click', () => {
+      void loadAuditoriaVista({ append: true });
+    });
+  }
+  if (btnExp) btnExp.addEventListener('click', () => exportarAuditoriaVistaExcel());
+  if (tbody) {
+    tbody.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest && e.target.closest('[data-auditoria-open]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-auditoria-open');
+      if (id) abrirModalAuditoriaDetallePorId(id);
+    });
+  }
+  if (close) close.addEventListener('click', () => cerrarModalAuditoriaDetalle());
+  if (back) {
+    setupBackdropCloseOnlyOnRealClick(back, () => cerrarModalAuditoriaDetalle());
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const bd = document.getElementById('modal-auditoria-detalle-backdrop');
+    if (bd && bd.classList.contains('activo')) cerrarModalAuditoriaDetalle();
+  });
+}
+
 /** Configuración de vistas: [menuId, vistaId, título, permiso de vista]. Orden del menú. */
 const VIEWS_CONFIG = [
   ['menu-inicio', 'vista-inicio', 'Panel de Control', 'ver_inicio'],
@@ -27457,6 +28387,7 @@ const VIEWS_CONFIG = [
   ['menu-reglas-negocio', 'vista-reglas-negocio', 'Reglas de negocio (CC)', 'abm_reglas_negocio'],
   ['menu-configuracion-empresa', 'vista-configuracion-empresa', 'Empresa / marca', 'abm_configuracion_empresa'],
   ['menu-seguridad', 'vista-seguridad', 'Seguridad', 'ver_seguridad'],
+  ['menu-auditoria', 'vista-auditoria', 'Auditoría', 'ver_auditoria'],
 ];
 
 function hasAnyViewPermission() {
@@ -27510,6 +28441,8 @@ function hasExpandedSectionInCurrentView() {
     if (vistaSeguridad.querySelector('.seguridad-permisos-menu-colapsable:not(.collapsed)')) return true;
     if (vistaSeguridad.querySelector('.seguridad-permisos-rol.expanded')) return true;
   }
+  const bdAud = document.getElementById('modal-auditoria-detalle-backdrop');
+  if (bdAud && bdAud.classList.contains('activo')) return true;
   return false;
 }
 
@@ -27529,6 +28462,7 @@ function refreshCurrentViewData() {
     'vista-reglas-negocio': loadReglasNegocioVista,
     'vista-configuracion-empresa': loadConfiguracionEmpresa,
     'vista-seguridad': loadSeguridad,
+    'vista-auditoria': loadAuditoriaVista,
   };
   const fn = loaders[currentVistaId];
   if (typeof fn !== 'function') return;
@@ -27661,6 +28595,7 @@ async function finalizeSessionUiSetup() {
   });
 
   setupVistasMenu();
+  setupAuditoriaVistaUi();
   applyVistasMenuVisibility();
   updateCcBotonesMovimientoManual();
   setupPanelControl();

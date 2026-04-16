@@ -119,6 +119,9 @@
           <path d="M3 3v18h18"/><path d="M7 16V9"/><path d="M12 16v-5"/><path d="M17 16V6"/>
         </symbol>
         <symbol id="icon-sprite-23" viewBox="0 0 24 24">
+          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1" ry="1"/>
+        </symbol>
+        <symbol id="icon-sprite-23" viewBox="0 0 24 24">
           <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
         </symbol>
         <symbol id="icon-sprite-24" viewBox="0 0 24 24">
@@ -248,8 +251,12 @@
         <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-12"></use></svg></span>
         <span class="menu-label">Seguridad</span>
       </a>
+      <a href="#" class="menu-item" id="menu-auditoria" title="Auditoría" aria-label="Auditoría">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-23"></use></svg></span>
+        <span class="menu-label">Auditoría</span>
+      </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.45</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.46</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -984,8 +991,99 @@
           <div id="seguridad-permisos-grid"></div>
         </div>
       </div>
+      <div id="vista-auditoria" class="card panel-auditoria" style="display:none;">
+        <h2 style="margin:0 0 0.75rem 0; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+          <span style="width:24px; height:24px; color:#555; flex-shrink:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-23"></use></svg></span>
+          Auditoría del sistema
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: auditoría"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Registro de acciones sensibles y ediciones. En el detalle: <strong>cuándo</strong>, <strong>quién</strong> y tabla de cambios con <strong>nombres legibles</strong> (clientes, intermediarios, tipos de operación, modos de pago, etc.); los identificadores internos van en «Referencia técnica (JSON)». Requiere permiso <strong>ver_auditoria</strong>. Filtros y «Buscar»; «Cargar más»; export Excel del lote cargado.</span></span>
+        </h2>
+        <div id="auditoria-sin-permiso" class="auditoria-aviso" style="display:none; padding:1rem; background:#fef3c7; border:1px solid #f59e0b; border-radius:8px; margin-bottom:1rem;">
+          No tenés permiso para ver la auditoría. Un administrador puede otorgarte <strong>ver_auditoria</strong> en Seguridad → permisos por perfil.
+        </div>
+        <div id="auditoria-controles" class="vista-toolbar auditoria-toolbar" style="margin-bottom:1rem; align-items:flex-end; gap:0.65rem; flex-wrap:wrap;">
+          <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Desde
+            <input type="date" id="auditoria-filtro-desde" class="auditoria-input-fecha" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; box-sizing:border-box;" />
+          </label>
+          <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Hasta
+            <input type="date" id="auditoria-filtro-hasta" class="auditoria-input-fecha" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; box-sizing:border-box;" />
+          </label>
+          <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Categoría
+            <select id="auditoria-filtro-categoria" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; min-width:10rem; max-width:100%; box-sizing:border-box;">
+              <option value="">(todas)</option>
+              <option value="transaccion">transaccion</option>
+              <option value="orden">orden</option>
+              <option value="cc_manual">cc_manual</option>
+              <option value="caja_manual">caja_manual</option>
+              <option value="app">app</option>
+            </select>
+          </label>
+          <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Acción (contiene)
+            <input type="text" id="auditoria-filtro-accion" placeholder="ej. editar" maxlength="120" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; min-width:8rem; max-width:100%; box-sizing:border-box;" />
+          </label>
+          <label class="auditoria-filtro-grupo auditoria-filtro-texto" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem; flex:1; min-width:min(100%, 14rem);">Texto en detalle
+            <input type="search" id="auditoria-filtro-detalle" placeholder="Buscar en detalle…" maxlength="200" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; width:100%; max-width:28rem; box-sizing:border-box;" />
+          </label>
+          <button type="button" class="btn-primary" id="auditoria-btn-buscar" title="Aplicar filtros">
+            <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span>Buscar
+          </button>
+          <button type="button" class="btn-excel" id="auditoria-btn-exportar" title="Exportar a Excel lo cargado en esta búsqueda" aria-label="Exportar auditoría a Excel">
+            <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-35"></use></svg></span>Excel
+          </button>
+        </div>
+        <p id="auditoria-resumen-lote" style="margin:0 0 0.65rem 0; font-size:0.88rem; color:#4b5563;" aria-live="polite"></p>
+        <div id="auditoria-loading" class="vista-loading-spinner" style="display:none; margin:0.5rem 0;">Cargando auditoría…</div>
+        <div id="auditoria-tabla-outer" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none; max-height:min(72vh, 900px);">
+          <table class="auditoria-tabla">
+            <thead>
+              <tr>
+                <th>Fecha (ART)</th>
+                <th>Usuario</th>
+                <th>Categoría</th>
+                <th>Acción</th>
+                <th>Detalle</th>
+                <th>Cambios</th>
+                <th style="width:1%;">Ver</th>
+              </tr>
+            </thead>
+            <tbody id="auditoria-tbody"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:0.85rem; display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center;">
+          <button type="button" class="btn-secondary" id="auditoria-btn-mas" style="display:none;">
+            <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-1"></use></svg></span>Cargar más
+          </button>
+        </div>
+      </div>
     </div>
   </main>
+
+  <div id="modal-auditoria-detalle-backdrop" class="modal-backdrop">
+    <div class="modal modal-auditoria-detalle">
+      <div class="modal-header">
+        <h2 id="modal-auditoria-detalle-titulo">Detalle de auditoría</h2>
+        <button type="button" class="modal-close" id="modal-auditoria-detalle-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body" style="min-width:0; max-width:100%; overflow-x:hidden;">
+        <div id="modal-auditoria-detalle-resumen" class="auditoria-detalle-resumen"></div>
+        <div id="modal-auditoria-detalle-meta" class="auditoria-detalle-meta-sub"></div>
+        <h3 style="margin:0.75rem 0 0.35rem 0; font-size:0.95rem;">Descripción</h3>
+        <pre id="modal-auditoria-detalle-texto" class="auditoria-detalle-pre"></pre>
+        <div id="modal-auditoria-cambios-wrap" style="margin-top:1rem; display:none;">
+          <h3 style="margin:0 0 0.35rem 0; font-size:0.95rem;">Qué se modificó</h3>
+          <div class="tabla-clientes-wrap tabla-wrap-con-scroll" style="max-height:min(52vh, 420px); overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;">
+            <table class="auditoria-tabla-cambios">
+              <thead><tr><th>Campo</th><th>Valor anterior</th><th>Valor nuevo</th></tr></thead>
+              <tbody id="modal-auditoria-cambios-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <details id="modal-auditoria-detalle-json-wrap" class="auditoria-detalle-json-details" style="margin-top:0.85rem;">
+          <summary style="cursor:pointer; font-size:0.9rem; color:#4b5563;">Referencia técnica (JSON, incluye identificadores internos)</summary>
+          <pre id="modal-auditoria-detalle-json" class="auditoria-detalle-pre" style="margin-top:0.5rem; max-height:min(36vh, 280px); overflow:auto;"></pre>
+        </details>
+      </div>
+    </div>
+  </div>
 
   <div id="modal-seguridad-nuevo-rol-backdrop" class="modal-backdrop">
     <div class="modal">

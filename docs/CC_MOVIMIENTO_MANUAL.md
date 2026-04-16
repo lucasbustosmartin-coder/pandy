@@ -65,7 +65,7 @@ Requiere permiso **`alta_movimiento_caja`** cuando aplica caja (insert del movim
 - En **Movimientos**, las filas **Manual** muestran acciones lápiz / papelera según permisos.
 - **Editar (lápiz):** el modal equivale al de alta: mismos campos; al guardar se **borran** las líneas CC anteriores y se **insertan** las nuevas (misma semántica que un alta). La caja vinculada se **actualiza** si sigue habiendo efectivo con empresa; se **anula** si pasás a banco/cheque o sacás a la empresa del flujo (requiere `anular_movimiento_caja` cuando corresponda anular). Si creás caja nueva donde antes no había, hace falta `alta_movimiento_caja`.
 - Si el registro **vinculó caja** (`movimiento_caja_id` en la línea CC, rellenado al guardar manual con efectivo tras `sql/migracion_cc_manual_editar_eliminar_auditoria.sql`), al **editar** o **anular** la app pide **confirmación** advirtiendo caja y **auditoría**.
-- Cada edición/anulación registra un evento en **`auditoria_app`** (categoría `cc_manual`, acción `editar` / `anular`, texto y metadata con ids).
+- Cada edición/anulación registra un evento en **`auditoria_app`** (categoría `cc_manual`, acción `editar` / `anular`, texto y metadata con ids). En **editar**, si hubo cambios de formulario respecto del contexto cargado, `metadata.cambios` lista `{ campo, anterior, nuevo }` (roles, ids, moneda, monto, modalidad, concepto, fecha, grupo); ver **`docs/AUDITORIA_APP_CAMBIOS.md`**.
 - Los movimientos generados por **órdenes/transacciones** (`es_movimiento_manual = false`) siguen editándose solo con `editar_transacciones` (no con los permisos de manual).
 
 ## Base de datos

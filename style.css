@@ -2743,3 +2743,25 @@
       }
     }
     .transaccion-acuerdo-datos .transaccion-acuerdo-fila + .transaccion-acuerdo-fila { margin-top: 0.35rem; }
+
+    /* Modal Auditoría: lectura práctica (sin IDs en la tabla principal) */
+    .modal-auditoria-detalle .auditoria-detalle-resumen {
+      padding: 0.85rem 1rem;
+      margin-bottom: 0.65rem;
+      border-radius: 10px;
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      font-size: 0.92rem;
+      line-height: 1.45;
+      color: #0c4a6e;
+    }
+    .modal-auditoria-detalle .auditoria-detalle-resumen p { margin: 0.2rem 0; }
+    .modal-auditoria-detalle .auditoria-detalle-meta-sub {
+      font-size: 0.86rem;
+      color: #6b7280;
+      margin-bottom: 0.35rem;
+    }
+    .modal-auditoria-detalle .auditoria-detalle-json-details summary { user-select: none; }
+    .modal-auditoria-detalle .auditoria-tabla-cambios th,
+    .modal-auditoria-detalle .auditoria-tabla-cambios td { vertical-align: top; }
+    .modal-auditoria-detalle .auditoria-tabla-cambios td { word-break: break-word; }
