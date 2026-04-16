@@ -57,12 +57,25 @@ El saldo en la vista **excluye** movimientos con `estado === 'anulado'` e **incl
 |-------|--------|---------------|
 | `loadCuentaCorriente` / `buildCcResumenRows` | El saldo mostrado = suma en `saldosDesdeMovimientosPorOrden` vía `ccMovimientoIncluirEnSaldoResumen`: entran **pendiente** y **cerrado**; solo se excluye **`anulado`**. Cliente e intermediario igual. Los mapas de pendientes y `pendienteClasePorMoneda` siguen sirviendo para leyendas y óptica (CHEQUE, USD-USD+int, etc.). En el modal detalle, `saldosPendiente` desglosa la parte solo pendiente en tarjetas y en el `tfoot` de la tabla. | Sí. |
 
+### 7.1 Sync `sync_cc_caja_orden`: regla transversal de `estado` en CC
+
+Tras deduplicar filas y aplicar el bloque «transacción anulada → movimiento CC `anulado`» y «orden anulada → toda la CC derivada `anulado`», `refuerzoEstadoCcCoherenteConInstrumentacion` en `main.js` aplica **cualquier tipo de operación**:
+
+| Condición de instrumentación | Efecto en CC cliente e intermediario (filas derivadas, no `es_movimiento_manual`) |
+|------------------------------|-----------------------------------------------------------------------------------|
+| **Todas** las transacciones en **`ejecutada`** | Todas las filas quedan en **`cerrado`** (corrige desalineaciones puntuales del motor, MC o sintéticas). |
+| **No** todas ejecutadas (instrumentación mixta o solo pendientes) | Fila con `transaccion_id` de una trx **pendiente** → **`pendiente`**. Fila con `transaccion_id` de una trx **ejecutada** → **`cerrado`** (no pisa **`anulado`**). Si hay **alguna** trx pendiente, filas **sin** `transaccion_id` → **`pendiente`**. |
+| Orden **`anulada`** | Sin cambio aquí: ya quedó todo en **`anulado`**. |
+
+Los movimientos **manuales** no se modifican. La caja (`movimientos_caja`) no entra en este refuerzo.
+
 ## 8. Comisiones generadas (Ganancia Pandy, Comisión intermediario)
 
 Para que la cuenta corriente cierre y no se dupliquen transacciones al pasar ejecutada→pendiente→ejecutada:
 
 - **Tabla `orden_comisiones_generadas`**: una fila por `(orden_id, tipo)` con `tipo` en `ganancia_pandy` o `comision_intermediario` y el `transaccion_id` de la transacción creada. Opcionalmente `transaccion_id_reducida` para Ganancia (ingreso cliente del que se descontó la comisión; se restaura al revertir). En **comision_intermediario**, `movimiento_caja_id` puede quedar **nulo** cuando la comisión corresponde a **tasa por transferencia al intermediario** fuera del acuerdo con el cliente: solo CC intermediario + fila de control, **sin** `movimientos_caja` efectivo (separar G/P operativo de billetes).
 - **Crear Ganancia / Comisión**: se usan `asegurarGananciaPandy` y `asegurarComisionIntermediario`, que consultan la tabla y solo crean movimientos si aún no existe la fila. **Comisión intermediario:** por defecto un egreso en `movimientos_caja` efectivo (legacy); si aplica tasa transferencia fuera del acuerdo (`ordenOmitirMovimientoCajaComisionIntPorTasaTransferenciaFueraAcuerdo` en `main.js`), solo se inserta la fila en `orden_comisiones_generadas` sin caja física. La línea «Comisión del acuerdo» en CC intermediario la inserta el flujo previo (`insertarFilasComisionIntermediarioCcPorTransaccion`).
+- **Motor `sync_cc_caja_orden` (filas «Comisión del acuerdo» sin `transaccion_id`):** `ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion` en `main.js`: **CHEQUE-ARS** solo cierra comisiones sintéticas cuando **toda** la instrumentación está en `ejecutada` o `anulada` (al menos una ejecutada). **Demás tipos:** si ya se cumple eso (`instOk`), las comisiones sintéticas van a **`cerrado`** aunque `ordenes.estado` vaya con desfase respecto de las transacciones; si aún hay trx pendientes pero la orden figura `orden_ejecutada` o `instrumentacion_cerrada_ejecucion`, también se cierran (alineación con la etiqueta de orden). La leyenda «… y Trans N» usa `nroTransReferenciaLeyendaComisionAcuerdo` y, en USD-USD, un fallback final unificado a la misma cadena.
 - **Reversa (ejecutada→pendiente)**:
   - Si se revierte **egreso Pandy→Int**: `revertirComisionIntermediario(ordenId)` borra el movimiento de caja si existía (`movimiento_caja_id`), las filas CC de comisión asociadas y la fila en la tabla.
   - Si se revierte **ingreso Int→Pandy**: se borran los movimientos CC de esa transacción (cobro y descuento) y se reabre la fila Compensación a pendiente.

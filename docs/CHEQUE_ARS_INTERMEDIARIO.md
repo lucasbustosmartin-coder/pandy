@@ -34,6 +34,8 @@ Convención alineada a la **cuenta corriente de Pandy** (qué le debe el interme
 
 Mientras **Tx4 sigue pendiente** y **Tx3** (u otra contraparte del par Pandy–intermediario) **no** está ejecutada, `contrapartida_ejecutada` es **false** para esa ingreso: hace falta una fila en `reglas_de_negocio` con `estado_transaccion = pendiente` y `contrapartida_ejecutada = false` (además de la fila con `true` cuando ya matchea el par). Canónico en `sql/reglas_de_negocio_tabla.sql`; parche: `sql/migracion_reglas_pendiente_contrapartida_false_usd_usd_int_y_cheque_tx4.sql`.
 
+**Instrumentación automática (4 tx en pendiente):** el motor necesita filas `estado_transaccion = pendiente` también para **Tx1** (Cliente→Pandy) y **Tx2** (Pandy→Cliente) en `entidad_cc = cliente`, para **Tx3** (Pandy→Intermediario) con `pendiente` y `contrapartida_ejecutada` **false** y **true**, y para **Tx4** (Intermediario→Pandy ingreso, `monto_efectivo_intermediario`) con `pendiente` y `contrapartida_ejecutada` **false** y **true**. Sin ellas, al sincronizar CC puede aparecer el toast «sin regla» o quedar movimientos sin la pata **Trans. 4**. Parche unificado: **`sql/migracion_reglas_cheque_ars_int_tx1_tx2_tx3_pendiente.sql`** (incluye Tx4 desde 2026-04); si ya corriste una versión vieja de ese archivo sin Tx4: **`sql/migracion_reglas_cheque_ars_int_tx4_pendiente.sql`**. Canónico: **`sql/reglas_de_negocio_tabla.sql`**.
+
 Ejemplo: cheque 25.000 ARS, comisión int 375 ARS, efectivo a devolver 24.625 ARS → líneas **+25.000**, **−375** y, al ejecutar Tx4, **−24.625**; saldo neto **0**.
 
 En el **resumen** CC, el test E2E sigue interpretando el saldo del intermediario con la lógica `saldoResumenANumero(..., true)` (lectura coherente con deuda neta aunque la celda muestre signo “positivo” en verde).
@@ -47,10 +49,11 @@ En el **resumen** CC, el test E2E sigue interpretando el saldo del intermediario
 ## Scripts SQL recomendados (Supabase)
 
 1. **Matriz en `reglas_de_negocio` y limpieza `cc_modelo`:** **`sql/migracion_reglas_de_negocio_cheque_ars.sql`**
-2. **Solo signos CC intermediario (DB ya cargada):** **`sql/migracion_reglas_cheque_ars_signos_cc_intermediario.sql`**
-3. Semilla catálogo: **`sql/seed_tipo_operacion_cheque_ars.sql`**
-4. Tipos y checks de moneda (histórico): **`sql/migracion_cc_modelo_reglas_canonico_cheque_ars.sql`**
-5. Bootstrap unificado: **`sql/reglas_de_negocio_tabla.sql`** (incluye CHEQUE-ARS con int) y **`sql/cc_modelo_reglas_tabla.sql`** (sin filas CHEQUE-ARS)
+2. **Pendiente Tx1–Tx4 (cliente Tx1–Tx2, intermediario Tx3–Tx4, `contrapartida_ejecutada` false/true según matriz):** **`sql/migracion_reglas_cheque_ars_int_tx1_tx2_tx3_pendiente.sql`** (motor CC; si tu copia no incluye Tx4, **`sql/migracion_reglas_cheque_ars_int_tx4_pendiente.sql`**).
+3. **Solo signos CC intermediario (DB ya cargada):** **`sql/migracion_reglas_cheque_ars_signos_cc_intermediario.sql`**
+4. Semilla catálogo: **`sql/seed_tipo_operacion_cheque_ars.sql`**
+5. Tipos y checks de moneda (histórico): **`sql/migracion_cc_modelo_reglas_canonico_cheque_ars.sql`**
+6. Bootstrap unificado: **`sql/reglas_de_negocio_tabla.sql`** (incluye CHEQUE-ARS con int) y **`sql/cc_modelo_reglas_tabla.sql`** (sin filas CHEQUE-ARS)
 
 Orden práctico: según `docs/TESTING_E2E_GUIA.md` §1.5–1.7 (RPC `sync_cc_caja_orden` al día).
 

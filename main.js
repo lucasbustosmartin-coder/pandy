@@ -3555,6 +3555,38 @@ function nroTransIngresoClientePandyPrincipalParaComisionConcepto(transacciones,
 }
 
 /**
+ * Nro. de transacción para leyenda «Comisión del acuerdo … y Trans N» cuando no hay ingreso C→P ejecutado con monto ≠ comisión
+ * (p. ej. multicontraparte / regla B: solo Pandy→cliente en monR). Misma cadena de fallback que la comisión implícita USD-USD.
+ */
+function nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto) {
+  const txs = transacciones || [];
+  const nroCp = nroTransIngresoClientePandyPrincipalParaComisionConcepto(txs, comisionPandyMonto);
+  if (nroCp != null) return nroCp;
+  const ej = (t) => transaccionEstadoTextoNormalizado(t) === 'ejecutada';
+  const egIntCli = txs
+    .filter((t) =>
+      ej(t) &&
+      (t.tipo || '').toLowerCase() === 'egreso' &&
+      String(t.pagador || '').toLowerCase() === 'intermediario' &&
+      String(t.cobrador || '').toLowerCase() === 'cliente'
+    )
+    .sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0))[0];
+  if (egIntCli && egIntCli.numero != null) return egIntCli.numero;
+  const ingPCli = txs
+    .filter((t) =>
+      ej(t) &&
+      (t.tipo || '').toLowerCase() === 'ingreso' &&
+      String(t.pagador || '').toLowerCase() === 'pandy' &&
+      String(t.cobrador || '').toLowerCase() === 'cliente'
+    )
+    .sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0))[0];
+  if (ingPCli && ingPCli.numero != null) return ingPCli.numero;
+  const ultEj = txs.filter((t) => ej(t)).sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0))[0];
+  if (ultEj && ultEj.numero != null) return ultEj.numero;
+  return null;
+}
+
+/**
  * Convención para concepto de movimiento de caja originado por una transacción.
  * Formato: "Ingreso de [moneda], por [monto], nro orden [nro], nro transacción [nro]" o "Egreso de ...".
  * nroOrden y nroTransaccion pueden ser null/undefined; en ese caso se omite esa parte o se pone "?".
@@ -9427,6 +9459,102 @@ function transaccionesInstrumentacionTodasEjecutadasOAnuladasConAlgunaEjecutada(
   return hayEjecutada;
 }
 
+/**
+ * Todas las transacciones de la instrumentación están en **ejecutada** (ninguna pendiente ni anulada).
+ * Base para la regla transversal: instrumentación totalmente ejecutada → toda la CC derivada en **cerrado**.
+ */
+function transaccionesInstrumentacionTodasEjecutadasStrict(transacciones) {
+  const txs = transacciones || [];
+  if (!txs.length) return false;
+  for (const t of txs) {
+    if (transaccionEstadoTextoNormalizado(t) !== 'ejecutada') return false;
+  }
+  return true;
+}
+
+/**
+ * Post-cálculo antes de `sync_cc_caja_orden`, **cualquier tipo de operación**:
+ * - Si **todas** las transacciones de instrumentación están **ejecutadas** → todo movimiento CC cliente/intermediario
+ *   derivado (no manual) queda en **cerrado** (corrige desalineaciones puntuales del motor/MC/sintéticas).
+ * - Si **no** están todas ejecutadas: fila con `transaccion_id` cuya transacción está **pendiente** → **pendiente**;
+ *   fila con `transaccion_id` cuya transacción está **ejecutada** → **cerrado** (salvo ya **anulado** por trx anulada u orden);
+ *   fila **sin** `transaccion_id` si hay **alguna** transacción pendiente → **pendiente**.
+ * - Orden **anulada**: no hace nada (el bloque previo ya fijó **anulado** en toda la CC derivada).
+ */
+function refuerzoEstadoCcCoherenteConInstrumentacion(ordenAnuladaSync, transacciones, rowsCcCliente, rowsCcInt, ahoraIso) {
+  if (ordenAnuladaSync) return;
+  const txs = transacciones || [];
+  if (!txs.length) return;
+  const todasEj = transaccionesInstrumentacionTodasEjecutadasStrict(txs);
+  const pendienteIds = new Set();
+  const ejecutadaIds = new Set();
+  for (const t of txs) {
+    const e = transaccionEstadoTextoNormalizado(t);
+    if (!t || t.id == null || String(t.id).trim() === '') continue;
+    const idStr = String(t.id);
+    if (e === 'pendiente') pendienteIds.add(idStr);
+    if (e === 'ejecutada') ejecutadaIds.add(idStr);
+  }
+  const algunaPend = pendienteIds.size > 0;
+
+  const aplicar = (rows) => {
+    for (const r of rows || []) {
+      if (!r || r.es_movimiento_manual === true) continue;
+      const st = String(r.estado || '').toLowerCase();
+      if (todasEj) {
+        if (st !== 'cerrado') {
+          r.estado = 'cerrado';
+          if (ahoraIso) r.estado_fecha = ahoraIso;
+        }
+        continue;
+      }
+      const tid = r.transaccion_id != null && r.transaccion_id !== '' ? String(r.transaccion_id) : '';
+      if (tid && pendienteIds.has(tid)) {
+        if (st !== 'pendiente') {
+          r.estado = 'pendiente';
+          if (ahoraIso) r.estado_fecha = ahoraIso;
+        }
+        continue;
+      }
+      if (tid && ejecutadaIds.has(tid)) {
+        if (st !== 'anulado' && st !== 'cerrado') {
+          r.estado = 'cerrado';
+          if (ahoraIso) r.estado_fecha = ahoraIso;
+        }
+        continue;
+      }
+      if (algunaPend && !tid) {
+        if (st !== 'pendiente') {
+          r.estado = 'pendiente';
+          if (ahoraIso) r.estado_fecha = ahoraIso;
+        }
+      }
+    }
+  };
+  aplicar(rowsCcCliente);
+  aplicar(rowsCcInt);
+}
+
+/**
+ * Comisiones / filas CC **sin** `transaccion_id`: deben quedar **`cerrado`** alineadas a instrumentación y orden.
+ * - **CHEQUE-ARS:** solo cuando toda la instrumentación está en ejecutada o anulada (al menos una ejecutada); no se
+ *   adelanta por solo `instrumentacion_cerrada_ejecucion` con patas pendientes (Tx3/Tx4, etc.).
+ * - **Resto de tipos:** si la instrumentación ya está totalmente resuelta (`instOk`), **cerrar** aunque `ordenes.estado`
+ *   vaya con desfase respecto de las transacciones (evita comisiones «pendiente» con todas las trx ejecutadas).
+ *   Si aún hay trx pendientes pero la orden figura `orden_ejecutada` o `instrumentacion_cerrada_ejecucion`, también
+ *   cerrar (alineación con la etiqueta de orden; p. ej. cruces + MC con compensaciones aún no ejecutadas).
+ */
+function ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, transacciones, tipoOperacionCodigo) {
+  if (!orden || typeof orden !== 'object') return false;
+  const ord = String(orden.estado || '').trim().toLowerCase();
+  if (ord === 'anulada') return false;
+  const instOk = transaccionesInstrumentacionTodasEjecutadasOAnuladasConAlgunaEjecutada(transacciones);
+  const cod = String(tipoOperacionCodigo || '').toUpperCase();
+  if (cod === 'CHEQUE-ARS') return instOk;
+  if (instOk) return true;
+  return ord === 'orden_ejecutada' || ord === 'instrumentacion_cerrada_ejecucion';
+}
+
 /** Suma `monto` por moneda solo filas CC cliente cerradas del cliente del acuerdo y esta orden. */
 function sumaCcClienteCerradoPorMonedaSoloClienteOrden(rowsCliente, clienteId, ordenId) {
   const filtered = (rowsCliente || []).filter(
@@ -9943,7 +10071,8 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
   // Comisión implícita USD-USD: `reglas_de_negocio` fila es_comision + monto_origen mr_menos_me (ver reglas_de_negocio_tabla / migraciones). Con spread en el acuerdo, el monto sale de mr−me (tabla + orden), no del reparto Pandy/intermediario. Par cliente **cerrado** → fila cerrada; si no, **pendiente** desde el primer sync (incl. con intermediario y todo P,P) vía `reglaComisionMotorPlantillaDetalle`.
   let nroTransComisionConceptoUsd = null;
   if (esUsdUsd) {
-    const trIngresoClienteAcuerdoUsd = (transacciones || [])
+    const txs = transacciones || [];
+    const trIngresoClienteAcuerdoUsd = txs
       .filter((t) =>
         (t.tipo || '').toLowerCase() === 'ingreso' &&
         String(t.pagador || '').toLowerCase() === 'cliente' &&
@@ -9954,6 +10083,37 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       .sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0))[0];
     nroTransComisionConceptoUsd =
       trIngresoClienteAcuerdoUsd && trIngresoClienteAcuerdoUsd.numero != null ? trIngresoClienteAcuerdoUsd.numero : null;
+    if (nroTransComisionConceptoUsd == null && txs.length) {
+      const egIntCli = txs
+        .filter((t) =>
+          transaccionEstadoTextoNormalizado(t) === 'ejecutada' &&
+          (t.tipo || '').toLowerCase() === 'egreso' &&
+          String(t.pagador || '').toLowerCase() === 'intermediario' &&
+          String(t.cobrador || '').toLowerCase() === 'cliente'
+        )
+        .sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0))[0];
+      if (egIntCli && egIntCli.numero != null) nroTransComisionConceptoUsd = egIntCli.numero;
+    }
+    if (nroTransComisionConceptoUsd == null && txs.length) {
+      const ingPCli = txs
+        .filter((t) =>
+          transaccionEstadoTextoNormalizado(t) === 'ejecutada' &&
+          (t.tipo || '').toLowerCase() === 'ingreso' &&
+          String(t.pagador || '').toLowerCase() === 'pandy' &&
+          String(t.cobrador || '').toLowerCase() === 'cliente'
+        )
+        .sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0))[0];
+      if (ingPCli && ingPCli.numero != null) nroTransComisionConceptoUsd = ingPCli.numero;
+    }
+    if (nroTransComisionConceptoUsd == null && txs.length) {
+      const ultEj = txs
+        .filter((t) => transaccionEstadoTextoNormalizado(t) === 'ejecutada')
+        .sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0))[0];
+      if (ultEj && ultEj.numero != null) nroTransComisionConceptoUsd = ultEj.numero;
+    }
+    if (nroTransComisionConceptoUsd == null) {
+      nroTransComisionConceptoUsd = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comM);
+    }
   }
   const feComUsd = esUsdUsd
     ? (nroTransComisionConceptoUsd != null
@@ -9965,6 +10125,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     const ingresoCobroClienteEjecutado = ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones);
     const egresoEntregaClienteEjecutado = egresoEntregaAClienteEjecutado(transacciones);
     const parClienteCerrado = ingresoCobroClienteEjecutado && egresoEntregaClienteEjecutado;
+    const comisionClienteUsdCerradaPorOrden = ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, transacciones, tipoOperacionCodigo);
     let reglaCom = null;
     if (parClienteCerrado) {
       // cp_ic: ingreso Cliente→Pandy. ci_pc: ingreso Cliente→Intermediario (misma comisión mr−me en tabla).
@@ -10019,7 +10180,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       if (Math.abs(montoCc) >= 1e-12) {
         const moneda = String(reglaCom.moneda || 'USD').toUpperCase();
         const ley = reglaCom.concepto_leyenda || 'comision_acuerdo';
-        const cerrado = parClienteCerrado;
+        const cerrado = parClienteCerrado || comisionClienteUsdCerradaPorOrden;
         rowsCcCliente.push({
           cliente_id: clienteId,
           orden_id: ordenId,
@@ -10061,6 +10222,13 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     feComCruceTcInt = nroTransComisionCruceTcInt != null
       ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionCruceTcInt, fecha, ahora)
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
+    if (nroTransComisionCruceTcInt == null) {
+      const nroFb = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comM);
+      if (nroFb != null) {
+        nroTransComisionCruceTcInt = nroFb;
+        feComCruceTcInt = fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroFb, fecha, ahora);
+      }
+    }
   }
   // Par cerrado: ingreso C→P/I + entrega al cliente ejecutados. cp_ic P,E: comisión con contrapartida_ejecutada false (misma tabla que USD-USD).
   if ((esUsdUsd || crucesTcComisionInt) && intermediarioId && filasIntParaComision.length) {
@@ -10088,7 +10256,8 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       contrapartidaComIntLookup,
     );
     if (reglaComIntUsd) {
-      const cerradoInt = parClienteCerradoUsdInt;
+      const cerradoInt =
+        parClienteCerradoUsdInt || ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, transacciones, tipoOperacionCodigo);
       const feComInt = esUsdUsd ? feComUsd : feComCruceTcInt;
       const nroTransComInt = esUsdUsd ? nroTransComisionConceptoUsd : nroTransComisionCruceTcInt;
       for (const filaInt of filasIntParaComision) {
@@ -10131,7 +10300,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       : 0;
   const montoComisionLineaCcClienteCheque = spreadClienteCheque >= 1e-6 ? spreadClienteCheque : comM;
   const nroTransComisionConceptoChequeArs =
-    codOpCh === 'CHEQUE-ARS' ? nroTransIngresoClientePandyPrincipalParaComisionConcepto(transacciones, comM) : null;
+    codOpCh === 'CHEQUE-ARS' ? nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comM) : null;
   const feComChequeArs = codOpCh === 'CHEQUE-ARS'
     ? (nroTransComisionConceptoChequeArs != null
       ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionConceptoChequeArs, fecha, ahora)
@@ -10164,10 +10333,12 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       estadoComPandy,
       parClienteCerrado,
     );
-    // Comisión Pandy: fila CC **pendiente** en cuanto hay acuerdo con comisión, aunque Tx1/Tx2 sigan pendientes; pasa a cerrado cuando `estadoComPandy` es ejecutada (par_cliente o condición).
+    // Comisión Pandy: fila CC **pendiente** en cuanto hay acuerdo con comisión, aunque Tx1/Tx2 sigan pendientes; pasa a cerrado cuando `estadoComPandy` es ejecutada (par_cliente o condición) u orden ya ejecutada con instrumentación resuelta.
     if (reglaComPandy) {
       const signo = Number(reglaComPandy.signo) != null ? Number(reglaComPandy.signo) : 1;
-      const cerrado = estadoComPandy === 'ejecutada';
+      const cerrado =
+        estadoComPandy === 'ejecutada' ||
+        ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, transacciones, tipoOperacionCodigo);
       const moneda = String(comisionPandyMon || reglaComPandy.moneda || 'ARS').toUpperCase();
       rowsCcCliente.push({
         cliente_id: clienteId,
@@ -10204,6 +10375,8 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     // Comisión intermediario: misma idea que Pandy — fila **pendiente** al persistir la orden si Tx3/Tx4 aún no cierran el par Pandy↔intermediario.
     if (reglaComInt) {
       const signo = Number(reglaComInt.signo) != null ? Number(reglaComInt.signo) : 1;
+      const cerradoIntCheque =
+        parIntCerrado || ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, transacciones, tipoOperacionCodigo);
       for (const filaInt of filasIntParaComision) {
         const comInt = Number(filaInt.monto) || 0;
         if (comInt < 1e-6) continue;
@@ -10218,7 +10391,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
           usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
           moneda: monCom,
           monto: signo * comInt,
-          estado: ordenAnuladaMotor ? 'anulado' : (parIntCerrado ? 'cerrado' : 'pendiente'),
+          estado: ordenAnuladaMotor ? 'anulado' : (cerradoIntCheque ? 'cerrado' : 'pendiente'),
           estado_fecha: feComChequeArs.estado_fecha,
           incluir_en_detalle: incluirEnDetalleCcDesdeCampoRegla(reglaComInt.incluir_en_detalle),
           ...montosCcPorMoneda(monCom, signo * comInt)
@@ -21242,7 +21415,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               motorCcWarnings,
             });
           } else if (!(usarMulticontraparteSync && tieneReglasNeg) && esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id) {
-            const nroTransComisionChequeFb = nroTransIngresoClientePandyPrincipalParaComisionConcepto(transacciones, comisionPandyMonto);
+            const nroTransComisionChequeFb = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
             const feSynthChequeFb = nroTransComisionChequeFb != null
               ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionChequeFb, fecha, ahora)
               : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
@@ -21329,7 +21502,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             intermediarioId &&
             filasComisionIntermediarioMotor.length
           ) {
-            const nroTransComisionChequeMc = nroTransIngresoClientePandyPrincipalParaComisionConcepto(transacciones, comisionPandyMonto);
+            const nroTransComisionChequeMc = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
             const feSynthChequeMc = nroTransComisionChequeMc != null
               ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionChequeMc, fecha, ahora)
               : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
@@ -21486,6 +21659,14 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               r.estado = 'anulado';
             });
           }
+
+          refuerzoEstadoCcCoherenteConInstrumentacion(
+            ordenAnuladaSync,
+            transacciones,
+            rowsCcClienteUnicos,
+            rowsCcIntUnicos,
+            ahora,
+          );
 
           const ordLabelInv = orden.numero != null ? String(orden.numero) : String(ordenId || '').slice(0, 8);
           if (motorCcWarnings.length && !silenciarAvisosInvarianteCc) {

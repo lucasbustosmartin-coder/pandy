@@ -99,6 +99,8 @@ Con MC activo, la CC se arma solo con `aplicarCcMulticontraparteManualConciliaci
 
 `sync_cc_caja_orden` **persiste** el JSON que arma el front; **no** recalcula ni valida el invariante en servidor. Si el front construye filas inconsistentes, la base las guarda.
 
+**Mitigación en front (estado CC):** antes del RPC, `refuerzoEstadoCcCoherenteConInstrumentacion` alinea `estado` de las filas derivadas con el conjunto de transacciones de instrumentación (todas ejecutadas → todo `cerrado`; mixto → ancla por `transaccion_id`; sintéticas sin id si hay pendientes; orden anulada ya unificada a `anulado`). Ver `docs/FLUJOS_CC_REGLA.md` §7.1. No sustituye validación de neteo ni lógica en SQL.
+
 Si falla la RPC, **`fallbackSyncCcCaja`** intenta el mismo conjunto por otra vía; tampoco valida invariantes.
 
 **Grieta:** no hay “última línea de defensa” en PostgreSQL para el cero por orden.

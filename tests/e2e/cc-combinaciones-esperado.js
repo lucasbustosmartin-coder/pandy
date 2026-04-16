@@ -33,28 +33,28 @@ const DATOS_FIJOS = {
  * detalleInt: montos persistidos en CC intermediario (+cheque, −comisión; −197k en Tx4 al cerrar). saldoIntARS sigue en convención E2E (saldoResumenANumero con intermediario).
  */
 const COMBINACIONES_ESPERADO_RAW = [
-  // 1. P,P,P,P — comisiones CC en pendiente al guardar (spread + comisión int.), visibles para conciliación aunque Tx1–Tx4 sigan pendientes.
-  { id: 'P,P,P,P', tx1: 'P', tx2: 'P', tx3: 'P', tx4: 'P', saldoClienteARS: 5000, saldoIntARS: -3000, detalleCliente: [5000], detalleInt: [-3000], saldoCajaEfectivoARS: 0, saldoCajaChequeARS: 0 },
+  // 1. P,P,P,P — patas Tx1–Tx4 + comisiones en CC pendiente (motor con reglas pendiente + contrapartida acorde).
+  { id: 'P,P,P,P', tx1: 'P', tx2: 'P', tx3: 'P', tx4: 'P', saldoClienteARS: 0, saldoIntARS: 0, detalleCliente: [-200000, 195000, 5000], detalleInt: [-197000, -3000, 200000], saldoCajaEfectivoARS: 0, saldoCajaChequeARS: 0 },
   // 2. P,P,P,E
-  { id: 'P,P,P,E', tx1: 'P', tx2: 'P', tx3: 'P', tx4: 'E', saldoClienteARS: 0, saldoIntARS: -197000, detalleCliente: [], detalleInt: [200000, -3000], saldoCajaEfectivoARS: 197000, saldoCajaChequeARS: 0 },
+  { id: 'P,P,P,E', tx1: 'P', tx2: 'P', tx3: 'P', tx4: 'E', saldoClienteARS: 0, saldoIntARS: 0, detalleCliente: [], detalleInt: [-197000, -3000, 200000], saldoCajaEfectivoARS: 197000, saldoCajaChequeARS: 0 },
   // 3. P,E,P,P — comisión intermediario ya en CC pendiente (Tx3/Tx4 aún P).
-  { id: 'P,E,P,P', tx1: 'P', tx2: 'E', tx3: 'P', tx4: 'P', saldoClienteARS: 200000, saldoIntARS: -3000, detalleCliente: [195000, 5000], detalleInt: [-3000], saldoCajaEfectivoARS: -195000, saldoCajaChequeARS: 0 },
+  { id: 'P,E,P,P', tx1: 'P', tx2: 'E', tx3: 'P', tx4: 'P', saldoClienteARS: 200000, saldoIntARS: 0, detalleCliente: [195000, 5000], detalleInt: [-197000, -3000, 200000], saldoCajaEfectivoARS: -195000, saldoCajaChequeARS: 0 },
   // 4. P,E,P,E
-  { id: 'P,E,P,E', tx1: 'P', tx2: 'E', tx3: 'P', tx4: 'E', saldoClienteARS: 200000, saldoIntARS: -197000, detalleCliente: [195000, 5000], detalleInt: [200000, -3000], saldoCajaEfectivoARS: 2000, saldoCajaChequeARS: 0 },
+  { id: 'P,E,P,E', tx1: 'P', tx2: 'E', tx3: 'P', tx4: 'E', saldoClienteARS: 200000, saldoIntARS: 0, detalleCliente: [195000, 5000], detalleInt: [-197000, -3000, 200000], saldoCajaEfectivoARS: 2000, saldoCajaChequeARS: 0 },
   // 5. E,P,P,P — Tx1 E = ingreso cheque; comisión Pandy +5k en CC → saldo neto −195k (200k − comisión), detalle [−200k, +5k]; int. −3k pendiente (Tx3/Tx4 P).
-  { id: 'E,P,P,P', tx1: 'E', tx2: 'P', tx3: 'P', tx4: 'P', saldoClienteARS: -195000, saldoIntARS: -3000, detalleCliente: [-200000, 5000], detalleInt: [-3000], saldoCajaEfectivoARS: 0, saldoCajaChequeARS: 200000 },
+  { id: 'E,P,P,P', tx1: 'E', tx2: 'P', tx3: 'P', tx4: 'P', saldoClienteARS: -195000, saldoIntARS: 0, detalleCliente: [-200000, 5000], detalleInt: [-197000, -3000, 200000], saldoCajaEfectivoARS: 0, saldoCajaChequeARS: 200000 },
   // 6. E,P,P,E
-  { id: 'E,P,P,E', tx1: 'E', tx2: 'P', tx3: 'P', tx4: 'E', saldoClienteARS: -195000, saldoIntARS: -197000, detalleCliente: [-200000, 5000], detalleInt: [200000, -3000], saldoCajaEfectivoARS: 197000, saldoCajaChequeARS: 200000 },
+  { id: 'E,P,P,E', tx1: 'E', tx2: 'P', tx3: 'P', tx4: 'E', saldoClienteARS: -195000, saldoIntARS: 0, detalleCliente: [-200000, 5000], detalleInt: [-197000, -3000, 200000], saldoCajaEfectivoARS: 197000, saldoCajaChequeARS: 200000 },
   // 7. E,P,E,P — Tx1 +200k cheque, Tx3 -200k cheque (Pandy entrega) → saldo cheque 0
-  { id: 'E,P,E,P', tx1: 'E', tx2: 'P', tx3: 'E', tx4: 'P', saldoClienteARS: -195000, saldoIntARS: -197000, detalleCliente: [-200000, 5000], detalleInt: [200000, -3000], saldoCajaEfectivoARS: 0, saldoCajaChequeARS: 0 },
+  { id: 'E,P,E,P', tx1: 'E', tx2: 'P', tx3: 'E', tx4: 'P', saldoClienteARS: -195000, saldoIntARS: 0, detalleCliente: [-200000, 5000], detalleInt: [-197000, -3000, 200000], saldoCajaEfectivoARS: 0, saldoCajaChequeARS: 0 },
   // 8. E,P,E,E
   { id: 'E,P,E,E', tx1: 'E', tx2: 'P', tx3: 'E', tx4: 'E', saldoClienteARS: -195000, saldoIntARS: 0, detalleCliente: [-200000, 5000], detalleInt: [200000, -197000, -3000], saldoCajaEfectivoARS: 197000, saldoCajaChequeARS: 0 },
   // 9. E,E,P,P — Tx1 cheque +200k, Tx2 efectivo -195k → efectivo -195000; comisión int. pendiente con Tx3/Tx4 P.
-  { id: 'E,E,P,P', tx1: 'E', tx2: 'E', tx3: 'P', tx4: 'P', saldoClienteARS: 0, saldoIntARS: -3000, detalleCliente: [-200000, 195000, 5000], detalleInt: [-3000], saldoCajaEfectivoARS: -195000, saldoCajaChequeARS: 200000 },
+  { id: 'E,E,P,P', tx1: 'E', tx2: 'E', tx3: 'P', tx4: 'P', saldoClienteARS: 0, saldoIntARS: 0, detalleCliente: [-200000, 195000, 5000], detalleInt: [-197000, -3000, 200000], saldoCajaEfectivoARS: -195000, saldoCajaChequeARS: 200000 },
   // 10. E,E,P,E — Tx2 -195k + Tx4 +197k efectivo = 2000
-  { id: 'E,E,P,E', tx1: 'E', tx2: 'E', tx3: 'P', tx4: 'E', saldoClienteARS: 0, saldoIntARS: -197000, detalleCliente: [-200000, 195000, 5000], detalleInt: [200000, -3000], saldoCajaEfectivoARS: 2000, saldoCajaChequeARS: 200000 },
+  { id: 'E,E,P,E', tx1: 'E', tx2: 'E', tx3: 'P', tx4: 'E', saldoClienteARS: 0, saldoIntARS: 0, detalleCliente: [-200000, 195000, 5000], detalleInt: [-197000, -3000, 200000], saldoCajaEfectivoARS: 2000, saldoCajaChequeARS: 200000 },
   // 11. E,E,E,P — Tx2 efectivo -195k; Tx1/Tx3 cheque
-  { id: 'E,E,E,P', tx1: 'E', tx2: 'E', tx3: 'E', tx4: 'P', saldoClienteARS: 0, saldoIntARS: -197000, detalleCliente: [-200000, 195000, 5000], detalleInt: [200000, -3000], saldoCajaEfectivoARS: -195000, saldoCajaChequeARS: 0 },
+  { id: 'E,E,E,P', tx1: 'E', tx2: 'E', tx3: 'E', tx4: 'P', saldoClienteARS: 0, saldoIntARS: 0, detalleCliente: [-200000, 195000, 5000], detalleInt: [-197000, -3000, 200000], saldoCajaEfectivoARS: -195000, saldoCajaChequeARS: 0 },
   // 12. E,E,E,E — Tx2 -195k + Tx4 +197k efectivo = 2000
   { id: 'E,E,E,E', tx1: 'E', tx2: 'E', tx3: 'E', tx4: 'E', saldoClienteARS: 0, saldoIntARS: 0, detalleCliente: [-200000, 195000, 5000], detalleInt: [200000, -197000, -3000], saldoCajaEfectivoARS: 2000, saldoCajaChequeARS: 0 },
 ];
