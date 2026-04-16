@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.44',
+  versionLabel: 'v3.7.45',
   lines: [
-    'Al refrescar la cuenta corriente, las comisiones del acuerdo pueden pasar a cerrado cuando toda la instrumentación ya está ejecutada (antes podían quedar colgadas en pendiente).',
-    'Misma lógica para el detalle que ves en Total: el saldo y los movimientos vuelven a alinearse con el acuerdo terminado.',
+    'En cuenta corriente, si elegís «Cliente», ya no aparece quien comparte registro con un intermediario: evita ver saldos distintos a la vista unificada.',
+    'Usá «Intermediario» o «Total» para ver a esa persona con todos sus movimientos juntos, en Saldos y en Movimientos.',
   ],
 };

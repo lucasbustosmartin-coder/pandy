@@ -5066,6 +5066,14 @@ function obtenerFilasCcResumenFiltradas() {
       if (r.tipo === 'cliente' && r.cc_cliente_vinculado_intermediario === true) return false;
       return r.tipo === 'cliente';
     });
+  } else if (ccFiltroTipo === 'cliente') {
+    /** Vista Cliente: excluir quien tiene vínculo 1:1 con intermediario (posición unificada solo en Intermediario / Total). */
+    filas = ccResumenRowsTodos.filter(
+      (r) =>
+        r.tipo === 'cliente' &&
+        r.cc_cliente_vinculado_intermediario !== true &&
+        conSaldo(r),
+    );
   } else {
     filas = ccResumenRowsTodos.filter((r) => r.tipo === ccFiltroTipo).filter(conSaldo);
   }
@@ -5159,13 +5167,17 @@ function pandiOrdenarMovsCcDesc(movs) {
   });
 }
 
-/** Vista «Movimientos» CC: pestaña Intermediario incluye filas CC intermediario + CC cliente del mismo vínculo. Total = todos los movimientos (cada fila del listado es única). */
+/**
+ * Vista «Movimientos» CC: Intermediario = filas CC intermediario + filas CC cliente del mismo vínculo (`cc_intermediario_consolidado_id`).
+ * Total = todos los movimientos (cada fila del listado es única).
+ * Cliente = solo libros de clientes **sin** vínculo con intermediario (las filas cliente del vinculado llevan `cc_intermediario_consolidado_id` y solo se ven en Intermediario / Total).
+ */
 function pandiCcDetallePasaFiltroTipo(m, filtroTipo) {
   if (filtroTipo === 'total') return true;
   if (filtroTipo === 'intermediario') {
     return m.tipo === 'intermediario' || m.cc_intermediario_consolidado_id != null;
   }
-  return m.tipo === 'cliente';
+  return m.tipo === 'cliente' && m.cc_intermediario_consolidado_id == null;
 }
 
 /**

@@ -30,8 +30,8 @@ Los movimientos siguen guardándose donde corresponde por rol (**CC cliente** vs
 
 ## Fase 3 — Cuenta corriente (lectura) — hecha en app
 
-- **Tipo Cliente:** igual que antes — solo movimientos y saldos de `movimientos_cuenta_corriente` del cliente (sin sumar la CC intermediario del par).
-- **Tipo Intermediario:** saldo resumen, pestaña **Movimientos**, modal **Ver detalle** (tabla + órdenes vinculadas), combo de entidad y export Excel usan la **unión** de movimientos de `movimientos_cuenta_corriente_intermediario` y, si hay vínculo, los de `movimientos_cuenta_corriente` del cliente emparejado. Implementación: `main.js` (`loadCuentaCorriente` + `buildCcResumenRows`, `fetchMovimientosCcPorEntidad`, filtros detalle). **No** se mueven filas entre tablas en BD ni se altera el sync/RPC.
+- **Tipo Cliente:** solo clientes **sin** fila en `contraparte_vinculo` (como `cliente_id`). Quien está vinculado a un intermediario **no** aparece en esta vista ni en sus saldos: la posición unificada es la fila **Intermediario** (y en **Total** no se duplica). Los movimientos de su CC “rol cliente” siguen persistidos en `movimientos_cuenta_corriente`; solo cambia la lectura en pantalla.
+- **Tipo Intermediario:** saldo resumen, pestaña **Movimientos**, modal **Ver detalle** (tabla + órdenes vinculadas), combo de entidad y export Excel usan la **unión** de movimientos de `movimientos_cuenta_corriente_intermediario` y, si hay vínculo, los de `movimientos_cuenta_corriente` del cliente emparejado. Implementación: `main.js` (`loadCuentaCorriente` + `buildCcResumenRows`, `obtenerFilasCcResumenFiltradas`, `pandiCcDetallePasaFiltroTipo`, `fetchMovimientosCcPorEntidad`, filtros detalle). **No** se mueven filas entre tablas en BD ni se altera el sync/RPC.
 
 ---
 
