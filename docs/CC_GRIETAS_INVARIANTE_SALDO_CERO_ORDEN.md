@@ -101,6 +101,8 @@ Con MC activo, la CC se arma solo con `aplicarCcMulticontraparteManualConciliaci
 
 **Mitigación en front (estado CC):** antes del RPC, `refuerzoEstadoCcCoherenteConInstrumentacion` alinea `estado` de las filas derivadas con el conjunto de transacciones de instrumentación (todas ejecutadas → todo `cerrado`; mixto → ancla por `transaccion_id`; sintéticas sin id si hay pendientes; orden anulada ya unificada a `anulado`). Ver `docs/FLUJOS_CC_REGLA.md` §7.1. No sustituye validación de neteo ni lógica en SQL.
 
+**Mitigación (neteo + comisión acuerdo):** la fila sintética «Comisión del acuerdo» **sin** `transaccion_id` (spread mr−me en USD-USD, etc.) pasa a `cerrado` con el refuerzo cuando toda la instrumentación está ejecutada; `validarInvarianteNeteoCcClienteAcuerdoCerrado` **descuenta** su monto en esa moneda del residual (junto con las patas regla B), para que no bloquee `sync_cc_caja_orden` mientras el libro del cliente refleja pata bruta + spread.
+
 Si falla la RPC, **`fallbackSyncCcCaja`** intenta el mismo conjunto por otra vía; tampoco valida invariantes.
 
 **Grieta:** no hay “última línea de defensa” en PostgreSQL para el cero por orden.
@@ -152,10 +154,10 @@ Los scripts en `sql/` son la fuente de verdad **esperada**; Supabase puede queda
 | Qué | Cómo |
 |-----|------|
 | Trx sin regla (`es_comision` false **y** true) | Array `motorCcWarnings` en `aplicarMotorCcDesdeReglasDeNegocio`; toast orden + detalle en consola. |
-| Par cliente cerrado / MC toda ejecutada pero CC no netea | `validarInvarianteNeteoCcClienteAcuerdoCerrado` antes de `sync_cc_caja_orden`; **no** persiste si falla (consola siempre; toast si no `silenciarAvisosInvarianteCc`). Excepción monR: suma de filas con leyenda Pandy o Tercero «cumple pata». **Cuándo corre:** solo si **no hay transacciones pendientes** (todas ejecutada o anulada, ≥1 ejecutada) **y** (MC completo **o** sin MC con par clásico C→P/I + entrega ejecutados **o** orden en `orden_ejecutada` / `instrumentacion_cerrada_ejecucion`). No se dispara a mitad de instrumentación aunque ya existan un ingreso cobro y un egreso entrega ejecutados (p. ej. CHEQUE 4 patas o MC parcial). |
+| Par cliente cerrado / MC toda ejecutada pero CC no netea | `validarInvarianteNeteoCcClienteAcuerdoCerrado` antes de `sync_cc_caja_orden`; **no** persiste si falla (consola siempre; toast si no `silenciarAvisosInvarianteCc`). Excepciones al cero: suma en monR de filas con leyenda Pandy o Tercero «cumple pata»; en monE la pata «en moneda entregada» (doble pata cruces sin int.); filas «Comisión del acuerdo» **cerradas** sin `transaccion_id` (spread sintético alineado al refuerzo). **Cuándo corre:** solo si **no hay transacciones pendientes** (todas ejecutada o anulada, ≥1 ejecutada) **y** (MC completo **o** sin MC con par clásico C→P/I + entrega ejecutados **o** orden en `orden_ejecutada` / `instrumentacion_cerrada_ejecucion`). No se dispara a mitad de instrumentación aunque ya existan un ingreso cobro y un egreso entrega ejecutados (p. ej. CHEQUE 4 patas o MC parcial). |
 | Sync global (muchas ódenes) | `sincronizarCcYCajaDesdeOrden(ordenId, { silenciarAvisosInvarianteCc: true })` — sin toasts duplicados; el bloqueo por neteo **sí** evita la RPC por orden afectada. |
 
-Helpers: `motorCcTransaccionEsperaReglaEnTabla`, `sumaCcClienteCerradoPorMonedaDesdeFilas`, constante `EPS_CC_NETEO_CLIENTE_ORDEN`.
+Helpers: `motorCcTransaccionEsperaReglaEnTabla`, `sumaCcClienteCerradoPorMonedaDesdeFilas`, `sumaMovimientosComisionAcuerdoSinteticaExentosNeteo`, constante `EPS_CC_NETEO_CLIENTE_ORDEN`.
 
 **Lookup y roles:** el motor aplica `transaccionNormalizarPagCobVacios` y `pagCobEfectivosTransaccionSync` sobre cada transacción antes de `lookupReglasDeNegocio`, alineado al sync de CC. Si `pagador`/`cobrador` en BD vienen vacíos o null, no se usa solo el valor crudo (que impediría matchear filas con `cliente` / `pandy` / `intermediario`).
 
@@ -165,7 +167,7 @@ Helpers: `motorCcTransaccionEsperaReglaEnTabla`, `sumaCcClienteCerradoPorMonedaD
 
 1. **Validación dura al guardar** instrumentación: pagador/cobrador deben matchear al menos una clave prevista para el tipo (bloquear guardado con mensaje).
 2. **Tests E2E** o fixtures que afirmen neteo en escenarios canónicos (acuerdo previo para expectativas).
-3. **Pata monR / monE (excepciones neteo):** leyendas «Pandy cumple pata» / «Tercero cumple pata» en monR; «Pandy cumple pata en moneda entregada» en monE (doble pata Pandy→cliente en cruce sin int.) — `docs/INSTRUMENTACION_MANUAL_MULTICONTRAPARTE.md` §3 y `aplicarMotorCcDesdeReglasDeNegocio` / `validarInvarianteNeteoCcClienteAcuerdoCerrado`.
+3. **Pata monR / monE y comisión acuerdo (excepciones neteo):** leyendas «Pandy cumple pata» / «Tercero cumple pata» en monR; «Pandy cumple pata en moneda entregada» en monE (doble pata Pandy→cliente en cruce sin int.); «Comisión del acuerdo» sin `transaccion_id` cuando está cerrada — `docs/INSTRUMENTACION_MANUAL_MULTICONTRAPARTE.md` §3 y `aplicarMotorCcDesdeReglasDeNegocio` / `validarInvarianteNeteoCcClienteAcuerdoCerrado`.
 4. **Procedimiento operativo:** tras cambiar `sql/` canónico, aplicar en Supabase + resync de órdenes afectadas.
 
 Cualquier **test E2E** o cambio de expectativas numéricas debe seguir la regla del proyecto: **acuerdo previo** con el negocio antes de mover aserciones.

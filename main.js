@@ -9441,6 +9441,13 @@ const SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONE = 'Pandy cumple pata en moned
 /** Ingreso otro cliente → cliente del acuerdo en monR (misma familia contable que B; leyenda distinta para auditoría). */
 const SUBSTRING_LEYENDA_CC_TERcERO_PATA_MONR = 'Tercero cumple pata en moneda recibida';
 
+/**
+ * Comisión del acuerdo (spread mr−me) **sin** `transaccion_id`: en USD-USD (y análogos) compensa la pata bruta frente a compromisos;
+ * con instrumentación totalmente ejecutada pasa a `cerrado` vía `refuerzoEstadoCcCoherenteConInstrumentacion` y debe eximirse del neteo
+ * igual que las patas regla B (si no, el invariante bloquea la RPC y la BD queda con comisiones «pendiente»).
+ */
+const SUBSTRING_LEYENDA_CC_COMISION_ACUERDO = 'Comisión del acuerdo';
+
 /** Código en `Error` rechazado antes de `sync_cc_caja_orden` cuando falla el neteo CC (evita persistir CC incoherente). */
 const PANDI_CC_NETEO_INVARIANT_CODE = 'PANDI_CC_NETEO_INVARIANT';
 
@@ -9600,6 +9607,25 @@ function sumaMovimientosPataMonEExentosNeteo(rowsCliente, clienteId, ordenId, mo
   return s;
 }
 
+/** Suma montos en `mon` de filas «Comisión del acuerdo» **cerradas**, sin `transaccion_id` (sintéticas); exentas de neteo en esa moneda. */
+function sumaMovimientosComisionAcuerdoSinteticaExentosNeteo(rowsCliente, clienteId, ordenId, mon) {
+  const monU = String(mon || '').toUpperCase();
+  let s = 0;
+  const subC = SUBSTRING_LEYENDA_CC_COMISION_ACUERDO;
+  for (const r of rowsCliente || []) {
+    if (!r || r.es_movimiento_manual === true) continue;
+    if (String(r.estado || '').toLowerCase() !== 'cerrado') continue;
+    if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
+    if (String(r.moneda || '').toUpperCase() !== monU) continue;
+    if (!String(r.concepto || '').includes(subC)) continue;
+    const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id) : '';
+    if (tid) continue;
+    const m = Number(r.monto);
+    if (Number.isFinite(m)) s += m;
+  }
+  return s;
+}
+
 /**
  * Cruce USD-ARS / ARS-USD sin int.: ingreso ejecutado Pandy→cliente del acuerdo en **monR** y egreso ejecutado Pandy→cliente del acuerdo en **monE**. No netear la pata en monE (MC + motor).
  */
@@ -9654,7 +9680,8 @@ function transaccionesHayIngresoPandyClienteMonRAcuerdoActivo(transacciones, ord
 /**
  * Invariante dura: solo cuando **no queda ninguna transacción pendiente** (todas ejecutada o anulada, al menos una ejecutada) **y** además: multicontraparte manual completo, **o** (sin MC) par clásico ingreso C→P/I + egreso entrega ambos ejecutados, **o** la orden está en `orden_ejecutada` / `instrumentacion_cerrada_ejecucion`.
  * Entonces la CC del cliente del acuerdo (filas **cerradas** de esta orden) debe netear a cero por moneda,
- * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata», y en moneda entregada la fila «Pandy cumple pata en moneda entregada» (doble pata empresa→cliente en monR+monE).
+ * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata», y en moneda entregada la fila «Pandy cumple pata en moneda entregada» (doble pata empresa→cliente en monR+monE),
+ * y en la moneda correspondiente la fila sintética «Comisión del acuerdo» **sin** `transaccion_id` (spread mr−me; alineada a refuerzo `cerrado` con toda la instrumentación ejecutada).
  * @returns {{ ok: true } | { ok: false, msg: string, sums: Record<string, number>, mon?: string }}
  */
 function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
@@ -9696,12 +9723,13 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
     const sum = sums[mon] || 0;
     if (Math.abs(sum) <= EPS_CC_NETEO_CLIENTE_ORDEN) continue;
 
+    const offsetComisionSint = sumaMovimientosComisionAcuerdoSinteticaExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, mon);
     const offsetPata =
       String(mon) === String(monR)
-        ? sumaMovimientosPataMonRExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, monR)
+        ? sumaMovimientosPataMonRExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, monR) + offsetComisionSint
         : String(mon) === String(monE)
-          ? sumaMovimientosPataMonEExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, monE)
-          : 0;
+          ? sumaMovimientosPataMonEExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, monE) + offsetComisionSint
+          : offsetComisionSint;
     const residual = sum - offsetPata;
     if (Math.abs(residual) <= EPS_CC_NETEO_CLIENTE_ORDEN) continue;
 
@@ -20958,7 +20986,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
  * Se borran todos los movimientos de esta orden y se vuelven a insertar según el estado actual de las transacciones.
  * Fecha contable y estado_fecha de cada fila derivada se anclan a la transacción (`fecha_ejecucion`, `updated_at`); ver `fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion`.
  * Si `ordenes.estado` es **anulada** y alguna transacción de la instrumentación no está **anulada**, antes del cálculo se intenta **UPDATE** en `transacciones` (coherencia orden↔instrumentación); si falla el UPDATE, se alinean estados en memoria para el sync y se deja traza en consola.
- * **Invariante neteo CC cliente del acuerdo:** si el acuerdo está “cerrado” para este criterio (par ingreso+egreso clásico ejecutados, o multicontraparte manual con todas las transacciones ejecutadas o anuladas), la suma por moneda de las filas CC cerradas de ese cliente y orden debe ser cero, salvo en moneda recibida el residual explicado por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata». Si no cumple, **no** se llama a `sync_cc_caja_orden` (no se persiste CC/caja derivada de este cálculo).
+ * **Invariante neteo CC cliente del acuerdo:** si el acuerdo está “cerrado” para este criterio (par ingreso+egreso clásico ejecutados, o multicontraparte manual con todas las transacciones ejecutadas o anuladas), la suma por moneda de las filas CC cerradas de ese cliente y orden debe ser cero, salvo el residual explicado por patas regla B y por la fila sintética «Comisión del acuerdo» sin `transaccion_id` (spread mr−me). Si no cumple, **no** se llama a `sync_cc_caja_orden` (no se persiste CC/caja derivada de este cálculo).
  * @param {string} ordenId
  * @param {{ silenciarAvisosInvarianteCc?: boolean, propagarError?: boolean }} [optsSyncCc] Si `silenciarAvisosInvarianteCc`, no muestra toasts de diagnóstico del motor ni del neteo (p. ej. sync global encadenado); el bloqueo por neteo igual evita la RPC. Si `propagarError`, el `.catch` final **rechaza** la promesa (p. ej. tras anular orden) en lugar de resolver en silencio.
  * @returns {Promise<void>}
