@@ -19,6 +19,7 @@
 ## App (`main.js`)
 
 - Si hay filas en **`reglas_de_negocio`** para **ARS-USD** + **`usa_intermediario`**, la sync usa **`aplicarMotorCcDesdeReglasDeNegocio`** y **no** aplica **`cc_modelo_reglas`** para ese caso (misma bandera que USD-ARS+int con filas en tabla).
+- **P,P (par cliente todo pendiente):** mismo criterio que USD-ARS+int y USD-USD+int (`todoParClientePendienteConIntParaAlinearCcMotor` en `main.js`): sin duplicar nominal en CC cliente entre **compromiso_cobrar** y egreso pendiente **+mr/−me**; ingreso alineado a **cobro_realizado** y entrega en **una** línea **compromiso_pago** por `monto_transacción` de la pata.
 - **Panel órdenes:** autocompletado de transacciones vacías para **ARS-USD** y **USD-ARS** con intermediario usa **`ci_pc`** por defecto (alineado a las reglas `ci_pc`). **USD-USD+int** sigue en **`cp_ic`** (tiene reglas para ambos en DB).
 - El motor ya omitía `mr_prorrateado` en egreso **ARS** para ARS-USD sin int (`aplicarMotorCcDesdeReglasDeNegocio`); se mantiene igual con **+int**.
 - **P,E en `ci_pc`:** con compromiso a cobrar pendiente en **+** (USD y ARS), el egreso Pandy→Cliente ejecutado con **`contrapartida_ejecutada = false`** debe registrar **`compromiso_pago` en −me (USD)** para anular la pata USD pendiente; la fila con **`contrapartida_ejecutada = true`** sigue en **+me** (cierra contra el ingreso ya ejecutado). Parche: `sql/migracion_reglas_int_ci_pc_compromiso_pago_anula_cobrar_pendiente.sql` (espejo de USD-ARS+int en `REG_NEG_USD_ARS_INT_PASO1.md`).

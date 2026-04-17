@@ -17,6 +17,7 @@
 
 ## Comisiones implícitas
 
+- **Par cliente P,P vs USD-USD / cruces + int:** el ajuste del motor `todoParClientePendienteConIntParaAlinearCcMotor` (compromiso de cobro vs egreso **+mr/−me**) **no aplica** a CHEQUE-ARS+int: aquí el ingreso pendiente cliente ya usa **`cobro_realizado`** con **−mr** en ARS y el egreso P→C **`monto_transacción`**, sin el patrón duplicado de los cruces/USD-USD.
 - **Pandy:** `monto_recibido − monto_entregado` del acuerdo (ARS), fila **`es_comision`** **Cliente→Pandy ingreso**; **`estadoEfectivoComision`** con **`par_cliente`** = ejecutada cuando **Tx1 o Tx2** está ejecutada (así con solo Tx1 ejecutada el neto cliente puede ser **−(mr − comisión) = −me**, p. ej. −200k + 5k = −195k).
 - **Intermediario:** comisión por tasa sobre el circuito Pandy–intermediario; filas **`es_comision = true`**, **Pandy→Intermediario egreso**, con **`condicion_estado_comision`** (p. ej. `par_pandy_int`) donde aplique.
 - Los importes concretos salen de la orden / `comisiones_orden` y del motor; la **forma** de cuándo suma y qué concepto usar está en **`reglas_de_negocio`** (filas `es_comision` + `condicion_estado_comision`).

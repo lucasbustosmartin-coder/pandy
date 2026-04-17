@@ -5,9 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.48',
+  versionLabel: 'v3.7.49',
   lines: [
-    'Mejoras en los tiempos de respuesta del servidor.',
-    'Ajustes de estabilidad y claridad al revisar movimientos en la app.',
+    'Mejoras en la cuenta corriente con órdenes que tienen intermediario: al guardar o refrescar, lo que ves queda más alineado.',
+    'Detalle de movimientos un poco más claro para seguir cada operación.',
+    'Varias correcciones recientes ya están en esta versión; seguiremos con ajustes puntuales en los próximos envíos.',
   ],
 };

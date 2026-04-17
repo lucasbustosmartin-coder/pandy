@@ -73,7 +73,7 @@ Sin red, podés **seguir viendo** lo que ya se guardó en el dispositivo al carg
 - **Listado de Órdenes** (mezclado con filas de **cola local**, si hay).  
 - **Panel de inicio:** tarjetas de **caja** (movimientos cerrados), **G/P operativa** (ganancia o pérdida operativa de la empresa; por período día / semana / mes / total; el **Total** por moneda es la **suma algebraica** de **seis bolsas**: caja manual y caja por órdenes solo **cerradas**; CC clientes e intermediarios con movimientos **pendiente o cerrado** (no anulados), igual criterio que **Cuenta corriente → Saldos**, excluyendo en esas filas el concepto comisión del acuerdo; más dos bolsas de **comisión del acuerdo** (empresa suma positiva; intermediario en **negativo** para restar del total) desde `comisiones_orden` por fecha de orden más líneas huérfanas en CC si no hay fila en esa tabla; con **reparto** empresa+intermediario en la **misma orden y moneda** en `comisiones_orden`, la parte intermediario de ese reparto **no se cuenta dos veces** en la bolsa intermediario — queda neteada en la fila empresa; pueden seguir sumando otras filas al intermediario u otras monedas), bloque **Pendientes**.  
 - **Vista Cajas:** tabla de movimientos y totales según la copia.  
-- **Vista Cuenta corriente:** resumen y movimientos según la copia y filtros que ya tenías (incluye la búsqueda por nombre en **Saldos** si la usaste). Con el tipo **Cliente**, la copia omite al cliente vinculado 1:1 con un intermediario (misma regla que con red: verlo en **Intermediario** o **Total**). El **saldo por moneda** en Saldos, en el detalle (ojo) y en totales de Movimientos **incluye líneas pendientes** no anuladas; en el modal de detalle también se muestra un **subtotal aparte de solo lo pendiente**. **Con red**, al abrir la vista puede verse un momento el estado de carga (spinner) mientras la app alinea movimientos con las órdenes (varias órdenes en paralelo; si en esta sesión acaba de completarse un sync global, a veces se omite repetirlo unos segundos para abrir más rápido — usá **Refrescar** si querés forzar siempre el recálculo completo). Recién después se muestran saldos y tablas, para que no aparezcan cifras intermedias incorrectas. El botón **Refrescar** (Saldos o Movimientos) hace esa misma **alineación** otra vez: recalcula CC y caja desde **todas** las órdenes con instrumentación; **no** necesitás entrar a instrumentación ni pulsar Guardar en cada orden para que se apliquen reglas o código nuevos del servidor. La columna **Usuario** en cada movimiento derivado de una orden muestra quien **ejecutó o grabó la transacción** correspondiente (o el creador de la orden en líneas sin transacción propia), no a la persona que solo abrió la pantalla o pulsó Refrescar.  
+- **Vista Cuenta corriente:** resumen y movimientos según la copia y filtros que ya tenías (incluye la búsqueda por nombre en **Saldos** si la usaste). Con el tipo **Cliente**, en **Saldos** la copia omite al cliente vinculado 1:1 con un intermediario (misma fila unificada en **Intermediario** o **Total**); en **Movimientos**, si ya habías cargado ese cliente con red, la copia puede incluir su libro de `movimientos_cuenta_corriente` (p. ej. patas pendientes de órdenes). El **saldo por moneda** en Saldos, en el detalle (ojo) y en totales de Movimientos **incluye líneas pendientes** no anuladas; en el modal de detalle también se muestra un **subtotal aparte de solo lo pendiente**. **Con red**, al abrir la vista puede verse un momento el estado de carga (spinner) mientras la app alinea movimientos con las órdenes (varias órdenes en paralelo; si en esta sesión acaba de completarse un sync global, a veces se omite repetirlo unos segundos para abrir más rápido — usá **Refrescar** si querés forzar siempre el recálculo completo). Recién después se muestran saldos y tablas, para que no aparezcan cifras intermedias incorrectas. El botón **Refrescar** (Saldos o Movimientos) hace esa misma **alineación** otra vez: recalcula CC y caja desde **todas** las órdenes con instrumentación; **no** necesitás entrar a instrumentación ni pulsar Guardar en cada orden para que se apliquen reglas o código nuevos del servidor. La columna **Usuario** en cada movimiento derivado de una orden muestra quien **ejecutó o grabó la transacción** correspondiente (o el creador de la orden en líneas sin transacción propia), no a la persona que solo abrió la pantalla o pulsó Refrescar.  
 - **Órdenes en el servidor — panel Transacciones** (fila expandida): si antes abriste **Transacciones** con red, suele haber **instrumentación en caché** por orden; se puede combinar con cambios locales pendientes de envío (ver §7).
 
 **Exportar a Excel** (Caja, CC, etc.): si los datos ya están cargados en pantalla, el export usa esa información; no crea datos nuevos en el servidor.
@@ -153,7 +153,7 @@ Hasta que vuelva la conexión (y en algunos casos tocás **Reintentar**), **no**
 - **Auditoría** (menú lateral, permiso **ver_auditoria**): listado de acciones sensibles en el servidor; filtros por fechas, categoría, acción y texto en detalle; **Cargar más** para el siguiente lote; **Ver** abre el detalle con **cuándo**, **quién** y tabla de cambios en lenguaje claro (nombres de cliente, intermediario, tipo de operación, modo de pago, etc.; sin UUID en la tabla principal); el JSON técnico va aparte, colapsado. **Exportar a Excel** el lote acumulado en la búsqueda actual. Sin conexión no se puede consultar.  
 - **Empresa / marca** — guardar configuración.  
 - **Clientes**, **Intermediarios**, **Tipos de operación** (incl. orden visual), **Reglas de negocio** — guardar o refrescar listados.
-- **Mismo cliente que intermediario:** si tenés permiso de ABM de **clientes** o de **intermediarios**, al **editar** un cliente o un intermediario podés elegir **«Mismo registro que…»** para indicar que es la misma persona en otro circuito (vínculo 1:1 en el servidor). Los listados muestran el nombre vinculado. En **Cuenta corriente**, con el tipo **Cliente** **no** aparece esa persona como cliente (solo se listan clientes **sin** vínculo); la posición unificada la ves con **Intermediario** o **Total**. Con el tipo **Intermediario**, la fila de ese intermediario y su detalle incluyen también los movimientos de CC cliente del par (vista unificada para la misma persona, sin duplicar datos en el servidor). Con el tipo **Total** ves la posición **consolidada sin duplicar** esa persona: cuenta una sola vez como en la fila intermediario, y los clientes **sin** vínculo siguen en su fila cliente (Saldos, Movimientos, búsqueda por nombre y export coherentes). En **Nueva orden**, si el tipo **usa intermediario** no podés dejar **cliente** e **intermediario** exactamente en ese par vinculado: la app te pide **tipo sin intermediario** y **multiparte**. Si cargaste la orden con dos registros distintos antes de crear el vínculo, completá el vínculo en Clientes/Intermediarios y editá la orden según corresponda.  
+- **Mismo cliente que intermediario:** si tenés permiso de ABM de **clientes** o de **intermediarios**, al **editar** un cliente o un intermediario podés elegir **«Mismo registro que…»** para indicar que es la misma persona en otro circuito (vínculo 1:1 en el servidor). Los listados muestran el nombre vinculado. En **Cuenta corriente → Saldos** con el tipo **Cliente**, **no** aparece esa persona como fila de resumen (solo clientes **sin** vínculo); en **Movimientos** con filtro **Cliente** podés ver las filas de CC de ese cliente aunque esté vinculado (libro persistido). La posición unificada de **saldos** la seguís viendo con **Intermediario** o **Total**. Con el tipo **Intermediario**, la fila de ese intermediario y su detalle incluyen también los movimientos de CC cliente del par (vista unificada para la misma persona, sin duplicar datos en el servidor). Con el tipo **Total** ves la posición **consolidada sin duplicar** esa persona en **Saldos**: una sola vez como en la fila intermediario, y los clientes **sin** vínculo siguen en su fila cliente. En **Nueva orden**, si el tipo **usa intermediario** no podés dejar **cliente** e **intermediario** exactamente en ese par vinculado: la app te pide **tipo sin intermediario** y **multiparte**. Si cargaste la orden con dos registros distintos antes de crear el vínculo, completá el vínculo en Clientes/Intermediarios y editá la orden según corresponda.  
 - **Anular orden** (pasa la orden y la instrumentación a anulada y **vuelve a sincronizar** la CC/caja derivada de esa orden: verás movimientos en **Anulada** que no suman al saldo); **anular** movimiento manual de CC.  
 - **Chat** — interpretar mensaje y confirmar orden desde chat.  
 - **Órdenes pendientes** / **Transacciones pendientes** desde el panel de inicio como listados **en vivo** (si la app pide datos frescos).  
@@ -708,314 +708,314 @@ L4867:         showToast('No existe el tipo de caja «' + nom + '». Ejecutá sq
 L4874:             showToast(v.mensaje, 'error');
 L4892:     showToast('Indicá la fecha.', 'error');
 L4906:     showConfirm(msg, 'Guardar', run, null, 'Cancelar', 'Confirmar edición');
-L6083:       showToast('No se pudieron cargar tipos de movimiento para exportar.', 'error');
-L6092:       showToast('No hay movimientos para exportar con el filtro actual.', 'info');
-L6142:         showToast('Exportado: ' + nombreArchivo, 'success');
-L6145:         showToast('Error al preparar exportación.', 'error');
-L6157:     showToast('No hay órdenes para exportar con el filtro actual.', 'info');
-L6253:     showToast('Exportado: ' + nombreArchivo, 'success');
-L6256:     showToast('Error al preparar exportación.', 'error');
-L6264:     showToast('No hay órdenes pendientes para exportar con el filtro actual.', 'info');
-L6357:       showToast('Exportado: ' + nombreArchivo, 'success');
-L6360:       showToast('Error al preparar exportación.', 'error');
-L6516:           showConfirm(
-L6527:                   showToast('Quitado de la cola local.', 'success');
-L6529:                   showToast('No se pudo quitar de la cola.', 'error');
-L7180:       showToast('Abrí primero el desglose completo desde G/P Operativa.', 'info');
-L7230:         showToast('G/P detalle: ' + errText(err), 'error');
-L7272:       showToast('G/P detalle: ' + errText(err), 'error');
-L7591:           showToast(
-L7627:         showToast('G/P Operativa: error de red o servidor.', 'error');
-L11105:       showToast('No se pudo cargar cuenta corriente: ' + msg, 'error');
-L11879:       showToast('No hay movimientos para exportar.', 'info');
-L11913:         showToast('Exportado: ' + nombreArchivo, 'success');
-L11916:         showToast('Error al preparar exportación.', 'error');
-L11924:     showToast('No hay filas para exportar.', 'info');
-L11955:     showToast('Exportado: ' + nombreArchivo, 'success');
-L11958:     showToast('Error al preparar exportación.', 'error');
-L12336:     showToast('Detalle CC: ' + msg, 'error', 6000);
-L12609:     showToast('Los movimientos manuales se editan desde la solapa Movimientos (botón lápiz en la fila).', 'info');
-L12633:     showToast('Los movimientos manuales se editan desde la solapa Movimientos.', 'info');
-L12640:     showToast('Falta fecha.', 'error');
-L12649:         showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-L13057:     showToast('No tenés permiso para registrar movimientos manuales de cuenta corriente.', 'error');
-L13093:         showToast('Error al cargar clientes/intermediarios.', 'error');
-L13103:         showToast('Sin catálogo local de clientes/intermediarios. Conectate una vez o abrí Órdenes con red para actualizar la caché.', 'info');
-L13299:             showToast('Caja registrada; no se pudo enlazar el id en CC: ' + (bad.error.message || 'ejecutá la migración movimiento_caja_id.'), 'error');
-L13423:   showToast('Enviando movimientos CC guardados sin red…', 'info');
-L13452:           showToast('Hay movimientos CC en cola con caja; hace falta permiso alta_movimiento_caja para insertar el movimiento de caja.', 'error');
-L13487:       showToast('No se pudieron enviar todos los movimientos CC offline: ' + msg, 'error');
-L13495:     showToast('Movimientos CC offline enviados al servidor.', 'success');
-L13650:   showToast('Movimiento guardado en cola local; se enviará al reconectar.', 'success');
-L13672:   showToast('Enviando movimientos de caja guardados sin red…', 'info');
-L13715:       showToast('No se pudieron enviar todos los movimientos de caja offline: ' + msg, 'error');
-L13722:     showToast('Movimientos de caja offline enviados al servidor.', 'success');
-L13728:     showToast('Sesión no válida.', 'error');
-L13732:     showToast('Sin permiso para registrar este movimiento.', 'error');
-L13745:     showToast(legsRes.error, 'error');
-L13753:     showToast('Indicá la fecha.', 'error');
-L13758:     showToast('El importe debe ser un número mayor que cero.', 'error');
-L13782:       showToast('Para registrar efectivo en caja necesitás permiso alta_movimiento_caja.', 'error');
-L13828:         showToast(
-L13836:         showToast('No se pudo guardar en la cola local: ' + (err && err.message ? String(err.message) : 'error'), 'error');
-L13847:         showToast('Movimientos registrados en CC y en caja (efectivo).', 'success');
-L13849:         showToast(
-L13874:           showToast('Error en cuenta corriente: ' + (err && err.message ? err.message : 'error'), 'error');
-L13884:           showToast('No existe el tipo de caja «' + nom + '». Ejecutá sql/migracion_tipos_caja_cc_manual.sql en Supabase o creá ese tipo en Cajas → Tipos de movimiento.', 'error');
-L13904:             showToast(
-L13917:           showToast(v.mensaje, 'error');
-L13936:       showToast('Error al resolver nombres para el signo en cuenta corriente.', 'error');
-L14085:     showToast('Sincronizando CC y caja desde órdenes…', 'info');
-L14089:         showToast('Cuenta corriente actualizada.', 'success');
-L14094:             showToast('Si tenés órdenes con transacciones ejecutadas y no ves movimientos: verificá que existan filas en reglas_de_negocio para el tipo de operación (y usa_intermediario) de cada orden, o revisá permis…
-L14099:         showToast(e && (e.message || String(e)) || 'Error al sincronizar', 'error');
-L14252:                 showToast('Error: ' + (r.error.message || 'No se pudo guardar.'), 'error');
-L14256:               showToast(val ? 'Tipo activo.' : 'Tipo inactivo.', 'success');
-L14276:                 showToast('Error: ' + (r.error.message || 'No se pudo guardar.'), 'error');
-L14280:               showToast(val ? 'G/P activado para este tipo.' : 'G/P desactivado para este tipo.', 'success');
-L14334:     showToast('El nombre es obligatorio.', 'error');
-L14347:       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-L14494:         showToast('No tenés permiso para dar de alta movimientos de caja.', 'info');
-L14499:         showToast('No tenés permiso para editar movimientos de caja.', 'info');
-L14503:         showToast(MSG_CAJA_VINCULADA_ORDEN_O_TRANSACCION, 'info');
-L14509:         showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'info');
-L14515:           showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'info');
-L14526:         showToast('Sin catálogo de tipos de caja. Entrá a Cajas con red al menos una vez para cargar la tabla.', 'info');
-L14596:     showToast(MSG_CAJA_VINCULADA_ORDEN_O_TRANSACCION, 'info');
-L14602:       showToast('No tenés permiso para editar movimientos de caja.', 'error');
-L14608:       showToast('No tenés permiso para registrar movimientos nuevos de caja.', 'error');
-L14617:     showToast('Completá tipo y monto (número positivo).', 'error');
-L14662:                 showToast('Error: ' + (r0.error.message || 'No se pudo verificar el movimiento.'), 'error');
-L14667:                 showToast(MSG_CAJA_VINCULADA_ORDEN_O_TRANSACCION, 'error');
-L14676:                     showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-L14708:             showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'error');
-L14715:           showToast(
-L14726:               showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-L14739:             showToast(v.mensaje, 'error');
-L14748:             showToast(v.mensaje, 'error');
-L14762:     showConfirm(
-L14986:     showToast('Monto inválido.', 'error');
-L14991:     showToast(
-L15005:           showToast('Error al actualizar monto: ' + (r.error?.message || ''), 'error');
-L15035:                 showToast(
-L15048:     if (!instrumentacionId) { showToast('Falta instrumentación.', 'error'); return Promise.resolve(); }
-L15051:       if (!ordenId) { showToast('No se encontró la orden.', 'error'); return Promise.resolve(); }
-L15073:                 showToast(vSaldo.mensaje || 'Saldo de caja insuficiente.', 'error');
-L15082:                     showToast('Error al actualizar monto: ' + (rUp.error?.message || ''), 'error');
-L15092:                   showToast('Error al reajustar CC/caja: ' + (err?.message || String(err)), 'error');
-L15240:           return prom.then(() => { if (onSuccess) onSuccess(); }).catch((err) => { showToast('Error al reajustar CC/caja: ' + (err?.message || ''), 'error'); });
-L15252:     showToast(
-L15277:           showToast('En operación CHEQUE no se puede cambiar el modo de pago de las transacciones generadas con Cheque.', 'error');
-L15284:             showToast('Error al actualizar modo de pago: ' + (r.error?.message || ''), 'error');
-L15321:                     showToast(
-L15346:                 if (rIns.error) showToast('Error al actualizar caja: ' + (rIns.error?.message || ''), 'error');
-L15473: function showToast(mensaje, type = 'success', duracionMs = 4500) {
-L15507: function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar, tituloModal, opciones) {
-L15869:     showToast(
-L15876:     showToast(
-L16611:     showToast('Monto guardado en el dispositivo; se enviará al reconectar.', 'info');
-L16614:     showToast('No se pudo guardar el cambio local.', 'error');
-L16621:     showToast('Modo de pago guardado en el dispositivo; se enviará al reconectar.', 'info');
-L16626:     showToast('No se pudo guardar el cambio local.', 'error');
-L16636:     showToast('Estado guardado en el dispositivo; se enviará al reconectar.', 'info');
-L16644:     showToast('No se pudo guardar el cambio local.', 'error');
-L16699:     showToast('Sin conexión: podés editar; los cambios se envían al reconectar.', 'info');
-L16701:     showToast('Instrumentación desde caché de este dispositivo (solo lectura).', 'info');
-L16764:   showToast('Enviando cambios de instrumentación guardados sin red…', 'info');
-L16803:       showToast('No se pudieron enviar todos los cambios offline: ' + msg, 'error');
-L16810:     showToast('Cambios de instrumentación offline enviados al servidor.', 'success');
-L17299:               showToast('Error al actualizar órdenes: ' + (msg || ''), 'error');
-L17405:         showToast('Error al actualizar órdenes: ' + (msg || ''), 'error');
-L17553:     showToast('Completá la tasa del intermediario (%). Esta orden usará comisión variable en lugar de la fija.', 'info');
-L17619:   showToast('Elegí la comisión fija del intermediario (USD ' + formatImporteDisplay(a) + ' o USD ' + formatImporteDisplay(b) + ').', 'error');
-L17725:     showToast('La orden está anulada; no se puede editar.', 'info');
-L17836:           showToast(
-L17841:           showToast(
-L17924:         showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
-L17928:         showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
-L18000:             showToast(
-L18184:         showToast(
-L18192:     if (!registro) showToast('Error al crear la orden: ' + (err && err.message ? err.message : ''), 'error');
-L18936:         showToast('Orden creada. Para asignación atómica de número, ejecutá sql/ordenes_insertar_con_proximo_numero.sql en Supabase.', 'info');
-L19304:       showToast('Iniciá sesión para usar la cola local.', 'error');
-L19308:       showToast('No tenés permiso para crear órdenes.', 'error');
-L19313:       showToast(val.error, 'error');
-L19318:       showToast('No hay catálogo en caché. Conectate al menos una vez para actualizar el respaldo local.', 'error');
-L19323:       showToast('Falta el tipo de operación en caché. Conectate para refrescar el catálogo.', 'error');
-L19333:           showToast('Faltan modos de pago «efectivo» o «cheque» en caché. Conectate para refrescar el catálogo.', 'error');
-L19341:           showToast('Falta el modo de pago «efectivo» en caché. Conectate para refrescar el catálogo.', 'error');
-L19345:           showToast('Falta el modo de pago «transferencia» en caché. Conectate para refrescar el catálogo.', 'error');
-L19356:         showToast('Falta el modo de pago «efectivo» en caché. Conectate para refrescar el catálogo.', 'error');
-L19362:       showToast('Este tipo no tiene plantilla automática en cola offline. Usá «Orden en cola local» simple o conectate.', 'info');
-L19389:     showToast(
-L19427:     showToast('Elegí un cliente. Toda orden debe tener cliente asignado.', 'error');
-L19431:     showToast('Elegí un tipo de operación.', 'error');
-L19435:     showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
-L19439:     showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
-L19445:     showToast('Elegí la instrumentación sugerida (con intermediario) antes de guardar o ir a instrumentación.', 'error');
-L19449:     showToast('Completá fecha, monto recibido y monto entregado (números positivos).', 'error');
-L19459:     showToast('En operaciones con cruce con tipo de cambio (USD o EUR contra otra moneda) el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
-L19463:     showToast('En USD-USD el monto a recibir debe ser mayor al monto a entregar (la diferencia es la comisión).', 'error');
-L19468:       showToast('En operación con cheque (CHEQUE–ARS) el monto a recibir debe ser mayor al monto a entregar (descuento acuerdo).', 'error');
-L19474:       showToast('En operación con cheque (CHEQUE–ARS) la tasa de descuento del intermediario es obligatoria (ej. 1 para 1%, entre 0 y 100).', 'error');
-L19489:       showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe / monto recibido del acuerdo).', 'error');
-L19495:     showToast(errTrT, 'error');
-L19506:       showToast('La comisión fija del intermediario no puede superar el beneficio del acuerdo.', 'error');
-L19647:           showToast('La parte de Pandy del acuerdo no puede quedar negativa (revisá comisión fija, tasa del intermediario o tasa por transferencia).', 'error');
-L19836:                   showToast('No se pudo guardar la opción multicontraparte.', 'error');
-L19839:                 showToast('Multicontraparte manual desactivada.', 'info', 4500);
-L19847:               showToast('Para activar multicontraparte manual hace falta permiso para eliminar transacciones: se quitan las filas que sigan siendo la plantilla automática del sistema (sin tocar lo que ya modificaste).…
-L19850:             showConfirm(
-L19859:                     showToast('No se pudo guardar la opción multicontraparte.', 'error');
-L19868:                           showToast(
-L19886:                       showToast('No se pudo completar la activación: ' + (err && (err.message || err.code) ? String(err.message || err.code) : 'error'), 'error');
-L20111:       showToast('No tenés permiso para editar órdenes.', 'error');
-L20116:       showToast('No tenés permiso para crear órdenes.', 'error');
-L20122:       showToast('No tenés permiso para anular órdenes.', 'error');
-L20131:     showToast(
-L20154:     showToast('Elegí un cliente. Toda orden debe tener cliente asignado.', 'error');
-L20158:     showToast('Elegí un tipo de operación.', 'error');
-L20162:     showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
-L20166:     showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
-L20171:     showToast('Elegí la instrumentación sugerida (con intermediario) antes de guardar.', 'error');
-L20175:     showToast('Completá fecha, monto recibido y monto entregado (números positivos).', 'error');
-L20185:     showToast('En operaciones con cruce contra USD el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
-L20189:     showToast('En USD-USD el monto a recibir debe ser mayor al monto a entregar (la diferencia es la comisión).', 'error');
-L20194:       showToast('En operación con cheque (CHEQUE–ARS) el monto a recibir debe ser mayor al monto a entregar (descuento acuerdo).', 'error');
-L20200:       showToast('En operación con cheque (CHEQUE–ARS) la tasa de descuento del intermediario es obligatoria (ej. 1 para 1%, entre 0 y 100).', 'error');
-L20215:       showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe / monto recibido del acuerdo).', 'error');
-L20221:     showToast(errTrTSave, 'error');
-L20229:       showToast('La comisión fija del intermediario no puede superar el beneficio del acuerdo.', 'error');
-L20316:       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-L20394:             showToast('La parte de Pandy del acuerdo no puede quedar negativa (revisá comisión fija, tasa del intermediario o tasa por transferencia).', 'error');
-L20471:     showConfirm('Los datos se perderán. ¿Continuar?', 'Sí, salir', () => {
-L20735:     if (rT.error) showToast('Error al cargar tipos de operación: ' + (rT.error.message || ''), 'error');
-L20819:         showToast('No tenés permiso para crear órdenes.', 'error');
-L20823:         showToast('Indicá un cliente en el mensaje (ej. "para Adriana").', 'error');
-L20827:         showToast('No se pudo identificar el tipo de operación. Indicá en el mensaje (ej. "recibo USD y entrego ARS" o "ARS-USD").', 'error');
-L20832:         showToast('Para este cruce con USD el tipo de cambio es obligatorio.', 'error');
-L20855:           showToast('Error al crear la orden: ' + (res.error.message || ''), 'error');
-L20860:           showToast('Error: no se obtuvo el id de la orden.', 'error');
-L20882:             showToast('Orden creada pero falló la instrumentación: ' + (rInst.error.message || ''), 'error');
-L20888:             showToast('Orden e instrumentación creadas.', 'success');
-L20893:             showToast('Orden e instrumentación creadas (con transacciones).', 'success');
-L20896:             showToast('Orden e instrumentación creadas; no se pudieron generar las transacciones automáticas.', 'info');
-L21124:       showToast(
-L21143:     showConfirm(cuerpo, 'Sí, salir', () => finalizar());
-L21145:     showToast('No se pudo verificar la instrumentación. Intentá de nuevo.', 'error');
-L22024:             showToast(
-L22042:               showToast(invNet.msg, 'error', 16000);
-L22061:                   showToast('Error al guardar movimientos de CC (orden ' + (orden.numero || ordenId) + '): ' + (e && (e.message || e.details) || String(e)), 'error', 8000);
-L22080:       showToast('Error al sincronizar CC para una orden: ' + (err && (err.message || err.details) || String(err)), 'error', 6000);
-L23884:     showToast(
-L24303:     showToast(
-L24319:       showToast('Actualizando estado…', 'info');
-L24342:       showToast('Esta transacción está anulada junto con la orden.', 'info');
-L24365:             showToast('No se puede marcar ejecutada la entrega del cheque al intermediario si el ingreso del cheque (Cliente→Pandy) sigue pendiente.', 'error');
-L24374:         showToast(vSaldoCajaEj.mensaje || 'Saldo de caja insuficiente.', 'error');
-L24397:           showConfirm(
-L24465:             showToast('Error al actualizar estado: ' + (rUp.error.message || ''), 'error');
-L24990:       showToast('Estado de la transacción actualizado.', 'success');
-L24994:     if (err && err.message) showToast('Error: ' + err.message, 'error');
-L25004:     showToast('Esta transacción está anulada; no se puede guardar cambios.', 'info');
-L25008:     showToast(
-L25019:     showToast('Falta instrumentación.', 'error');
-L25026:     showToast('Elegí un modo de pago.', 'error');
-L25035:     showToast('El estado Anulada no se asigna desde este formulario (solo al anular la orden).', 'info');
-L25044:     showToast(esOrdenCheque || moneda !== 'ARS' ? 'Monto debe ser un número positivo.' : 'Completá el monto en la moneda indicada; el tipo de cambio se toma del acuerdo.', 'error');
-L25086:       showToast('No se encontró la orden de esta instrumentación.', 'error');
-L25092:         showToast('No se encontró la orden.', 'error');
-L25106:             showToast('Elegí el intermediario pagador.', 'error');
-L25113:             showToast('Elegí el intermediario cobrador.', 'error');
-L25118:           showToast('Elegí el cliente pagador.', 'error');
-L25125:             showToast('En Cliente → Cliente elegí el cliente cobrador (puede ser el del acuerdo si recibe la entrega, u otro cliente).', 'error');
-L25129:             showToast('El cobrador no puede ser el mismo cliente que el pagador.', 'error');
-L25138:         showToast('El pagador y el cobrador no pueden ser la misma entidad.', 'error');
-L25145:           showToast(validacion.mensaje, 'error');
-L25168:               showConfirm(
-L25270:       if (r.error) showToast('Error al crear la transacción compensatoria: ' + (r.error.message || ''), 'error');
-L25271:       else showToast('Transacción compensatoria creada por ' + formatImporteDisplay(montoCompensatorio) + ' ' + moneda + '.', 'success');
-L25277:       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-L25359:               showToast(
-L25718:                       showToast('Error al crear movimiento de caja: ' + (rCaja.error.message || ''), 'error');
-L25770:                         showToast(v.mensaje, 'error');
-L25806:     if (res.estado === 'orden_ejecutada') showToast('La orden ha quedado ejecutada.', 'success');
-L25807:     else showToast('La instrumentación ha quedado cerrada. Orden en ejecución. Quedan transacciones por ejecutar.', 'info');
-L26095:     showToast('No tenés permiso para dar de baja transacciones.', 'error');
-L26107:       showToast('No se puede dar de baja esta transacción: forma parte del momento cero de la orden. Para deshacer los movimientos de la orden, usá "Anular orden".', 'error');
-L26110:     showConfirm('¿Dar de baja esta transacción? Se eliminarán también los movimientos de caja y cuenta corriente asociados.', 'Dar de baja', () => {
-L26120:             showToast('Error al eliminar: ' + (rDel.error?.message || ''), 'error');
-L26123:           showToast('Transacción dada de baja.', 'success');
-L26265:         if (silentCli) showToast('Error al actualizar clientes: ' + (res.error.message || ''), 'error');
-L26306:             if (res.error) showToast('Error: ' + (res.error.message || 'No se pudo actualizar.'), 'error');
-L26307:             else showToast('Actualizado.');
-L26363:           showToast('No se pudieron cargar intermediarios para el vínculo: ' + (rInt.error.message || ''), 'error');
-L26382:         showToast('Error al cargar vínculos.', 'error');
-L26401:     showToast('El nombre es obligatorio.', 'error');
-L26419:       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-L26424:       showToast('Error: no se obtuvo el id del cliente.', 'error');
-L26433:       showToast('Cliente guardado. Vínculo: ' + msg, 'error');
-L26493:         if (silentInt) showToast('Error al actualizar intermediarios: ' + (res.error.message || ''), 'error');
-L26534:             if (res.error) showToast('Error: ' + (res.error.message || 'No se pudo actualizar.'), 'error');
-L26535:             else showToast('Actualizado.');
-L26591:           showToast('No se pudieron cargar clientes para el vínculo: ' + (rCli.error.message || ''), 'error');
-L26610:         showToast('Error al cargar vínculos.', 'error');
-L26629:     showToast('El nombre es obligatorio.', 'error');
-L26648:       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-L26653:       showToast('Error: no se obtuvo el id del intermediario.', 'error');
-L26662:       showToast('Intermediario guardado. Vínculo: ' + msg, 'error');
-L26686:     showToast('Elegí un archivo de imagen.', 'error');
-L26693:     showToast('No se pudo subir: ' + (error.message || 'revisá bucket y permisos en Supabase.'), 'error');
-L26703:     showToast('Elegí un archivo de imagen.', 'error');
-L26710:     showToast('No se pudo subir: ' + (error.message || 'revisá bucket tipo-operacion-iconos y permisos en Supabase.'), 'error');
-L26748:         showToast('Logo subido; URL cargada. Recordá guardar la configuración.', 'success');
-L26848:       showToast('Falta la columna orden_visual en tipos_operacion. Ejecutá en Supabase: sql/migracion_tipos_operacion_orden_visual.sql. Hasta entonces se usa orden por código.', 'info');
-L26872:         showToast('No se puede reordenar: falta la columna orden_visual. Ejecutá sql/migracion_tipos_operacion_orden_visual.sql en Supabase.', 'error');
-L26874:         showToast('Error: ' + ((e1 && e1.message) || (e2 && e2.message) || 'No se pudo reordenar.'), 'error');
-L26878:     showToast('Orden actualizado.', 'success');
-L26915:       showToast('Error: ' + msg, 'error');
-L26974:             if (resU.error) showToast('Error: ' + (resU.error.message || 'No se pudo actualizar.'), 'error');
-L26975:             else showToast('Actualizado.');
-L26984:             showToast('Error: ' + (rDup.error.message || 'No se pudo validar.'), 'error');
-L26990:             showToast('Ya existe un tipo con el mismo código y la misma opción Intermediario.', 'error');
-L27063:     showToast('Código y nombre son obligatorios.', 'error');
-L27070:     showToast('Moneda IN y OUT deben ser USD, EUR, ARS o Cheque.', 'error');
-L27074:     showToast('Cheque solo puede combinarse con ARS (el otro lado debe ser ARS).', 'error');
-L27082:     showToast('En modo personalizado indicá una URL https válida o subí una imagen al Storage.', 'error');
-L27099:       showToast('Error: ' + (rDup.error.message || 'No se pudo validar.'), 'error');
-L27103:       showToast('Ya existe un tipo con el mismo código y la misma opción Intermediario. Usá otro código o cambiá el toggle Intermediario.', 'error');
-L27112:           showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
-L27117:         showToast(id ? 'Tipo de operación actualizado.' : 'Tipo de operación creado.', 'success');
-L27130:         showToast('Error: ' + (rMax.error.message || 'No se pudo obtener el orden. Ejecutá en Supabase sql/migracion_tipos_operacion_orden_visual.sql'), 'error');
-L27182:         showToast('Imagen subida; URL cargada en el campo.', 'success');
-L27445:     showToast('Ya existe otra fila con la misma clave (tipo, int., entidad, pagador/cobrador, comisión, estado, contrapartida, línea).', 'error');
-L27453:       showToast('Error al guardar: ' + (res.error.message || '') + (res.error.code === '23505' ? ' (clave duplicada)' : ''), 'error');
-L27457:     showToast(id ? 'Regla actualizada.' : 'Regla creada.', 'success');
-L27466:     showToast('Concepto leyenda obligatorio.', 'error');
-L27472:     showToast(v.errores[0], 'error');
-L27477:     showConfirm(
-L27490:   showConfirm(
-L27495:         if (res.error) showToast('Error: ' + (res.error.message || ''), 'error');
-L27497:           showToast('Fila eliminada.', 'success');
-L27622:     showToast('Elegí un origen.', 'error');
-L27626:     showToast('Indicá el código destino (ej. EUR-USD).', 'error');
-L27630:     showToast('Origen y destino no pueden ser idénticos.', 'error');
-L27637:     showToast('No hay filas en caché para el origen elegido.', 'error');
-L27644:     showToast('El destino ya tiene reglas. Eliminá o editá manualmente antes de replicar (evitamos sobrescribir sin control).', 'error');
-L27651:     showConfirm(
-L27659:   showConfirm(
-L27690:       showToast('Replicación completada (' + batch.length + ' filas).', 'success');
-L27697:         showToast('Error al replicar: ' + (res.error.message || ''), 'error');
-L27739:       showToast('Error: ' + msg, 'error');
-L27755:         showToast('Error: ' + msg, 'error');
-L28353:       showToast('Error al cargar auditoría: ' + (r.error.message || ''), 'error');
-L28380:     showToast('No hay filas cargadas. Buscá primero o cargá más resultados.', 'info');
-L28404:       showToast('Exportado: ' + nombreArchivo, 'success');
-L28408:       showToast('Error al preparar exportación.', 'error');
-L28575:         showToast('Sesión cerrada por inactividad.', 'info');
-L28604:           showToast('No se pudo guardar el nombre. ¿Ejecutaste la migración SQL en Supabase?', 'error');
-L28608:         showToast('Nombre guardado. Se verá en listados y exportaciones.', 'success');
-L28866:         showConfirm(
-L28905:           showToast(
+L6084:       showToast('No se pudieron cargar tipos de movimiento para exportar.', 'error');
+L6093:       showToast('No hay movimientos para exportar con el filtro actual.', 'info');
+L6143:         showToast('Exportado: ' + nombreArchivo, 'success');
+L6146:         showToast('Error al preparar exportación.', 'error');
+L6158:     showToast('No hay órdenes para exportar con el filtro actual.', 'info');
+L6254:     showToast('Exportado: ' + nombreArchivo, 'success');
+L6257:     showToast('Error al preparar exportación.', 'error');
+L6265:     showToast('No hay órdenes pendientes para exportar con el filtro actual.', 'info');
+L6358:       showToast('Exportado: ' + nombreArchivo, 'success');
+L6361:       showToast('Error al preparar exportación.', 'error');
+L6517:           showConfirm(
+L6528:                   showToast('Quitado de la cola local.', 'success');
+L6530:                   showToast('No se pudo quitar de la cola.', 'error');
+L7181:       showToast('Abrí primero el desglose completo desde G/P Operativa.', 'info');
+L7231:         showToast('G/P detalle: ' + errText(err), 'error');
+L7273:       showToast('G/P detalle: ' + errText(err), 'error');
+L7592:           showToast(
+L7628:         showToast('G/P Operativa: error de red o servidor.', 'error');
+L11145:       showToast('No se pudo cargar cuenta corriente: ' + msg, 'error');
+L11919:       showToast('No hay movimientos para exportar.', 'info');
+L11953:         showToast('Exportado: ' + nombreArchivo, 'success');
+L11956:         showToast('Error al preparar exportación.', 'error');
+L11964:     showToast('No hay filas para exportar.', 'info');
+L11995:     showToast('Exportado: ' + nombreArchivo, 'success');
+L11998:     showToast('Error al preparar exportación.', 'error');
+L12376:     showToast('Detalle CC: ' + msg, 'error', 6000);
+L12649:     showToast('Los movimientos manuales se editan desde la solapa Movimientos (botón lápiz en la fila).', 'info');
+L12673:     showToast('Los movimientos manuales se editan desde la solapa Movimientos.', 'info');
+L12680:     showToast('Falta fecha.', 'error');
+L12689:         showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+L13097:     showToast('No tenés permiso para registrar movimientos manuales de cuenta corriente.', 'error');
+L13133:         showToast('Error al cargar clientes/intermediarios.', 'error');
+L13143:         showToast('Sin catálogo local de clientes/intermediarios. Conectate una vez o abrí Órdenes con red para actualizar la caché.', 'info');
+L13339:             showToast('Caja registrada; no se pudo enlazar el id en CC: ' + (bad.error.message || 'ejecutá la migración movimiento_caja_id.'), 'error');
+L13463:   showToast('Enviando movimientos CC guardados sin red…', 'info');
+L13492:           showToast('Hay movimientos CC en cola con caja; hace falta permiso alta_movimiento_caja para insertar el movimiento de caja.', 'error');
+L13527:       showToast('No se pudieron enviar todos los movimientos CC offline: ' + msg, 'error');
+L13535:     showToast('Movimientos CC offline enviados al servidor.', 'success');
+L13690:   showToast('Movimiento guardado en cola local; se enviará al reconectar.', 'success');
+L13712:   showToast('Enviando movimientos de caja guardados sin red…', 'info');
+L13755:       showToast('No se pudieron enviar todos los movimientos de caja offline: ' + msg, 'error');
+L13762:     showToast('Movimientos de caja offline enviados al servidor.', 'success');
+L13768:     showToast('Sesión no válida.', 'error');
+L13772:     showToast('Sin permiso para registrar este movimiento.', 'error');
+L13785:     showToast(legsRes.error, 'error');
+L13793:     showToast('Indicá la fecha.', 'error');
+L13798:     showToast('El importe debe ser un número mayor que cero.', 'error');
+L13822:       showToast('Para registrar efectivo en caja necesitás permiso alta_movimiento_caja.', 'error');
+L13868:         showToast(
+L13876:         showToast('No se pudo guardar en la cola local: ' + (err && err.message ? String(err.message) : 'error'), 'error');
+L13887:         showToast('Movimientos registrados en CC y en caja (efectivo).', 'success');
+L13889:         showToast(
+L13914:           showToast('Error en cuenta corriente: ' + (err && err.message ? err.message : 'error'), 'error');
+L13924:           showToast('No existe el tipo de caja «' + nom + '». Ejecutá sql/migracion_tipos_caja_cc_manual.sql en Supabase o creá ese tipo en Cajas → Tipos de movimiento.', 'error');
+L13944:             showToast(
+L13957:           showToast(v.mensaje, 'error');
+L13976:       showToast('Error al resolver nombres para el signo en cuenta corriente.', 'error');
+L14125:     showToast('Sincronizando CC y caja desde órdenes…', 'info');
+L14129:         showToast('Cuenta corriente actualizada.', 'success');
+L14134:             showToast('Si tenés órdenes con transacciones ejecutadas y no ves movimientos: verificá que existan filas en reglas_de_negocio para el tipo de operación (y usa_intermediario) de cada orden, o revisá permis…
+L14139:         showToast(e && (e.message || String(e)) || 'Error al sincronizar', 'error');
+L14292:                 showToast('Error: ' + (r.error.message || 'No se pudo guardar.'), 'error');
+L14296:               showToast(val ? 'Tipo activo.' : 'Tipo inactivo.', 'success');
+L14316:                 showToast('Error: ' + (r.error.message || 'No se pudo guardar.'), 'error');
+L14320:               showToast(val ? 'G/P activado para este tipo.' : 'G/P desactivado para este tipo.', 'success');
+L14374:     showToast('El nombre es obligatorio.', 'error');
+L14387:       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+L14534:         showToast('No tenés permiso para dar de alta movimientos de caja.', 'info');
+L14539:         showToast('No tenés permiso para editar movimientos de caja.', 'info');
+L14543:         showToast(MSG_CAJA_VINCULADA_ORDEN_O_TRANSACCION, 'info');
+L14549:         showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'info');
+L14555:           showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'info');
+L14566:         showToast('Sin catálogo de tipos de caja. Entrá a Cajas con red al menos una vez para cargar la tabla.', 'info');
+L14636:     showToast(MSG_CAJA_VINCULADA_ORDEN_O_TRANSACCION, 'info');
+L14642:       showToast('No tenés permiso para editar movimientos de caja.', 'error');
+L14648:       showToast('No tenés permiso para registrar movimientos nuevos de caja.', 'error');
+L14657:     showToast('Completá tipo y monto (número positivo).', 'error');
+L14702:                 showToast('Error: ' + (r0.error.message || 'No se pudo verificar el movimiento.'), 'error');
+L14707:                 showToast(MSG_CAJA_VINCULADA_ORDEN_O_TRANSACCION, 'error');
+L14716:                     showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+L14748:             showToast(MSG_CAJA_VINCULADA_CC_MANUAL, 'error');
+L14755:           showToast(
+L14766:               showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+L14779:             showToast(v.mensaje, 'error');
+L14788:             showToast(v.mensaje, 'error');
+L14802:     showConfirm(
+L15026:     showToast('Monto inválido.', 'error');
+L15031:     showToast(
+L15045:           showToast('Error al actualizar monto: ' + (r.error?.message || ''), 'error');
+L15075:                 showToast(
+L15088:     if (!instrumentacionId) { showToast('Falta instrumentación.', 'error'); return Promise.resolve(); }
+L15091:       if (!ordenId) { showToast('No se encontró la orden.', 'error'); return Promise.resolve(); }
+L15113:                 showToast(vSaldo.mensaje || 'Saldo de caja insuficiente.', 'error');
+L15122:                     showToast('Error al actualizar monto: ' + (rUp.error?.message || ''), 'error');
+L15132:                   showToast('Error al reajustar CC/caja: ' + (err?.message || String(err)), 'error');
+L15280:           return prom.then(() => { if (onSuccess) onSuccess(); }).catch((err) => { showToast('Error al reajustar CC/caja: ' + (err?.message || ''), 'error'); });
+L15292:     showToast(
+L15317:           showToast('En operación CHEQUE no se puede cambiar el modo de pago de las transacciones generadas con Cheque.', 'error');
+L15324:             showToast('Error al actualizar modo de pago: ' + (r.error?.message || ''), 'error');
+L15361:                     showToast(
+L15386:                 if (rIns.error) showToast('Error al actualizar caja: ' + (rIns.error?.message || ''), 'error');
+L15513: function showToast(mensaje, type = 'success', duracionMs = 4500) {
+L15547: function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar, tituloModal, opciones) {
+L15909:     showToast(
+L15916:     showToast(
+L16651:     showToast('Monto guardado en el dispositivo; se enviará al reconectar.', 'info');
+L16654:     showToast('No se pudo guardar el cambio local.', 'error');
+L16661:     showToast('Modo de pago guardado en el dispositivo; se enviará al reconectar.', 'info');
+L16666:     showToast('No se pudo guardar el cambio local.', 'error');
+L16676:     showToast('Estado guardado en el dispositivo; se enviará al reconectar.', 'info');
+L16684:     showToast('No se pudo guardar el cambio local.', 'error');
+L16739:     showToast('Sin conexión: podés editar; los cambios se envían al reconectar.', 'info');
+L16741:     showToast('Instrumentación desde caché de este dispositivo (solo lectura).', 'info');
+L16804:   showToast('Enviando cambios de instrumentación guardados sin red…', 'info');
+L16843:       showToast('No se pudieron enviar todos los cambios offline: ' + msg, 'error');
+L16850:     showToast('Cambios de instrumentación offline enviados al servidor.', 'success');
+L17339:               showToast('Error al actualizar órdenes: ' + (msg || ''), 'error');
+L17445:         showToast('Error al actualizar órdenes: ' + (msg || ''), 'error');
+L17593:     showToast('Completá la tasa del intermediario (%). Esta orden usará comisión variable en lugar de la fija.', 'info');
+L17659:   showToast('Elegí la comisión fija del intermediario (USD ' + formatImporteDisplay(a) + ' o USD ' + formatImporteDisplay(b) + ').', 'error');
+L17765:     showToast('La orden está anulada; no se puede editar.', 'info');
+L17876:           showToast(
+L17881:           showToast(
+L17964:         showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
+L17968:         showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
+L18040:             showToast(
+L18224:         showToast(
+L18232:     if (!registro) showToast('Error al crear la orden: ' + (err && err.message ? err.message : ''), 'error');
+L18976:         showToast('Orden creada. Para asignación atómica de número, ejecutá sql/ordenes_insertar_con_proximo_numero.sql en Supabase.', 'info');
+L19344:       showToast('Iniciá sesión para usar la cola local.', 'error');
+L19348:       showToast('No tenés permiso para crear órdenes.', 'error');
+L19353:       showToast(val.error, 'error');
+L19358:       showToast('No hay catálogo en caché. Conectate al menos una vez para actualizar el respaldo local.', 'error');
+L19363:       showToast('Falta el tipo de operación en caché. Conectate para refrescar el catálogo.', 'error');
+L19373:           showToast('Faltan modos de pago «efectivo» o «cheque» en caché. Conectate para refrescar el catálogo.', 'error');
+L19381:           showToast('Falta el modo de pago «efectivo» en caché. Conectate para refrescar el catálogo.', 'error');
+L19385:           showToast('Falta el modo de pago «transferencia» en caché. Conectate para refrescar el catálogo.', 'error');
+L19396:         showToast('Falta el modo de pago «efectivo» en caché. Conectate para refrescar el catálogo.', 'error');
+L19402:       showToast('Este tipo no tiene plantilla automática en cola offline. Usá «Orden en cola local» simple o conectate.', 'info');
+L19429:     showToast(
+L19467:     showToast('Elegí un cliente. Toda orden debe tener cliente asignado.', 'error');
+L19471:     showToast('Elegí un tipo de operación.', 'error');
+L19475:     showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
+L19479:     showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
+L19485:     showToast('Elegí la instrumentación sugerida (con intermediario) antes de guardar o ir a instrumentación.', 'error');
+L19489:     showToast('Completá fecha, monto recibido y monto entregado (números positivos).', 'error');
+L19499:     showToast('En operaciones con cruce con tipo de cambio (USD o EUR contra otra moneda) el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
+L19503:     showToast('En USD-USD el monto a recibir debe ser mayor al monto a entregar (la diferencia es la comisión).', 'error');
+L19508:       showToast('En operación con cheque (CHEQUE–ARS) el monto a recibir debe ser mayor al monto a entregar (descuento acuerdo).', 'error');
+L19514:       showToast('En operación con cheque (CHEQUE–ARS) la tasa de descuento del intermediario es obligatoria (ej. 1 para 1%, entre 0 y 100).', 'error');
+L19529:       showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe / monto recibido del acuerdo).', 'error');
+L19535:     showToast(errTrT, 'error');
+L19546:       showToast('La comisión fija del intermediario no puede superar el beneficio del acuerdo.', 'error');
+L19687:           showToast('La parte de Pandy del acuerdo no puede quedar negativa (revisá comisión fija, tasa del intermediario o tasa por transferencia).', 'error');
+L19876:                   showToast('No se pudo guardar la opción multicontraparte.', 'error');
+L19879:                 showToast('Multicontraparte manual desactivada.', 'info', 4500);
+L19887:               showToast('Para activar multicontraparte manual hace falta permiso para eliminar transacciones: se quitan las filas que sigan siendo la plantilla automática del sistema (sin tocar lo que ya modificaste).…
+L19890:             showConfirm(
+L19899:                     showToast('No se pudo guardar la opción multicontraparte.', 'error');
+L19908:                           showToast(
+L19926:                       showToast('No se pudo completar la activación: ' + (err && (err.message || err.code) ? String(err.message || err.code) : 'error'), 'error');
+L20151:       showToast('No tenés permiso para editar órdenes.', 'error');
+L20156:       showToast('No tenés permiso para crear órdenes.', 'error');
+L20162:       showToast('No tenés permiso para anular órdenes.', 'error');
+L20171:     showToast(
+L20194:     showToast('Elegí un cliente. Toda orden debe tener cliente asignado.', 'error');
+L20198:     showToast('Elegí un tipo de operación.', 'error');
+L20202:     showToast('Para este tipo de operación es obligatorio elegir un intermediario.', 'error');
+L20206:     showToast(PANDI_MSG_ORDEN_PAR_VINCULADO_CON_INTERMEDIARIO, 'error');
+L20211:     showToast('Elegí la instrumentación sugerida (con intermediario) antes de guardar.', 'error');
+L20215:     showToast('Completá fecha, monto recibido y monto entregado (números positivos).', 'error');
+L20225:     showToast('En operaciones con cruce contra USD el tipo de cambio del acuerdo es obligatorio y debe ser mayor a cero.', 'error');
+L20229:     showToast('En USD-USD el monto a recibir debe ser mayor al monto a entregar (la diferencia es la comisión).', 'error');
+L20234:       showToast('En operación con cheque (CHEQUE–ARS) el monto a recibir debe ser mayor al monto a entregar (descuento acuerdo).', 'error');
+L20240:       showToast('En operación con cheque (CHEQUE–ARS) la tasa de descuento del intermediario es obligatoria (ej. 1 para 1%, entre 0 y 100).', 'error');
+L20255:       showToast('En USD-USD con intermediario completá la tasa del intermediario (%, sobre el importe / monto recibido del acuerdo).', 'error');
+L20261:     showToast(errTrTSave, 'error');
+L20269:       showToast('La comisión fija del intermediario no puede superar el beneficio del acuerdo.', 'error');
+L20356:       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+L20434:             showToast('La parte de Pandy del acuerdo no puede quedar negativa (revisá comisión fija, tasa del intermediario o tasa por transferencia).', 'error');
+L20511:     showConfirm('Los datos se perderán. ¿Continuar?', 'Sí, salir', () => {
+L20775:     if (rT.error) showToast('Error al cargar tipos de operación: ' + (rT.error.message || ''), 'error');
+L20859:         showToast('No tenés permiso para crear órdenes.', 'error');
+L20863:         showToast('Indicá un cliente en el mensaje (ej. "para Adriana").', 'error');
+L20867:         showToast('No se pudo identificar el tipo de operación. Indicá en el mensaje (ej. "recibo USD y entrego ARS" o "ARS-USD").', 'error');
+L20872:         showToast('Para este cruce con USD el tipo de cambio es obligatorio.', 'error');
+L20895:           showToast('Error al crear la orden: ' + (res.error.message || ''), 'error');
+L20900:           showToast('Error: no se obtuvo el id de la orden.', 'error');
+L20922:             showToast('Orden creada pero falló la instrumentación: ' + (rInst.error.message || ''), 'error');
+L20928:             showToast('Orden e instrumentación creadas.', 'success');
+L20933:             showToast('Orden e instrumentación creadas (con transacciones).', 'success');
+L20936:             showToast('Orden e instrumentación creadas; no se pudieron generar las transacciones automáticas.', 'info');
+L21164:       showToast(
+L21183:     showConfirm(cuerpo, 'Sí, salir', () => finalizar());
+L21185:     showToast('No se pudo verificar la instrumentación. Intentá de nuevo.', 'error');
+L22064:             showToast(
+L22082:               showToast(invNet.msg, 'error', 16000);
+L22101:                   showToast('Error al guardar movimientos de CC (orden ' + (orden.numero || ordenId) + '): ' + (e && (e.message || e.details) || String(e)), 'error', 8000);
+L22120:       showToast('Error al sincronizar CC para una orden: ' + (err && (err.message || err.details) || String(err)), 'error', 6000);
+L23924:     showToast(
+L24343:     showToast(
+L24359:       showToast('Actualizando estado…', 'info');
+L24382:       showToast('Esta transacción está anulada junto con la orden.', 'info');
+L24405:             showToast('No se puede marcar ejecutada la entrega del cheque al intermediario si el ingreso del cheque (Cliente→Pandy) sigue pendiente.', 'error');
+L24414:         showToast(vSaldoCajaEj.mensaje || 'Saldo de caja insuficiente.', 'error');
+L24437:           showConfirm(
+L24505:             showToast('Error al actualizar estado: ' + (rUp.error.message || ''), 'error');
+L25030:       showToast('Estado de la transacción actualizado.', 'success');
+L25034:     if (err && err.message) showToast('Error: ' + err.message, 'error');
+L25044:     showToast('Esta transacción está anulada; no se puede guardar cambios.', 'info');
+L25048:     showToast(
+L25059:     showToast('Falta instrumentación.', 'error');
+L25066:     showToast('Elegí un modo de pago.', 'error');
+L25075:     showToast('El estado Anulada no se asigna desde este formulario (solo al anular la orden).', 'info');
+L25084:     showToast(esOrdenCheque || moneda !== 'ARS' ? 'Monto debe ser un número positivo.' : 'Completá el monto en la moneda indicada; el tipo de cambio se toma del acuerdo.', 'error');
+L25126:       showToast('No se encontró la orden de esta instrumentación.', 'error');
+L25132:         showToast('No se encontró la orden.', 'error');
+L25146:             showToast('Elegí el intermediario pagador.', 'error');
+L25153:             showToast('Elegí el intermediario cobrador.', 'error');
+L25158:           showToast('Elegí el cliente pagador.', 'error');
+L25165:             showToast('En Cliente → Cliente elegí el cliente cobrador (puede ser el del acuerdo si recibe la entrega, u otro cliente).', 'error');
+L25169:             showToast('El cobrador no puede ser el mismo cliente que el pagador.', 'error');
+L25178:         showToast('El pagador y el cobrador no pueden ser la misma entidad.', 'error');
+L25185:           showToast(validacion.mensaje, 'error');
+L25208:               showConfirm(
+L25310:       if (r.error) showToast('Error al crear la transacción compensatoria: ' + (r.error.message || ''), 'error');
+L25311:       else showToast('Transacción compensatoria creada por ' + formatImporteDisplay(montoCompensatorio) + ' ' + moneda + '.', 'success');
+L25317:       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+L25399:               showToast(
+L25758:                       showToast('Error al crear movimiento de caja: ' + (rCaja.error.message || ''), 'error');
+L25810:                         showToast(v.mensaje, 'error');
+L25846:     if (res.estado === 'orden_ejecutada') showToast('La orden ha quedado ejecutada.', 'success');
+L25847:     else showToast('La instrumentación ha quedado cerrada. Orden en ejecución. Quedan transacciones por ejecutar.', 'info');
+L26135:     showToast('No tenés permiso para dar de baja transacciones.', 'error');
+L26147:       showToast('No se puede dar de baja esta transacción: forma parte del momento cero de la orden. Para deshacer los movimientos de la orden, usá "Anular orden".', 'error');
+L26150:     showConfirm('¿Dar de baja esta transacción? Se eliminarán también los movimientos de caja y cuenta corriente asociados.', 'Dar de baja', () => {
+L26160:             showToast('Error al eliminar: ' + (rDel.error?.message || ''), 'error');
+L26163:           showToast('Transacción dada de baja.', 'success');
+L26305:         if (silentCli) showToast('Error al actualizar clientes: ' + (res.error.message || ''), 'error');
+L26346:             if (res.error) showToast('Error: ' + (res.error.message || 'No se pudo actualizar.'), 'error');
+L26347:             else showToast('Actualizado.');
+L26403:           showToast('No se pudieron cargar intermediarios para el vínculo: ' + (rInt.error.message || ''), 'error');
+L26422:         showToast('Error al cargar vínculos.', 'error');
+L26441:     showToast('El nombre es obligatorio.', 'error');
+L26459:       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+L26464:       showToast('Error: no se obtuvo el id del cliente.', 'error');
+L26473:       showToast('Cliente guardado. Vínculo: ' + msg, 'error');
+L26533:         if (silentInt) showToast('Error al actualizar intermediarios: ' + (res.error.message || ''), 'error');
+L26574:             if (res.error) showToast('Error: ' + (res.error.message || 'No se pudo actualizar.'), 'error');
+L26575:             else showToast('Actualizado.');
+L26631:           showToast('No se pudieron cargar clientes para el vínculo: ' + (rCli.error.message || ''), 'error');
+L26650:         showToast('Error al cargar vínculos.', 'error');
+L26669:     showToast('El nombre es obligatorio.', 'error');
+L26688:       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+L26693:       showToast('Error: no se obtuvo el id del intermediario.', 'error');
+L26702:       showToast('Intermediario guardado. Vínculo: ' + msg, 'error');
+L26726:     showToast('Elegí un archivo de imagen.', 'error');
+L26733:     showToast('No se pudo subir: ' + (error.message || 'revisá bucket y permisos en Supabase.'), 'error');
+L26743:     showToast('Elegí un archivo de imagen.', 'error');
+L26750:     showToast('No se pudo subir: ' + (error.message || 'revisá bucket tipo-operacion-iconos y permisos en Supabase.'), 'error');
+L26788:         showToast('Logo subido; URL cargada. Recordá guardar la configuración.', 'success');
+L26888:       showToast('Falta la columna orden_visual en tipos_operacion. Ejecutá en Supabase: sql/migracion_tipos_operacion_orden_visual.sql. Hasta entonces se usa orden por código.', 'info');
+L26912:         showToast('No se puede reordenar: falta la columna orden_visual. Ejecutá sql/migracion_tipos_operacion_orden_visual.sql en Supabase.', 'error');
+L26914:         showToast('Error: ' + ((e1 && e1.message) || (e2 && e2.message) || 'No se pudo reordenar.'), 'error');
+L26918:     showToast('Orden actualizado.', 'success');
+L26955:       showToast('Error: ' + msg, 'error');
+L27014:             if (resU.error) showToast('Error: ' + (resU.error.message || 'No se pudo actualizar.'), 'error');
+L27015:             else showToast('Actualizado.');
+L27024:             showToast('Error: ' + (rDup.error.message || 'No se pudo validar.'), 'error');
+L27030:             showToast('Ya existe un tipo con el mismo código y la misma opción Intermediario.', 'error');
+L27103:     showToast('Código y nombre son obligatorios.', 'error');
+L27110:     showToast('Moneda IN y OUT deben ser USD, EUR, ARS o Cheque.', 'error');
+L27114:     showToast('Cheque solo puede combinarse con ARS (el otro lado debe ser ARS).', 'error');
+L27122:     showToast('En modo personalizado indicá una URL https válida o subí una imagen al Storage.', 'error');
+L27139:       showToast('Error: ' + (rDup.error.message || 'No se pudo validar.'), 'error');
+L27143:       showToast('Ya existe un tipo con el mismo código y la misma opción Intermediario. Usá otro código o cambiá el toggle Intermediario.', 'error');
+L27152:           showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
+L27157:         showToast(id ? 'Tipo de operación actualizado.' : 'Tipo de operación creado.', 'success');
+L27170:         showToast('Error: ' + (rMax.error.message || 'No se pudo obtener el orden. Ejecutá en Supabase sql/migracion_tipos_operacion_orden_visual.sql'), 'error');
+L27222:         showToast('Imagen subida; URL cargada en el campo.', 'success');
+L27485:     showToast('Ya existe otra fila con la misma clave (tipo, int., entidad, pagador/cobrador, comisión, estado, contrapartida, línea).', 'error');
+L27493:       showToast('Error al guardar: ' + (res.error.message || '') + (res.error.code === '23505' ? ' (clave duplicada)' : ''), 'error');
+L27497:     showToast(id ? 'Regla actualizada.' : 'Regla creada.', 'success');
+L27506:     showToast('Concepto leyenda obligatorio.', 'error');
+L27512:     showToast(v.errores[0], 'error');
+L27517:     showConfirm(
+L27530:   showConfirm(
+L27535:         if (res.error) showToast('Error: ' + (res.error.message || ''), 'error');
+L27537:           showToast('Fila eliminada.', 'success');
+L27662:     showToast('Elegí un origen.', 'error');
+L27666:     showToast('Indicá el código destino (ej. EUR-USD).', 'error');
+L27670:     showToast('Origen y destino no pueden ser idénticos.', 'error');
+L27677:     showToast('No hay filas en caché para el origen elegido.', 'error');
+L27684:     showToast('El destino ya tiene reglas. Eliminá o editá manualmente antes de replicar (evitamos sobrescribir sin control).', 'error');
+L27691:     showConfirm(
+L27699:   showConfirm(
+L27730:       showToast('Replicación completada (' + batch.length + ' filas).', 'success');
+L27737:         showToast('Error al replicar: ' + (res.error.message || ''), 'error');
+L27779:       showToast('Error: ' + msg, 'error');
+L27795:         showToast('Error: ' + msg, 'error');
+L28393:       showToast('Error al cargar auditoría: ' + (r.error.message || ''), 'error');
+L28420:     showToast('No hay filas cargadas. Buscá primero o cargá más resultados.', 'info');
+L28444:       showToast('Exportado: ' + nombreArchivo, 'success');
+L28448:       showToast('Error al preparar exportación.', 'error');
+L28615:         showToast('Sesión cerrada por inactividad.', 'info');
+L28644:           showToast('No se pudo guardar el nombre. ¿Ejecutaste la migración SQL en Supabase?', 'error');
+L28648:         showToast('Nombre guardado. Se verá en listados y exportaciones.', 'success');
+L28906:         showConfirm(
+L28945:           showToast(
 
 — Fin —
