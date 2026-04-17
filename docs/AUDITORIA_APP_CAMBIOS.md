@@ -32,6 +32,7 @@ Otros campos frecuentes en `metadata` (según el flujo):
 | `transaccion` / `cambiar_estado`  | Combo **pendiente ↔ ejecutada** (tras RPC `transacciones_cambiar_estado` o `UPDATE` fallback): estado, `fecha_ejecucion`, `usuario_id`, `revertida_una_vez` si aplica. |
 | `orden` / `editar`                | **Guardar orden** (wizard y flujo «guardar orden»): diff de columnas de negocio respecto del snapshot **antes** del `UPDATE` y la fila **después** (relectura). |
 | `cc_manual` / `editar`            | **Editar movimiento manual de CC**: diff de roles, ids de contraparte, moneda, monto, modalidad, concepto, fecha, grupo. Si no hay diff de campos (caso límite), se mantiene un registro con metadata previa sin arreglo `cambios`. |
+| `cc_manual` / `anular`            | **Anular** movimiento(es) manual(es) de CC: **`detalle`** legible (moneda, importe formateado, fecha, concepto usuario, modalidad, pagador/cobrador con nombres de cliente/intermediario cuando hay red, cantidad de líneas del grupo, aviso si hubo caja vinculada). En **metadata** siguen `grupo_id`, `caja_id`, `filas` (referencia técnica) y opcionalmente `usuario_snapshot`. |
 | `caja_manual` / `editar`          | **Editar movimiento de caja solo manual** (sin orden ni transacción): diff de moneda, monto, tipo, caja_tipo, concepto, fecha. |
 
 Anulaciones y otros eventos pueden seguir usando solo `detalle` y metadata sin `cambios`; ver `docs/CC_MOVIMIENTO_MANUAL.md`.

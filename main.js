@@ -4211,6 +4211,66 @@ function ccManualFetchContextOperacion(m) {
   });
 }
 
+/** Nombres de cliente/intermediario para el texto de auditoría al anular CC manual (sin UUID en `detalle`). */
+function ccManualFetchMapasNombresAuditoriaAnular(ctx) {
+  const cliIds = [...new Set([ctx.pagCli, ctx.cobCli].filter((x) => x != null && String(x).trim()))].map(String);
+  const intIds = [...new Set([ctx.pagInt, ctx.cobInt].filter((x) => x != null && String(x).trim()))].map(String);
+  const p1 =
+    cliIds.length && pandiCcManualGuardadoEnServidorOk()
+      ? client.from('clientes').select('id, nombre').in('id', cliIds)
+      : Promise.resolve({ data: [] });
+  const p2 =
+    intIds.length && pandiCcManualGuardadoEnServidorOk()
+      ? client.from('intermediarios').select('id, nombre').in('id', intIds)
+      : Promise.resolve({ data: [] });
+  return Promise.all([p1, p2])
+    .then(([r1, r2]) => {
+      const mapCli = Object.create(null);
+      (r1.data || []).forEach((row) => {
+        if (row.id) mapCli[String(row.id)] = row.nombre ? String(row.nombre) : 'Cliente';
+      });
+      const mapInt = Object.create(null);
+      (r2.data || []).forEach((row) => {
+        if (row.id) mapInt[String(row.id)] = row.nombre ? String(row.nombre) : 'Intermediario';
+      });
+      return { mapCli, mapInt };
+    })
+    .catch(() => ({ mapCli: Object.create(null), mapInt: Object.create(null) }));
+}
+
+/** `detalle` legible para `auditoria_app` al anular movimiento(es) CC manual. */
+function ccManualDetalleTextoAnularAuditoria(ctx, mapCli, mapInt) {
+  const mapC = mapCli || Object.create(null);
+  const mapI = mapInt || Object.create(null);
+  const mon = (ctx.moneda || 'USD').toUpperCase();
+  const imp = formatImporteDisplay(Number(ctx.montoAbs) || 0);
+  const fecha = (ctx.fecha || '').toString().trim().slice(0, 10);
+  const concRaw = ctx.conceptoUsuario != null ? String(ctx.conceptoUsuario).trim() : '';
+  const conc = concRaw.slice(0, 200).replace(/\s+/g, ' ');
+  const concPart = conc ? ` · «${conc.replace(/"/g, "'")}»` : '';
+  const fechaPart = fecha ? ` · ${fecha}` : '';
+  const rolNom = (rol, idCli, idInt) => {
+    const r = String(rol || '').toLowerCase();
+    if (r === 'pandy') return 'Pandy';
+    if (r === 'cliente') {
+      const id = idCli ? String(idCli) : '';
+      return id && mapC[id] ? `Cliente «${mapC[id]}»` : 'Cliente';
+    }
+    if (r === 'intermediario') {
+      const id = idInt ? String(idInt) : '';
+      return id && mapI[id] ? `Intermediario «${mapI[id]}»` : 'Intermediario';
+    }
+    return rol || '—';
+  };
+  const partesPagCob = `Pagador: ${rolNom(ctx.pagRol, ctx.pagCli, ctx.pagInt)} · Cobrador: ${rolNom(ctx.cobRol, ctx.cobCli, ctx.cobInt)}`;
+  const nFilas = (ctx.filas || []).length;
+  const lineasTxt = nFilas > 1 ? `${nFilas} líneas de cuenta corriente (mismo grupo manual).` : 'Una línea de cuenta corriente.';
+  const modoTxt = ctx.modoPago ? ` · Modalidad: ${String(ctx.modoPago)}` : '';
+  const cajaTxt = ctx.cajaId ? ' Movimiento de caja vinculado (efectivo) anulado también.' : '';
+  const out = `CC manual anulado: ${mon} ${imp}${fechaPart}${concPart}${modoTxt}. ${partesPagCob}. ${lineasTxt}${cajaTxt}`;
+  return out.replace(/\s+/g, ' ').trim().slice(0, 8000);
+}
+
 let ccManualEditContext = null;
 
 function closeModalCcManualEditar() {
@@ -4531,26 +4591,42 @@ function ejecutarAnularCcManualContexto(ctx) {
   const ahora = new Date().toISOString();
   const promesas = (ctx.filas || []).map((f) => client.from(f.tabla).update({ estado: 'anulado', estado_fecha: ahora }).eq('id', f.id));
   const fin = (opts) => {
-    const detalle = 'CC manual anulado. Líneas: ' + (ctx.filas || []).map((f) => f.tabla + ':' + f.id).join(', ')
-      + (ctx.cajaId ? '. Caja: ' + ctx.cajaId : '');
-    registrarAuditoriaApp('cc_manual', 'anular', detalle, { grupo_id: ctx.grupoId, caja_id: ctx.cajaId, filas: ctx.filas });
-    if (!opts || !opts.skipOkToast) showToast('Movimiento manual anulado.', 'success');
-    loadCuentaCorriente();
-    if (typeof loadCajas === 'function') loadCajas();
-    if (ccDetalleTipo && ccDetalleId) {
-      fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos, saldos, saldosPendiente, ordenes, pendienteEnMoneda, pendienteClasePorMoneda }) => {
-        ccDetalleMovimientosList = ccDetalleRowsConTipoOpDesdeOrdenes(movimientos, ordenes);
-        ccDetalleOrdenesList = ordenes || [];
-        renderCcDetalleTable();
-        const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
-        if (saldosWrap && saldos) {
-          const pendMonModal = pendienteEnMoneda || ccPendientePorMonedaDesdeMovs(movimientos);
-          saldosWrap.innerHTML = htmlCcModalSaldosCards(saldos, pendMonModal, pendienteClasePorMoneda, saldosPendiente);
-          reaplicarVisibilidadMonedasCuentaCorrienteDom();
+    const metaAud = {
+      grupo_id: ctx.grupoId,
+      caja_id: ctx.cajaId,
+      filas: ctx.filas,
+    };
+    const snap = auditoriaUsuarioSnapshotMeta();
+    if (snap) metaAud.usuario_snapshot = snap;
+    void ccManualFetchMapasNombresAuditoriaAnular(ctx)
+      .then(({ mapCli, mapInt }) => {
+        const detalle = ccManualDetalleTextoAnularAuditoria(ctx, mapCli, mapInt);
+        return registrarAuditoriaApp('cc_manual', 'anular', detalle, metaAud);
+      })
+      .catch((err) => {
+        console.warn('cc_manual anular auditoría:', err);
+        const detalleFb = ccManualDetalleTextoAnularAuditoria(ctx, Object.create(null), Object.create(null));
+        return registrarAuditoriaApp('cc_manual', 'anular', detalleFb, metaAud);
+      })
+      .finally(() => {
+        if (!opts || !opts.skipOkToast) showToast('Movimiento manual anulado.', 'success');
+        loadCuentaCorriente();
+        if (typeof loadCajas === 'function') loadCajas();
+        if (ccDetalleTipo && ccDetalleId) {
+          fetchMovimientosCcPorEntidad(ccDetalleTipo, ccDetalleId).then(({ movimientos, saldos, saldosPendiente, ordenes, pendienteEnMoneda, pendienteClasePorMoneda }) => {
+            ccDetalleMovimientosList = ccDetalleRowsConTipoOpDesdeOrdenes(movimientos, ordenes);
+            ccDetalleOrdenesList = ordenes || [];
+            renderCcDetalleTable();
+            const saldosWrap = document.getElementById('modal-cc-detalle-saldos');
+            if (saldosWrap && saldos) {
+              const pendMonModal = pendienteEnMoneda || ccPendientePorMonedaDesdeMovs(movimientos);
+              saldosWrap.innerHTML = htmlCcModalSaldosCards(saldos, pendMonModal, pendienteClasePorMoneda, saldosPendiente);
+              reaplicarVisibilidadMonedasCuentaCorrienteDom();
+            }
+            renderCcDetalleOperaciones();
+          }).catch(() => {});
         }
-        renderCcDetalleOperaciones();
-      }).catch(() => {});
-    }
+      });
   };
   Promise.all(promesas).then((results) => {
     const err = results.find((r) => r && r.error);
