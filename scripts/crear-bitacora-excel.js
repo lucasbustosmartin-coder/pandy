@@ -21,6 +21,7 @@ function aplicarHoyAhora(rows) {
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Regla despliegue: prohibido mencionar Auditoría en PANDI_RELEASE_BLURB', 'bitacora-tareas.mdc fila «Auditoría (prohibido en lines)» + Evitar; reglas-pandi Despliegue; docs/GIT_Y_VERCEL §4. Copy usuario genérico si el release es solo auditoría.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Despliegue v3.7.46 (prod + preview estable)', 'Modal «Nueva versión»: copy solo «Mejoras en los tiempos de respuesta del servidor» (sin mencionar auditoría al usuario). pandi-release-blurb.js; index.html v3.7.46; vercel --prod; npx vercel --yes; merge main→preview-empleado + verificación SHA.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'Auditoría: diffs en ediciones (trx, orden, CC manual, caja)', 'auditoria_app metadata.cambios [{campo, anterior, nuevo}] + usuario_id + usuario_snapshot; transacciones (modal, monto tabla, modo pago, cambiar estado); órdenes (wizard + guardar); CC manual editar; movimiento caja manual. Helpers main.js. docs/AUDITORIA_APP_CAMBIOS.md; CC_MOVIMIENTO_MANUAL; estructura-proyecto.', 'Desarrollo'],
   ['__HOY__', '__AHORA__', 'Auditoría: vista admin menú + refresh segundo plano', 'Menú Auditoría (ver_auditoria): filtros, tabla, detalle modal, Excel. loadAuditoriaVista sale al inicio si isPandiBackgroundRefresh() para no limpiar acumulado/tbody. docs/AUDITORIA_APP_CAMBIOS.md § vista app.', 'Corrección'],
