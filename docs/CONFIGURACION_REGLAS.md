@@ -7,6 +7,7 @@ Las restricciones y permitidos que afectan transacciones, reversiones y edición
 | Clave | Descripción | Valores | Por defecto |
 |-------|-------------|---------|-------------|
 | `session_timeout_minutes` | Minutos de inactividad antes de cerrar sesión | 1–1440 | 60 |
+| `supabase_select_page_size` | Máx. filas por request en lecturas masivas desde el front (PostgREST); debe ser ≤ `max-rows` del proyecto | 100–10000 | 1000 |
 | `reversar_max_veces` | Cuántas veces se puede reversar una transacción de ejecutada a pendiente (por transacción) | 0 = no permitir, 1 = una vez | 1 |
 
 ## Uso en la app
@@ -16,10 +17,11 @@ Las restricciones y permitidos que afectan transacciones, reversiones y edición
 
 ## Dónde se editan
 
-- Hoy: en **Seguridad** solo se expone el tiempo de inactividad. Las demás claves se pueden cambiar desde Supabase (SQL o Table Editor) o agregando controles en Seguridad.
+- Hoy: en **Seguridad** el Admin configura tiempo de inactividad, **tamaño de página Supabase** y comisión fija USD–USD cuando aplica. Las demás claves se pueden cambiar desde Supabase (SQL o Table Editor) o agregando controles en Seguridad.
 - Futuro: sección "Reglas de negocio" o vista Configuración para Admin con inputs por clave.
 
 ## Migraciones
 
 - `sql/app_config_session_timeout.sql` — crea `app_config` e inserta `session_timeout_minutes`.
+- `sql/migracion_app_config_supabase_select_page_size.sql` — inserta `supabase_select_page_size` (por defecto 1000).
 - `sql/migracion_app_config_reglas_reversar.sql` — inserta `reversar_max_veces` con valor 1 (ON CONFLICT DO NOTHING).

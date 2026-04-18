@@ -287,21 +287,23 @@ function pandiSupabaseQuerySafe(promise) {
 }
 
 /**
- * Iterador asíncrono que sortea el límite nativo de filas de Supabase front-end (1,000 max).
+ * Iterador asíncrono que sortea el límite de filas por request de PostgREST (tamaño de página configurable en Seguridad).
  * Exige una función constructora de consulta para generar la API Request en cada pasada (ej: `() => client.from('x').select(...)`).
  * Envuelve en pandiSupabaseQuerySafe automáticamente para robustez.
+ * @param {number} [step] — si se omite, usa `pandiSupabaseSelectPageSizeClamped()` (app_config `supabase_select_page_size`).
  */
-async function pandiSupabaseFetchAll(queryBuilderFn, step = 1000) {
+async function pandiSupabaseFetchAll(queryBuilderFn, step) {
+  const pageSize = step != null && Number(step) > 0 ? Math.min(Math.floor(Number(step)), PANDI_SUPABASE_PAGE_SIZE_MAX) : pandiSupabaseSelectPageSizeClamped();
   let allData = [];
   let currentFrom = 0;
   while (true) {
-    const to = currentFrom + step - 1;
+    const to = currentFrom + pageSize - 1;
     const { data, error } = await pandiSupabaseQuerySafe(queryBuilderFn().range(currentFrom, to));
     if (error) return { data: allData.length > 0 ? allData : null, error };
     if (!data || data.length === 0) break;
     allData = allData.concat(data);
-    if (data.length < step) break;
-    currentFrom += step;
+    if (data.length < pageSize) break;
+    currentFrom += pageSize;
   }
   return { data: allData, error: null };
 }
@@ -2368,6 +2370,19 @@ function delayMinLoadingSiNoEsBackground(shownAt) {
 // Tiempo de inactividad: tras X minutos sin usar la app se cierra la sesión (configurable por Admin en Seguridad)
 let lastActivityTime = 0;
 let sessionTimeoutMinutes = 60;
+
+/** Máx. filas por request en lecturas paginadas (PostgREST). Configurable en Seguridad → `app_config.supabase_select_page_size`. */
+const PANDI_SUPABASE_PAGE_SIZE_MIN = 100;
+const PANDI_SUPABASE_PAGE_SIZE_MAX = 10000;
+const PANDI_SUPABASE_PAGE_SIZE_DEFAULT = 1000;
+let pandiSupabaseSelectPageSize = PANDI_SUPABASE_PAGE_SIZE_DEFAULT;
+
+function pandiSupabaseSelectPageSizeClamped() {
+  const n = Number(pandiSupabaseSelectPageSize);
+  if (!Number.isFinite(n) || n < PANDI_SUPABASE_PAGE_SIZE_MIN) return PANDI_SUPABASE_PAGE_SIZE_DEFAULT;
+  return Math.min(Math.floor(n), PANDI_SUPABASE_PAGE_SIZE_MAX);
+}
+
 /** USD-USD + cp_ic: intermediario con comisión fija en USD (`app_config` key `usd_usd_comision_fija_config`, editable en Seguridad). */
 let usdUsdComisionFijaConfig = { intermediario_id: '', opcion_a: 50, opcion_b: 75 };
 /** En esta sesión del wizard el usuario eligió comisión variable (%) en lugar de la fija para USD-USD+cp_ic con intermediario parametrizado. */
@@ -2941,6 +2956,49 @@ function loadSeguridad() {
       }
     } else if (tiempoSesionWrap) {
       tiempoSesionWrap.style.display = 'none';
+    }
+
+    const wrapPageSize = document.getElementById('seguridad-supabase-page-size-wrap');
+    const inputPageSize = document.getElementById('seguridad-supabase-page-size');
+    const btnGuardarPageSize = document.getElementById('seguridad-supabase-page-size-guardar');
+    if (wrapPageSize && myRole === 'admin') {
+      wrapPageSize.style.display = 'block';
+      client.from('app_config').select('value').eq('key', 'supabase_select_page_size').maybeSingle().then((r) => {
+        const raw = r && r.data && r.data.value != null ? String(r.data.value).trim() : '';
+        const val = raw ? parseInt(raw, 10) : PANDI_SUPABASE_PAGE_SIZE_DEFAULT;
+        if (inputPageSize) {
+          inputPageSize.value =
+            !isNaN(val) && val >= PANDI_SUPABASE_PAGE_SIZE_MIN && val <= PANDI_SUPABASE_PAGE_SIZE_MAX
+              ? val
+              : PANDI_SUPABASE_PAGE_SIZE_DEFAULT;
+        }
+      });
+      if (btnGuardarPageSize && inputPageSize) {
+        btnGuardarPageSize.replaceWith(btnGuardarPageSize.cloneNode(true));
+        document.getElementById('seguridad-supabase-page-size-guardar').addEventListener('click', () => {
+          const v = parseInt(String(inputPageSize.value || '').trim(), 10);
+          if (isNaN(v) || v < PANDI_SUPABASE_PAGE_SIZE_MIN || v > PANDI_SUPABASE_PAGE_SIZE_MAX) {
+            showToast('Ingresá un número entre ' + PANDI_SUPABASE_PAGE_SIZE_MIN + ' y ' + PANDI_SUPABASE_PAGE_SIZE_MAX + '.', 'error');
+            return;
+          }
+          client
+            .from('app_config')
+            .upsert(
+              { key: 'supabase_select_page_size', value: String(v), updated_at: new Date().toISOString(), updated_by: currentUserId },
+              { onConflict: 'key' },
+            )
+            .then((res) => {
+              if (res.error) {
+                showToast('Error: ' + (res.error.message || 'No se pudo guardar. ¿Migración SQL ejecutada?'), 'error');
+                return;
+              }
+              pandiSupabaseSelectPageSize = v;
+              showToast('Tamaño de página guardado. Recargá la página o cerrá sesión para que todas las vistas usen el nuevo valor.', 'success');
+            });
+        });
+      }
+    } else if (wrapPageSize) {
+      wrapPageSize.style.display = 'none';
     }
 
     const wrapComFijaUsd = document.getElementById('seguridad-usd-comision-fija-wrap');
@@ -11964,7 +12022,7 @@ function loadCuentaCorriente(opts) {
   // OMITIDO DE FORMA PERMANENTE el forceo de `sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion` para lecturas de pantalla
   // (destruía la experiencia de usuario y consumía miles de lecturas O(N) recreando tablas íntegras en órdenes pasadas alineadas).
 
-  // Lectura de movimientos: usamos pandiSupabaseFetchAll para romper la barrera invisible de < 1000 records.
+  // Lectura de movimientos: pandiSupabaseFetchAll pagina con el tamaño configurado en Seguridad (app_config supabase_select_page_size).
   return Promise.all([
       client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
       client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
@@ -25414,8 +25472,8 @@ function openModalTransaccion(registro, instrumentacionId) {
         ? client.from('transacciones').select('id, tipo, moneda, monto, cobrador, pagador, tipo_cambio, estado, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instrumentacionId).order('created_at', { ascending: true })
         : Promise.resolve({ data: [] });
       Promise.all([
-        client.from('clientes').select('id, nombre').order('nombre').limit(800),
-        client.from('intermediarios').select('id, nombre').order('nombre').limit(800),
+        client.from('clientes').select('id, nombre').order('nombre').limit(pandiSupabaseSelectPageSizeClamped()),
+        client.from('intermediarios').select('id, nombre').order('nombre').limit(pandiSupabaseSelectPageSizeClamped()),
         qTrxInst,
       ]).then(([rCli, rInt, rTrx]) => {
         if (seq !== openModalTransaccionSeq) return;
@@ -30112,15 +30170,22 @@ function onSessionReady(session, sessionOpts) {
       return Promise.all([
         client.from('app_config').select('value').eq('key', 'session_timeout_minutes').maybeSingle(),
         client.from('app_config').select('value').eq('key', 'usd_usd_comision_fija_config').maybeSingle(),
+        client.from('app_config').select('value').eq('key', 'supabase_select_page_size').maybeSingle(),
       ]);
     })
-    .then(async ([configRes, cfgFijaRes]) => {
+    .then(async ([configRes, cfgFijaRes, pageSizeRes]) => {
       if (configRes && !configRes.error && configRes.data && configRes.data.value) {
         const n = parseInt(configRes.data.value, 10);
         if (n > 0 && n <= 1440) sessionTimeoutMinutes = n;
       }
       if (cfgFijaRes && !cfgFijaRes.error && cfgFijaRes.data && cfgFijaRes.data.value) {
         usdUsdComisionFijaConfig = parseUsdUsdComisionFijaConfigJson(cfgFijaRes.data.value);
+      }
+      if (pageSizeRes && !pageSizeRes.error && pageSizeRes.data && pageSizeRes.data.value != null) {
+        const ps = parseInt(String(pageSizeRes.data.value).trim(), 10);
+        if (!isNaN(ps) && ps >= PANDI_SUPABASE_PAGE_SIZE_MIN && ps <= PANDI_SUPABASE_PAGE_SIZE_MAX) {
+          pandiSupabaseSelectPageSize = ps;
+        }
       }
       aplicarValoresRadiosComisionFijaUsdWizard();
       await finalizeSessionUiSetup();

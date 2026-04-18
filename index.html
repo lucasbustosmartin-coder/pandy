@@ -260,7 +260,7 @@
         <span class="menu-label">Auditoría</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.53</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.54</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -959,7 +959,7 @@
         <h2 style="margin:0 0 0.75rem 0; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span style="width:24px; height:24px; color:#555; flex-shrink:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-12"></use></svg></span>
           Seguridad – Usuarios y roles
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: seguridad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Asigná el <strong>perfil</strong> (rol) a cada usuario: los base son Admin, Encargado y Visor; podés <strong>crear perfiles nuevos</strong> (ej. comercial o administrativo) y luego darles permisos. Más abajo configurás <strong>permisos por perfil</strong> (qué menús ve y en cuáles puede operar) y, si sos Admin, el <strong>tiempo de inactividad</strong> antes del cierre de sesión automático.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: seguridad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Asigná el <strong>perfil</strong> (rol) a cada usuario: los base son Admin, Encargado y Visor; podés <strong>crear perfiles nuevos</strong> (ej. comercial o administrativo) y luego darles permisos. Más abajo configurás <strong>permisos por perfil</strong> (qué menús ve y en cuáles puede operar) y, si sos Admin, el <strong>tiempo de inactividad</strong> antes del cierre de sesión automático, el <strong>tamaño de página</strong> de consultas a Supabase y la comisión fija USD–USD cuando aplica.</span></span>
         </h2>
         <div id="seguridad-tiempo-sesion-wrap" class="seguridad-tiempo-sesion" style="display:none; margin-bottom:1.25rem; padding:1rem; background:#f9fafb; border-radius:10px; border:1px solid #e5e7eb;">
           <h3 style="margin:0 0 0.5rem 0; font-size:1rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Tiempo de inactividad
@@ -971,6 +971,20 @@
               <input type="number" id="seguridad-session-timeout-min" min="1" max="1440" step="1" style="width:5rem; padding:0.35rem 0.5rem; border-radius:6px; border:1px solid #ccc;" aria-label="Minutos de inactividad antes de cerrar sesión" />
             </label>
             <button type="button" class="btn-primary" id="seguridad-session-timeout-guardar">
+              <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar
+            </button>
+          </div>
+        </div>
+        <div id="seguridad-supabase-page-size-wrap" class="seguridad-supabase-page-size" style="display:none; margin-bottom:1.25rem; padding:1rem; background:#f9fafb; border-radius:10px; border:1px solid #e5e7eb;">
+          <h3 style="margin:0 0 0.5rem 0; font-size:1rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Tamaño de página (Supabase)
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: tamaño de página Supabase"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Cantidad máxima de <strong>filas por request</strong> que la app pide al servidor en listas grandes (cuenta corriente, transacciones, etc.). Debe ser <strong>menor o igual</strong> al límite <code>max-rows</code> configurado en PostgREST (en tu proyecto puede ser 5000). Valores típicos: 1000–5000. Rango permitido en la app: <strong>100 a 10000</strong>. Solo <strong>Admin</strong> puede modificarlo; tras guardar, <strong>volvé a iniciar sesión</strong> o recargá la página para que todas las vistas usen el nuevo valor.</span></span>
+          </h3>
+          <div class="vista-toolbar" style="align-items:center; gap:0.5rem;">
+            <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
+              <span>Filas por consulta:</span>
+              <input type="number" id="seguridad-supabase-page-size" min="100" max="10000" step="100" style="width:6rem; padding:0.35rem 0.5rem; border-radius:6px; border:1px solid #ccc;" aria-label="Filas máximas por consulta a Supabase" />
+            </label>
+            <button type="button" class="btn-primary" id="seguridad-supabase-page-size-guardar">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar
             </button>
           </div>
