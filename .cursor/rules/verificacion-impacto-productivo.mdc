@@ -1,33 +1,45 @@
 ---
-description: Checklist de impacto cruzado antes de cerrar cambios en sistema ya productivo (CC, caja, G/P, RPC).
+description: Regla estricta productivo — impacto en todo lo no pedido explícitamente; preguntar antes de aplicar si hay efecto colateral.
 alwaysApply: true
 ---
 
-# Verificación de impacto (entorno productivo)
+# Verificación de impacto estricta (productivo)
 
-El sistema está **en producción**. Un cambio que “arregla” un flujo puede **romper otro** si no se revisan dependencias. Antes de dar por cerrada una tarea que toque lógica de negocio, persistencia o agregados:
+El sistema está **en producción**. El objetivo no es revisar “algunas áreas típicas”, sino **garantizar que el cambio no altere ninguna funcionalidad que el usuario no haya pedido tocar**.
 
-## 1. Delimitar el radio del diff
+## Principio (obligatorio)
 
-- Archivos tocados: `main.js`, `utils.js`, `sql/*`, `index.html`, tests, `reglas_de_negocio` (solo vía migración acordada).
-- Tipo de cambio: solo UI, solo validación previa a RPC, motor genérico, SQL en servidor, ambos.
+1. **Alcance explícito del pedido:** interpretar qué pidió el usuario (pantalla, flujo, tabla, RPC, test, doc). Eso es el **núcleo permitido** del cambio.
+2. **Todo lo demás es territorio protegido:** cualquier otra parte del sistema (otras pantallas, otros flujos, exports, permisos, auditoría, PWA/offline, listados, modales, agregados SQL, otra moneda u otro tipo de operación que comparta código, helpers en `utils.js`, etc.) debe quedar **igual en comportamiento** salvo que el usuario lo haya autorizado.
+3. **Si el cambio propuesto puede afectar algo fuera del núcleo permitido** (por código compartido, mismos datos, misma RPC, mismo invariante, mismo helper, mismo evento global, etc.): **no aplicar el cambio todavía.** **Preguntar siempre al usuario** de forma explícita: qué otro lugar podría verse afectado, en qué sentido, y si acepta ese alcance o prefiere un enfoque acotado (p. ej. ramificación mínima, feature flag, solo dev, otra solución).
+4. **Sin respuesta afirmativa del usuario** a ese alcance colateral: **no implementar** la parte que lo cause; como máximo **proponer** alternativas y esperar instrucción.
 
-## 2. Áreas que suelen acoplarse (revisar las que apliquen)
+> Esto aplica **también** cuando la propuesta de cambio viene del propio usuario: si al analizar el diff razonable aparece efecto en otro módulo, **preguntar antes de aplicar** no es opcional.
 
-| Área | Qué revisar |
-|------|-------------|
-| **CC cliente / intermediario** | Sync, saldos, movimientos pendiente vs cerrado, compensación, préstamo regla B, `docs/FLUJOS_CC_REGLA.md`, `docs/CORAZON_SISTEMA_CC_Y_CAJA.md`. |
-| **Caja** | Movimientos generados por órdenes vs manuales, exclusiones de comisión, alineación con CC. |
-| **Invariante / neteo** | `validarInvarianteNeteoCcClienteAcuerdoCerrado` y helpers: un ajuste para un caso puede cambiar si **otra** combinación pasa o falla el guardado/sync. |
-| **G/P Operativa** | Las funciones `gp_operativa_resumen` / `gp_operativa_detalle` (**SQL**, `sql/migracion_gp_operativa_panel.sql`) agregan **datos ya persistidos** (caja, CC, comisiones). **No** ejecutan el invariante del navegador. Tras cambios en CC/sync, confirmar que los movimientos que el motor persiste siguen siendo los esperados para el panel (misma semántica de bolsas: excl. líneas comisión en flujo CC, etc.). |
-| **RPC / triggers** | Si cambia el payload o el orden de escritura hacia Supabase, revisar `sync_cc_caja_orden`, `transacciones_cambiar_estado` y scripts en `sql/` según regla **reglas-pandi** (Bitácora, RPC y tests). |
-| **Tests** | `npm run test:unit-cc-flip` u otros que cubran el flujo; E2E si el diff toca selectores o textos (`docs/TESTING_E2E_GUIA.md`). |
+## Cómo cumplirlo (sin sustituir el principio por una lista corta)
 
-## 3. Criterio de cierre
+- **Trazar dependencias:** desde el archivo/línea a tocar, seguir imports, llamadas, RPC, tablas, claves de negocio y lectores (paneles, Excel, informes).
+- **Inventario de riesgo:** nombrar en voz alta (en la respuesta al usuario) **funcionalidades que no estaban en el pedido** y que podrían cambiar; si la lista no está vacía o hay duda razonable → **preguntar**.
+- La tabla siguiente es **ejemplificativa**, no exhaustiva: **no alcanza** marcar solo esas filas; el criterio es **todo el sistema** frente al alcance pedido.
 
-- Explicar en la respuesta al usuario (o en bitácora si aplica) **qué áreas vecinas se revisaron** y por qué quedan fuera de riesgo, o qué riesgo queda y cómo se mitiga.
-- Si el cambio es puramente cosmético o aislado en un componente sin datos, indicarlo explícitamente.
+| Ejemplos de superficies a considerar | Por qué suelen acoplarse |
+|--------------------------------------|---------------------------|
+| CC cliente / intermediario, sync, invariantes, caja | Mismo motor, mismos movimientos |
+| G/P Operativa, saldos, listados, filtros por fecha | Mismas tablas o mismas funciones agregadas |
+| Órdenes, transacciones, wizard, instrumentación | Estados y payloads compartidos |
+| Permisos, auditoría, mensajería, exports | Rutas transversales |
+| PWA / service worker / offline | Cache y rutas de datos |
+| `utils.js`, helpers genéricos | Un cambio afecta muchos flujos |
+| `sql/`, triggers, RPC | Lectores múltiples en el front o en otros scripts |
+| Tests y expectativas | Regresión = cambio de contrato no acordado |
 
-## 4. No sustituir esta regla por “parece OK”
+## Cierre de tarea
 
-Si no hay tiempo para una prueba manual amplia, al menos: **trazar el camino de datos** (formulario → guardado → tablas → panel/reporte) y **un caso mínimo** (orden de prueba o fixture) que cubra el diff.
+- Si **no** hubo riesgo colateral razonable: decirlo explícitamente (**qué se excluyó** del análisis y por qué es acotado, p. ej. typo en string de una sola vista).
+- Si hubo riesgo y el usuario **autorizó** el alcance: implementar solo lo acordado y mencionar qué quedó fuera a propósito.
+- **Prohibido** dar por bueno “solo toqué X” sin haber razonado el resto del sistema respecto del pedido.
+
+## Relación con otras reglas
+
+- Si hay conflicto entre rapidez y esta regla: **gana esta regla** (productivo + no efectos no pedidos).
+- Donde **reglas-pandi** exija acuerdo (tests, expectativas, etc.), se mantiene; esta regla **añade** la barrera **antes de aplicar** cuando hay **efecto en otra funcionalidad**.
