@@ -2612,6 +2612,8 @@ function refreshPermisosYVista() {
         showView(firstId, firstTitle);
       } else if (currentVistaId === 'vista-inicio') {
         loadInicio();
+      } else if (currentVistaId === 'vista-control-calidad') {
+        loadControlCalidadVista();
       } else if (currentVistaId === 'vista-cajas') {
         loadCajas({ soloFiltros: true });
       }
@@ -2637,7 +2639,20 @@ function showView(vistaId, pageTitle) {
     pageTitle = 'Órdenes';
   }
   currentVistaId = vistaId;
-  ['vista-inicio', 'vista-ordenes', 'vista-cajas', 'vista-clientes', 'vista-intermediarios', 'vista-tipos-operacion', 'vista-cuenta-corriente', 'vista-reglas-negocio', 'vista-configuracion-empresa', 'vista-seguridad', 'vista-auditoria'].forEach((id) => {
+  [
+    'vista-inicio',
+    'vista-ordenes',
+    'vista-cajas',
+    'vista-clientes',
+    'vista-intermediarios',
+    'vista-tipos-operacion',
+    'vista-cuenta-corriente',
+    'vista-control-calidad',
+    'vista-reglas-negocio',
+    'vista-configuracion-empresa',
+    'vista-seguridad',
+    'vista-auditoria',
+  ].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.display = id === vistaId ? 'block' : 'none';
   });
@@ -2672,6 +2687,7 @@ function showView(vistaId, pageTitle) {
   if (vistaId === 'vista-reglas-negocio') loadReglasNegocioVista();
   if (vistaId === 'vista-configuracion-empresa') loadConfiguracionEmpresa();
   if (vistaId === 'vista-auditoria') void loadAuditoriaVista({ append: false });
+  if (vistaId === 'vista-control-calidad') void loadControlCalidadVista();
   pandiCollapseMobileSidebarAfterNav();
   if (pandiIsMobileNavLayout()) {
     const mc = document.querySelector('.main-content');
@@ -2696,6 +2712,10 @@ const MENSAJE_AL_DESACTIVAR_PERMISO = {
   editar_movimiento_cc_manual: 'Sin este permiso no podrán editar movimientos de CC marcados como manual (sin orden) desde la lista de Movimientos.',
   eliminar_movimiento_cc_manual: 'Sin este permiso no podrán anular movimientos de CC manuales desde la lista de Movimientos.',
   ver_auditoria: 'Sin este permiso no podrán consultar la tabla de auditoría (registro de acciones sensibles) en Supabase o futuras pantallas de log.',
+  ver_control_calidad:
+    'Sin este permiso no verán el menú Control de calidad (parejas CC↔caja y coherencia transacción vs CC cliente). La migración SQL otorga este permiso a quien ya tenía control G/P heredado.',
+  ver_gp_operativo_control_calidad:
+    'Permiso heredado: mientras exista en la base, habilita la misma vista que Control de calidad junto con ver_control_calidad. Preferí asignar solo ver_control_calidad a roles nuevos.',
 };
 
 /** Si faltan políticas RLS + GRANT en app_role_permission, DELETE/INSERT no afectan filas y PostgREST puede no devolver error. */
@@ -2736,6 +2756,7 @@ const PERMISOS_POR_MENU = [
     ],
     operar: [],
   },
+  { id: 'control-calidad', titulo: 'Control de calidad', ver: ['ver_control_calidad'], operar: [] },
   { id: 'ordenes', titulo: 'Órdenes', ver: ['ver_ordenes'], operar: ['ingresar_orden', 'editar_orden', 'anular_orden', 'editar_estado_orden', 'ingresar_transacciones', 'editar_transacciones', 'eliminar_transacciones'] },
   { id: 'cajas', titulo: 'Cajas', ver: ['ver_cajas', 'ver_cajas_efectivo', 'ver_cajas_banco', 'ver_cajas_cheque'], verSubPerms: ['ver_cajas_efectivo', 'ver_cajas_banco', 'ver_cajas_cheque'], operar: ['alta_movimiento_caja', 'editar_movimiento_caja', 'anular_movimiento_caja', 'abm_tipos_movimiento_caja'] },
   { id: 'clientes', titulo: 'Clientes', ver: ['ver_clientes'], operar: ['abm_clientes'] },
@@ -3498,6 +3519,29 @@ let cajasVistaSolapa = 'movimientos';
 /** Panel Inicio — G/P Operativa: período activo en la card. */
 let inicioGpOperativoPeriodo = 'dia';
 let inicioGpOperativoListenersAttached = false;
+/** Vista Control de calidad: período (misma lógica de fechas que G/P Operativa). */
+let controlCalidadPeriodo = 'mes';
+let controlCalidadListenersAttached = false;
+
+function setupControlCalidadVista() {
+  if (controlCalidadListenersAttached) return;
+  const root = document.getElementById('vista-control-calidad');
+  if (!root) return;
+  root.querySelectorAll('[data-control-calidad-periodo]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const p = btn.getAttribute('data-control-calidad-periodo');
+      if (!p || p === controlCalidadPeriodo) return;
+      controlCalidadPeriodo = p;
+      root.querySelectorAll('[data-control-calidad-periodo]').forEach((b) => {
+        const on = b.getAttribute('data-control-calidad-periodo') === p;
+        b.classList.toggle('activo', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      void loadControlCalidadVista();
+    });
+  });
+  controlCalidadListenersAttached = true;
+}
 let tiposMovimientoCaja = [];
 /** Última carga completa (sync + fetch). Cambiar solo moneda/fecha/tipo caja en UI repinta desde acá sin tocar Supabase ni sync masivo — mismo criterio que filtros en memoria en PortfolioDetail (Sistema-Contable). */
 let cajasMovimientosFullCache = null;
@@ -7031,6 +7075,251 @@ const GP_OPERATIVA_DETALLE_BOLSAS = [
   { key: 'comisiones_acuerdo_pandy', titulo: 'Comisión del acuerdo (empresa)' },
   { key: 'comisiones_acuerdo_intermediario', titulo: 'Comisión del acuerdo (intermediario)' },
 ];
+
+/** Textos para alertas de parejas CC↔caja en `control_calidad_informe`. */
+const GP_QC_TIPO_LABEL = {
+  cc_caja_manual_cliente_mismo_signo: 'Cliente + caja manual: mismos signos en CC y caja (riesgo de doble efecto en el Total).',
+  cc_caja_manual_cliente_monto_no_opuesto: 'Cliente + caja manual: montos no contrapuestos (CC + caja ≠ 0).',
+  cc_caja_manual_cliente_caja_fuera_gp: 'Cliente + caja manual: el tipo de caja no incluye G/P pero la CC sí entra al Total.',
+  cc_caja_orden_cliente_mismo_signo: 'Cliente + caja por orden: mismos signos en CC y caja.',
+  cc_caja_orden_cliente_monto_no_opuesto: 'Cliente + caja por orden: montos no contrapuestos (CC + caja ≠ 0).',
+  cc_caja_orden_cliente_caja_fuera_gp: 'Cliente + caja por orden: caja excluida de G/P por tipo pero la CC sí suma.',
+  cc_caja_manual_intermediario_mismo_signo: 'Intermediario + caja manual: mismos signos en CC y caja.',
+  cc_caja_manual_intermediario_monto_no_opuesto: 'Intermediario + caja manual: montos no contrapuestos (CC + caja ≠ 0).',
+  cc_caja_manual_intermediario_caja_fuera_gp: 'Intermediario + caja manual: el tipo de caja no incluye G/P pero la CC sí entra al Total.',
+  cc_caja_orden_intermediario_mismo_signo: 'Intermediario + caja por orden: mismos signos en CC y caja.',
+  cc_caja_orden_intermediario_monto_no_opuesto: 'Intermediario + caja por orden: montos no contrapuestos (CC + caja ≠ 0).',
+  cc_caja_orden_intermediario_caja_fuera_gp: 'Intermediario + caja por orden: caja excluida de G/P por tipo pero la CC sí suma.',
+};
+
+function puedeVerControlCalidad() {
+  return (
+    userPermissions.includes('ver_control_calidad') || userPermissions.includes('ver_gp_operativo_control_calidad')
+  );
+}
+
+function renderControlCalidadSeccionParejas(block) {
+  const total = Number(block && block.total) || 0;
+  const items = block && Array.isArray(block.items) ? block.items : [];
+  const extra = total > items.length ? ` Se listan ${items.length} de ${total}.` : '';
+  let body = '';
+  if (total === 0) {
+    body = '<p class="control-calidad-seccion-msg">Sin alertas en el período.</p>';
+  } else {
+    const rows = items
+      .map((row) => {
+        const lab = GP_QC_TIPO_LABEL[row.tipo] || row.tipo;
+        const ccM = Number(row.cc_monto);
+        const cjM = Number(row.caja_monto);
+        return `<tr>
+          <td>${escapeHtml(lab)}</td>
+          <td><code>${escapeHtml(String(row.cc_id != null ? row.cc_id : ''))}</code></td>
+          <td>${escapeHtml(String(row.cc_fecha || ''))}</td>
+          <td class="${inicioGpClaseSigno(ccM)}">${escapeHtml(formatImporteDisplay(ccM))}</td>
+          <td><code>${escapeHtml(String(row.caja_id != null ? row.caja_id : ''))}</code></td>
+          <td>${escapeHtml(String(row.caja_fecha || ''))}</td>
+          <td class="${inicioGpClaseSigno(cjM)}">${escapeHtml(formatImporteDisplay(cjM))}</td>
+        </tr>`;
+      })
+      .join('');
+    body = `<div class="tabla-clientes-wrap tabla-wrap-con-scroll"><table class="tabla-listado-ordenes control-calidad-tabla"><thead><tr>
+      <th>Alerta</th><th>CC</th><th>Fecha CC</th><th>Monto CC</th><th>Caja</th><th>Fecha caja</th><th>Monto caja</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  return `<section class="control-calidad-seccion" aria-labelledby="cc-qc-parejas-h"><h4 id="cc-qc-parejas-h">Parejas cuenta corriente ↔ caja (${total})</h4><p class="control-calidad-hint">Movimientos vinculados por <code>movimiento_caja_id</code>: mismos signos, montos no opuestos, o tipo de caja fuera de G/P mientras la CC sí entra al total operativo.${extra}</p>${body}</section>`;
+}
+
+function renderControlCalidadSeccionTransTabla(titulo, idBase, hint, cols, block) {
+  const total = Number(block && block.total) || 0;
+  const items = block && Array.isArray(block.items) ? block.items : [];
+  const extra = total > items.length ? ` Se listan ${items.length} de ${total}.` : '';
+  const ths = cols.map((c) => `<th>${escapeHtml(c)}</th>`).join('');
+  let body = '';
+  if (total === 0) {
+    body = '<p class="control-calidad-seccion-msg">Sin casos en el período.</p>';
+  } else {
+    const rows = items
+      .map((row) => {
+        const cells = (row._cells || []).map((v) => `<td>${v}</td>`).join('');
+        return `<tr>${cells}</tr>`;
+      })
+      .join('');
+    body = `<div class="tabla-clientes-wrap tabla-wrap-con-scroll"><table class="tabla-listado-ordenes control-calidad-tabla"><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  return `<section class="control-calidad-seccion" aria-labelledby="${idBase}"><h4 id="${idBase}">${escapeHtml(titulo)} (${total})</h4><p class="control-calidad-hint">${hint}${extra}</p>${body}</section>`;
+}
+
+function renderControlCalidadSeccionSinCc(block) {
+  const items = (block && Array.isArray(block.items) ? block.items : []).map((row) => ({
+    ...row,
+    _cells: [
+      escapeHtml(String(row.orden_numero != null ? row.orden_numero : '')),
+      escapeHtml(String(row.fecha_orden || '')),
+      escapeHtml(String(row.transaccion_numero != null ? row.transaccion_numero : '')),
+      escapeHtml(String(row.estado_transaccion || '')),
+      escapeHtml(String(row.tipo_ie || '')),
+    ],
+  }));
+  return renderControlCalidadSeccionTransTabla(
+    'Transacción ejecutada (dueño cliente) sin movimiento en cuenta corriente',
+    'cc-qc-sin-cc-h',
+    'Órdenes no anuladas por fecha de orden; transacción en estado ejecutada y <code>owner = cliente</code>; no hay fila en <code>movimientos_cuenta_corriente</code> no anulada para esa transacción.',
+    ['Orden', 'Fecha orden', 'Trans.', 'Estado trx.', 'Tipo I/E'],
+    { total: block && block.total, items }
+  );
+}
+
+function renderControlCalidadSeccionEjNoCerrado(block) {
+  const items = (block && Array.isArray(block.items) ? block.items : []).map((row) => ({
+    ...row,
+    _cells: [
+      escapeHtml(String(row.orden_numero != null ? row.orden_numero : '')),
+      escapeHtml(String(row.fecha_orden || '')),
+      escapeHtml(String(row.transaccion_numero != null ? row.transaccion_numero : '')),
+      escapeHtml(String(row.estado_transaccion || '')),
+      escapeHtml(String(row.cc_estados || '')),
+    ],
+  }));
+  return renderControlCalidadSeccionTransTabla(
+    'Transacción ejecutada con CC cliente que no está todo en estado «cerrado»',
+    'cc-qc-ej-no-cerr-h',
+    'Hay al menos un movimiento en <code>movimientos_cuenta_corriente</code> no anulado cuyo estado no es <code>cerrado</code>. Columna «Estados CC»: valores distintos encontrados.',
+    ['Orden', 'Fecha orden', 'Trans.', 'Estado trx.', 'Estados CC'],
+    { total: block && block.total, items }
+  );
+}
+
+function renderControlCalidadSeccionPendNoPendiente(block) {
+  const items = (block && Array.isArray(block.items) ? block.items : []).map((row) => ({
+    ...row,
+    _cells: [
+      escapeHtml(String(row.orden_numero != null ? row.orden_numero : '')),
+      escapeHtml(String(row.fecha_orden || '')),
+      escapeHtml(String(row.transaccion_numero != null ? row.transaccion_numero : '')),
+      escapeHtml(String(row.estado_transaccion || '')),
+      escapeHtml(String(row.cc_estados || '')),
+    ],
+  }));
+  return renderControlCalidadSeccionTransTabla(
+    'Transacción pendiente con CC cliente que no está todo en estado «pendiente»',
+    'cc-qc-pend-no-pend-h',
+    'Hay al menos un movimiento en <code>movimientos_cuenta_corriente</code> no anulado cuyo estado no es <code>pendiente</code>.',
+    ['Orden', 'Fecha orden', 'Trans.', 'Estado trx.', 'Estados CC'],
+    { total: block && block.total, items }
+  );
+}
+
+/** Vista menú Control de calidad: RPC `control_calidad_informe` (requiere migración SQL). */
+function loadControlCalidadVista() {
+  setupControlCalidadVista();
+  const sinPerm = document.getElementById('control-calidad-sin-permiso');
+  const loading = document.getElementById('control-calidad-loading');
+  const contenido = document.getElementById('control-calidad-contenido');
+  const leyenda = document.getElementById('control-calidad-leyenda-periodo');
+  const root = document.getElementById('vista-control-calidad');
+  if (!loading || !contenido) return Promise.resolve();
+  const silent = isPandiBackgroundRefresh();
+
+  if (root) {
+    root.querySelectorAll('[data-control-calidad-periodo]').forEach((b) => {
+      const on = b.getAttribute('data-control-calidad-periodo') === controlCalidadPeriodo;
+      b.classList.toggle('activo', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  }
+
+  if (!puedeVerControlCalidad()) {
+    if (!silent) {
+      if (sinPerm) sinPerm.style.display = 'block';
+      loading.style.display = 'none';
+      contenido.style.display = 'none';
+      contenido.innerHTML = '';
+    }
+    return Promise.resolve();
+  }
+  if (!silent && sinPerm) sinPerm.style.display = 'none';
+
+  const rango = inicioGpOperativoRangoFechas(controlCalidadPeriodo);
+  if (leyenda) {
+    if (controlCalidadPeriodo === 'total') {
+      leyenda.textContent =
+        'Período: todo el historial. Parejas CC↔caja por fechas de movimientos; transacciones por fecha de orden (dueño cliente). Argentina.';
+    } else if (rango.desde && rango.hasta) {
+      leyenda.textContent = `Período: ${rango.desde} al ${rango.hasta} (inclusive). Argentina.`;
+    } else {
+      leyenda.textContent = '';
+    }
+  }
+
+  if (!silent) {
+    loading.style.display = 'block';
+    contenido.style.display = 'none';
+  }
+
+  return client
+    .rpc('control_calidad_informe', { p_desde: rango.desde, p_hasta: rango.hasta })
+    .then((res) => {
+      if (!silent) loading.style.display = 'none';
+      if (res.error) {
+        if (!silent) {
+          contenido.style.display = 'block';
+          const msg = String(res.error.message || '');
+          const faltaFn =
+            /does not exist|42883|Could not find the function/i.test(msg) ||
+            (msg.includes('function') && msg.includes('control_calidad_informe'));
+          contenido.innerHTML =
+            '<p class="control-calidad-error"><strong>No se pudo cargar.</strong> ' +
+            (faltaFn
+              ? 'Ejecutá <code>sql/migracion_control_calidad_vista_informe.sql</code> en Supabase.'
+              : escapeHtml(msg)) +
+            '</p>';
+        }
+        return;
+      }
+      let j = res.data;
+      if (typeof j === 'string') {
+        try {
+          j = JSON.parse(j);
+        } catch (e) {
+          j = null;
+        }
+      }
+      if (!j || typeof j !== 'object') {
+        if (!silent) {
+          contenido.style.display = 'block';
+          contenido.innerHTML = '<p class="control-calidad-error">Respuesta inválida del servidor.</p>';
+        }
+        return;
+      }
+      if (j.ok === false && j.motivo === 'sin_permiso') {
+        if (!silent) {
+          if (sinPerm) sinPerm.style.display = 'block';
+          contenido.style.display = 'none';
+        }
+        return;
+      }
+      const parejas = j.parejas_cc_caja || {};
+      const sinCc = j.trans_sin_mov_cc_cliente || {};
+      const ejNoCerr = j.trans_ejecutada_cc_no_cerrado || {};
+      const pendNoPend = j.trans_pendiente_cc_no_pendiente || {};
+      const html = [
+        renderControlCalidadSeccionParejas(parejas),
+        renderControlCalidadSeccionSinCc(sinCc),
+        renderControlCalidadSeccionEjNoCerrado(ejNoCerr),
+        renderControlCalidadSeccionPendNoPendiente(pendNoPend),
+      ].join('');
+      contenido.innerHTML = html;
+      if (!silent) contenido.style.display = 'block';
+      else if (contenido.style.display === 'none' && html) contenido.style.display = 'block';
+    })
+    .catch(() => {
+      if (!silent) {
+        loading.style.display = 'none';
+        contenido.style.display = 'block';
+        contenido.innerHTML = '<p class="control-calidad-error">Error de red o servidor.</p>';
+      }
+    });
+}
 
 /** Filas planas del último desglose «total» (P&L: seis bolsas); para ver solo una moneda en todas las filas. */
 let pandiGpDetalleCacheTotalFilas = null;
@@ -29383,6 +29672,7 @@ const VIEWS_CONFIG = [
   ['menu-intermediarios', 'vista-intermediarios', 'Intermediarios', 'ver_intermediarios'],
   ['menu-tipos-operacion', 'vista-tipos-operacion', 'Tipos de operación', 'abm_tipos_operacion'],
   ['menu-cuenta-corriente', 'vista-cuenta-corriente', 'Cuenta corriente', 'ver_cuenta_corriente'],
+  ['menu-control-calidad', 'vista-control-calidad', 'Control de calidad', 'ver_control_calidad'],
   ['menu-reglas-negocio', 'vista-reglas-negocio', 'Reglas de negocio (CC)', 'abm_reglas_negocio'],
   ['menu-configuracion-empresa', 'vista-configuracion-empresa', 'Empresa / marca', 'abm_configuracion_empresa'],
   ['menu-seguridad', 'vista-seguridad', 'Seguridad', 'ver_seguridad'],
@@ -29390,27 +29680,31 @@ const VIEWS_CONFIG = [
 ];
 
 function hasAnyViewPermission() {
+  if (puedeVerControlCalidad()) return true;
   return VIEWS_CONFIG.some((r) => userPermissions.includes(r[3]));
 }
 
 function canViewVista(vistaId) {
   if (!hasAnyViewPermission()) return true; // Sin migración de vistas: ver todo
+  if (vistaId === 'vista-control-calidad') return puedeVerControlCalidad();
   const row = VIEWS_CONFIG.find((r) => r[1] === vistaId);
   if (!row) return true;
   return userPermissions.includes(row[3]);
 }
 
 function getFirstAllowedView() {
-  const row = VIEWS_CONFIG.find((r) => userPermissions.includes(r[3]));
+  const row = VIEWS_CONFIG.find((r) => canViewVista(r[1]));
   return row ? [row[1], row[2]] : ['vista-inicio', 'Panel de Control'];
 }
 
 function applyVistasMenuVisibility() {
   const useVistasPermisos = hasAnyViewPermission();
-  VIEWS_CONFIG.forEach(([menuId, , , perm]) => {
+  VIEWS_CONFIG.forEach(([menuId, vistaId, , perm]) => {
     const menuEl = document.getElementById(menuId);
     if (!menuEl) return;
-    menuEl.style.display = !useVistasPermisos || userPermissions.includes(perm) ? '' : 'none';
+    let visible = !useVistasPermisos || userPermissions.includes(perm);
+    if (vistaId === 'vista-control-calidad') visible = !useVistasPermisos || puedeVerControlCalidad();
+    menuEl.style.display = visible ? '' : 'none';
   });
 }
 
@@ -29462,6 +29756,7 @@ function refreshCurrentViewData() {
     'vista-configuracion-empresa': loadConfiguracionEmpresa,
     'vista-seguridad': loadSeguridad,
     'vista-auditoria': loadAuditoriaVista,
+    'vista-control-calidad': loadControlCalidadVista,
   };
   const fn = loaders[currentVistaId];
   if (typeof fn !== 'function') return;
@@ -29594,6 +29889,7 @@ async function finalizeSessionUiSetup() {
   });
 
   setupVistasMenu();
+  setupControlCalidadVista();
   setupAuditoriaVistaUi();
   applyVistasMenuVisibility();
   updateCcBotonesMovimientoManual();

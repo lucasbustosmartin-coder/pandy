@@ -1396,6 +1396,60 @@
       line-height: 1.35;
     }
     .inicio-gp-matriz-error { font-size: 0.9rem; color: #6b7280; padding: 0.25rem 0; }
+    /* G/P Operativa — estilos legacy .inicio-gp-qc (bloque QC retirado del panel; vista dedicada Control de calidad) */
+    .inicio-gp-qc {
+      margin-top: 0.75rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+    .inicio-gp-qc--loading { color: #6b7280; }
+    .inicio-gp-qc--ok { border-color: #bbf7d0; background: #f0fdf4; color: #14532d; }
+    .inicio-gp-qc--warn { border-color: #fcd34d; background: #fffbeb; color: #78350f; }
+    .inicio-gp-qc--error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+    .inicio-gp-qc .inicio-gp-qc-count { font-weight: 700; }
+    .inicio-gp-qc-list { margin: 0.4rem 0 0 1rem; padding: 0; max-height: 14rem; overflow-y: auto; }
+    .inicio-gp-qc-list li { margin-bottom: 0.35rem; }
+    .inicio-gp-qc-tipo { display: block; font-weight: 600; margin-bottom: 0.1rem; }
+    .vista-control-calidad .control-calidad-seccion {
+      margin-bottom: 1.35rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .vista-control-calidad .control-calidad-seccion:last-of-type {
+      border-bottom: none;
+    }
+    .vista-control-calidad .control-calidad-seccion h4 {
+      margin: 0 0 0.35rem 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+    .vista-control-calidad .control-calidad-hint {
+      margin: 0 0 0.5rem 0;
+      font-size: 0.82rem;
+      color: #4b5563;
+      line-height: 1.45;
+    }
+    .vista-control-calidad .control-calidad-seccion-msg {
+      margin: 0;
+      font-size: 0.88rem;
+      color: #6b7280;
+    }
+    .vista-control-calidad .control-calidad-error {
+      margin: 0.5rem 0 0 0;
+      font-size: 0.9rem;
+      color: #991b1b;
+      line-height: 1.45;
+    }
+    .vista-control-calidad .control-calidad-tabla th,
+    .vista-control-calidad .control-calidad-tabla td {
+      font-size: 0.82rem;
+      vertical-align: top;
+    }
     .inicio-gp-matriz-num {
       text-align: right;
       font-variant-numeric: tabular-nums;

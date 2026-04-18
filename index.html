@@ -239,6 +239,10 @@
         <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-9"></use></svg></span>
         <span class="menu-label">Cuenta corriente</span>
       </a>
+      <a href="#" class="menu-item" id="menu-control-calidad" title="Control de calidad" aria-label="Control de calidad">
+        <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-22"></use></svg></span>
+        <span class="menu-label">Control de calidad</span>
+      </a>
       <a href="#" class="menu-item menu-item-critico" id="menu-reglas-negocio" title="Reglas de negocio (crítico)" aria-label="Reglas de negocio">
         <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-10"></use></svg></span>
         <span class="menu-label">Reglas CC</span>
@@ -256,7 +260,7 @@
         <span class="menu-label">Auditoría</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.50</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.51</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -812,6 +816,27 @@
             </table>
           </div>
         </div>
+      </div>
+      <div id="vista-control-calidad" class="card vista-control-calidad" style="display:none;">
+        <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+          <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-22"></use></svg></span>
+          Control de calidad
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Control de calidad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><strong>Control de calidad</strong> agrupa alertas para revisar coherencia entre <strong>caja</strong>, <strong>cuenta corriente cliente</strong> y <strong>transacciones</strong> en el período elegido (calendario <strong>Argentina</strong>; la semana es <strong>lunes a domingo</strong>). Las <strong>parejas CC↔caja</strong> filtran por fechas de ambos movimientos. Las secciones sobre <strong>transacciones</strong> usan la <strong>fecha de la orden</strong> y el dueño <strong>cliente</strong>. Requiere permiso <code>ver_control_calidad</code> (o el permiso heredado <code>ver_gp_operativo_control_calidad</code> hasta normalizar roles). Ejecutá en Supabase <code>sql/migracion_control_calidad_vista_informe.sql</code> si la función <code>control_calidad_informe</code> no existe.</span></span>
+        </h3>
+        <div id="control-calidad-sin-permiso" class="panel-reglas-negocio-aviso" role="status" style="display:none;">
+          No tenés permiso para ver esta vista (<code>ver_control_calidad</code> o el permiso heredado de control G/P).
+        </div>
+        <div class="inicio-gp-toolbar" style="margin-bottom:0.35rem;">
+          <div class="inicio-gp-periodos" role="tablist" aria-label="Período control de calidad">
+            <button type="button" class="btn-secondary inicio-gp-pill" data-control-calidad-periodo="dia" aria-selected="false">Día</button>
+            <button type="button" class="btn-secondary inicio-gp-pill" data-control-calidad-periodo="semana" aria-selected="false">Semana</button>
+            <button type="button" class="btn-secondary inicio-gp-pill activo" data-control-calidad-periodo="mes" aria-selected="true">Mes</button>
+            <button type="button" class="btn-secondary inicio-gp-pill" data-control-calidad-periodo="total" aria-selected="false">Total</button>
+          </div>
+        </div>
+        <p class="inicio-gp-leyenda" id="control-calidad-leyenda-periodo" style="margin:0 0 0.75rem 0;"></p>
+        <div id="control-calidad-loading" class="vista-loading-spinner" style="display:none;">Cargando informe…</div>
+        <div id="control-calidad-contenido" style="display:none;" aria-live="polite"></div>
       </div>
       <div id="vista-reglas-negocio" class="card" style="display:none;">
         <h3 style="margin:0 0 0.5rem 0; font-size:1.1rem; display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem;">

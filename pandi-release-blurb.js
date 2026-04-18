@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.50',
+  versionLabel: 'v3.7.51',
   lines: [
-    'Cuenta corriente: al cerrar acuerdos en la misma moneda con intermediario, el resumen y el guardado deberían quedar coherentes sin quedarte a medias.',
-    'Si invertís el ingreso en una operación dólar–dólar con intermediario, el sistema valida mejor el saldo y evita guardar datos incompletos.',
-    'Menos mensajes de error confusos al ejecutar la segunda transacción cuando todo está bien instrumentado.',
+    'Nuevo menú «Control de calidad» con un informe por período para revisar coherencia entre caja, cuenta corriente del cliente y transacciones.',
+    'En el panel de inicio, la tarjeta de ganancia/pérdida operativa queda centrada en la matriz; las alertas de control pasan a la vista dedicada.',
+    'Si tu perfil tenía permiso de control heredado, seguís pudiendo abrir el informe hasta que el administrador unifique los permisos en Seguridad.',
   ],
 };
