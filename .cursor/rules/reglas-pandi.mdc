@@ -5,6 +5,13 @@ alwaysApply: true
 
 # Reglas de trabajo – Pandi
 
+## Verificación de impacto productivo (obligatoria — no omitir)
+
+- **Archivo:** `.cursor/rules/verificacion-impacto-productivo.mdc` (`alwaysApply: true`). Vale para **cualquier** cambio en el repo (un carácter o mil líneas).
+- **Antes del primer edit** en rutas compartidas (`main.js` sync CC/caja o motor, `utils.js`, `sql/` RPC, PWA/SW, tests e2e): cumplir el **protocolo obligatorio** de esa regla (núcleo vs territorio protegido, inventario de riesgo, **preguntar** si hay colateral razonable).
+- **Al cerrar la tarea:** en la respuesta al usuario, incluir el bloque **`Verificación de impacto:`** como exige esa regla. Si no se cumplió, **no dar por cerrada** la tarea: completar el bloque o la pregunta pendiente.
+- **Conflicto rapidez vs esta regla:** gana siempre la verificación de impacto (ya acordado en `verificacion-impacto-productivo`).
+
 ## Contexto del proyecto
 
 - **Backend:** Supabase (PostgreSQL). Tablas y esquema se definirán según la app. Scripts SQL en `sql/` se ejecutan en Supabase SQL Editor.
@@ -75,7 +82,7 @@ alwaysApply: true
 - **RPC / Supabase:** Si el cambio afecta lógica que corre en el backend (funciones en `sql/`, p. ej. `sync_cc_caja_orden`, `transacciones_cambiar_estado`), **hay que revisar si las RPC deben adaptarse** y actualizar los scripts en `sql/` cuando corresponda. No puede omitirse este paso.
 - **Tests:** Si el cambio afecta flujos o UI cubiertos por tests (E2E en `tests/e2e/`, o tests unitarios), **hay que adaptar o ampliar los tests** en la misma sesión para que sigan pasando y reflejen el nuevo comportamiento. No omitir: revisar selectores, textos, columnas o pasos que hayan cambiado. Guía: `docs/TESTING_E2E_GUIA.md`.
 - **Expectativas de tests (única fuente de verdad):** Los valores esperados en tests (p. ej. `cc-combinaciones-esperado.js`, o cualquier assert de saldos/resultados) **no pueden modificarse sin analizar y acordar con el usuario**. El propósito del test es asegurar la única fuente de verdad: si se cambia el esperado sin análisis ni acuerdo, se viola ese principio.
-- **Impacto cruzado (productivo, estricto):** Cualquier cambio debe evaluarse frente a **todo lo que el usuario no pidió tocar**. Regla **verificacion-impacto-productivo** (`.cursor/rules/verificacion-impacto-productivo.mdc`): si el cambio puede afectar **otra funcionalidad**, **preguntar siempre al usuario antes de aplicarlo** y no implementar esa parte sin respuesta explícita; al cerrar, dejar claro alcance pedido vs. riesgos descartados o autorizados.
+- **Impacto cruzado (productivo, estricto):** Ver también la sección **«Verificación de impacto productivo»** al inicio de este archivo. Detalle operativo: **verificacion-impacto-productivo** (`.cursor/rules/verificacion-impacto-productivo.mdc`) — si el cambio puede afectar **otra funcionalidad**, **preguntar siempre al usuario antes de aplicarlo** y no implementar esa parte sin respuesta explícita; al cerrar, el bloque **`Verificación de impacto:`** con alcance vs. riesgos descartados o autorizados.
 
 ## Regla estricta: acuerdo antes de implementar (no omitir)
 

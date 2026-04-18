@@ -7,6 +7,25 @@ alwaysApply: true
 
 El sistema está **en producción**. El objetivo no es revisar “algunas áreas típicas”, sino **garantizar que el cambio no altere ninguna funcionalidad que el usuario no haya pedido tocar**.
 
+> **Recordatorio para el agente (no negociable):** Esta regla tiene `alwaysApply: true`. **No se omite** por rapidez, por diff chico, por confianza en el cambio ni porque el usuario no la mencionó. Si vas a tocar el repo y **aún no** hiciste el protocolo de abajo (núcleo vs colateral, inventario, **pregunta** si aplica), **pará**: completalo en el mensaje **antes** del primer `apply_patch`/edición.
+
+## Protocolo obligatorio antes del primer cambio en el repo
+
+En **toda** tarea que implique **modificar archivos** (código, SQL, tests, config):
+
+1. **Núcleo permitido:** qué pidió el usuario (alcance mínimo interpretado).
+2. **Superficies enlazadas:** nombrar qué otras partes del sistema comparten ese código, esos datos o esa RPC (aunque sea en una frase: p. ej. “`sincronizarCcYCajaDesdeOrden` corre para **todas** las órdenes al sincronizar CC”).
+3. **Barrera:** si hay **posibilidad razonable** de que cambie el comportamiento **fuera** del núcleo → **no editar todavía**; preguntar con alcance concreto y esperar confirmación explícita.
+4. **Excepción muy acotada (igual cerrar con texto):** typo en un string de una sola vista sin imports compartidos, variable local, archivo nuevo aún no cableado — igual conviene una línea **Verificación de impacto:** “sin riesgo colateral razonable porque …”.
+
+### Disparadores (protocolo completo obligatorio: pasos 1–4 antes de editar)
+
+- **`main.js`:** sync CC/caja (`sincronizarCcYCajaDesdeOrden`, `fallbackSyncCcCaja`), motor CC (`aplicarMotorCcDesdeReglasDeNegocio`), multicontraparte manual, invariante de neteo, filas insertadas a Supabase desde el cliente.
+- **`utils.js`** u otros helpers usados desde muchos flujos.
+- **`sql/`** RPC, triggers o vistas leídas por más de un informe o pantalla.
+- **PWA / service worker / `config.js`** si cambia cache, rutas o entorno.
+- **`tests/e2e/`** o expectativas que fijen contrato de negocio.
+
 ## Principio (obligatorio)
 
 1. **Alcance explícito del pedido:** interpretar qué pidió el usuario (pantalla, flujo, tabla, RPC, test, doc). Eso es el **núcleo permitido** del cambio.
@@ -35,8 +54,12 @@ El sistema está **en producción**. El objetivo no es revisar “algunas áreas
 
 ## Cierre de tarea
 
-- Si **no** hubo riesgo colateral razonable: decirlo explícitamente (**qué se excluyó** del análisis y por qué es acotado, p. ej. typo en string de una sola vista).
+- En la **respuesta final al usuario** (cuando hubo edición en el repo), incluir un bloque visible titulado exactamente **`Verificación de impacto:`** con una de estas formas:
+  - **Sin riesgo colateral razonable** — motivo breve (p. ej. “solo string en vista X; sin imports compartidos”).
+  - **Riesgos identificados:** … — **Usuario autorizó** … / **Quedó fuera de alcance** …
+- Si **no** hubo riesgo colateral razonable: igual decir **qué quedó fuera del análisis** si hubo zonas no revisadas a propósito (y por qué es legítimo).
 - Si hubo riesgo y el usuario **autorizó** el alcance: implementar solo lo acordado y mencionar qué quedó fuera a propósito.
+- **Prohibido** cerrar con solo “listo”, “hecho” o “aplicado” **sin** ese bloque cuando se modificaron archivos del proyecto.
 - **Prohibido** dar por bueno “solo toqué X” sin haber razonado el resto del sistema respecto del pedido.
 
 ## Relación con otras reglas

@@ -5,10 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.52',
+  versionLabel: 'v3.7.53',
   lines: [
-    'El informe de Control de calidad ahora tiene en cuenta también las órdenes anuladas del período, para cruzar caja y cuenta corriente sin dejar huecos.',
-    'Si una transacción quedó anulada, el informe puede avisarte si falta huella en cuenta corriente o si algún movimiento derivado no quedó alineado con el anulado.',
-    'Actualizamos las ayudas en pantalla y el manual offline para leer mejor cada alerta.',
+    'Al actualizar o re-sincronizar la cuenta corriente de una orden, las transacciones anuladas vuelven a dejar registro en el libro cuando antes podía faltar una línea.',
+    'Con eso, el informe de Control de calidad y la cuenta corriente coinciden mejor después de guardar o refrescar.',
   ],
 };

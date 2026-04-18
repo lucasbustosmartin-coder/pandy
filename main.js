@@ -10227,6 +10227,75 @@ function lookupReglasDeNegocioMotorContrapartidaAnulada(
   return rows || [];
 }
 
+/**
+ * Tras motor + MC + legacy: por cada transacción en **anulada**, si ninguna fila en CC cliente ni intermediario
+ * referencia ese `transaccion_id`, inserta una fila marcadora (monto 0, estado anulado). Sin esto, el sync
+ * (DELETE + INSERT por orden) borra reparaciones SQL y `control_calidad_informe.trans_anulada_sin_registro_cc`
+ * vuelve a alertar cuando el motor no matchea reglas para esa trx (p. ej. `!reglasTx.length` y return temprano).
+ */
+function inyectarFilasCcTrazabilidadTransaccionesAnuladasSinMovimiento(
+  rowsCcCliente,
+  rowsCcInt,
+  transacciones,
+  orden,
+  ordenId,
+  clienteId,
+  intermediarioId,
+  fecha,
+  ahora,
+) {
+  if (!Array.isArray(transacciones) || !orden || !ordenId) return;
+  for (const tRaw of transacciones) {
+    if ((tRaw.concepto || '').includes('Ganancia del acuerdo')) continue;
+    const tNorm = transaccionNormalizarPagCobVacios(tRaw);
+    if (transaccionEstadoTextoNormalizado(tNorm) !== 'anulada') continue;
+    const tid = tNorm.id != null ? String(tNorm.id) : '';
+    if (!tid) continue;
+    const tieneCli = (rowsCcCliente || []).some((r) => r && r.transaccion_id && String(r.transaccion_id) === tid);
+    const tieneInt = (rowsCcInt || []).some((r) => r && r.transaccion_id && String(r.transaccion_id) === tid);
+    if (tieneCli || tieneInt) continue;
+    const ownerL = String(tNorm.owner || '').toLowerCase();
+    const monRaw = String(tNorm.moneda || '').toUpperCase().trim();
+    const mon = monRaw === 'USD' || monRaw === 'EUR' || monRaw === 'ARS' ? monRaw : 'USD';
+    const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(tNorm, fecha, ahora);
+    const nro = tNorm.numero != null ? tNorm.numero : null;
+    const on = orden.numero != null ? orden.numero : '';
+    const concepto =
+      'Trazabilidad transacción anulada — Orden ' +
+      on +
+      ', Trans. ' +
+      (nro != null ? nro : '?') +
+      ' (sin fila CC del motor; sync)';
+    const uid = usuarioIdMovimientoCcDesdeTransaccionOOrden(tNorm, orden);
+    const base = {
+      orden_id: ordenId,
+      transaccion_id: tNorm.id,
+      transaccion_numero: nro,
+      concepto,
+      fecha: feT.fecha,
+      usuario_id: uid,
+      moneda: mon,
+      monto: 0,
+      estado: 'anulado',
+      estado_fecha: feT.estado_fecha,
+      incluir_en_detalle: true,
+      es_movimiento_manual: false,
+      ...montosCcPorMoneda(mon, 0),
+    };
+    if (ownerL === 'intermediario' && intermediarioId) {
+      rowsCcInt.push({
+        intermediario_id: intermediarioId,
+        ...base,
+      });
+    } else if (clienteId) {
+      rowsCcCliente.push({
+        cliente_id: clienteId,
+        ...base,
+      });
+    }
+  }
+}
+
 /** Tolerancia al comprobar neteo CC cliente por moneda tras el motor (misma escala que el resto del archivo). */
 const EPS_CC_NETEO_CLIENTE_ORDEN = 1e-6;
 
@@ -23098,6 +23167,18 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               ordenAnuladaSync,
             );
           }
+
+          inyectarFilasCcTrazabilidadTransaccionesAnuladasSinMovimiento(
+            rowsCcCliente,
+            rowsCcInt,
+            transacciones,
+            orden,
+            ordenId,
+            clienteId,
+            intermediarioId,
+            fecha,
+            ahora,
+          );
 
           // Evitar duplicados: clave debe distinguir dos líneas válidas con mismo monto (p. ej. ARS-USD inversa P,E: +me USD en Tx1 pendiente y en Tx2 ejecutada).
           const seenCli = new Set();
