@@ -38,13 +38,16 @@ export function formatNumeroComaHastaDecimales(num, maxDecimales) {
   return decPart !== '' ? entera + ',' + decPart : entera;
 }
 
+/** Máx. decimales en % para tasas del wizard (cliente, intermediario, transferencia, CHEQUE). */
+export const PANDI_TASA_PCT_DECIMALES_UI = 6;
+
 /**
- * Porcentaje de tasa para inputs del wizard (hasta 4 decimales, coma decimal, miles con punto).
+ * Porcentaje de tasa para inputs del wizard (hasta 6 decimales, coma decimal, miles con punto).
  * @param {number} num - Valor en % (ej. 1.5 para 1,5%).
  * @returns {string}
  */
 export function formatTasaPorcentajeDisplay(num) {
-  return formatNumeroComaHastaDecimales(num, 4);
+  return formatNumeroComaHastaDecimales(num, PANDI_TASA_PCT_DECIMALES_UI);
 }
 
 /**

@@ -38,6 +38,8 @@ No subas este archivo a Git (está en `.gitignore`). Opcional **`.env.local`** p
 
 **Fechas de negocio (Argentina):** ejecutá primero `sql/helpers_fecha_argentina.sql` si armás la base a mano (antes de tablas con `DEFAULT` en `fecha`). En bases ya existentes, `sql/migracion_fecha_default_columnas_argentina.sql` alinea los DEFAULT de columnas `fecha`. Convención: `docs/FECHAS_ARGENTINA.md`.
 
+**Compensación CC (USD-USD + intermediario, sin multicontraparte manual):** columna opcional `transacciones.compensacion_cc_monto_aplicado` (numeric, nullable). Script: `sql/migracion_transacciones_compensacion_cc_monto.sql`. Sin ejecutarlo en Supabase, el front puede recibir error al guardar el modal si intenta persistir ese campo. El sync inserta en CC la línea «Compensación parcial en cuenta corriente- …» o «Compensación total en cuenta corriente- …» vinculada a la transacción. Ver `docs/CUENTA_CORRIENTE_Y_CAJA.md`.
+
 **RPC `sync_cc_caja_orden` — `usuario_id` en movimientos CC:** en producción/dev, volvé a ejecutar el script actual `sql/rpc_sync_cc_caja_orden.sql` (pegar en SQL Editor). Si el JSON no trae `usuario_id`, la función resuelve desde `transacciones` y `ordenes` antes que `p_usuario_id`. Nota: `sql/migracion_rpc_sync_cc_caja_orden_cc_usuario_desde_trx.sql` solo documenta el cambio; el cuerpo ejecutable está en `rpc_sync_cc_caja_orden.sql`.
 
 **Anular orden — DELETE `comisiones_orden` / `orden_comisiones_generadas`:** el front (`ejecutarAnulacionOrdenCompleta`) elimina esas filas al anular. Las políticas RLS originales solo permitían DELETE con `abm_ordenes`. Ejecutar en **prod y dev** `sql/migracion_rls_comisiones_delete_anular_orden.sql` para permitir también `anular_orden` (misma condición en ambas tablas).

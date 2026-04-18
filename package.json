@@ -19,6 +19,7 @@
     "dev:host": "node scripts/build-config.js && vite --port 5173 --host 0.0.0.0",
     "dev:open": "node scripts/build-config.js && vite --open --port 5173",
     "preview": "node scripts/build-config.js && vite preview",
+    "test:unit-cc-flip": "node --test tests/unit/compensacion-cc-flip-logica.test.mjs",
     "test:e2e": "playwright test --reporter=line --workers=1",
     "test:e2e:orden": "playwright test --grep-invert \"Reversa\"",
     "test:e2e:reversa": "playwright test -g \"Reversa\"",

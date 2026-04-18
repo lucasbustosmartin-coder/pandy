@@ -9,7 +9,7 @@ En este tipo **no hay comisión como línea aparte en la orden**: la **comisión
 - En la UI, `monto_recibido` debe ser **mayor** que `monto_entregado` (si no, error de validación).
 - Ese margen es el **ingreso de Pandy** por el acuerdo.
 
-En el bloque **Datos del acuerdo** (importe = monto que recibe el cliente, tasa al cliente en %), el usuario elige la **interpretación de la tasa** (solo en la UI de USD-USD):
+En el bloque **Datos del acuerdo** (importe = monto que recibe el cliente, tasa al cliente en %), el usuario elige la **interpretación de la tasa** (solo en la UI de USD-USD). Las tasas **%** admiten **hasta 6 decimales**. **«Comisión a Recibir»** (spread **mr − me**) es **editable**: al modificarla, la app recalcula la tasa al cliente y los montos (auditoría al confirmar el campo y al guardar la orden).
 
 1. **Descuento sobre lo recibido** (por defecto; compatible con órdenes guardadas antes sin campo explícito):  
    **`monto_entregado = importe × (1 − tasa_al_cliente / 100)`**  

@@ -2,6 +2,16 @@
 
 Esta guía indica **qué tenés que hacer vos** para que los tests automatizados funcionen y cómo usarlos.
 
+### Tests unitarios locales (sin Playwright ni Supabase)
+
+Para la política de **compensación CC** al invertir un ingreso Cliente→Pandy a Pandy→Cliente (USD-USD con intermediario, sin multicontraparte manual), el repo incluye tests mínimos que documentan el tope `Math.min(monto, -saldo)` y la suma exenta del invariante de neteo:
+
+```bash
+npm run test:unit-cc-flip
+```
+
+No requieren `.env.test` ni app levantada.
+
 ---
 
 ## 1. Lo que tenés que hacer una sola vez

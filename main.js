@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { formatMonto, formatImporteDisplay, formatTasaPorcentajeDisplay, formatNumeroComaHastaDecimales, formatImporteParaInput, formatearCeldaMoneda, formatearCeldaMonedaConSigno, htmlTipoOperacionIconos, htmlIconoMonedaTipoOp, isHttpsUrlSegura } from './utils.js';
+import { formatMonto, formatImporteDisplay, formatTasaPorcentajeDisplay, formatNumeroComaHastaDecimales, formatImporteParaInput, formatearCeldaMoneda, formatearCeldaMonedaConSigno, htmlTipoOperacionIconos, htmlIconoMonedaTipoOp, isHttpsUrlSegura, PANDI_TASA_PCT_DECIMALES_UI } from './utils.js';
 import { PANDI_RELEASE_BLURB } from './pandi-release-blurb.js';
 import {
   openPandiOfflineDb,
@@ -2372,8 +2372,8 @@ let sessionTimeoutMinutes = 60;
 let usdUsdComisionFijaConfig = { intermediario_id: '', opcion_a: 50, opcion_b: 75 };
 /** En esta sesión del wizard el usuario eligió comisión variable (%) en lugar de la fija para USD-USD+cp_ic con intermediario parametrizado. */
 let ordenWizardUsdUsdCpIcIgnorarComisionFija = false;
-/** Decimales permitidos en campos de tasa (%) del wizard. */
-const PANDI_TASA_PCT_DECIMALES = 4;
+/** Decimales permitidos en campos de tasa (%) del wizard (alineado a `PANDI_TASA_PCT_DECIMALES_UI` en utils). */
+const PANDI_TASA_PCT_DECIMALES = PANDI_TASA_PCT_DECIMALES_UI;
 const PANDI_LS_USD_COMISION_FIJA_PREF = 'pandi_usd_comision_fija_pref';
 
 function parseUsdUsdComisionFijaConfigJson(raw) {
@@ -3536,7 +3536,29 @@ function conceptoCcLeyenda(tipo, ordenNumero, transNumero) {
   if (tipo === 'contra_cobro_entrega_pendiente') return 'Contra cobro (entrega pendiente)' + suf;
   if (tipo === 'prestamo_pandy_monr_regla_b')
     return 'Préstamo al cliente (cobertura Pandy — moneda recibida)' + suf;
+  if (tipo === 'compensacion_parcial_total') return 'Compensación parcial o total' + suf;
   return 'Movimiento' + suf;
+}
+
+/**
+ * Leyenda CC por compensación de saldo (flip ingreso C→P a P→C, USD-USD+int sin MC).
+ * Total: el monto compensado iguala el monto del ingreso. Parcial: compensación estrictamente menor (p. ej. tope −saldo).
+ */
+function conceptoCompensacionCcEnCuentaCorriente(esTotal, ordenNumero, transNumero) {
+  const ord = ordenNumero != null && ordenNumero !== '' ? String(ordenNumero) : '?';
+  const tr = transNumero != null && transNumero !== '' ? String(transNumero) : '?';
+  const tipo = esTotal ? 'total' : 'parcial';
+  return 'Compensación ' + tipo + ' en cuenta corriente- Orden ' + ord + ' y Trans ' + tr;
+}
+
+/** Filas CC de compensación por saldo (nueva leyenda o legacy «parcial o total»). */
+function conceptoCcEsCompensacionSaldoFlipConcepto(concepto) {
+  const c = String(concepto || '');
+  return (
+    c.includes('Compensación parcial en cuenta corriente-') ||
+    c.includes('Compensación total en cuenta corriente-') ||
+    c.includes('Compensación parcial o total')
+  );
 }
 
 /**
@@ -3882,7 +3904,7 @@ function registrarAuditoriaTransaccionMonto(transaccionId, t, ordenId, oldMonto,
 const TRANSACCION_CAMPOS_EDICION_MODAL = [
   'instrumentacion_id', 'tipo', 'modo_pago_id', 'moneda', 'monto', 'cobrador', 'pagador', 'owner', 'estado', 'concepto', 'tipo_cambio',
   'pagador_cliente_id', 'cobrador_cliente_id', 'pagador_intermediario_id', 'cobrador_intermediario_id',
-  'fecha_ejecucion', 'usuario_id',
+  'fecha_ejecucion', 'usuario_id', 'compensacion_cc_monto_aplicado',
 ];
 
 /** Instrumentación 1:1 con orden: transacciones e id de instrumentación para anulación. */
@@ -5262,6 +5284,91 @@ function ordenUsdUsdTasaClientePctDesdeMrMe(mr, me, modo) {
   if (e >= r) return null;
   if (m === USD_USD_TASA_CLIENTE_MODO_INCREMENTO) return 100 * (r / e - 1);
   return 100 * (1 - e / r);
+}
+
+/** Refresco de «primeros datos» del wizard; se asigna en cada `adaptarFormularioOrden`. */
+let ordenWizardActualizarPrimerosDatosRef = null;
+let ordenWizardUsdUsdAjustandoDesdeComision = false;
+
+/**
+ * USD-USD: el usuario editó «Comisión a Recibir» (spread mr−me); recalcula tasa al cliente y vuelve a armar montos.
+ * @param {{ soloSiValido?: boolean, registrarAuditoria?: boolean }} [opts]
+ */
+function ordenWizardUsdUsdComisionSpreadListenersEjecutarAjuste(opts) {
+  const soloSiValido = !!(opts && opts.soloSiValido);
+  const registrarAuditoria = !!(opts && opts.registrarAuditoria);
+  const tipoOpt = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+  const codigoRaw = String(tipoOpt?.getAttribute('data-codigo') || '').trim();
+  const codigo = codigoRaw.replace(/\s*-\s*/g, '-').toUpperCase();
+  if (codigo !== 'USD-USD') return;
+  const importeChequeEl = document.getElementById('orden-importe-cheque');
+  const comisionDisplay = document.getElementById('orden-comision-display');
+  const tasaDescuentoClienteEl = document.getElementById('orden-tasa-descuento-cliente');
+  if (!importeChequeEl || !comisionDisplay || !tasaDescuentoClienteEl) return;
+  if (comisionDisplay.readOnly) return;
+  if (ordenWizardUsdUsdAjustandoDesdeComision) return;
+  const I = parseImporteInput(importeChequeEl.value);
+  const C = parseImporteInput(comisionDisplay.value);
+  const modo = ordenUsdUsdTasaClienteModoDesdeDom();
+  if (!(typeof I === 'number' && !isNaN(I) && I > 0)) return;
+  if (!(typeof C === 'number' && !isNaN(C) && C > 0)) return;
+  let mr;
+  let me;
+  if (modo === USD_USD_TASA_CLIENTE_MODO_INCREMENTO) {
+    me = I;
+    mr = me + C;
+  } else {
+    mr = I;
+    me = mr - C;
+  }
+  if (!(me > 1e-9 && mr > me + 1e-9)) {
+    if (!soloSiValido) {
+      showToast('La comisión debe ser menor que el importe y dejar un monto a entregar positivo.', 'error');
+    }
+    return;
+  }
+  const tPct = ordenUsdUsdTasaClientePctDesdeMrMe(mr, me, modo);
+  if (tPct == null || !(tPct > 0) || !(tPct < 100)) {
+    if (!soloSiValido) {
+      showToast('Con esa comisión no se puede calcular una tasa al cliente válida (entre 0 y 100%).', 'error');
+    }
+    return;
+  }
+  if (esWizardUsdUsdConIntermediario() && ordenUsdIntMostrarComisionFijaNacho()) {
+    const nachoInp = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
+    const fija = nachoInp ? Number(nachoInp.value) || 0 : 0;
+    if (fija > C + 1e-6) {
+      if (!soloSiValido) {
+        showToast('La comisión total no puede ser menor que la comisión fija acordada con el intermediario.', 'error');
+      }
+      return;
+    }
+  }
+  ordenWizardUsdUsdAjustandoDesdeComision = true;
+  tasaDescuentoClienteEl.value = formatTasaPorcentajeDisplay(tPct);
+  ordenWizardUsdUsdAjustandoDesdeComision = false;
+  if (typeof ordenWizardActualizarPrimerosDatosRef === 'function') {
+    ordenWizardActualizarPrimerosDatosRef();
+  }
+  if (registrarAuditoria && currentUserId) {
+    const idEl = document.getElementById('orden-id');
+    const ordenIdAud = idEl && idEl.value ? String(idEl.value).trim() : '';
+    const detalle =
+      'Wizard USD-USD: ajuste desde «Comisión a Recibir» → tasa al cliente y montos recalculados' +
+      (ordenIdAud ? ` (orden id ${ordenIdAud.slice(0, 8)}…)` : ' (borrador)');
+    void registrarAuditoriaApp('orden', 'wizard_ajuste_desde_comision_usd', detalle, {
+      orden_id: ordenIdAud || null,
+      spread_usd: C,
+      tasa_cliente_pct: tPct,
+      modo_tasa: modo,
+      monto_recibido: mr,
+      monto_entregado: me,
+    });
+  }
+}
+
+function ordenWizardUsdUsdOnComisionSpreadChangeBlur() {
+  ordenWizardUsdUsdComisionSpreadListenersEjecutarAjuste({ soloSiValido: false, registrarAuditoria: true });
 }
 
 function reaplicarVisibilidadMonedasCuentaCorrienteDom() {
@@ -9792,6 +9899,133 @@ const SUBSTRING_LEYENDA_CC_TERcERO_PATA_MONR = 'Tercero cumple pata en moneda re
  */
 const SUBSTRING_LEYENDA_CC_COMISION_ACUERDO = 'Comisión del acuerdo';
 
+function esOrdenUsdUsdConIntermediarioSinMcParaCompensacionCc(orden, totMcSv) {
+  if (totMcSv) return false;
+  if (!orden || !orden.intermediario_id) return false;
+  const meta = tiposOperacionNestedMeta(orden.tipos_operacion);
+  const codRaw = meta.codigo !== '–' ? String(meta.codigo || '').trim() : '';
+  const codNorm = String(normalizarCodigoTipoOperacion(codRaw) || codRaw || '')
+    .toUpperCase()
+    .replace(/\s*-\s*/g, '-');
+  if (codNorm === 'USD-USD') return true;
+  // Respaldo: mismo acuerdo USD↔USD que el catálogo «USD-USD» cuando el join no trae codigo (RLS, FK viejo, respuesta parcial).
+  const mr = String(monedaCatalogoParaOrden(orden.moneda_recibida) || '')
+    .trim()
+    .toUpperCase();
+  const me = String(monedaCatalogoParaOrden(orden.moneda_entregada) || '')
+    .trim()
+    .toUpperCase();
+  return mr === 'USD' && me === 'USD';
+}
+
+function esIngresoPagCobClientePandyTn(tn) {
+  if (!tn || String(tn.tipo || '').toLowerCase() !== 'ingreso') return false;
+  const x = transaccionNormalizarPagCobVacios(tn);
+  const { pag, cob } = pagCobEfectivosTransaccionSync(x);
+  return pag === 'cliente' && cob === 'pandy';
+}
+
+function esIngresoPagCobPandyClienteTn(tn) {
+  if (!tn || String(tn.tipo || '').toLowerCase() !== 'ingreso') return false;
+  const x = transaccionNormalizarPagCobVacios(tn);
+  const { pag, cob } = pagCobEfectivosTransaccionSync(x);
+  return pag === 'pandy' && cob === 'cliente';
+}
+
+/** Ingreso editado: Cliente→Pandy pasa a Pandy→Cliente. */
+function esIngresoFlipCompensacionClientePandyAPandyCliente(trPrevNorm, tipoNew, pagadorNew, cobradorNew) {
+  if (String(tipoNew || '').trim().toLowerCase() !== 'ingreso') return false;
+  if (!esIngresoPagCobClientePandyTn(trPrevNorm)) return false;
+  const nuevo = transaccionNormalizarPagCobVacios({ tipo: tipoNew, pagador: pagadorNew, cobrador: cobradorNew });
+  return esIngresoPagCobPandyClienteTn(nuevo);
+}
+
+/** Ingreso editado: Pandy→Cliente vuelve a Cliente→Pandy (limpia compensación persistida). */
+function esIngresoFlipCompensacionPandyClienteAClientePandy(trPrevNorm, tipoNew, pagadorNew, cobradorNew) {
+  if (String(tipoNew || '').trim().toLowerCase() !== 'ingreso') return false;
+  if (!esIngresoPagCobPandyClienteTn(trPrevNorm)) return false;
+  const nuevo = transaccionNormalizarPagCobVacios({ tipo: tipoNew, pagador: pagadorNew, cobrador: cobradorNew });
+  return esIngresoPagCobClientePandyTn(nuevo);
+}
+
+/**
+ * Suma global `monto` en CC cliente para una moneda (no anulados; misma regla que resumen).
+ * @returns {Promise<number>}
+ */
+function fetchSaldoClienteCcGlobalPorMonedaSumaMonto(clienteId, monedaUpper) {
+  const mon = String(monedaUpper || '').toUpperCase();
+  const cid = String(clienteId || '').trim();
+  if (!cid || !mon) return Promise.resolve(0);
+  return client
+    .from('movimientos_cuenta_corriente')
+    .select('monto, moneda, estado')
+    .eq('cliente_id', cid)
+    .eq('moneda', mon)
+    .then(({ data, error }) => {
+      if (error) throw error;
+      let s = 0;
+      for (const m of data || []) {
+        if (!ccMovimientoIncluirEnSaldoResumen(m)) continue;
+        s += Number(m.monto) || 0;
+      }
+      return s;
+    });
+}
+
+/** Suma filas CC de compensación por saldo flip (**cerradas**; exento neteo invariante con acuerdo cerrado). Incluye leyenda legacy. */
+function sumaMovimientosCompensacionParcialTotalCcExentosNeteo(rowsCliente, clienteId, ordenId, mon) {
+  const monU = String(mon || '').toUpperCase();
+  let s = 0;
+  for (const r of rowsCliente || []) {
+    if (!r || r.es_movimiento_manual === true) continue;
+    if (String(r.estado || '').toLowerCase() !== 'cerrado') continue;
+    if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
+    if (String(r.moneda || '').toUpperCase() !== monU) continue;
+    if (!conceptoCcEsCompensacionSaldoFlipConcepto(r.concepto)) continue;
+    const m = Number(r.monto);
+    if (Number.isFinite(m)) s += m;
+  }
+  return s;
+}
+
+/**
+ * Tras motor + préstamo regla B: fila CC «Compensación parcial/total en cuenta corriente- …» si `transacciones.compensacion_cc_monto_aplicado` > 0.
+ */
+function inyectarFilasCompensacionCcClienteDesdeTransacciones(rowsCcCliente, orden, ordenId, clienteId, fecha, ahora, transacciones, ordenAnuladaSync) {
+  if (!Array.isArray(rowsCcCliente) || !orden || !clienteId || !ordenId) return;
+  for (const tRaw of transacciones || []) {
+    if (!tRaw) continue;
+    const comp = Number(tRaw.compensacion_cc_monto_aplicado);
+    if (!Number.isFinite(comp) || comp < 1e-6) continue;
+    const t = transaccionNormalizarPagCobVacios(tRaw);
+    if (String(t.tipo || '').toLowerCase() !== 'ingreso') continue;
+    const st = transaccionEstadoTextoNormalizado(t);
+    if (st !== 'ejecutada' && st !== 'pendiente') continue;
+    const mon = String(t.moneda || 'USD').toUpperCase();
+    const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
+    const nro = t.numero != null ? t.numero : null;
+    const estadoFila = ordenAnuladaSync ? 'anulado' : (st === 'ejecutada' ? 'cerrado' : 'pendiente');
+    const montoTrx = Number(t.monto);
+    const esCompTotal =
+      Number.isFinite(montoTrx) && montoTrx > 0 && comp + 1e-6 >= montoTrx;
+    rowsCcCliente.push({
+      cliente_id: clienteId,
+      orden_id: ordenId,
+      transaccion_id: t.id != null ? t.id : null,
+      transaccion_numero: nro,
+      concepto: conceptoCompensacionCcEnCuentaCorriente(esCompTotal, orden.numero, nro),
+      fecha: feT.fecha,
+      usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(t, orden),
+      moneda: mon,
+      monto: comp,
+      estado: estadoFila,
+      estado_fecha: feT.estado_fecha,
+      incluir_en_detalle: true,
+      ...montosCcPorMoneda(mon, comp),
+    });
+  }
+}
+
 /**
  * Antes de `sync_cc_caja_orden`: si quedaron **dos** filas CC cliente con el mismo «Compromiso de Pago» **plano**
  * (sin leyenda de pata), misma `transaccion_id` o mismo `transaccion_numero`, misma moneda y cliente, y montos **opuestos**
@@ -9985,6 +10219,26 @@ function sumaMovimientosPataMonRExentosNeteo(rowsCliente, clienteId, ordenId, mo
 }
 
 /**
+ * Suma montos **cerrados** «Préstamo al cliente (cobertura Pandy — moneda recibida)» en esa moneda.
+ * Es el **+m** memo gemelo de la pata **−m** regla B: ya está compensado en `sumaMovimientosPataMonRExentosNeteo` junto a la pata;
+ * si se incluye en el **total** bruto de `validarInvarianteNeteoCcClienteAcuerdoCerrado` sin restarlo, el residual falla y **bloquea** `sync_cc_caja_orden` (nunca persiste el préstamo).
+ */
+function sumaCcClienteCerradoPrestamoGemeloReglaBMonR(rowsCliente, clienteId, ordenId, mon) {
+  const monU = String(mon || '').toUpperCase();
+  const subL = SUBSTRING_LEYENDA_CC_PRESTAMO_PANDY_REGULA_B_MONR;
+  let s = 0;
+  for (const r of rowsCliente || []) {
+    if (!r || String(r.estado || '').toLowerCase() !== 'cerrado') continue;
+    if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
+    if (String(r.moneda || '').toUpperCase() !== monU) continue;
+    if (!String(r.concepto || '').includes(subL)) continue;
+    const m = Number(r.monto);
+    if (Number.isFinite(m)) s += m;
+  }
+  return s;
+}
+
+/**
  * Transacción candidata al **+m** «Préstamo… (cobertura Pandy — moneda recibida)» gemelo del **−m** «Pandy cumple pata en moneda recibida» (`clienteIdSync` = `orden.cliente_id` en el sync por orden).
  * - **Ingreso** en moneda recibida: Pandy→cliente (UUID o sin `cobrador_cliente_id`) o cliente→cliente con cobrador acuerdo explícito.
  * - **Egreso** en esa misma moneda y **Pandy→cliente**: patrón **ci_pc** (instrumentación: ingreso C→I en monR y **egreso** P→C; en USD-USD `moneda` de la entrega coincide con monR).
@@ -10009,6 +10263,39 @@ function transaccionPrestamoReglaBPandyAcuerdoMonR(t, orden, monR, clienteIdSync
     return false;
   }
   return pag === 'pandy' && cob === 'cliente';
+}
+
+/**
+ * Extiende `transaccionPrestamoReglaBPandyAcuerdoMonR`: si pag/cob en la trx vienen vacíos o la inferencia por tipo da otro rol, pero **ya** hay en `rowsCcCliente` una fila **−m** con «Pandy cumple pata en moneda recibida» enlazada al mismo `transaccion_id` / `transaccion_numero`, cuenta como candidata al **+m** préstamo (evita que no se inserte el gemelo cuando la fila CC sí refleja regla B).
+ */
+function transaccionPrestamoReglaBPandyAcuerdoMonROConFilaCcPataNegativa(rowsCcCliente, ordenId, t, orden, monR, clienteIdSync) {
+  if (transaccionPrestamoReglaBPandyAcuerdoMonR(t, orden, monR, clienteIdSync)) return true;
+  const tN = transaccionNormalizarPagCobVacios(t);
+  const st = transaccionEstadoTextoNormalizado(tN);
+  if (st !== 'ejecutada' && st !== 'pendiente') return false;
+  if (String(tN.moneda || '').toUpperCase() !== String(monR || '').toUpperCase()) return false;
+  const cidAc = orden.cliente_id != null && String(orden.cliente_id).trim() !== '' ? String(orden.cliente_id).trim() : '';
+  const cidSync = clienteIdSync != null && String(clienteIdSync).trim() !== '' ? String(clienteIdSync).trim() : '';
+  if (!cidAc || cidSync !== cidAc) return false;
+  const subP = SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR;
+  const monU = String(monR || '').toUpperCase();
+  const cid = String(clienteIdSync);
+  const oid = String(ordenId);
+  const tid = tN.id != null && String(tN.id).trim() !== '' ? String(tN.id) : '';
+  const tn = tN.numero != null && String(tN.numero).trim() !== '' ? String(tN.numero) : '';
+  for (const r of rowsCcCliente || []) {
+    if (!r || r.es_movimiento_manual === true) continue;
+    if (String(r.cliente_id || '') !== cid || String(r.orden_id || '') !== oid) continue;
+    if (String(r.moneda || '').toUpperCase() !== monU) continue;
+    const m = Number(r.monto);
+    if (!Number.isFinite(m) || m > -1e-9) continue;
+    if (!String(r.concepto || '').includes(subP)) continue;
+    const rid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id) : '';
+    if (tid && rid && rid === tid) return true;
+    const rn = r.transaccion_numero != null && String(r.transaccion_numero).trim() !== '' ? String(r.transaccion_numero) : '';
+    if (tn && rn && rn === tn) return true;
+  }
+  return false;
 }
 
 /**
@@ -10072,7 +10359,7 @@ function completarCcClientePrestamoReglaBPandyMonSiFalta(rowsCcCliente, orden, o
       else if (cl.includes('compromiso de pago') && !c.includes(subT)) {
         const tolM = Math.max(1, Math.abs(montoTrx) * 1e-6);
         if (Math.abs(m + montoTrx) <= tolM) ok = true;
-        else if (transaccionPrestamoReglaBPandyAcuerdoMonR(tN, orden, monR, clienteId)) ok = true;
+        else if (transaccionPrestamoReglaBPandyAcuerdoMonROConFilaCcPataNegativa(rowsCcCliente, ordenId, tN, orden, monR, clienteId)) ok = true;
       }
       if (ok) {
         const absM = Math.abs(m);
@@ -10087,7 +10374,7 @@ function completarCcClientePrestamoReglaBPandyMonSiFalta(rowsCcCliente, orden, o
     const t = transaccionNormalizarPagCobVacios(tRaw);
     const st = transaccionEstadoTextoNormalizado(t);
     if (st !== 'ejecutada' && st !== 'pendiente') continue;
-    if (!transaccionPrestamoReglaBPandyAcuerdoMonR(t, orden, monR, clienteId)) continue;
+    if (!transaccionPrestamoReglaBPandyAcuerdoMonROConFilaCcPataNegativa(rowsCcCliente, ordenId, t, orden, monR, clienteId)) continue;
     const montoT = Number(t.monto) || 0;
     if (montoT < 1e-9) continue;
     const ck = claveTrx(t);
@@ -10137,7 +10424,7 @@ function completarCcClientePrestamoReglaBPandyMonSiFalta(rowsCcCliente, orden, o
     const t2 = transaccionNormalizarPagCobVacios(tHitRaw);
     const st2 = transaccionEstadoTextoNormalizado(t2);
     if (st2 !== 'ejecutada' && st2 !== 'pendiente') continue;
-    if (!transaccionPrestamoReglaBPandyAcuerdoMonR(t2, orden, monR, clienteId)) continue;
+    if (!transaccionPrestamoReglaBPandyAcuerdoMonROConFilaCcPataNegativa(rowsCcCliente, ordenId, t2, orden, monR, clienteId)) continue;
     const montoT2 = Number(t2.monto) || 0;
     if (montoT2 < 1e-9) continue;
     const ck2 = claveTrx(t2);
@@ -10251,10 +10538,56 @@ function transaccionesHayIngresoPandyClienteMonRAcuerdoActivo(transacciones, ord
 }
 
 /**
+ * USD-USD + intermediario (`monR === monE`) con `compensacion_cc_monto_aplicado` en alguna transacción:
+ * el +me del egreso Intermediario→Cliente figura como «Compromiso de Pago» en la misma moneda que la pata/compensación;
+ * no entra en `sumaMovimientosPataMonEExentosNeteo` (solo aplica cuando monR≠monE en el bucle del invariante). Sin este término el residual queda ~+me y bloquea `sync_cc_caja_orden`.
+ */
+function sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUsdConCompensacionTrx(
+  rowsCliente,
+  clienteId,
+  ordenId,
+  mon,
+  transacciones,
+  orden,
+) {
+  const monU = String(mon || '').toUpperCase();
+  const monR = String(orden.moneda_recibida || '').toUpperCase();
+  const monE = String(orden.moneda_entregada || '').toUpperCase();
+  if (monU !== monR || monR !== monE || !orden.intermediario_id) return 0;
+  const hayCompTrx = (transacciones || []).some((t) => Number(t && t.compensacion_cc_monto_aplicado) >= 1e-6);
+  if (!hayCompTrx) return 0;
+  const trxById = new Map((transacciones || []).filter((t) => t && t.id != null).map((t) => [String(t.id), t]));
+  let s = 0;
+  for (const r of rowsCliente || []) {
+    if (!r || r.es_movimiento_manual === true) continue;
+    if (String(r.estado || '').toLowerCase() !== 'cerrado') continue;
+    if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
+    if (String(r.moneda || '').toUpperCase() !== monU) continue;
+    const c = String(r.concepto || '');
+    if (!c.includes('Compromiso de Pago')) continue;
+    if (c.includes(SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR) || c.includes(SUBSTRING_LEYENDA_CC_TERcERO_PATA_MONR)) continue;
+    const tid = r.transaccion_id;
+    if (tid == null || String(tid).trim() === '') continue;
+    const t = trxById.get(String(tid));
+    if (!t) continue;
+    if (String(t.tipo || '').toLowerCase() !== 'egreso') continue;
+    if (transaccionEstadoTextoNormalizado(t) !== 'ejecutada') continue;
+    const tn = transaccionNormalizarPagCobVacios(t);
+    const { pag, cob } = pagCobEfectivosTransaccionSync(tn);
+    if (pag !== 'intermediario' || cob !== 'cliente') continue;
+    const m = Number(r.monto);
+    if (Number.isFinite(m)) s += m;
+  }
+  return s;
+}
+
+/**
  * Invariante dura: solo cuando **no queda ninguna transacción pendiente** (todas ejecutada o anulada, al menos una ejecutada) **y** además: multicontraparte manual completo, **o** (sin MC) par clásico ingreso C→P/I + egreso entrega ambos ejecutados, **o** la orden está en `orden_ejecutada` / `instrumentacion_cerrada_ejecucion`.
  * Entonces la CC del cliente del acuerdo (filas **cerradas** de esta orden) debe netear a cero por moneda,
- * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata» o «Préstamo al cliente (cobertura Pandy — moneda recibida)» (gemelo +m de la pata −m regla B), y en moneda entregada la fila «Pandy cumple pata en moneda entregada» (doble pata empresa→cliente en monR+monE),
- * y en la moneda correspondiente la fila sintética «Comisión del acuerdo» **sin** `transaccion_id` (spread mr−me; alineada a refuerzo `cerrado` con toda la instrumentación ejecutada).
+ * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata» o «Préstamo al cliente (cobertura Pandy — moneda recibida)» (gemelo +m de la pata −m regla B; el **+m** préstamo se **resta** del total bruto antes del residual porque el par ± ya está en `sumaMovimientosPataMonRExentosNeteo` y si no se resta bloquea el sync), y en moneda entregada la fila «Pandy cumple pata en moneda entregada» (doble pata empresa→cliente en monR+monE),
+ * y en la moneda correspondiente la fila sintética «Comisión del acuerdo» **sin** `transaccion_id` (spread mr−me; alineada a refuerzo `cerrado` con toda la instrumentación ejecutada);
+ * y filas **«Compensación parcial/total en cuenta corriente- Orden … y Trans …»** (ingreso USD-USD+int invertido C→P a P→C con `compensacion_cc_monto_aplicado` en la transacción; legacy «parcial o total»);
+ * y en **USD-USD + int.** con `monR===monE` y compensación persistida en transacciones, el **Compromiso de Pago** del egreso **Intermediario→Cliente** (+me) en esa moneda (`sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUsdConCompensacionTrx`).
  * @returns {{ ok: true } | { ok: false, msg: string, sums: Record<string, number>, mon?: string }}
  */
 function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
@@ -10293,17 +10626,28 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
   const monedas = new Set([...Object.keys(sums), monR, monE].filter(Boolean));
 
   for (const mon of monedas) {
-    const sum = sums[mon] || 0;
+    const sumRaw = sums[mon] || 0;
+    const sumPrestGemelo = sumaCcClienteCerradoPrestamoGemeloReglaBMonR(rowsCcClienteUnicos, clienteId, ordenId, mon);
+    const sum = sumRaw - sumPrestGemelo;
     if (Math.abs(sum) <= EPS_CC_NETEO_CLIENTE_ORDEN) continue;
 
     const offsetComisionSint = sumaMovimientosComisionAcuerdoSinteticaExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, mon);
+    const offsetCompCc = sumaMovimientosCompensacionParcialTotalCcExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, mon);
     const offsetPata =
       String(mon) === String(monR)
         ? sumaMovimientosPataMonRExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, monR) + offsetComisionSint
         : String(mon) === String(monE)
           ? sumaMovimientosPataMonEExentosNeteo(rowsCcClienteUnicos, clienteId, ordenId, monE) + offsetComisionSint
           : offsetComisionSint;
-    const residual = sum - offsetPata;
+    const offsetEgresoMeUsdUsdComp = sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUsdConCompensacionTrx(
+      rowsCcClienteUnicos,
+      clienteId,
+      ordenId,
+      mon,
+      transacciones,
+      orden,
+    );
+    const residual = sum - offsetPata - offsetCompCc - offsetEgresoMeUsdUsdComp;
     if (Math.abs(residual) <= EPS_CC_NETEO_CLIENTE_ORDEN) continue;
 
     const ordLabelInv = orden.numero != null ? String(orden.numero) : String(ordenId || '').slice(0, 8);
@@ -18812,6 +19156,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
 
   function actualizarComisionUsdUsd() {
     if (!isUsdUsd || !comisionDisplay) return;
+    if (document.activeElement === comisionDisplay) return;
     const r = parseImporteInput(document.getElementById('orden-monto-recibido').value);
     const e = parseImporteInput(document.getElementById('orden-monto-entregado').value);
     const comision = (typeof r === 'number' && !isNaN(r) && typeof e === 'number' && !isNaN(e) && r > e) ? r - e : null;
@@ -19124,6 +19469,8 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     }
   }
 
+  ordenWizardActualizarPrimerosDatosRef = actualizarPrimerosDatos;
+
   if (isTipoPrimerosDatos) {
     setRestoOrdenEditable(false);
     if (wrapMontosCalculados) wrapMontosCalculados.style.display = 'none';
@@ -19152,8 +19499,38 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
       tasaIntPrimerosUsd.addEventListener('input', actualizarPrimerosDatos);
       tasaIntPrimerosUsd.addEventListener('change', actualizarPrimerosDatos);
     }
+    if (comisionDisplay) {
+      if (isUsdUsd) {
+        comisionDisplay.readOnly = false;
+        comisionDisplay.removeAttribute('readonly');
+        comisionDisplay.style.background = '';
+        comisionDisplay.style.color = '';
+        setupInputImporte(comisionDisplay);
+        if (comisionDisplay.dataset.pandiComisionSpreadListeners !== '1') {
+          comisionDisplay.dataset.pandiComisionSpreadListeners = '1';
+          comisionDisplay.addEventListener('change', ordenWizardUsdUsdOnComisionSpreadChangeBlur);
+          comisionDisplay.addEventListener('blur', ordenWizardUsdUsdOnComisionSpreadChangeBlur);
+        }
+      } else {
+        if (comisionDisplay.dataset.pandiComisionSpreadListeners === '1') {
+          comisionDisplay.removeEventListener('change', ordenWizardUsdUsdOnComisionSpreadChangeBlur);
+          comisionDisplay.removeEventListener('blur', ordenWizardUsdUsdOnComisionSpreadChangeBlur);
+          comisionDisplay.dataset.pandiComisionSpreadListeners = '0';
+        }
+        comisionDisplay.readOnly = true;
+        comisionDisplay.setAttribute('readonly', 'readonly');
+        comisionDisplay.style.background = '#eee';
+        comisionDisplay.style.color = '#555';
+      }
+    }
   } else {
     setRestoOrdenEditable(true);
+    const cdNoPrimeros = document.getElementById('orden-comision-display');
+    if (cdNoPrimeros && cdNoPrimeros.dataset.pandiComisionSpreadListeners === '1') {
+      cdNoPrimeros.removeEventListener('change', ordenWizardUsdUsdOnComisionSpreadChangeBlur);
+      cdNoPrimeros.removeEventListener('blur', ordenWizardUsdUsdOnComisionSpreadChangeBlur);
+      cdNoPrimeros.dataset.pandiComisionSpreadListeners = '0';
+    }
     // No forzar readOnly=false en ambos montos si es cruce con TC (ARS-USD, etc.):
     // setRestoOrdenEditable ya dejó solo el campo operativo editable; si ambos quedan
     // editables, el usuario suele escribir en el gris (calculado) sin TC y parece “bloqueado”.
@@ -20348,7 +20725,7 @@ function renderOrdenWizardInstrumentacion(instId) {
         };
         const estadoTexto = (t) => (String(t.estado || '').toLowerCase() === 'anulada' ? 'Anulada' : (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente'));
         const listaSorted = sortTransaccionesPorNumero(lista);
-        const selTrxWizardCols = 'id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id';
+        const selTrxWizardCols = 'id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, compensacion_cc_monto_aplicado';
         function paintWizardTabla(maps, mapUsuario) {
           mapUsuario = mapUsuario || {};
           const cobradorL = (t) => transaccionParticipanteCeldaHtml(t, orden, 'cobrador', maps);
@@ -21767,7 +22144,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
         const instId = rInst.data.id;
         const multicontraparteManual = !!(rInst.data && rInst.data.multicontraparte_manual);
         const selectColsTrxInstrumentacionSync =
-          'id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at';
+          'id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at, compensacion_cc_monto_aplicado';
         return Promise.all([
           client.from('transacciones').select(selectColsTrxInstrumentacionSync).eq('instrumentacion_id', instId),
           client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
@@ -22351,6 +22728,16 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
 
           if (clienteId) {
             completarCcClientePrestamoReglaBPandyMonSiFalta(
+              rowsCcCliente,
+              orden,
+              ordenId,
+              clienteId,
+              fecha,
+              ahora,
+              transacciones,
+              ordenAnuladaSync,
+            );
+            inyectarFilasCompensacionCcClienteDesdeTransacciones(
               rowsCcCliente,
               orden,
               ordenId,
@@ -25575,19 +25962,114 @@ function saveTransaccion() {
         showToast('El pagador y el cobrador no pueden ser la misma entidad.', 'error');
         return;
       }
-      client.from('transacciones').select('id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instrumentacionId).then((rTr) => {
+      client
+        .from('transacciones')
+        .select(
+          'id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id, compensacion_cc_monto_aplicado',
+        )
+        .eq('instrumentacion_id', instrumentacionId)
+        .then((rTr) => {
         const list = rTr.data || [];
         const validacion = validarTotalesVsAcuerdo(list, orden, id || null, transaccionProyectada, totalesOptsSv);
         if (!validacion.ok) {
           showToast(validacion.mensaje, 'error');
           return;
         }
-        const trActual = id ? list.find((t) => t.id === id) : null;
+        const trActual = id ? list.find((t) => String(t.id) === String(id)) : null;
         const oldMonto = trActual != null && !isNaN(Number(trActual.monto)) ? Number(trActual.monto) : null;
         const bajandoImporte = id && oldMonto != null && monto < oldMonto - 1e-6;
         const diferenciaComp = bajandoImporte ? oldMonto - monto : null;
         const esParPandyIntermediario =
           (cobrador === 'pandy' && pagador === 'intermediario') || (cobrador === 'intermediario' && pagador === 'pandy');
+
+        const aplicarCompensacionCcFlipSiCorrespondeYLuegoGuardar = () => {
+          const trPrev = id ? list.find((t) => String(t.id) === String(id)) : null;
+          const prevNorm = trPrev ? transaccionNormalizarPagCobVacios(trPrev) : null;
+          /** Saldo global CC + persistencia de `compensacion_cc_monto_aplicado` al pasar ingreso C→P a P→C (USD-USD+int sin MC). */
+          const persistirCompensacionCcFlipUsdUsdSaldoYComp = () => {
+            fetchSaldoClienteCcGlobalPorMonedaSumaMonto(orden.cliente_id, moneda)
+              .then((saldo) => {
+                if (saldo >= -1e-6) {
+                  showToast(
+                    'Para pasar el ingreso a Pandy→Cliente hace falta saldo a favor del cliente (Pandy como deudor en cuenta corriente en ' +
+                      String(moneda || '').toUpperCase() +
+                      '). La posición actual no muestra deuda de Pandy con el cliente.',
+                    'error',
+                  );
+                  return;
+                }
+                const cap = -saldo;
+                if (monto > cap + 1e-6) {
+                  showToast(
+                    'El monto no puede superar ' +
+                      formatImporteDisplay(cap) +
+                      ' ' +
+                      moneda +
+                      ' (tope según deuda de Pandy con el cliente en cuenta corriente al usar compensación).',
+                    'error',
+                  );
+                  return;
+                }
+                const comp = Math.min(monto, cap);
+                guardarTransaccionPayload(undefined, comp);
+              })
+              .catch((e) => {
+                showToast('No se pudo validar el saldo de cuenta corriente: ' + (e && e.message ? e.message : String(e)), 'error');
+              });
+          };
+          if (
+            id &&
+            trPrev &&
+            orden &&
+            esOrdenUsdUsdConIntermediarioSinMcParaCompensacionCc(orden, totMcSv) &&
+            esIngresoFlipCompensacionClientePandyAPandyCliente(prevNorm, tipo, pagador, cobrador) &&
+            orden.cliente_id
+          ) {
+            persistirCompensacionCcFlipUsdUsdSaldoYComp();
+            return;
+          }
+          if (
+            id &&
+            trPrev &&
+            Number(trPrev.compensacion_cc_monto_aplicado) >= 1e-6 &&
+            prevNorm &&
+            esIngresoFlipCompensacionPandyClienteAClientePandy(prevNorm, tipo, pagador, cobrador)
+          ) {
+            guardarTransaccionPayload(undefined, null);
+            return;
+          }
+          const monRU = String(orden && orden.moneda_recibida ? orden.moneda_recibida : '').toUpperCase();
+          const nFormFlip = transaccionNormalizarPagCobVacios({ tipo, pagador, cobrador });
+          const { pag: pagForm, cob: cobForm } = pagCobEfectivosTransaccionSync(nFormFlip);
+          const esIngresoPandyClienteMonRUsdUsdIntSinCompPersistida =
+            id &&
+            trPrev &&
+            orden &&
+            orden.cliente_id &&
+            !totMcSv &&
+            esOrdenUsdUsdConIntermediarioSinMcParaCompensacionCc(orden, totMcSv) &&
+            String(tipo || '').trim().toLowerCase() === 'ingreso' &&
+            String(moneda || '').toUpperCase() === monRU &&
+            pagForm === 'pandy' &&
+            cobForm === 'cliente';
+          if (esIngresoPandyClienteMonRUsdUsdIntSinCompPersistida) {
+            const compDb = Number(trPrev.compensacion_cc_monto_aplicado);
+            if (!Number.isFinite(compDb) || compDb < 1e-6) {
+              if (prevNorm && esIngresoPagCobClientePandyTn(prevNorm)) {
+                persistirCompensacionCcFlipUsdUsdSaldoYComp();
+                return;
+              }
+              showToast(
+                'No se puede guardar un ingreso Pandy→Cliente del acuerdo en la moneda recibida (USD-USD con intermediario) sin el monto de compensación en cuenta corriente. ' +
+                  'Volvé a Cliente→Pandy, guardá, y repetí el giro para que el sistema valide el saldo y persista la compensación; si la transacción ya quedó inconsistente, contactá soporte.',
+                'error',
+              );
+              return;
+            }
+          }
+          guardarTransaccionPayload();
+        };
+
         if (bajandoImporte && diferenciaComp > 0) {
           // Si es momento cero + guardamos ejecutada + monto menor: el split crea la diferencia; no ofrecer "compensatoria" para no duplicar.
           return client.from('movimientos_cuenta_corriente').select('id, monto_usd, monto_ars, monto_eur').eq('transaccion_id', id).then((rMov) => {
@@ -25600,23 +26082,23 @@ function saveTransaccion() {
               (tipo === 'egreso' && me > 1e-6 && monto > 1e-6 && (me - monto) > 1e-6)
             );
             if (esSplit || esParPandyIntermediario) {
-              guardarTransaccionPayload();
+              aplicarCompensacionCcFlipSiCorrespondeYLuegoGuardar();
             } else {
               showConfirm(
                 `Estás bajando el importe. ¿Querés que el sistema genere una transacción compensatoria con los mismos datos por ${formatImporteDisplay(diferenciaComp)} ${moneda} para cerrar el acuerdo?`,
                 'Sí, generar compensatoria',
                 () => guardarTransaccionPayload(diferenciaComp),
-                () => guardarTransaccionPayload()
+                () => aplicarCompensacionCcFlipSiCorrespondeYLuegoGuardar()
               );
             }
           });
         }
-        guardarTransaccionPayload();
+        aplicarCompensacionCcFlipSiCorrespondeYLuegoGuardar();
       });
     });
   });
 
-  function guardarTransaccionPayload(montoCompensatorio) {
+  function guardarTransaccionPayload(montoCompensatorio, compensacionCcMontoAplicado) {
   const wrapMcSave = document.getElementById('transaccion-multicontraparte-contrapartes-wrap');
   const usarMcSave = wrapMcSave && wrapMcSave.style.display !== 'none';
   const idsMcSave = leerIdsContraparteMulticontraparteForm(ordenClienteIdParaIdsMc);
@@ -25648,9 +26130,13 @@ function saveTransaccion() {
   completarPayloadIdsContraparteDesdeOrden(payload, ordenParaCompletarIdsTransaccion);
   if (estado === 'ejecutada') payload.fecha_ejecucion = fechaHoyYYYYMMDDArgentina();
   if (estado === 'ejecutada') payload.usuario_id = currentUserId;
+  if (compensacionCcMontoAplicado !== undefined && id) {
+    payload.compensacion_cc_monto_aplicado =
+      compensacionCcMontoAplicado != null && Number(compensacionCcMontoAplicado) >= 1e-6 ? Number(compensacionCcMontoAplicado) : null;
+  }
 
   const TRANSACCION_SELECT_PREV_MODAL =
-    'id, instrumentacion_id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, usuario_id, numero';
+    'id, instrumentacion_id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, usuario_id, numero, compensacion_cc_monto_aplicado';
   const prom = id
     ? client
       .from('transacciones')
