@@ -7126,7 +7126,7 @@ function renderControlCalidadSeccionParejas(block) {
       <th>Alerta</th><th>CC</th><th>Fecha CC</th><th>Monto CC</th><th>Caja</th><th>Fecha caja</th><th>Monto caja</th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
-  return `<section class="control-calidad-seccion" aria-labelledby="cc-qc-parejas-h"><h4 id="cc-qc-parejas-h">Parejas cuenta corriente ↔ caja (${total})</h4><p class="control-calidad-hint">Movimientos vinculados por <code>movimiento_caja_id</code>: mismos signos, montos no opuestos, o tipo de caja fuera de G/P mientras la CC sí entra al total operativo.${extra}</p>${body}</section>`;
+  return `<section class="control-calidad-seccion" aria-labelledby="cc-qc-parejas-h"><h4 id="cc-qc-parejas-h">Parejas cuenta corriente ↔ caja (${total})</h4><p class="control-calidad-hint">Incluye filas de <code>movimientos_cuenta_corriente</code> y de <code>movimientos_cuenta_corriente_intermediario</code> con <code>movimiento_caja_id</code> vinculado a caja: mismos signos, montos no opuestos, o tipo de caja fuera de G/P mientras la CC sí entra al total operativo.${extra}</p>${body}</section>`;
 }
 
 function renderControlCalidadSeccionTransTabla(titulo, idBase, hint, cols, block) {
@@ -7149,7 +7149,13 @@ function renderControlCalidadSeccionTransTabla(titulo, idBase, hint, cols, block
   return `<section class="control-calidad-seccion" aria-labelledby="${idBase}"><h4 id="${idBase}">${escapeHtml(titulo)} (${total})</h4><p class="control-calidad-hint">${hint}${extra}</p>${body}</section>`;
 }
 
-function renderControlCalidadSeccionSinCc(block) {
+function renderControlCalidadSeccionSinRegistroCc(block, opts) {
+  opts = opts || {};
+  const titulo = opts.titulo || 'Transacción sin movimientos en cuenta corriente';
+  const idBase = opts.idBase || 'cc-qc-sin-cc-h';
+  const hint =
+    opts.hint ||
+    'Por fecha de orden en el período; no hay fila no anulada ni en <code>movimientos_cuenta_corriente</code> ni en <code>movimientos_cuenta_corriente_intermediario</code> para esa transacción.';
   const items = (block && Array.isArray(block.items) ? block.items : []).map((row) => ({
     ...row,
     _cells: [
@@ -7158,15 +7164,13 @@ function renderControlCalidadSeccionSinCc(block) {
       escapeHtml(String(row.transaccion_numero != null ? row.transaccion_numero : '')),
       escapeHtml(String(row.estado_transaccion || '')),
       escapeHtml(String(row.tipo_ie || '')),
+      escapeHtml(String(row.owner || '')),
     ],
   }));
-  return renderControlCalidadSeccionTransTabla(
-    'Transacción ejecutada (dueño cliente) sin movimiento en cuenta corriente',
-    'cc-qc-sin-cc-h',
-    'Órdenes no anuladas por fecha de orden; transacción en estado ejecutada y <code>owner = cliente</code>; no hay fila en <code>movimientos_cuenta_corriente</code> no anulada para esa transacción.',
-    ['Orden', 'Fecha orden', 'Trans.', 'Estado trx.', 'Tipo I/E'],
-    { total: block && block.total, items }
-  );
+  return renderControlCalidadSeccionTransTabla(titulo, idBase, hint, ['Orden', 'Fecha orden', 'Trans.', 'Estado trx.', 'Tipo I/E', 'Owner'], {
+    total: block && block.total,
+    items,
+  });
 }
 
 function renderControlCalidadSeccionEjNoCerrado(block) {
@@ -7181,9 +7185,9 @@ function renderControlCalidadSeccionEjNoCerrado(block) {
     ],
   }));
   return renderControlCalidadSeccionTransTabla(
-    'Transacción ejecutada con CC cliente que no está todo en estado «cerrado»',
+    'Transacción ejecutada: movimientos CC no anulados y alguno no está «cerrado»',
     'cc-qc-ej-no-cerr-h',
-    'Hay al menos un movimiento en <code>movimientos_cuenta_corriente</code> no anulado cuyo estado no es <code>cerrado</code>. Columna «Estados CC»: valores distintos encontrados.',
+    'Por fecha de orden en el período (incluye orden anulada si la transacción sigue en ejecutada). Se consideran <code>movimientos_cuenta_corriente</code> y <code>movimientos_cuenta_corriente_intermediario</code> (excl. anulado). Columna «Estados CC»: valores en ambos libros.',
     ['Orden', 'Fecha orden', 'Trans.', 'Estado trx.', 'Estados CC'],
     { total: block && block.total, items }
   );
@@ -7201,10 +7205,53 @@ function renderControlCalidadSeccionPendNoPendiente(block) {
     ],
   }));
   return renderControlCalidadSeccionTransTabla(
-    'Transacción pendiente con CC cliente que no está todo en estado «pendiente»',
+    'Transacción pendiente: movimientos CC no anulados y alguno no está «pendiente»',
     'cc-qc-pend-no-pend-h',
-    'Hay al menos un movimiento en <code>movimientos_cuenta_corriente</code> no anulado cuyo estado no es <code>pendiente</code>.',
+    'Por fecha de orden en el período (incluye orden anulada si la transacción sigue pendiente). Se consideran ambos libros de CC (excl. movimientos anulados).',
     ['Orden', 'Fecha orden', 'Trans.', 'Estado trx.', 'Estados CC'],
+    { total: block && block.total, items }
+  );
+}
+
+function renderControlCalidadTrxAnuladaSinCc(block) {
+  const items = (block && Array.isArray(block.items) ? block.items : []).map((row) => ({
+    ...row,
+    _cells: [
+      escapeHtml(String(row.orden_numero != null ? row.orden_numero : '')),
+      escapeHtml(String(row.estado_orden || '')),
+      escapeHtml(String(row.fecha_orden || '')),
+      escapeHtml(String(row.transaccion_numero != null ? row.transaccion_numero : '')),
+      escapeHtml(String(row.estado_transaccion || '')),
+      escapeHtml(String(row.owner || '')),
+      escapeHtml(String(row.tipo_ie || '')),
+    ],
+  }));
+  return renderControlCalidadSeccionTransTabla(
+    'Transacción anulada sin ningún movimiento en cuenta corriente',
+    'cc-qc-anul-sin-cc-h',
+    'Se espera al menos una fila en <code>movimientos_cuenta_corriente</code> o en <code>movimientos_cuenta_corriente_intermediario</code> con <code>transaccion_id</code> de la transacción anulada (trazabilidad al anular).',
+    ['Orden', 'Estado orden', 'Fecha orden', 'Trans.', 'Estado trx.', 'Owner', 'Tipo I/E'],
+    { total: block && block.total, items }
+  );
+}
+
+function renderControlCalidadTrxAnuladaCcNoAnulado(block) {
+  const items = (block && Array.isArray(block.items) ? block.items : []).map((row) => ({
+    ...row,
+    _cells: [
+      escapeHtml(String(row.orden_numero != null ? row.orden_numero : '')),
+      escapeHtml(String(row.estado_orden || '')),
+      escapeHtml(String(row.fecha_orden || '')),
+      escapeHtml(String(row.transaccion_numero != null ? row.transaccion_numero : '')),
+      escapeHtml(String(row.estado_transaccion || '')),
+      escapeHtml(String(row.cc_estados || '')),
+    ],
+  }));
+  return renderControlCalidadSeccionTransTabla(
+    'Transacción anulada: CC derivado (no manual) que no está en estado anulado',
+    'cc-qc-anul-cc-vivo-h',
+    'Solo movimientos con <code>es_movimiento_manual = false</code>. Los estados aceptados en CC son <code>anulado</code> o <code>anulada</code> (prefijo <code>cli:</code> / <code>int:</code> indica libro).',
+    ['Orden', 'Estado orden', 'Fecha orden', 'Trans.', 'Estado trx.', 'Estados CC incorrectos'],
     { total: block && block.total, items }
   );
 }
@@ -7243,7 +7290,7 @@ function loadControlCalidadVista() {
   if (leyenda) {
     if (controlCalidadPeriodo === 'total') {
       leyenda.textContent =
-        'Período: todo el historial. Parejas CC↔caja por fechas de movimientos; transacciones por fecha de orden (dueño cliente). Argentina.';
+        'Período: todo el historial. Parejas CC↔caja por fechas de movimientos; transacciones por fecha de orden (CC cliente e intermediario). Argentina.';
     } else if (rango.desde && rango.hasta) {
       leyenda.textContent = `Período: ${rango.desde} al ${rango.hasta} (inclusive). Argentina.`;
     } else {
@@ -7299,14 +7346,28 @@ function loadControlCalidadVista() {
         return;
       }
       const parejas = j.parejas_cc_caja || {};
-      const sinCc = j.trans_sin_mov_cc_cliente || {};
+      const ejecutadaSinCc = j.trans_ejecutada_sin_registro_cc || j.trans_sin_mov_cc_cliente || {};
+      const pendienteSinCc = j.trans_pendiente_sin_registro_cc || {};
       const ejNoCerr = j.trans_ejecutada_cc_no_cerrado || {};
       const pendNoPend = j.trans_pendiente_cc_no_pendiente || {};
       const html = [
         renderControlCalidadSeccionParejas(parejas),
-        renderControlCalidadSeccionSinCc(sinCc),
+        renderControlCalidadSeccionSinRegistroCc(ejecutadaSinCc, {
+          titulo: 'Transacción ejecutada sin movimientos en cuenta corriente',
+          idBase: 'cc-qc-sin-cc-ej-h',
+          hint:
+            'Por <strong>fecha de orden</strong> en el período (toda orden, incluida anulada). Transacción <strong>ejecutada</strong> sin ninguna fila no anulada en <code>movimientos_cuenta_corriente</code> ni en <code>movimientos_cuenta_corriente_intermediario</code>.',
+        }),
+        renderControlCalidadSeccionSinRegistroCc(pendienteSinCc, {
+          titulo: 'Transacción pendiente sin movimientos en cuenta corriente',
+          idBase: 'cc-qc-sin-cc-pend-h',
+          hint:
+            'Por <strong>fecha de orden</strong> en el período (toda orden, incluida anulada). Transacción <strong>pendiente</strong> sin ninguna fila no anulada en <code>movimientos_cuenta_corriente</code> ni en <code>movimientos_cuenta_corriente_intermediario</code>.',
+        }),
         renderControlCalidadSeccionEjNoCerrado(ejNoCerr),
         renderControlCalidadSeccionPendNoPendiente(pendNoPend),
+        renderControlCalidadTrxAnuladaSinCc(j.trans_anulada_sin_registro_cc || {}),
+        renderControlCalidadTrxAnuladaCcNoAnulado(j.trans_anulada_cc_estado_no_anulado || {}),
       ].join('');
       contenido.innerHTML = html;
       if (!silent) contenido.style.display = 'block';

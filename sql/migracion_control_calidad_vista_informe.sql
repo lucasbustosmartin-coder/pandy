@@ -6,7 +6,7 @@
 INSERT INTO public.app_permission (permission, description) VALUES
   (
     'ver_control_calidad',
-    'Menú Control de calidad: informe de alertas (parejas CC↔caja, transacciones vs CC cliente).'
+    'Menú Control de calidad: informe de alertas (parejas CC↔caja, transacciones vs CC cliente e intermediario).'
   )
 ON CONFLICT (permission) DO UPDATE SET description = EXCLUDED.description;
 
@@ -34,9 +34,12 @@ SET search_path = ''
 AS $fn$
 DECLARE
   j_parejas jsonb;
-  j_sin_cc jsonb;
+  j_ejecutada_sin_cc jsonb;
+  j_pendiente_sin_cc jsonb;
   j_ej_no_cerr jsonb;
   j_pend_no_pend jsonb;
+  j_trx_anulada_sin_cc jsonb;
+  j_trx_anulada_cc_no_anulado jsonb;
 BEGIN
   IF NOT (
     (SELECT public.has_permission('ver_control_calidad'))
@@ -239,7 +242,7 @@ BEGIN
   INTO j_parejas
   FROM (SELECT 1) _x;
 
-  /* Transacción ejecutada, owner cliente, sin fila en CC cliente (no anulada) */
+  /* Ejecutada: sin ningún movimiento en CC cliente ni en CC intermediario (no anulado) */
   WITH base AS (
     SELECT
       t.id AS transaccion_id,
@@ -253,14 +256,18 @@ BEGIN
     FROM public.transacciones t
     INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
     INNER JOIN public.ordenes o ON o.id = i.orden_id
-    WHERE lower(COALESCE(o.estado, '')) <> 'anulada'
-      AND (p_desde IS NULL OR o.fecha >= p_desde)
+    WHERE (p_desde IS NULL OR o.fecha >= p_desde)
       AND (p_hasta IS NULL OR o.fecha <= p_hasta)
       AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.owner, '')) = 'cliente'
       AND NOT EXISTS (
         SELECT 1
         FROM public.movimientos_cuenta_corriente m
+        WHERE m.transaccion_id = t.id
+          AND COALESCE(lower(m.estado), '') <> 'anulado'
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.movimientos_cuenta_corriente_intermediario m
         WHERE m.transaccion_id = t.id
           AND COALESCE(lower(m.estado), '') <> 'anulado'
       )
@@ -289,11 +296,79 @@ BEGIN
       '[]'::jsonb
     )
   )
-  INTO j_sin_cc
+  INTO j_ejecutada_sin_cc
   FROM (SELECT 1) _y;
 
-  /* Ejecutada: hay movimientos CC cliente pero alguno no está cerrado (excl. anulado) */
-  WITH bad AS (
+  /* Pendiente: sin ningún movimiento en CC cliente ni en CC intermediario (no anulado) */
+  WITH base AS (
+    SELECT
+      t.id AS transaccion_id,
+      t.numero AS transaccion_numero,
+      t.estado AS estado_transaccion,
+      t.owner,
+      t.tipo AS tipo_ie,
+      o.id AS orden_id,
+      o.numero AS orden_numero,
+      o.fecha::text AS fecha_orden
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    INNER JOIN public.ordenes o ON o.id = i.orden_id
+    WHERE (p_desde IS NULL OR o.fecha >= p_desde)
+      AND (p_hasta IS NULL OR o.fecha <= p_hasta)
+      AND lower(COALESCE(t.estado, '')) = 'pendiente'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.movimientos_cuenta_corriente m
+        WHERE m.transaccion_id = t.id
+          AND COALESCE(lower(m.estado), '') <> 'anulado'
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.movimientos_cuenta_corriente_intermediario m
+        WHERE m.transaccion_id = t.id
+          AND COALESCE(lower(m.estado), '') <> 'anulado'
+      )
+  ),
+  c AS (SELECT count(*)::int AS n FROM base),
+  lim AS (SELECT * FROM base ORDER BY orden_numero NULLS LAST, transaccion_numero LIMIT 200)
+  SELECT jsonb_build_object(
+    'total', (SELECT n FROM c),
+    'items', COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'transaccion_id', b.transaccion_id,
+            'transaccion_numero', b.transaccion_numero,
+            'orden_id', b.orden_id,
+            'orden_numero', b.orden_numero,
+            'fecha_orden', b.fecha_orden,
+            'estado_transaccion', b.estado_transaccion,
+            'owner', b.owner,
+            'tipo_ie', b.tipo_ie
+          )
+          ORDER BY b.orden_numero NULLS LAST, b.transaccion_numero
+        )
+        FROM lim b
+      ),
+      '[]'::jsonb
+    )
+  )
+  INTO j_pendiente_sin_cc
+  FROM (SELECT 1) _y0;
+
+  /* Ejecutada: movimientos CC (cliente o intermediario) no anulados y alguno no está cerrado */
+  WITH mov_cc AS (
+    SELECT m.transaccion_id, m.estado
+    FROM public.movimientos_cuenta_corriente m
+    WHERE m.transaccion_id IS NOT NULL
+      AND COALESCE(lower(m.estado), '') <> 'anulado'
+    UNION ALL
+    SELECT m.transaccion_id, m.estado
+    FROM public.movimientos_cuenta_corriente_intermediario m
+    WHERE m.transaccion_id IS NOT NULL
+      AND COALESCE(lower(m.estado), '') <> 'anulado'
+  ),
+  bad AS (
     SELECT
       t.id AS transaccion_id,
       t.numero AS transaccion_numero,
@@ -305,15 +380,12 @@ BEGIN
     FROM public.transacciones t
     INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
     INNER JOIN public.ordenes o ON o.id = i.orden_id
-    INNER JOIN public.movimientos_cuenta_corriente m ON m.transaccion_id = t.id
-    WHERE lower(COALESCE(o.estado, '')) <> 'anulada'
-      AND (p_desde IS NULL OR o.fecha >= p_desde)
+    INNER JOIN mov_cc m ON m.transaccion_id = t.id
+    WHERE (p_desde IS NULL OR o.fecha >= p_desde)
       AND (p_hasta IS NULL OR o.fecha <= p_hasta)
       AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.owner, '')) = 'cliente'
-      AND COALESCE(lower(m.estado), '') <> 'anulado'
     GROUP BY t.id, t.numero, t.estado, o.id, o.numero, o.fecha
-    HAVING bool_or(COALESCE(lower(m.estado), '') IS DISTINCT FROM 'cerrado')
+    HAVING bool_or(COALESCE(lower(trim(m.estado::text)), '') IS DISTINCT FROM 'cerrado')
   ),
   c AS (SELECT count(*)::int AS n FROM bad),
   lim AS (SELECT * FROM bad ORDER BY orden_numero NULLS LAST, transaccion_numero LIMIT 200)
@@ -341,8 +413,19 @@ BEGIN
   INTO j_ej_no_cerr
   FROM (SELECT 1) _z;
 
-  /* Pendiente: hay movimientos CC cliente pero alguno no está pendiente (excl. anulado) */
-  WITH bad AS (
+  /* Pendiente: movimientos CC (cliente o intermediario) no anulados y alguno no está pendiente */
+  WITH mov_cc AS (
+    SELECT m.transaccion_id, m.estado
+    FROM public.movimientos_cuenta_corriente m
+    WHERE m.transaccion_id IS NOT NULL
+      AND COALESCE(lower(m.estado), '') <> 'anulado'
+    UNION ALL
+    SELECT m.transaccion_id, m.estado
+    FROM public.movimientos_cuenta_corriente_intermediario m
+    WHERE m.transaccion_id IS NOT NULL
+      AND COALESCE(lower(m.estado), '') <> 'anulado'
+  ),
+  bad AS (
     SELECT
       t.id AS transaccion_id,
       t.numero AS transaccion_numero,
@@ -354,15 +437,12 @@ BEGIN
     FROM public.transacciones t
     INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
     INNER JOIN public.ordenes o ON o.id = i.orden_id
-    INNER JOIN public.movimientos_cuenta_corriente m ON m.transaccion_id = t.id
-    WHERE lower(COALESCE(o.estado, '')) <> 'anulada'
-      AND (p_desde IS NULL OR o.fecha >= p_desde)
+    INNER JOIN mov_cc m ON m.transaccion_id = t.id
+    WHERE (p_desde IS NULL OR o.fecha >= p_desde)
       AND (p_hasta IS NULL OR o.fecha <= p_hasta)
       AND lower(COALESCE(t.estado, '')) = 'pendiente'
-      AND lower(COALESCE(t.owner, '')) = 'cliente'
-      AND COALESCE(lower(m.estado), '') <> 'anulado'
     GROUP BY t.id, t.numero, t.estado, o.id, o.numero, o.fecha
-    HAVING bool_or(COALESCE(lower(m.estado), '') IS DISTINCT FROM 'pendiente')
+    HAVING bool_or(COALESCE(lower(trim(m.estado::text)), '') IS DISTINCT FROM 'pendiente')
   ),
   c AS (SELECT count(*)::int AS n FROM bad),
   lim AS (SELECT * FROM bad ORDER BY orden_numero NULLS LAST, transaccion_numero LIMIT 200)
@@ -390,17 +470,159 @@ BEGIN
   INTO j_pend_no_pend
   FROM (SELECT 1) _w;
 
+  /* Transacción anulada: sin ninguna fila CC en cliente ni intermediario */
+  WITH base AS (
+    SELECT
+      t.id AS transaccion_id,
+      t.numero AS transaccion_numero,
+      t.estado AS estado_transaccion,
+      t.owner,
+      t.tipo AS tipo_ie,
+      o.id AS orden_id,
+      o.numero AS orden_numero,
+      o.fecha::text AS fecha_orden,
+      o.estado AS estado_orden
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    INNER JOIN public.ordenes o ON o.id = i.orden_id
+    WHERE (p_desde IS NULL OR o.fecha >= p_desde)
+      AND (p_hasta IS NULL OR o.fecha <= p_hasta)
+      AND lower(COALESCE(t.estado, '')) = 'anulada'
+      AND NOT EXISTS (
+        SELECT 1 FROM public.movimientos_cuenta_corriente m WHERE m.transaccion_id = t.id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM public.movimientos_cuenta_corriente_intermediario m WHERE m.transaccion_id = t.id
+      )
+  ),
+  c AS (SELECT count(*)::int AS n FROM base),
+  lim AS (SELECT * FROM base ORDER BY orden_numero NULLS LAST, transaccion_numero LIMIT 200)
+  SELECT jsonb_build_object(
+    'total', (SELECT n FROM c),
+    'items', COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'transaccion_id', b.transaccion_id,
+            'transaccion_numero', b.transaccion_numero,
+            'orden_id', b.orden_id,
+            'orden_numero', b.orden_numero,
+            'fecha_orden', b.fecha_orden,
+            'estado_transaccion', b.estado_transaccion,
+            'estado_orden', b.estado_orden,
+            'owner', b.owner,
+            'tipo_ie', b.tipo_ie
+          )
+          ORDER BY b.orden_numero NULLS LAST, b.transaccion_numero
+        )
+        FROM lim b
+      ),
+      '[]'::jsonb
+    )
+  )
+  INTO j_trx_anulada_sin_cc
+  FROM (SELECT 1) _wa;
+
+  /* Transacción anulada: movimientos CC derivados (no manual) con estado distinto de anulado */
+  WITH base AS (
+    SELECT
+      t.id AS transaccion_id,
+      t.numero AS transaccion_numero,
+      t.estado AS estado_transaccion,
+      o.id AS orden_id,
+      o.numero AS orden_numero,
+      o.fecha::text AS fecha_orden,
+      o.estado AS estado_orden,
+      (
+        SELECT string_agg(x.e, ', ')
+        FROM (
+          SELECT DISTINCT concat('cli:', trim(m.estado::text)) AS e
+          FROM public.movimientos_cuenta_corriente m
+          WHERE m.transaccion_id = t.id
+            AND COALESCE(m.es_movimiento_manual, false) = false
+            AND COALESCE(lower(trim(m.estado::text)), '') NOT IN ('anulado', 'anulada')
+        ) x
+      ) AS cc_estados_cliente,
+      (
+        SELECT string_agg(x.e, ', ')
+        FROM (
+          SELECT DISTINCT concat('int:', trim(m.estado::text)) AS e
+          FROM public.movimientos_cuenta_corriente_intermediario m
+          WHERE m.transaccion_id = t.id
+            AND COALESCE(m.es_movimiento_manual, false) = false
+            AND COALESCE(lower(trim(m.estado::text)), '') NOT IN ('anulado', 'anulada')
+        ) x
+      ) AS cc_estados_intermediario
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    INNER JOIN public.ordenes o ON o.id = i.orden_id
+    WHERE (p_desde IS NULL OR o.fecha >= p_desde)
+      AND (p_hasta IS NULL OR o.fecha <= p_hasta)
+      AND lower(COALESCE(t.estado, '')) = 'anulada'
+      AND (
+        EXISTS (
+          SELECT 1
+          FROM public.movimientos_cuenta_corriente m
+          WHERE m.transaccion_id = t.id
+            AND COALESCE(m.es_movimiento_manual, false) = false
+            AND COALESCE(lower(trim(m.estado::text)), '') NOT IN ('anulado', 'anulada')
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM public.movimientos_cuenta_corriente_intermediario m
+          WHERE m.transaccion_id = t.id
+            AND COALESCE(m.es_movimiento_manual, false) = false
+            AND COALESCE(lower(trim(m.estado::text)), '') NOT IN ('anulado', 'anulada')
+        )
+      )
+  ),
+  base2 AS (
+    SELECT
+      b.*,
+      nullif(trim(both ' ' FROM concat_ws(' ', b.cc_estados_cliente, b.cc_estados_intermediario)), '') AS cc_estados_mal
+    FROM base b
+  ),
+  c AS (SELECT count(*)::int AS n FROM base2),
+  lim AS (SELECT * FROM base2 ORDER BY orden_numero NULLS LAST, transaccion_numero LIMIT 200)
+  SELECT jsonb_build_object(
+    'total', (SELECT n FROM c),
+    'items', COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'transaccion_id', b.transaccion_id,
+            'transaccion_numero', b.transaccion_numero,
+            'orden_id', b.orden_id,
+            'orden_numero', b.orden_numero,
+            'fecha_orden', b.fecha_orden,
+            'estado_transaccion', b.estado_transaccion,
+            'estado_orden', b.estado_orden,
+            'cc_estados', b.cc_estados_mal
+          )
+          ORDER BY b.orden_numero NULLS LAST, b.transaccion_numero
+        )
+        FROM lim b
+      ),
+      '[]'::jsonb
+    )
+  )
+  INTO j_trx_anulada_cc_no_anulado
+  FROM (SELECT 1) _wb;
+
   RETURN jsonb_build_object(
     'ok', true,
     'parejas_cc_caja', j_parejas,
-    'trans_sin_mov_cc_cliente', j_sin_cc,
+    'trans_ejecutada_sin_registro_cc', j_ejecutada_sin_cc,
+    'trans_pendiente_sin_registro_cc', j_pendiente_sin_cc,
     'trans_ejecutada_cc_no_cerrado', j_ej_no_cerr,
-    'trans_pendiente_cc_no_pendiente', j_pend_no_pend
+    'trans_pendiente_cc_no_pendiente', j_pend_no_pend,
+    'trans_anulada_sin_registro_cc', j_trx_anulada_sin_cc,
+    'trans_anulada_cc_estado_no_anulado', j_trx_anulada_cc_no_anulado
   );
 END;
 $fn$;
 
 COMMENT ON FUNCTION public.control_calidad_informe(date, date) IS
-  'Control de calidad: parejas CC↔caja + transacciones (owner cliente) vs CC cliente por fecha de orden. Requiere ver_control_calidad o ver_gp_operativo_control_calidad.';
+  'Control de calidad: parejas CC↔caja (cliente e intermediario) + transacciones vs CC en ambos libros por fecha de orden (incluye órdenes anuladas). Transacción anulada: filas CC no manuales deben estar en estado anulado. Requiere ver_control_calidad o ver_gp_operativo_control_calidad.';
 
 GRANT EXECUTE ON FUNCTION public.control_calidad_informe(date, date) TO authenticated;

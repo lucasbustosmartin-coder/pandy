@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.51',
+  versionLabel: 'v3.7.52',
   lines: [
-    'Nuevo menú «Control de calidad» con un informe por período para revisar coherencia entre caja, cuenta corriente del cliente y transacciones.',
-    'En el panel de inicio, la tarjeta de ganancia/pérdida operativa queda centrada en la matriz; las alertas de control pasan a la vista dedicada.',
-    'Si tu perfil tenía permiso de control heredado, seguís pudiendo abrir el informe hasta que el administrador unifique los permisos en Seguridad.',
+    'El informe de Control de calidad ahora tiene en cuenta también las órdenes anuladas del período, para cruzar caja y cuenta corriente sin dejar huecos.',
+    'Si una transacción quedó anulada, el informe puede avisarte si falta huella en cuenta corriente o si algún movimiento derivado no quedó alineado con el anulado.',
+    'Actualizamos las ayudas en pantalla y el manual offline para leer mejor cada alerta.',
   ],
 };
