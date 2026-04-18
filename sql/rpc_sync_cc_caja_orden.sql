@@ -1,13 +1,10 @@
 -- RPC: sincronizar CC (cliente e intermediario) y caja para una orden en una sola transacción.
--- El front construye los rows (misma lógica que hoy) y los envía en JSONB; esta función hace delete + insert atómicos.
--- Ejecutar en Supabase SQL Editor.
--- Nota: transaccion_numero / orden_numero se leen con ->> (texto) y luego ::integer para que JSON null
--- no rompa el INSERT (evita "cannot cast jsonb null to type integer" en filas de comisión con transaccion_numero null).
--- Caja: movimientos_caja.usuario_id sale solo del JSON de cada fila (quien ejecutó la transacción en el front);
--- no se rellena con p_usuario_id para no atribuir resync del admin al operador real.
--- CC cliente/intermediario: si el JSON no trae usuario_id (o null), se resuelve desde transacciones.usuario_id
--- y luego ordenes.usuario_id; p_usuario_id solo como último recurso (frontes viejos). Así un «Refrescar» CC
--- no puede grabar al invocador como dueño de los movimientos si la fila tiene transaccion_id en BD.
+-- El front construye los rows (misma lógica que hoy) y los envía en JSONB.
+-- Versión **diff**: INSERT filas nuevas, UPDATE si cambió algo útil, DELETE huérfanos.
+-- No hace DELETE masivo + reinsert: menos escrituras/WAL y conserva `id` cuando la fila lógica es la misma.
+-- No toca filas CC con `es_movimiento_manual = true`. Caja: solo `tipo_movimiento_id IS NULL` (derivados).
+-- Ejecutar en Supabase SQL Editor (reemplaza la función anterior).
+-- Nota: transaccion_numero / orden_numero vía ->> y cast para JSON null (igual que antes).
 
 CREATE OR REPLACE FUNCTION public.sync_cc_caja_orden(
   p_orden_id uuid,
@@ -24,127 +21,376 @@ AS $$
 DECLARE
   r jsonb;
   ids_trx uuid[];
+  v_mid uuid;
+  v_fecha date;
+  v_usuario uuid;
+  v_monto numeric;
+  v_monto_usd numeric;
+  v_monto_ars numeric;
+  v_monto_eur numeric;
+  v_estado text;
+  v_estado_fecha timestamptz;
+  v_incluir boolean;
+  v_concepto text;
+  v_trx uuid;
+  v_trx_n int;
+  v_cli uuid;
+  v_int uuid;
+  v_mon text;
+  v_caja_tipo text;
+  v_ord_num int;
+  v_row_m public.movimientos_cuenta_corriente%ROWTYPE;
+  v_row_mi public.movimientos_cuenta_corriente_intermediario%ROWTYPE;
+  v_row_mc public.movimientos_caja%ROWTYPE;
+  v_found boolean;
 BEGIN
   IF p_orden_id IS NULL THEN
     RETURN;
   END IF;
 
-  -- 1) Obtener ids de transacciones de esta orden (para borrar movimientos_caja por transacción)
   SELECT COALESCE(array_agg(t.id), array[]::uuid[])
   INTO ids_trx
   FROM public.transacciones t
   JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
   WHERE i.orden_id = p_orden_id;
 
-  -- 2) Borrar movimientos CC cliente e intermediario de esta orden
-  DELETE FROM public.movimientos_cuenta_corriente WHERE orden_id = p_orden_id;
-  DELETE FROM public.movimientos_cuenta_corriente_intermediario WHERE orden_id = p_orden_id;
-
-  -- 3) Borrar movimientos de caja: por transacciones de la orden y por orden_id (transaccion_id null)
-  IF array_length(ids_trx, 1) > 0 THEN
-    DELETE FROM public.movimientos_caja WHERE transaccion_id = ANY(ids_trx);
-  END IF;
-  DELETE FROM public.movimientos_caja WHERE orden_id = p_orden_id AND transaccion_id IS NULL;
-
-  -- 4) Insertar movimientos CC cliente (incluir_en_detalle desde JSON; saldo = suma de todos los no anulados)
-  FOR r IN SELECT * FROM jsonb_array_elements(p_rows_cc_cliente)
+  -- ========== CC cliente: upsert por clave lógica (alineada al dedupe en main.js) ==========
+  FOR r IN SELECT * FROM jsonb_array_elements(COALESCE(p_rows_cc_cliente, '[]'::jsonb))
   LOOP
-    INSERT INTO public.movimientos_cuenta_corriente (
-      cliente_id, orden_id, transaccion_id, transaccion_numero, concepto, fecha, usuario_id,
-      moneda, monto, monto_usd, monto_ars, monto_eur, estado, estado_fecha, incluir_en_detalle
-    ) VALUES (
-      (r->>'cliente_id')::uuid,
-      (r->>'orden_id')::uuid,
-      (r->>'transaccion_id')::uuid,
-      (r->>'transaccion_numero')::integer,
-      r->>'concepto',
-      COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina()),
-      COALESCE(
-        NULLIF(TRIM(COALESCE(r->>'usuario_id', '')), '')::uuid,
-        (
-          SELECT tr.usuario_id
-          FROM public.transacciones tr
-          WHERE (r->>'transaccion_id') IS NOT NULL
-            AND TRIM(COALESCE(r->>'transaccion_id', '')) <> ''
-            AND tr.id = (NULLIF(TRIM(r->>'transaccion_id'), ''))::uuid
-          LIMIT 1
-        ),
-        (SELECT o.usuario_id FROM public.ordenes o WHERE o.id = (r->>'orden_id')::uuid LIMIT 1),
-        p_usuario_id
+    v_cli := (r->>'cliente_id')::uuid;
+    v_trx := NULLIF(TRIM(COALESCE(r->>'transaccion_id', '')), '')::uuid;
+    IF trim(COALESCE(r->>'transaccion_numero', '')) = '' THEN
+      v_trx_n := NULL;
+    ELSE
+      v_trx_n := (trim(r->>'transaccion_numero'))::integer;
+    END IF;
+    v_mon := upper(trim(COALESCE(r->>'moneda', '')));
+    v_monto := (r->>'monto')::numeric;
+    v_concepto := r->>'concepto';
+
+    SELECT m.id INTO v_mid
+    FROM public.movimientos_cuenta_corriente m
+    WHERE m.orden_id = p_orden_id
+      AND COALESCE(m.es_movimiento_manual, false) = false
+      AND m.cliente_id = v_cli
+      AND m.transaccion_id IS NOT DISTINCT FROM v_trx
+      AND m.transaccion_numero IS NOT DISTINCT FROM v_trx_n
+      AND upper(trim(m.moneda)) = v_mon
+      AND m.monto IS NOT DISTINCT FROM v_monto
+      AND left(COALESCE(m.concepto, ''), 72) IS NOT DISTINCT FROM left(COALESCE(v_concepto, ''), 72)
+    LIMIT 1;
+
+    v_fecha := COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina());
+    v_usuario := COALESCE(
+      NULLIF(TRIM(COALESCE(r->>'usuario_id', '')), '')::uuid,
+      (
+        SELECT tr.usuario_id
+        FROM public.transacciones tr
+        WHERE v_trx IS NOT NULL AND tr.id = v_trx
+        LIMIT 1
       ),
-      r->>'moneda',
-      (r->>'monto')::numeric,
-      COALESCE((r->>'monto_usd')::numeric, 0),
-      COALESCE((r->>'monto_ars')::numeric, 0),
-      COALESCE((r->>'monto_eur')::numeric, 0),
-      COALESCE(r->>'estado', 'cerrado'),
-      COALESCE((r->>'estado_fecha')::timestamptz, now()),
-      COALESCE((r->>'incluir_en_detalle')::boolean, true)
+      (SELECT o.usuario_id FROM public.ordenes o WHERE o.id = p_orden_id LIMIT 1),
+      p_usuario_id
     );
+    v_monto_usd := COALESCE((r->>'monto_usd')::numeric, 0);
+    v_monto_ars := COALESCE((r->>'monto_ars')::numeric, 0);
+    v_monto_eur := COALESCE((r->>'monto_eur')::numeric, 0);
+    v_estado := COALESCE(r->>'estado', 'cerrado');
+    v_estado_fecha := COALESCE((r->>'estado_fecha')::timestamptz, now());
+    v_incluir := COALESCE((r->>'incluir_en_detalle')::boolean, true);
+
+    IF v_mid IS NOT NULL THEN
+      UPDATE public.movimientos_cuenta_corriente m
+      SET
+        concepto = v_concepto,
+        fecha = v_fecha,
+        usuario_id = v_usuario,
+        moneda = v_mon,
+        monto = v_monto,
+        monto_usd = v_monto_usd,
+        monto_ars = v_monto_ars,
+        monto_eur = v_monto_eur,
+        estado = v_estado,
+        estado_fecha = CASE
+          WHEN (
+            m.concepto IS DISTINCT FROM v_concepto OR m.fecha IS DISTINCT FROM v_fecha OR m.usuario_id IS DISTINCT FROM v_usuario
+            OR upper(trim(m.moneda)) IS DISTINCT FROM v_mon OR m.monto IS DISTINCT FROM v_monto
+            OR m.monto_usd IS DISTINCT FROM v_monto_usd OR m.monto_ars IS DISTINCT FROM v_monto_ars OR m.monto_eur IS DISTINCT FROM v_monto_eur
+            OR m.estado IS DISTINCT FROM v_estado OR m.incluir_en_detalle IS DISTINCT FROM v_incluir
+          ) THEN v_estado_fecha
+          ELSE m.estado_fecha
+        END,
+        incluir_en_detalle = v_incluir
+      WHERE m.id = v_mid;
+    ELSE
+      INSERT INTO public.movimientos_cuenta_corriente (
+        cliente_id, orden_id, transaccion_id, transaccion_numero, concepto, fecha, usuario_id,
+        moneda, monto, monto_usd, monto_ars, monto_eur, estado, estado_fecha, incluir_en_detalle
+      ) VALUES (
+        v_cli, p_orden_id, v_trx, v_trx_n, v_concepto, v_fecha, v_usuario,
+        v_mon, v_monto, v_monto_usd, v_monto_ars, v_monto_eur, v_estado, v_estado_fecha, v_incluir
+      );
+    END IF;
   END LOOP;
 
-  -- 5) Insertar movimientos CC intermediario
-  FOR r IN SELECT * FROM jsonb_array_elements(p_rows_cc_int)
+  FOR v_row_m IN
+    SELECT * FROM public.movimientos_cuenta_corriente m
+    WHERE m.orden_id = p_orden_id AND COALESCE(m.es_movimiento_manual, false) = false
   LOOP
-    INSERT INTO public.movimientos_cuenta_corriente_intermediario (
-      intermediario_id, orden_id, transaccion_id, transaccion_numero, concepto, fecha, usuario_id,
-      moneda, monto, monto_usd, monto_ars, monto_eur, estado, estado_fecha, incluir_en_detalle
-    ) VALUES (
-      (r->>'intermediario_id')::uuid,
-      (r->>'orden_id')::uuid,
-      (r->>'transaccion_id')::uuid,
-      (r->>'transaccion_numero')::integer,
-      r->>'concepto',
-      COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina()),
-      COALESCE(
-        NULLIF(TRIM(COALESCE(r->>'usuario_id', '')), '')::uuid,
-        (
-          SELECT tr.usuario_id
-          FROM public.transacciones tr
-          WHERE (r->>'transaccion_id') IS NOT NULL
-            AND TRIM(COALESCE(r->>'transaccion_id', '')) <> ''
-            AND tr.id = (NULLIF(TRIM(r->>'transaccion_id'), ''))::uuid
-          LIMIT 1
-        ),
-        (SELECT o.usuario_id FROM public.ordenes o WHERE o.id = (r->>'orden_id')::uuid LIMIT 1),
-        p_usuario_id
-      ),
-      r->>'moneda',
-      (r->>'monto')::numeric,
-      COALESCE((r->>'monto_usd')::numeric, 0),
-      COALESCE((r->>'monto_ars')::numeric, 0),
-      COALESCE((r->>'monto_eur')::numeric, 0),
-      COALESCE(r->>'estado', 'cerrado'),
-      COALESCE((r->>'estado_fecha')::timestamptz, now()),
-      COALESCE((r->>'incluir_en_detalle')::boolean, true)
-    );
+    v_found := false;
+    FOR r IN SELECT * FROM jsonb_array_elements(COALESCE(p_rows_cc_cliente, '[]'::jsonb))
+    LOOP
+      v_cli := (r->>'cliente_id')::uuid;
+      v_trx := NULLIF(TRIM(COALESCE(r->>'transaccion_id', '')), '')::uuid;
+      IF trim(COALESCE(r->>'transaccion_numero', '')) = '' THEN
+        v_trx_n := NULL;
+      ELSE
+        v_trx_n := (trim(r->>'transaccion_numero'))::integer;
+      END IF;
+      v_mon := upper(trim(COALESCE(r->>'moneda', '')));
+      v_monto := (r->>'monto')::numeric;
+      v_concepto := r->>'concepto';
+      IF v_row_m.cliente_id = v_cli
+        AND v_row_m.transaccion_id IS NOT DISTINCT FROM v_trx
+        AND v_row_m.transaccion_numero IS NOT DISTINCT FROM v_trx_n
+        AND upper(trim(v_row_m.moneda)) = v_mon
+        AND v_row_m.monto IS NOT DISTINCT FROM v_monto
+        AND left(COALESCE(v_row_m.concepto, ''), 72) IS NOT DISTINCT FROM left(COALESCE(v_concepto, ''), 72)
+      THEN
+        v_found := true;
+        EXIT;
+      END IF;
+    END LOOP;
+    IF NOT v_found THEN
+      DELETE FROM public.movimientos_cuenta_corriente WHERE id = v_row_m.id;
+    END IF;
   END LOOP;
 
-  -- 6) Insertar movimientos de caja
-  FOR r IN SELECT * FROM jsonb_array_elements(p_rows_caja)
+  -- ========== CC intermediario ==========
+  FOR r IN SELECT * FROM jsonb_array_elements(COALESCE(p_rows_cc_int, '[]'::jsonb))
   LOOP
-    INSERT INTO public.movimientos_caja (
-      moneda, monto, caja_tipo, transaccion_id, orden_id, orden_numero, transaccion_numero,
-      concepto, fecha, usuario_id
-    ) VALUES (
-      r->>'moneda',
-      (r->>'monto')::numeric,
-      COALESCE(r->>'caja_tipo', 'efectivo'),
-      (r->>'transaccion_id')::uuid,
-      (r->>'orden_id')::uuid,
-      (r->>'orden_numero')::integer,
-      (r->>'transaccion_numero')::integer,
-      r->>'concepto',
-      COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina()),
-      (NULLIF(TRIM(COALESCE(r->>'usuario_id', '')), ''))::uuid
+    v_int := (r->>'intermediario_id')::uuid;
+    v_trx := NULLIF(TRIM(COALESCE(r->>'transaccion_id', '')), '')::uuid;
+    IF trim(COALESCE(r->>'transaccion_numero', '')) = '' THEN
+      v_trx_n := NULL;
+    ELSE
+      v_trx_n := (trim(r->>'transaccion_numero'))::integer;
+    END IF;
+    v_mon := upper(trim(COALESCE(r->>'moneda', '')));
+    v_monto := (r->>'monto')::numeric;
+    v_concepto := r->>'concepto';
+
+    SELECT m.id INTO v_mid
+    FROM public.movimientos_cuenta_corriente_intermediario m
+    WHERE m.orden_id = p_orden_id
+      AND COALESCE(m.es_movimiento_manual, false) = false
+      AND m.intermediario_id = v_int
+      AND m.transaccion_id IS NOT DISTINCT FROM v_trx
+      AND m.transaccion_numero IS NOT DISTINCT FROM v_trx_n
+      AND upper(trim(m.moneda)) = v_mon
+      AND m.monto IS NOT DISTINCT FROM v_monto
+      AND left(COALESCE(m.concepto, ''), 72) IS NOT DISTINCT FROM left(COALESCE(v_concepto, ''), 72)
+    LIMIT 1;
+
+    v_fecha := COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina());
+    v_usuario := COALESCE(
+      NULLIF(TRIM(COALESCE(r->>'usuario_id', '')), '')::uuid,
+      (SELECT tr.usuario_id FROM public.transacciones tr WHERE v_trx IS NOT NULL AND tr.id = v_trx LIMIT 1),
+      (SELECT o.usuario_id FROM public.ordenes o WHERE o.id = p_orden_id LIMIT 1),
+      p_usuario_id
     );
+    v_monto_usd := COALESCE((r->>'monto_usd')::numeric, 0);
+    v_monto_ars := COALESCE((r->>'monto_ars')::numeric, 0);
+    v_monto_eur := COALESCE((r->>'monto_eur')::numeric, 0);
+    v_estado := COALESCE(r->>'estado', 'cerrado');
+    v_estado_fecha := COALESCE((r->>'estado_fecha')::timestamptz, now());
+    v_incluir := COALESCE((r->>'incluir_en_detalle')::boolean, true);
+
+    IF v_mid IS NOT NULL THEN
+      UPDATE public.movimientos_cuenta_corriente_intermediario m
+      SET
+        concepto = v_concepto,
+        fecha = v_fecha,
+        usuario_id = v_usuario,
+        moneda = v_mon,
+        monto = v_monto,
+        monto_usd = v_monto_usd,
+        monto_ars = v_monto_ars,
+        monto_eur = v_monto_eur,
+        estado = v_estado,
+        estado_fecha = CASE
+          WHEN (
+            m.concepto IS DISTINCT FROM v_concepto OR m.fecha IS DISTINCT FROM v_fecha OR m.usuario_id IS DISTINCT FROM v_usuario
+            OR upper(trim(m.moneda)) IS DISTINCT FROM v_mon OR m.monto IS DISTINCT FROM v_monto
+            OR m.monto_usd IS DISTINCT FROM v_monto_usd OR m.monto_ars IS DISTINCT FROM v_monto_ars OR m.monto_eur IS DISTINCT FROM v_monto_eur
+            OR m.estado IS DISTINCT FROM v_estado OR m.incluir_en_detalle IS DISTINCT FROM v_incluir
+          ) THEN v_estado_fecha
+          ELSE m.estado_fecha
+        END,
+        incluir_en_detalle = v_incluir
+      WHERE m.id = v_mid;
+    ELSE
+      INSERT INTO public.movimientos_cuenta_corriente_intermediario (
+        intermediario_id, orden_id, transaccion_id, transaccion_numero, concepto, fecha, usuario_id,
+        moneda, monto, monto_usd, monto_ars, monto_eur, estado, estado_fecha, incluir_en_detalle
+      ) VALUES (
+        v_int, p_orden_id, v_trx, v_trx_n, v_concepto, v_fecha, v_usuario,
+        v_mon, v_monto, v_monto_usd, v_monto_ars, v_monto_eur, v_estado, v_estado_fecha, v_incluir
+      );
+    END IF;
+  END LOOP;
+
+  FOR v_row_mi IN
+    SELECT * FROM public.movimientos_cuenta_corriente_intermediario m
+    WHERE m.orden_id = p_orden_id AND COALESCE(m.es_movimiento_manual, false) = false
+  LOOP
+    v_found := false;
+    FOR r IN SELECT * FROM jsonb_array_elements(COALESCE(p_rows_cc_int, '[]'::jsonb))
+    LOOP
+      v_int := (r->>'intermediario_id')::uuid;
+      v_trx := NULLIF(TRIM(COALESCE(r->>'transaccion_id', '')), '')::uuid;
+      IF trim(COALESCE(r->>'transaccion_numero', '')) = '' THEN
+        v_trx_n := NULL;
+      ELSE
+        v_trx_n := (trim(r->>'transaccion_numero'))::integer;
+      END IF;
+      v_mon := upper(trim(COALESCE(r->>'moneda', '')));
+      v_monto := (r->>'monto')::numeric;
+      v_concepto := r->>'concepto';
+      IF v_row_mi.intermediario_id = v_int
+        AND v_row_mi.transaccion_id IS NOT DISTINCT FROM v_trx
+        AND v_row_mi.transaccion_numero IS NOT DISTINCT FROM v_trx_n
+        AND upper(trim(v_row_mi.moneda)) = v_mon
+        AND v_row_mi.monto IS NOT DISTINCT FROM v_monto
+        AND left(COALESCE(v_row_mi.concepto, ''), 72) IS NOT DISTINCT FROM left(COALESCE(v_concepto, ''), 72)
+      THEN
+        v_found := true;
+        EXIT;
+      END IF;
+    END LOOP;
+    IF NOT v_found THEN
+      DELETE FROM public.movimientos_cuenta_corriente_intermediario WHERE id = v_row_mi.id;
+    END IF;
+  END LOOP;
+
+  -- ========== Caja (derivados: sin tipo_movimiento_id) ==========
+  FOR r IN SELECT * FROM jsonb_array_elements(COALESCE(p_rows_caja, '[]'::jsonb))
+  LOOP
+    v_trx := NULLIF(TRIM(COALESCE(r->>'transaccion_id', '')), '')::uuid;
+    IF trim(COALESCE(r->>'transaccion_numero', '')) = '' THEN
+      v_trx_n := NULL;
+    ELSE
+      v_trx_n := (trim(r->>'transaccion_numero'))::integer;
+    END IF;
+    IF trim(COALESCE(r->>'orden_numero', '')) = '' THEN
+      v_ord_num := NULL;
+    ELSE
+      v_ord_num := (trim(r->>'orden_numero'))::integer;
+    END IF;
+    v_mon := upper(trim(COALESCE(r->>'moneda', '')));
+    v_monto := (r->>'monto')::numeric;
+    v_caja_tipo := COALESCE(r->>'caja_tipo', 'efectivo');
+    v_concepto := r->>'concepto';
+    v_fecha := COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina());
+    v_usuario := NULLIF(TRIM(COALESCE(r->>'usuario_id', '')), '')::uuid;
+
+    SELECT m.id INTO v_mid
+    FROM public.movimientos_caja m
+    WHERE m.tipo_movimiento_id IS NULL
+      AND m.transaccion_numero IS NOT DISTINCT FROM v_trx_n
+      AND upper(trim(m.moneda)) = v_mon
+      AND m.monto IS NOT DISTINCT FROM v_monto
+      AND COALESCE(m.caja_tipo, 'efectivo') = v_caja_tipo
+      AND m.orden_numero IS NOT DISTINCT FROM v_ord_num
+      AND left(COALESCE(m.concepto, ''), 72) IS NOT DISTINCT FROM left(COALESCE(v_concepto, ''), 72)
+      AND (
+        (v_trx IS NOT NULL AND m.transaccion_id = v_trx)
+        OR (v_trx IS NULL AND m.orden_id = p_orden_id AND m.transaccion_id IS NULL)
+      )
+    LIMIT 1;
+
+    IF v_mid IS NOT NULL THEN
+      UPDATE public.movimientos_caja m
+      SET
+        moneda = v_mon,
+        monto = v_monto,
+        caja_tipo = v_caja_tipo,
+        orden_id = p_orden_id,
+        orden_numero = v_ord_num,
+        transaccion_numero = v_trx_n,
+        concepto = v_concepto,
+        fecha = v_fecha,
+        usuario_id = v_usuario
+      WHERE m.id = v_mid
+        AND (
+          m.moneda IS DISTINCT FROM v_mon OR m.monto IS DISTINCT FROM v_monto OR m.caja_tipo IS DISTINCT FROM v_caja_tipo
+          OR m.orden_numero IS DISTINCT FROM v_ord_num OR m.transaccion_numero IS DISTINCT FROM v_trx_n
+          OR m.concepto IS DISTINCT FROM v_concepto OR m.fecha IS DISTINCT FROM v_fecha OR m.usuario_id IS DISTINCT FROM v_usuario
+        );
+    ELSE
+      INSERT INTO public.movimientos_caja (
+        moneda, monto, caja_tipo, transaccion_id, orden_id, orden_numero, transaccion_numero,
+        concepto, fecha, usuario_id
+      ) VALUES (
+        v_mon, v_monto, v_caja_tipo, v_trx, p_orden_id, v_ord_num, v_trx_n,
+        v_concepto, v_fecha, v_usuario
+      );
+    END IF;
+  END LOOP;
+
+  FOR v_row_mc IN
+    SELECT * FROM public.movimientos_caja m
+    WHERE m.tipo_movimiento_id IS NULL
+      AND (
+        m.orden_id = p_orden_id
+        OR (cardinality(ids_trx) > 0 AND m.transaccion_id IS NOT NULL AND m.transaccion_id = ANY (ids_trx))
+      )
+  LOOP
+    v_found := false;
+    FOR r IN SELECT * FROM jsonb_array_elements(COALESCE(p_rows_caja, '[]'::jsonb))
+    LOOP
+      v_trx := NULLIF(TRIM(COALESCE(r->>'transaccion_id', '')), '')::uuid;
+      IF trim(COALESCE(r->>'transaccion_numero', '')) = '' THEN
+        v_trx_n := NULL;
+      ELSE
+        v_trx_n := (trim(r->>'transaccion_numero'))::integer;
+      END IF;
+      IF trim(COALESCE(r->>'orden_numero', '')) = '' THEN
+        v_ord_num := NULL;
+      ELSE
+        v_ord_num := (trim(r->>'orden_numero'))::integer;
+      END IF;
+      v_mon := upper(trim(COALESCE(r->>'moneda', '')));
+      v_monto := (r->>'monto')::numeric;
+      v_caja_tipo := COALESCE(r->>'caja_tipo', 'efectivo');
+      v_concepto := r->>'concepto';
+
+      IF v_row_mc.transaccion_id IS NOT DISTINCT FROM v_trx
+        AND v_row_mc.transaccion_numero IS NOT DISTINCT FROM v_trx_n
+        AND v_row_mc.orden_numero IS NOT DISTINCT FROM v_ord_num
+        AND upper(trim(v_row_mc.moneda)) = v_mon
+        AND v_row_mc.monto IS NOT DISTINCT FROM v_monto
+        AND COALESCE(v_row_mc.caja_tipo, 'efectivo') = v_caja_tipo
+        AND left(COALESCE(v_row_mc.concepto, ''), 72) IS NOT DISTINCT FROM left(COALESCE(v_concepto, ''), 72)
+        AND (
+          (v_trx IS NOT NULL AND v_row_mc.transaccion_id = v_trx)
+          OR (v_trx IS NULL AND v_row_mc.orden_id = p_orden_id AND v_row_mc.transaccion_id IS NULL)
+        )
+      THEN
+        v_found := true;
+        EXIT;
+      END IF;
+    END LOOP;
+    IF NOT v_found THEN
+      DELETE FROM public.movimientos_caja WHERE id = v_row_mc.id;
+    END IF;
   END LOOP;
 END;
 $$;
 
-COMMENT ON FUNCTION public.sync_cc_caja_orden IS 'Sync CC cliente, CC intermediario y caja para una orden. Recibe rows ya calculados por el front (JSONB). Ejecuta delete + insert en una transacción. Llamar desde el front tras construir rowsCcCliente, rowsCcInt, rowsCaja.';
+COMMENT ON FUNCTION public.sync_cc_caja_orden IS
+  'Sync CC cliente, CC intermediario y caja para una orden (JSONB desde el front). Versión diff: UPDATE/INSERT/DELETE por clave lógica; no borra ni reinserta todo. Respeta CC manual (es_movimiento_manual). Caja: solo filas sin tipo_movimiento_id.';
 
--- Permitir invocar la RPC desde el front (anon con sesión o authenticated)
 GRANT EXECUTE ON FUNCTION public.sync_cc_caja_orden(uuid, uuid, jsonb, jsonb, jsonb) TO anon;
 GRANT EXECUTE ON FUNCTION public.sync_cc_caja_orden(uuid, uuid, jsonb, jsonb, jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sync_cc_caja_orden(uuid, uuid, jsonb, jsonb, jsonb) TO service_role;

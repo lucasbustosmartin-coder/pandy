@@ -3443,6 +3443,21 @@ function fechaHoyYYYYMMDDArgentina() {
   return fechaYYYYMMDDEnZonaArgentina(new Date());
 }
 
+/**
+ * Día contable de la orden (`ordenes.fecha`): ancla estable para CC/caja en sync cuando no hay `fecha_ejecucion` en la transacción
+ * (p. ej. comisión sintética sin `transaccion_id`). No usar la fecha del resync como sustituto si existe fecha de orden.
+ */
+function fechaContableYYYYMMDDDesdeCampoFechaOrden(fOrd, fechaUltimoRecurso) {
+  if (fOrd == null || String(fOrd).trim() === '') return fechaUltimoRecurso;
+  if (fOrd instanceof Date && !isNaN(fOrd.getTime())) {
+    const d = fechaYYYYMMDDEnZonaArgentina(fOrd);
+    if (d) return d;
+  }
+  const s = String(fOrd).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return fechaUltimoRecurso;
+}
+
 /** Último día del mes (mes 1–12, año gregoriano); sin depender de la zona horaria del navegador. */
 function ultimoDiaDelMesGregoriano(anio, mes1a12) {
   return new Date(Date.UTC(anio, mes1a12, 0)).getUTCDate();
@@ -4028,11 +4043,11 @@ function fetchTransaccionesParaAnulacionOrden(ordenId) {
 }
 
 /** Marca todas las transacciones de la instrumentación como anuladas (coherente con orden anulada). */
-function anularTodasTransaccionesInstrumentacion(instrumentacionId, ahora) {
+function anularTodasTransaccionesInstrumentacion(instrumentacionId, _ahora) {
   if (!instrumentacionId) return Promise.resolve();
   return client
     .from('transacciones')
-    .update({ estado: 'anulada', fecha_ejecucion: null, updated_at: ahora })
+    .update({ estado: 'anulada', fecha_ejecucion: null })
     .eq('instrumentacion_id', instrumentacionId)
     .neq('estado', 'anulada')
     .then((r) => {
@@ -9056,7 +9071,7 @@ function completarPayloadIdsContraparteDesdeOrden(payload, orden) {
 
 /**
  * Fecha contable (`fecha`) y `estado_fecha` para movimientos CC/caja derivados de una transacción.
- * Ancla al hecho: `fecha_ejecucion` y, si existe, `updated_at` de la transacción; si no hay datos, fallback al sync (comportamiento previo).
+ * Ancla al hecho: `fecha_ejecucion` y, si aplica, `updated_at`; si falta ejecución y la trx está **anulada**, priorizar el fallback (día de la orden en sync), no `updated_at` (evita que un resync «mueva» el día contable).
  * Prepara etapa posterior de sync por diff (opción 2).
  */
 function fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fechaFallbackDia, ahoraFallbackIso) {
@@ -9067,7 +9082,12 @@ function fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fechaFallbackDia, 
   const feStr = fe != null && String(fe).trim() !== '' ? String(fe).trim().slice(0, 10) : '';
   const ua = t.updated_at;
   const diaDesdeUa = ua ? fechaYYYYMMDDEnZonaArgentina(ua) : '';
-  const dia = feStr || diaDesdeUa || fechaFallbackDia;
+  const estadoT = transaccionEstadoTextoNormalizado(t);
+  const dia =
+    feStr ||
+    (estadoT === 'anulada' && fechaFallbackDia ? fechaFallbackDia : '') ||
+    diaDesdeUa ||
+    fechaFallbackDia;
   let estadoFecha = ahoraFallbackIso;
   if (ua) {
     const d = new Date(ua);
@@ -22561,8 +22581,8 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
 /**
  * Sincroniza CC (cliente e intermediario) y caja desde la orden y sus transacciones.
  * Regla única: orden + instrumentación son la fuente de verdad; CC y caja se recalculan por derivación.
- * Se borran todos los movimientos de esta orden y se vuelven a insertar según el estado actual de las transacciones.
- * Fecha contable y estado_fecha de cada fila derivada se anclan a la transacción (`fecha_ejecucion`, `updated_at`); ver `fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion`.
+ * La RPC `sync_cc_caja_orden` en Supabase aplica **diff** (UPDATE/INSERT/DELETE por clave lógica; ver `sql/rpc_sync_cc_caja_orden.sql`). El fallback en cliente sigue siendo delete+insert si la RPC falla.
+ * Fecha contable y estado_fecha de cada fila derivada se anclan a la transacción (`fecha_ejecucion`, `updated_at` cuando aplica); sin ejecución, comisiones sintéticas y coherencia anulada usan el día de `ordenes.fecha` (no la fecha del resync). Ver `fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion`.
  * Si `ordenes.estado` es **anulada** y alguna transacción de la instrumentación no está **anulada**, antes del cálculo se intenta **UPDATE** en `transacciones` (coherencia orden↔instrumentación); si falla el UPDATE, se alinean estados en memoria para el sync y se deja traza en consola.
  * **Invariante neteo CC cliente del acuerdo:** si el acuerdo está “cerrado” para este criterio (par ingreso+egreso clásico ejecutados, o multicontraparte manual con todas las transacciones ejecutadas o anuladas), la suma por moneda de las filas CC cerradas de ese cliente y orden debe ser cero, salvo el residual explicado por patas regla B y por la fila sintética «Comisión del acuerdo» sin `transaccion_id` (spread mr−me). Si no cumple, **no** se llama a `sync_cc_caja_orden` (no se persiste CC/caja derivada de este cálculo).
  * @param {string} ordenId
@@ -22573,14 +22593,16 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
   optsSyncCc = optsSyncCc || {};
   const silenciarAvisosInvarianteCc = optsSyncCc.silenciarAvisosInvarianteCc === true;
   if (!ordenId || !currentUserId) return Promise.resolve();
-  const fecha = fechaHoyYYYYMMDDArgentina();
+  const fechaHoySync = fechaHoyYYYYMMDDArgentina();
   const ahora = new Date().toISOString();
 
-  return client.from('ordenes').select('id, usuario_id, numero, estado, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, intermediarios(nombre)').eq('id', ordenId).single()
+  return client.from('ordenes').select('id, usuario_id, numero, estado, fecha, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, intermediarios(nombre)').eq('id', ordenId).single()
     .then((rOrd) => {
       if (rOrd.error || !rOrd.data) return Promise.resolve();
       const orden = rOrd.data;
       const ordenAnuladaSync = String(orden.estado || '').toLowerCase() === 'anulada';
+      /** Día contable de respaldo en sync: siempre `ordenes.fecha` (comisiones sin trx, trx anuladas sin `fecha_ejecucion`); último recurso «hoy» solo si la orden no tiene fecha. */
+      const fecha = fechaContableYYYYMMDDDesdeCampoFechaOrden(orden.fecha, fechaHoySync);
       const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
       const codigoOrdenRaw = (toJoin && toJoin.codigo) || null;
       const codigoOrden = normalizarCodigoTipoOperacion(codigoOrdenRaw) || codigoOrdenRaw;
@@ -22637,7 +22659,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               }
               return client
                 .from('transacciones')
-                .update({ estado: 'anulada', fecha_ejecucion: null, updated_at: ahora })
+                .update({ estado: 'anulada', fecha_ejecucion: null })
                 .eq('instrumentacion_id', instId)
                 .neq('estado', 'anulada')
                 .then((rUp) => {
@@ -22649,7 +22671,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                       );
                     }
                     return transacciones.map((x) =>
-                      Object.assign({}, x, { estado: 'anulada', fecha_ejecucion: null, updated_at: ahora }),
+                      Object.assign({}, x, { estado: 'anulada', fecha_ejecucion: null }),
                     );
                   }
                   return client
