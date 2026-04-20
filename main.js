@@ -23704,7 +23704,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           // Cierre sintético dos monedas (CC cliente): +montoRecibido en monR y −montoEntregado en monE cuando el “par cliente” está ejecutado.
           // Ingreso: Cliente→Pandy o Cliente→Intermediario (misma semántica que ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado).
           // Egreso entrega al cliente: Pandy→Cliente **o** Intermediario→Cliente (cp_ic: cobro a Pandy + entrega vía int.).
-          // Solo **legacy** si NO corre el motor completo (`reglas_de_negocio` sin derivación MC/Aj): con `usarMotorEfectivo` el motor ya cierra la CC por transacción; el cierre sintético duplicaría +monR/−monE (ej. ARS-USD+int E,E). Con **instrumentacion_ajustada_manual** o MC + reglas el motor va en `soloComisiones` y **no** recorre trx: las patas cliente de egreso Int→Cliente no entran en el bucle legacy (`pag === 'intermediario'`); el cierre sintético sigue siendo el que netea USD del cobro con **monR** y refleja **monE** en ARS (ver orden 1 Adriana prod). Multicontraparte manual: CC patas en `aplicarCcMulticontraparteManualConciliacionCompleta` (no duplicar cierre aquí).
+          // Solo **legacy** si NO corre el motor completo (`reglas_de_negocio` sin derivación MC/Aj): con `usarMotorEfectivo` el motor ya cierra la CC por transacción; el cierre sintético duplicaría +monR/−monE (ej. ARS-USD+int E,E). Con **instrumentacion_ajustada_manual** o MC + reglas el motor va en `soloComisiones` y **no** recorre trx: el **+monR** netea el cobro en CC cliente; en **USD-ARS/ARS-USD + int. cp_ic** no se inserta el **−monE** en CC cliente (la pata en moneda entregada es frente al intermediario → **CC intermediario**). Multicontraparte manual: CC patas en `aplicarCcMulticontraparteManualConciliacionCompleta` (no duplicar cierre aquí).
           if (clienteId && monR !== monE && !usarMotorEfectivo && !usarMulticontraparteSync) {
             const trxEjecutadaCierre = (t) => (t.estado || '').toString().toLowerCase() === 'ejecutada';
             const ingresosCli = transacciones.filter((t) => {
@@ -23743,20 +23743,27 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 estado_fecha: feCierre.estado_fecha,
                 ...montosCcPorMoneda(monR, montoRecibido),
               });
-              rowsCcCliente.push({
-                cliente_id: clienteId,
-                orden_id: ordenId,
-                transaccion_id: egresoRef != null ? egresoRef.id : null,
-                transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
-                concepto: conceptoCierre,
-                fecha: feCierre.fecha,
-                usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(egresoRef, orden),
-                moneda: monE,
-                monto: -montoEntregado,
-                estado: ordenAnuladaSync ? 'anulado' : 'cerrado',
-                estado_fecha: feCierre.estado_fecha,
-                ...montosCcPorMoneda(monE, -montoEntregado),
-              });
+              // USD-ARS / ARS-USD + intermediario **cp_ic** (entrega Intermediario→Cliente): el libro **Pandy–cliente** no debe llevar la pata en **monE** como deuda del cliente frente a Pandy; esa posición vive en **CC intermediario** (compromiso / flujo con el int.). Solo se inserta el cierre **+monR** que netea el cobro en moneda recibida. Sin int. o patrón **ci_pc** (entrega Pandy→Cliente) sí hace falta el par ± en ambas monedas en CC cliente.
+              const omitirCierreClienteMonedaEntregadaCpIc =
+                !!intermediarioId &&
+                (codNorm === 'USD-ARS' || codNorm === 'ARS-USD') &&
+                patronInstrumentacionIntDesdeTransacciones(transacciones) === 'cp_ic';
+              if (!omitirCierreClienteMonedaEntregadaCpIc) {
+                rowsCcCliente.push({
+                  cliente_id: clienteId,
+                  orden_id: ordenId,
+                  transaccion_id: egresoRef != null ? egresoRef.id : null,
+                  transaccion_numero: egresoRef && egresoRef.numero != null ? egresoRef.numero : null,
+                  concepto: conceptoCierre,
+                  fecha: feCierre.fecha,
+                  usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(egresoRef, orden),
+                  moneda: monE,
+                  monto: -montoEntregado,
+                  estado: ordenAnuladaSync ? 'anulado' : 'cerrado',
+                  estado_fecha: feCierre.estado_fecha,
+                  ...montosCcPorMoneda(monE, -montoEntregado),
+                });
+              }
             }
           }
 

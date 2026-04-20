@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.59',
+  versionLabel: 'v3.7.60',
   lines: [
-    'Cruce en dos monedas con instrumentación ajustada manual (badge Aj) y reglas: el sync vuelve a generar el par de cierre «Cierre orden» (+recibido en una moneda y −entregado en la otra) cuando hace falta, porque en ese modo el motor solo suma comisiones y no repone sola la pata intermediario→cliente en la cuenta del cliente.',
-    'Se corrige un cambio previo que en ese caso dejaba solo el cobro en dólares sin la contrapartida libro en pesos.',
+    'Dólar–peso (o peso–dólar) con intermediario en el patrón cobro a Pandy y entrega del intermediario al cliente: al cerrar el acuerdo, la cuenta corriente del cliente con Pandy deja de mostrar una deuda en pesos que en realidad corresponde al circuito con el intermediario.',
+    'El cierre «Cierre orden» sigue compensando el cobro en la moneda recibida; la parte en pesos queda reflejada en la cuenta corriente del intermediario, no como saldo pendiente del cliente frente a Pandy.',
   ],
 };
