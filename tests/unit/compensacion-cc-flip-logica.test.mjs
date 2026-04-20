@@ -125,6 +125,37 @@ test('legado sin saldo: comp = monto ingreso → parcial por defecto', () => {
   assert.equal(esCompTotalLeyendaCcFlip(2000, 2000, null), false);
 });
 
+/** Réplica del tope al guardar flip C→P a P→C cuando el saldo global coincide con `me` y hay spread (main.js `persistirCompensacionCcFlipUsdUsdSaldoYComp`). */
+function capTopeCompensacionFlipDesdeSaldoYOrden(saldo, monedaTrx, orden, esUsdUsdIntSinMc) {
+  let cap = -saldo;
+  if (!esUsdUsdIntSinMc || !orden) return cap;
+  const monRU = String(orden.moneda_recibida || '').toUpperCase();
+  const monEU = String(orden.moneda_entregada || '').toUpperCase();
+  const mrOrd = Number(orden.monto_recibido) || 0;
+  const meOrd = Number(orden.monto_entregado) || 0;
+  const monU = String(monedaTrx || '').toUpperCase();
+  const tol = 0.02;
+  if (monRU === monEU && monU === monRU && mrOrd > meOrd + tol && Math.abs(cap - meOrd) <= tol) {
+    cap += mrOrd - meOrd;
+  }
+  return cap;
+}
+
+test('tope flip: saldo −2527 y orden mr=2627 me=2527 → cap 2627 (no quedar en me)', () => {
+  const orden = { moneda_recibida: 'USD', moneda_entregada: 'USD', monto_recibido: 2627, monto_entregado: 2527 };
+  assert.equal(capTopeCompensacionFlipDesdeSaldoYOrden(-2527, 'USD', orden, true), 2627);
+});
+
+test('tope flip: saldo ya −2627 → cap 2627 sin sumar spread otra vez', () => {
+  const orden = { moneda_recibida: 'USD', moneda_entregada: 'USD', monto_recibido: 2627, monto_entregado: 2527 };
+  assert.equal(capTopeCompensacionFlipDesdeSaldoYOrden(-2627, 'USD', orden, true), 2627);
+});
+
+test('tope flip: deuda 2000 sin coincidir con me → no ajuste', () => {
+  const orden = { moneda_recibida: 'USD', moneda_entregada: 'USD', monto_recibido: 2627, monto_entregado: 2527 };
+  assert.equal(capTopeCompensacionFlipDesdeSaldoYOrden(-2000, 'USD', orden, true), 2000);
+});
+
 test('leyenda legacy «parcial o total» sigue en suma exenta', () => {
   const cid = 'c1';
   const oid = 'o1';

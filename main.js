@@ -27219,7 +27219,23 @@ function saveTransaccion() {
                   );
                   return;
                 }
-                const cap = -saldo;
+                let cap = -saldo;
+                /** USD–USD + int. misma moneda con spread (`mr`>`me`): la suma global de CC puede quedar anclada al importe **me** de patas pendientes; el flip del ingreso en **monR** debe poder compensar hasta la deuda coherente con **mr** (no descontar el spread del tope). */
+                const monRU = String(orden.moneda_recibida || '').toUpperCase();
+                const monEU = String(orden.moneda_entregada || '').toUpperCase();
+                const mrOrd = Number(orden.monto_recibido) || 0;
+                const meOrd = Number(orden.monto_entregado) || 0;
+                const monU = String(moneda || '').toUpperCase();
+                const tolTopeFlip = 0.02;
+                if (
+                  esOrdenUsdUsdConIntermediarioSinMcParaCompensacionCc(orden, totMcSv) &&
+                  monRU === monEU &&
+                  monU === monRU &&
+                  mrOrd > meOrd + tolTopeFlip &&
+                  Math.abs(cap - meOrd) <= tolTopeFlip
+                ) {
+                  cap += mrOrd - meOrd;
+                }
                 if (monto > cap + 1e-6) {
                   showToast(
                     'El monto no puede superar ' +
