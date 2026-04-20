@@ -1,3 +1,7 @@
+-- **LEGADO (2025):** insertaba E,P con **+mr** y **−me** en el mismo egreso pendiente. El canónico actual es **solo +mr**
+-- y comisión **es_comision** cerrada **−(mr−me)**; ver `sql/migracion_reglas_usd_usd_ep_cobro_me_comision_cerrada.sql` y `reglas_de_negocio_tabla.sql`.
+-- No ejecutar este script en bases ya migradas al modelo nuevo (reintroduciría la línea −me duplicada).
+--
 -- E,P USD-USD sin int: egreso pendiente con contrapartida ejecutada = dos líneas en reglas_de_negocio:
 --   linea 0: +mr (anula deuda del cobro); linea 1: −me (lo que Pandy debe al cliente). Saldo neto −me.
 -- Idempotente: reemplaza la fila única antigua (solo me +1) por el par de filas.

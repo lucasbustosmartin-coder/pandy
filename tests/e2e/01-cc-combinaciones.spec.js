@@ -6,7 +6,7 @@
  * Mismos datos fijos (200k, 195k, 197k, 5k, 3k). Valida saldo y detalle CC cliente e intermediario.
  * Escribe un log en Excel (test-results/cc-combinaciones-log.xlsx) con expectativa, real y resultado (PASS/ERR) por combinación.
  *
- * Fuente de verdad: **`reglas_de_negocio`** para CHEQUE-ARS + intermediario (ver `docs/CHEQUE_ARS_INTERMEDIARIO.md`). El saldo CC = suma por moneda de movimientos persistidos (no anulados).
+ * Fuente de verdad: **`reglas_de_negocio`** para CHEQUE-ARS + intermediario (ver `docs/CHEQUE_ARS_INTERMEDIARIO.md`). Con pendientes en el saldo, **Resumen ARS = 0** y el **detalle** (modal / movimientos) por libro debe **netear a 0** en cada combinación (`cc-combinaciones-esperado.js`).
  * Solo si en algún momento ejecutaste `sql/migracion_reglas_cheque_ars_sin_trx_pandy_int.sql`, volvé a correr **`sql/migracion_reglas_de_negocio_cheque_ars.sql`** para recuperar reglas ancladas a Tx3/Tx4. Si **nunca** corriste ese script, no hace falta tocar Supabase por eso.
  * Par cerrado cliente (E,E,*,*) requiere reglas correctas para que el sync cierre CC cliente. Si falla, revisá `sql/migracion_reglas_de_negocio_cheque_ars.sql` y sync (ver docs/TESTING_E2E_GUIA.md §1.5).
  * Si falla sync con "cannot cast jsonb null to type integer", re-ejecutá sql/rpc_sync_cc_caja_orden.sql (§1.6).
@@ -27,6 +27,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { test, expect } = require('@playwright/test');
 const { reloadYEsperarAppLista } = require('./e2e-reload-app');
+const { navegarVistaCajasYEsperarCarga } = require('./e2e-caja-navegar');
 const { ccResumenDisplayDiffAlgebraico } = require('./cc-resumen-optica-match');
 const { writeSuiteSheet } = require('./cc-combinaciones-log-workbook');
 const { COMBINACIONES_ESPERADO, DATOS_FIJOS } = require('./cc-combinaciones-esperado');
@@ -101,19 +102,20 @@ function saldoLeidoANumero(saldoStr) {
 }
 
 /**
- * Resumen CC Saldos: la app muestra montos en óptica Pandy (positivo = a cobrar / a favor).
- * Los fixtures siguen en convención algebraica de suma de movimientos en DB → al validar: leído + esperado ≈ 0.
+ * Resumen CC Saldos: misma convención que `ccSaldoDisplayOpticaResumen` / suma de movimientos no anulados (incluye pendiente).
  */
 function saldoResumenANumero(saldoStr) {
   return saldoLeidoANumero(saldoStr);
 }
 
+/** Suma algebraica de montos en detalle CC (ARS). */
+function sumaAlgebraicaDetalleCc(arr) {
+  return (arr || []).reduce((s, x) => s + (Number(x) || 0), 0);
+}
+
 /** Va a Cajas, lee saldo efectivo ARS (#cajas-saldo-efectivo-ars). La app muestra valor absoluto; el signo viene de la clase negativo. Si sale "–", espera 2s y relee una vez (sync puede tardar). */
 async function leerSaldoCajaEfectivoARS(page) {
-  await page.locator('#menu-cajas').click();
-  await expect(page.locator('#vista-cajas')).toBeVisible({ timeout: 5000 });
-  await expect(page.locator('#cajas-saldos')).toBeVisible({ timeout: 10000 });
-  await expect(page.locator('#cajas-loading')).toBeHidden({ timeout: 20000 });
+  await navegarVistaCajasYEsperarCarga(page);
   const el = page.locator('#cajas-saldo-efectivo-ars');
   let texto = (await el.textContent())?.trim() || '–';
   if (texto === '–' || !/\d/.test(texto)) {
@@ -332,19 +334,30 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       await expect(page.locator('#cc-loading')).toBeHidden({ timeout: 60000 });
       await page.waitForTimeout(1500);
 
-      // Validar saldo Cliente
+      // Validar saldo Cliente (poll + refresh: la grilla a veces llega en 0 antes de que termine el sync).
       await page.locator('#cc-filtro-tipo button[data-tipo="cliente"]').click();
       await expect(page.locator('#cc-filtro-tipo button[data-tipo="cliente"].activo')).toBeVisible({ timeout: 5000 });
-      await page.waitForTimeout(800);
-      const filaCliente = await obtenerFilaClientePorNombre(tbodyCc, page, nombreCliente);
-      const countCli = await filaCliente.count();
+      const saldoEsperadoCliente = Number(esperado.saldoClienteARS) || 0;
+      const deadlineSaldoCli = Date.now() + 45000;
       let saldoClienteARS = 0;
-      if (countCli > 0) {
-        const celdaArs = filaCliente.first().locator('td:nth-child(4)');
-        const texto = await leerSaldoConSigno(celdaArs);
-        saldoClienteARS = saldoResumenANumero(texto);
+      let countCli = 0;
+      let filaCliente = await obtenerFilaClientePorNombre(tbodyCc, page, nombreCliente);
+      while (true) {
+        countCli = await filaCliente.count();
+        if (countCli > 0) {
+          const celdaArs = filaCliente.first().locator('td:nth-child(4)');
+          const texto = await leerSaldoConSigno(celdaArs);
+          saldoClienteARS = saldoResumenANumero(texto);
+        } else {
+          saldoClienteARS = 0;
+        }
+        if (ccResumenDisplayDiffAlgebraico(saldoClienteARS, saldoEsperadoCliente) <= 1) break;
+        if (Date.now() >= deadlineSaldoCli) break;
+        await page.locator('#cc-btn-refrescar').click();
+        await expect(page.locator('#cc-loading')).toBeHidden({ timeout: 60000 });
+        await page.waitForTimeout(450);
+        filaCliente = await obtenerFilaClientePorNombre(tbodyCc, page, nombreCliente);
       }
-      const diffCli = ccResumenDisplayDiffAlgebraico(saldoClienteARS, esperado.saldoClienteARS);
 
       // Validar detalle Cliente: solo desde el modal "Ver detalle" (#cc-detalle-tbody), no desde la vista "Detalle de movimientos".
       if (countCli > 0 && esperado.detalleCliente && esperado.detalleCliente.length >= 0) {
@@ -367,7 +380,7 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
         appSorted = [...montosApp].sort((a, b) => a - b);
       }
 
-      // Validar saldo Intermediario (la app muestra verde = DB negativo → invertir signo al leer)
+      // Validar saldo Intermediario (misma convención algebraica que Resumen / movimientos)
       await page.locator('#cc-filtro-tipo button[data-tipo="intermediario"]').click();
       await expect(page.locator('#cc-filtro-tipo button[data-tipo="intermediario"].activo')).toBeVisible({ timeout: 5000 });
       await page.waitForTimeout(800);
@@ -379,7 +392,6 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
         const texto = await leerSaldoConSigno(celdaArs);
         saldoIntARS = saldoResumenANumero(texto);
       }
-      const diffInt = ccResumenDisplayDiffAlgebraico(saldoIntARS, esperado.saldoIntARS);
 
       // Validar detalle Intermediario: solo desde el modal "Ver detalle" (#cc-detalle-tbody).
       if (countInt > 0 && esperado.detalleInt && esperado.detalleInt.length >= 0) {
@@ -407,30 +419,56 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
         appIntSorted = [...montosAppInt].sort((a, b) => a - b);
       }
 
-      const saldoCliEsperadoCero = Math.abs(Number(esperado.saldoClienteARS) || 0) <= 1;
-      const saldoIntEsperadoCero = Math.abs(Number(esperado.saldoIntARS) || 0) <= 1;
-      // Si en Resumen no hay fila (saldo 0) pero sí detalle esperado: mismo pantallazo, clic en "Detalle de movimientos" (Tipo Cliente o Intermediario) y leer la tabla para rellenar Real en el log. Lo mismo para cliente y para intermediario.
-      if (countCli === 0 && saldoCliEsperadoCero && (esperado.detalleCliente || []).length > 0) {
+      const saldoEsperadoInt = Number(esperado.saldoIntARS) || 0;
+      expect(
+        Math.abs(sumaAlgebraicaDetalleCc(esperado.detalleCliente)),
+        `Fixture ${esperado.id}: detalle cliente debe netear a 0`
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(sumaAlgebraicaDetalleCc(esperado.detalleInt)),
+        `Fixture ${esperado.id}: detalle intermediario debe netear a 0`
+      ).toBeLessThanOrEqual(1);
+      // Sin fila en Resumen: rellenar montos desde vista Detalle de movimientos solo para comparar listas (el saldo sigue leído de la celda o 0).
+      if (countCli === 0 && (esperado.detalleCliente || []).length > 0) {
+        await page.locator('#cc-filtro-tipo button[data-tipo="cliente"]').click();
+        await expect(page.locator('#cc-filtro-tipo button[data-tipo="cliente"].activo')).toBeVisible({ timeout: 5000 });
+        await page.waitForTimeout(400);
         const leido = await leerMontosDesdeVistaDetalle(page, 'cliente', nombreCliente);
         if (leido.length > 0) appSorted = leido;
       }
-      if (countInt === 0 && saldoIntEsperadoCero && (esperado.detalleInt || []).length > 0) {
-        const leido = await leerMontosDesdeVistaDetalle(page, 'intermediario', nombreIntermediario);
-        if (leido.length > 0) appIntSorted = leido;
+      if (countInt === 0 && (esperado.detalleInt || []).length > 0) {
+        await page.locator('#cc-filtro-tipo button[data-tipo="intermediario"]').click();
+        await expect(page.locator('#cc-filtro-tipo button[data-tipo="intermediario"].activo')).toBeVisible({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const leidoI = await leerMontosDesdeVistaDetalle(page, 'intermediario', nombreIntermediario);
+        if (leidoI.length > 0) appIntSorted = leidoI;
       }
+
+      const diffCli = ccResumenDisplayDiffAlgebraico(saldoClienteARS, saldoEsperadoCliente);
+      const diffInt = ccResumenDisplayDiffAlgebraico(saldoIntARS, saldoEsperadoInt);
       // Log a Excel: expectativa, real, resultado (PASS/ERR/N/A). Detalle desde modal "Ver detalle" o desde vista "Detalle de movimientos" si no hay fila (saldo 0).
       const resSaldoCli = diffCli <= 1 ? 'PASS' : 'ERR';
       const resSaldoInt = diffInt <= 1 ? 'PASS' : 'ERR';
       let resDetalleCli = 'ERR';
       if (esperadoSorted.length === 0) resDetalleCli = 'PASS';
-      else if (countCli === 0 && saldoCliEsperadoCero) resDetalleCli = 'PASS'; // sin fila porque saldo 0 (resumen oculta la fila)
-      else if (countCli === 0) resDetalleCli = 'N/A';
-      else if (appSorted.length === esperadoSorted.length && esperadoSorted.every((v, i) => Math.abs((appSorted[i] || 0) - v) <= 1)) resDetalleCli = 'PASS';
+      else if (
+        appSorted.length === esperadoSorted.length &&
+        esperadoSorted.every((v, i) => Math.abs((appSorted[i] || 0) - v) <= 1)
+      ) {
+        resDetalleCli = 'PASS';
+      } else if (esperadoSorted.length > 0 && appSorted.length === 0) {
+        resDetalleCli = 'N/A';
+      }
       let resDetalleInt = 'ERR';
       if (esperadoIntSorted.length === 0) resDetalleInt = 'PASS';
-      else if (countInt === 0 && saldoIntEsperadoCero) resDetalleInt = 'PASS'; // sin fila porque saldo 0
-      else if (countInt === 0) resDetalleInt = 'N/A';
-      else if (appIntSorted.length === esperadoIntSorted.length && esperadoIntSorted.every((v, i) => Math.abs((appIntSorted[i] || 0) - v) <= 1)) resDetalleInt = 'PASS';
+      else if (
+        appIntSorted.length === esperadoIntSorted.length &&
+        esperadoIntSorted.every((v, i) => Math.abs((appIntSorted[i] || 0) - v) <= 1)
+      ) {
+        resDetalleInt = 'PASS';
+      } else if (esperadoIntSorted.length > 0 && appIntSorted.length === 0) {
+        resDetalleInt = 'N/A';
+      }
       // Control caja efectivo (Tx2, Tx4) y cheque (Tx1 ingreso, Tx3 egreso). Si esperado ≠ 0 y la primera lectura da 0, reintentar tras 3s.
       const expSdoCE = Number(esperado.saldoCajaEfectivoARS) || 0;
       let realSaldoCE = await leerSaldoCajaEfectivoARS(page);
@@ -447,8 +485,8 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       const saldoCCh_Rdo = diffCCh <= 1 ? 'PASS' : 'ERR';
       logRows.push([
         esperado.id,
-        esperado.saldoClienteARS, saldoClienteARS, resSaldoCli,
-        esperado.saldoIntARS, saldoIntARS, resSaldoInt,
+        saldoEsperadoCliente, saldoClienteARS, resSaldoCli,
+        saldoEsperadoInt, saldoIntARS, resSaldoInt,
         JSON.stringify(esperado.detalleCliente || []), JSON.stringify(appSorted), resDetalleCli,
         JSON.stringify(esperado.detalleInt || []), JSON.stringify(appIntSorted), resDetalleInt,
         expSdoCE, realSaldoCE, saldoCE_Rdo,
@@ -456,28 +494,37 @@ test.describe('CC CHEQUE-ARS: combinaciones de estados Tx1..Tx4', () => {
       ]);
 
       // Asserts
-      expect(diffCli, `Combinación ${esperado.id}: saldo CC cliente esperado ${esperado.saldoClienteARS}, app ${saldoClienteARS}`).toBeLessThanOrEqual(1);
-      if (countCli > 0 && esperado.detalleCliente && esperado.detalleCliente.length >= 0) {
+      expect(diffCli, `Combinación ${esperado.id}: saldo CC cliente esperado ${saldoEsperadoCliente}, app ${saldoClienteARS}`).toBeLessThanOrEqual(1);
+      const puedeValidarDetalleCli =
+        esperadoSorted.length > 0 && (countCli > 0 || appSorted.length > 0);
+      if (puedeValidarDetalleCli) {
         expect(appSorted.length, `Combinación ${esperado.id}: detalle cliente: cantidad esperada ${esperadoSorted.length}, app ${appSorted.length}`).toBe(esperadoSorted.length);
         for (let i = 0; i < esperadoSorted.length; i++) {
           const diff = Math.abs((appSorted[i] || 0) - (esperadoSorted[i] || 0));
           expect(diff, `Combinación ${esperado.id}: detalle cliente monto ${i + 1} esperado ${esperadoSorted[i]}, app ${appSorted[i]}`).toBeLessThanOrEqual(1);
         }
-      }
-      if (countInt === 0 && esperado.saldoIntARS !== 0) {
-        expect(countInt, `Combinación ${esperado.id}: se esperaba saldo int ${esperado.saldoIntARS}, no hay fila de intermediario`).toBeGreaterThan(0);
+        expect(
+          Math.abs(sumaAlgebraicaDetalleCc(appSorted)),
+          `Combinación ${esperado.id}: detalle cliente en app debe netear a 0`
+        ).toBeLessThanOrEqual(1);
       }
       const hintReglasInt = '';
       expect(
         diffInt,
-        `Combinación ${esperado.id}: saldo CC intermediario esperado ${esperado.saldoIntARS}, app ${saldoIntARS}.${hintReglasInt}`
+        `Combinación ${esperado.id}: saldo CC intermediario esperado ${saldoEsperadoInt}, app ${saldoIntARS}.${hintReglasInt}`
       ).toBeLessThanOrEqual(1);
-      if (countInt > 0 && esperado.detalleInt && esperado.detalleInt.length >= 0) {
+      const puedeValidarDetalleInt =
+        esperadoIntSorted.length > 0 && (countInt > 0 || appIntSorted.length > 0);
+      if (puedeValidarDetalleInt) {
         expect(appIntSorted.length, `Combinación ${esperado.id}: detalle intermediario: cantidad esperada ${esperadoIntSorted.length}, app ${appIntSorted.length}`).toBe(esperadoIntSorted.length);
         for (let i = 0; i < esperadoIntSorted.length; i++) {
           const diff = Math.abs((appIntSorted[i] || 0) - (esperadoIntSorted[i] || 0));
           expect(diff, `Combinación ${esperado.id}: detalle int monto ${i + 1} esperado ${esperadoIntSorted[i]}, app ${appIntSorted[i]}`).toBeLessThanOrEqual(1);
         }
+        expect(
+          Math.abs(sumaAlgebraicaDetalleCc(appIntSorted)),
+          `Combinación ${esperado.id}: detalle intermediario en app debe netear a 0`
+        ).toBeLessThanOrEqual(1);
       }
       expect(diffCE, `Combinación ${esperado.id}: saldo caja efectivo ARS esperado ${expSdoCE}, app ${realSaldoCE}`).toBeLessThanOrEqual(1);
       expect(diffCCh, `Combinación ${esperado.id}: saldo caja cheque ARS esperado ${expSdoCCh}, app ${realSaldoCCh}`).toBeLessThanOrEqual(1);

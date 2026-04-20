@@ -495,7 +495,7 @@
     .th-orden-importe { text-align: right; }
     .th-orden-multi-col,
     .td-orden-multi-col {
-      min-width: 3.5rem;
+      min-width: 4.25rem;
       text-align: center;
     }
     .orden-badge-multi {
@@ -521,6 +521,14 @@
       background: #f3f4f6;
       color: #9ca3af;
       font-weight: 500;
+    }
+    .orden-badge-multi--aj {
+      margin-left: 0.15rem;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 0.72rem;
+      min-width: 1.35rem;
+      padding: 0.15rem 0.35rem;
     }
     #tabla-ordenes .th-orden-multi-col .help-inline,
     #ordenes-pendientes-tabla-wrap .th-orden-multi-col .help-inline {

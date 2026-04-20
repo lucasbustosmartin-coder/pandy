@@ -1,19 +1,18 @@
--- USD-USD sin intermediario, **E,P** (ingreso Cliente→Pandy ejecutado, egreso Pandy→Cliente pendiente):
--- comisión implícita (mr − me) como línea explícita en CC cliente en estado **pendiente**.
--- El front, si esta fila existe en `reglas_de_negocio`, trata la 2.ª línea del egreso pendiente como **−mr** (no −me)
--- para que el saldo no quede en −(me − (mr−me)); ver `aplicarMotorCcDesdeReglasDeNegocio` en main.js.
--- G/P Operativa (`gp_operativa_resumen`) solo agrega movimientos CC con estado **cerrado** → esta línea no entra
--- hasta que el par cierre (sync regenera la fila es_comision como cerrada vía regla ejecutada+true).
+-- USD-USD sin intermediario, **E,P**: la comisión implícita (`mr − me`) figura en CC como línea **cerrada** **−318**
+-- (regla `es_comision` con `estado_transaccion = ejecutada`, `contrapartida_ejecutada = false`, `signo = −1`).
+-- El cobro en CC es **−me**; el compromiso de entrega pendiente queda en **+mr** solamente (sin fila −me duplicada en el egreso).
+-- G/P Operativa: la comisión **sí** entra en bolsas CC cerradas cuando aplica el panel.
 --
--- Idempotente. Ejecutar en Supabase SQL Editor en bases ya desplegadas.
+-- Idempotente. Para bases con la matriz antigua (comisión pendiente / −mr en cobro), usar además
+-- `sql/migracion_reglas_usd_usd_ep_cobro_me_comision_cerrada.sql`.
 
 INSERT INTO public.reglas_de_negocio (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada, linea,
   moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
 ) VALUES
-  ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 0,
-   'USD', 1, 'mr_menos_me', true, 'comision_acuerdo')
+  ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 0,
+   'USD', -1, 'mr_menos_me', true, 'comision_acuerdo')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada, linea

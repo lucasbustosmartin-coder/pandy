@@ -10,6 +10,7 @@ alwaysApply: true
 - **Archivo:** `.cursor/rules/verificacion-impacto-productivo.mdc` (`alwaysApply: true`). Vale para **cualquier** cambio en el repo (un carácter o mil líneas).
 - **Antes del primer edit** en rutas compartidas (`main.js` sync CC/caja o motor, `utils.js`, `sql/` RPC, PWA/SW, tests e2e): cumplir el **protocolo obligatorio** de esa regla (núcleo vs territorio protegido, inventario de riesgo, **preguntar** si hay colateral razonable).
 - **Al cerrar la tarea:** en la respuesta al usuario, incluir el bloque **`Verificación de impacto:`** como exige esa regla. Si no se cumplió, **no dar por cerrada** la tarea: completar el bloque o la pregunta pendiente.
+- **Criterio duro de cierre (sin que el usuario lo repita):** si en la sesión se **modificó** cualquier archivo del repo (`apply_patch`, escritura, borrado), la respuesta final **debe** incluir el bloque titulado exactamente **`Verificación de impacto:`** (contenido según `verificacion-impacto-productivo.mdc`). **Sin ese título y ese contenido, la tarea no se considera entregada:** el agente debe completar el bloque en el mismo hilo antes de terminar; el usuario no tiene que volver a pedirlo.
 - **Conflicto rapidez vs esta regla:** gana siempre la verificación de impacto (ya acordado en `verificacion-impacto-productivo`).
 
 ## Contexto del proyecto

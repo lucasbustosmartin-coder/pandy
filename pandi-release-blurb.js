@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.54',
+  versionLabel: 'v3.7.55',
   lines: [
-    'En Seguridad (solo administradores) podés ajustar cuántas filas pide la app en cada consulta cuando los listados son muy grandes, para acelerar la carga si tu entorno lo permite.',
-    'Después de guardar ese valor, recargá la página para que toda la app use el nuevo tamaño en cuenta corriente y en el resto de las lecturas masivas.',
+    'Cuenta corriente: reglas y migraciones SQL para cruces con intermediario (patrón ci_pc) cuando el acuerdo ya está ejecutado en ambas patas; conviene ejecutar los scripts indicados en Supabase y resincronizar la orden si ves el aviso de saldo.',
+    'Documentación de requisitos Supabase, bitácora y pruebas al día; otros ajustes internos de sync CC, G/P operativa y clasificación de movimientos.',
   ],
 };

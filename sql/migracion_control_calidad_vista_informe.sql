@@ -1,6 +1,6 @@
 -- Control de calidad: permiso de menú + RPC unificada `control_calidad_informe`.
 -- Reemplaza `gp_operativa_control_calidad` (el front pasa a llamar solo `control_calidad_informe`).
--- Requiere: migracion_gp_operativa_panel.sql (helpers), ordenes/transacciones/instrumentacion estándar.
+-- Requiere: migracion_gp_operativa_panel.sql (helpers gp_movimiento_*_gp y gp_concepto_es_*), ordenes/transacciones/instrumentacion estándar.
 -- Ejecutar en Supabase SQL Editor (Pandy y Pandy-Dev).
 
 INSERT INTO public.app_permission (permission, description) VALUES
@@ -64,7 +64,7 @@ BEGIN
     INNER JOIN public.movimientos_caja c ON c.id = m.movimiento_caja_id
     LEFT JOIN public.tipos_movimiento_caja t ON t.id = c.tipo_movimiento_id
     WHERE m.estado IN ('pendiente', 'cerrado')
-      AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+      AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
       AND c.estado = 'cerrado'
       AND c.orden_id IS NULL
       AND (p_desde IS NULL OR m.fecha >= p_desde)
@@ -86,10 +86,10 @@ BEGIN
     INNER JOIN public.movimientos_caja c ON c.id = m.movimiento_caja_id
     LEFT JOIN public.tipos_movimiento_caja t ON t.id = c.tipo_movimiento_id
     WHERE m.estado IN ('pendiente', 'cerrado')
-      AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+      AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
       AND c.estado = 'cerrado'
       AND c.orden_id IS NOT NULL
-      AND NOT public.gp_concepto_es_comision_caja_ordenes_gp(COALESCE(c.concepto, ''))
+      AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(c.concepto, ''), c.clasificacion_movimiento)
       AND (p_desde IS NULL OR m.fecha >= p_desde)
       AND (p_hasta IS NULL OR m.fecha <= p_hasta)
       AND (p_desde IS NULL OR c.fecha >= p_desde)
@@ -109,7 +109,7 @@ BEGIN
     INNER JOIN public.movimientos_caja c ON c.id = m.movimiento_caja_id
     LEFT JOIN public.tipos_movimiento_caja t ON t.id = c.tipo_movimiento_id
     WHERE m.estado IN ('pendiente', 'cerrado')
-      AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+      AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
       AND c.estado = 'cerrado'
       AND c.orden_id IS NULL
       AND (p_desde IS NULL OR m.fecha >= p_desde)
@@ -131,10 +131,10 @@ BEGIN
     INNER JOIN public.movimientos_caja c ON c.id = m.movimiento_caja_id
     LEFT JOIN public.tipos_movimiento_caja t ON t.id = c.tipo_movimiento_id
     WHERE m.estado IN ('pendiente', 'cerrado')
-      AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+      AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
       AND c.estado = 'cerrado'
       AND c.orden_id IS NOT NULL
-      AND NOT public.gp_concepto_es_comision_caja_ordenes_gp(COALESCE(c.concepto, ''))
+      AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(c.concepto, ''), c.clasificacion_movimiento)
       AND (p_desde IS NULL OR m.fecha >= p_desde)
       AND (p_hasta IS NULL OR m.fecha <= p_hasta)
       AND (p_desde IS NULL OR c.fecha >= p_desde)

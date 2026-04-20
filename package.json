@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "bitacora": "node scripts/crear-bitacora-excel.js",
+    "excel:matriz-clasificacion-gp": "node scripts/crear-matriz-clasificacion-gp-xlsx.js",
+    "excel:matriz-clasificacion-trx": "node scripts/crear-matriz-clasificacion-transaccion-xlsx.js",
     "sql:vuelco-inicial": "node scripts/generar-sql-vuelco-inicial.js",
     "dev:supabase:volcar": "node scripts/volcar-pandy-dev-supabase.js",
     "sql:bootstrap:dev": "node scripts/concat-bootstrap-dev-sql.js",
@@ -20,6 +22,9 @@
     "dev:open": "node scripts/build-config.js && vite --open --port 5173",
     "preview": "node scripts/build-config.js && vite preview",
     "test:unit-cc-flip": "node --test tests/unit/compensacion-cc-flip-logica.test.mjs",
+    "test:unit-clasificacion-gp": "node --test tests/unit/clasificacion-gp-sql-paridad.test.mjs",
+    "test:unit-clasificacion": "node --test tests/unit/clasificacion-gp-sql-paridad.test.mjs tests/unit/clasificacion-sync-inferencia.test.mjs",
+    "smoke:gp-operativa-readonly": "node scripts/smoke-gp-operativa-readonly.mjs",
     "test:e2e": "playwright test --reporter=line --workers=1",
     "test:e2e:orden": "playwright test --grep-invert \"Reversa\"",
     "test:e2e:reversa": "playwright test -g \"Reversa\"",

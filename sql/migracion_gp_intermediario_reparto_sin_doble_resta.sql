@@ -1,6 +1,7 @@
 -- Parche G/P (2026-04): comisiones_orden con reparto Pandy+intermediario misma orden+moneda.
 -- La fila Pandy ya es ganancia neta marca; no restar de nuevo la fila intermediario en comisiones_acuerdo_intermediario.
 -- Idempotente: reemplaza gp_operativa_resumen y gp_operativa_detalle. Ya integrado en migracion_gp_operativa_panel.sql y migracion_gp_operativa_detalle.sql.
+-- Requiere columna clasificacion_movimiento (ENUM): migracion_movimiento_clasificacion_fase0_ddl.sql y helpers gp_movimiento_*_gp del panel.
 
 CREATE OR REPLACE FUNCTION public.gp_operativa_resumen(p_desde date, p_hasta date)
 RETURNS jsonb
@@ -34,7 +35,7 @@ AS $$
          FROM public.movimientos_caja m
          WHERE m.orden_id IS NOT NULL
            AND m.estado = 'cerrado'
-           AND NOT public.gp_concepto_es_comision_caja_ordenes_gp(COALESCE(m.concepto, ''))
+           AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
            AND (p_desde IS NULL OR m.fecha >= p_desde)
            AND (p_hasta IS NULL OR m.fecha <= p_hasta)
          GROUP BY m.moneda
@@ -48,7 +49,7 @@ AS $$
          SELECT m.moneda, SUM(m.monto)::numeric AS s
          FROM public.movimientos_cuenta_corriente m
          WHERE m.estado IN ('pendiente', 'cerrado')
-           AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+           AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
            AND (p_desde IS NULL OR m.fecha >= p_desde)
            AND (p_hasta IS NULL OR m.fecha <= p_hasta)
          GROUP BY m.moneda
@@ -62,7 +63,7 @@ AS $$
          SELECT m.moneda, SUM(m.monto)::numeric AS s
          FROM public.movimientos_cuenta_corriente_intermediario m
          WHERE m.estado IN ('pendiente', 'cerrado')
-           AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+           AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
            AND (p_desde IS NULL OR m.fecha >= p_desde)
            AND (p_hasta IS NULL OR m.fecha <= p_hasta)
          GROUP BY m.moneda
@@ -88,7 +89,7 @@ AS $$
            SELECT m.moneda, m.monto::numeric AS monto
            FROM public.movimientos_cuenta_corriente m
            WHERE m.estado IN ('pendiente', 'cerrado')
-             AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+             AND public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
              AND (p_desde IS NULL OR m.fecha >= p_desde)
              AND (p_hasta IS NULL OR m.fecha <= p_hasta)
              AND (
@@ -131,7 +132,7 @@ AS $$
            SELECT m.moneda, m.monto::numeric AS monto
            FROM public.movimientos_cuenta_corriente_intermediario m
            WHERE m.estado IN ('pendiente', 'cerrado')
-             AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+             AND public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
              AND (p_desde IS NULL OR m.fecha >= p_desde)
              AND (p_hasta IS NULL OR m.fecha <= p_hasta)
              AND (
@@ -251,7 +252,7 @@ BEGIN
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
       WHERE m.orden_id IS NOT NULL
         AND m.estado = 'cerrado'
-        AND NOT public.gp_concepto_es_comision_caja_ordenes_gp(COALESCE(m.concepto, ''))
+        AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
     ) sub;
@@ -290,7 +291,7 @@ BEGIN
       LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
       WHERE m.estado IN ('pendiente', 'cerrado')
-        AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+        AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
     ) sub;
@@ -329,7 +330,7 @@ BEGIN
       LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
       WHERE m.estado IN ('pendiente', 'cerrado')
-        AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+        AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
     ) sub;
@@ -391,7 +392,7 @@ BEGIN
       LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
       WHERE m.estado IN ('pendiente', 'cerrado')
-        AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+        AND public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
         AND (
@@ -469,7 +470,7 @@ BEGIN
       LEFT JOIN public.transacciones tr ON tr.id = m.transaccion_id
       LEFT JOIN public.modos_pago mp ON mp.id = tr.modo_pago_id
       WHERE m.estado IN ('pendiente', 'cerrado')
-        AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+        AND public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
         AND (p_desde IS NULL OR m.fecha >= p_desde)
         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
         AND (

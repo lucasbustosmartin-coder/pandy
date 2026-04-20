@@ -11,7 +11,7 @@
  * Filtros (opcional):
  *   TIPO_CODIGO=ARS-USD COMBINACION_ID="E,P" npx playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js --headed
  *
- * Con `TIPO_CODIGO=USD-USD`, por defecto solo corre **sin** intermediario. Para **con** intermediario (mismas 4 combinaciones P/E; Tx2 = Intermediario→Cliente; CC int en E,E):
+ * Con `TIPO_CODIGO=USD-USD`, por defecto solo corre **sin** intermediario. Para **con** intermediario (mismas 4 combinaciones P/E; Tx2 = Intermediario→Cliente; saldos CC int. en `cc-tipos-activos-esperado.js`, p. ej. P,P ≈ −comisión int.):
  *   TIPO_CODIGO=USD-USD TIPO_USA_INTERMEDIARIO=true ...
  *   npm run test:e2e-cc-usd-usd-int-combos
  *
@@ -27,6 +27,7 @@ const { ccResumenDisplayMatchAlgebraico, ccResumenDisplayDiffAlgebraico } = requ
 const { execSync } = require('child_process');
 const { test, expect } = require('@playwright/test');
 const { reloadYEsperarAppLista } = require('./e2e-reload-app');
+const { navegarVistaCajasYEsperarCarga } = require('./e2e-caja-navegar');
 const { writeSuiteSheet } = require('./cc-combinaciones-log-workbook');
 const {
   ARS_USD_FIJOS,
@@ -162,6 +163,9 @@ async function obtenerFilaIntermediarioPorNombre(tbodyCc, page, nombreIntermedia
  */
 async function esperarSaldosResumenCliente(page, tbodyCc, nombreCliente, expU, expE, expA, timeoutMs = 60000) {
   const start = Date.now();
+  /** Evita PASS falso: primera lectura sin fila + saldos esperados 0 no implica CC ya pintada. */
+  const msMinAntesDeAceptarSinFilaConSaldosCero =
+    Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 3000 : 0;
   let lastUsd = 0;
   let lastEur = 0;
   let lastArs = 0;
@@ -174,7 +178,13 @@ async function esperarSaldosResumenCliente(page, tbodyCc, nombreCliente, expU, e
       lastUsd = 0;
       lastEur = 0;
       lastArs = 0;
-      if (Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1) {
+      const elapsed = Date.now() - start;
+      if (
+        Math.abs(expU) <= 1 &&
+        Math.abs(expE) <= 1 &&
+        Math.abs(expA) <= 1 &&
+        elapsed >= msMinAntesDeAceptarSinFilaConSaldosCero
+      ) {
         return { saldoUSD: 0, saldoEUR: 0, saldoARS: 0, countCli: 0 };
       }
     } else {
@@ -202,10 +212,7 @@ async function esperarSaldosResumenCliente(page, tbodyCc, nombreCliente, expU, e
 
 /** Lee efectivo USD (#cajas-saldo-efectivo-usd) con signo desde clase .negativo */
 async function leerSaldoCajaEfectivoUSD(page) {
-  await page.locator('#menu-cajas').click();
-  await expect(page.locator('#vista-cajas')).toBeVisible({ timeout: 5000 });
-  await expect(page.locator('#cajas-saldos')).toBeVisible({ timeout: 10000 });
-  await expect(page.locator('#cajas-loading')).toBeHidden({ timeout: 20000 });
+  await navegarVistaCajasYEsperarCarga(page);
   const el = page.locator('#cajas-saldo-efectivo-usd');
   let texto = (await el.textContent())?.trim() || '–';
   if (texto === '–' || !/\d/.test(texto)) {
@@ -621,12 +628,9 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
                   60000
                 );
                 const filaCliente = await obtenerFilaClientePorNombre(tbodyCc, page, nombreCliente);
-                const diffU =
-                  countCli === 0 && Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 0 : ccResumenDisplayDiffAlgebraico(saldoUSD, expU);
-                const diffE =
-                  countCli === 0 && Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 0 : ccResumenDisplayDiffAlgebraico(saldoEUR, expE);
-                const diffA =
-                  countCli === 0 && Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 0 : ccResumenDisplayDiffAlgebraico(saldoARS, expA);
+                const diffU = ccResumenDisplayDiffAlgebraico(saldoUSD, expU);
+                const diffE = ccResumenDisplayDiffAlgebraico(saldoEUR, expE);
+                const diffA = ccResumenDisplayDiffAlgebraico(saldoARS, expA);
                 if (countCli === 0 && (Math.abs(expU) > 1 || Math.abs(expE) > 1 || Math.abs(expA) > 1)) {
                   throw new Error(
                     `${cfg.codigo} ${esperado.id}: sin fila cliente pero se esperaba saldo USD=${expU} EUR=${expE} ARS=${expA}`

@@ -10,7 +10,61 @@ Para la política de **compensación CC** al invertir un ingreso Cliente→Pandy
 npm run test:unit-cc-flip
 ```
 
-No requieren `.env.test` ni app levantada.
+Paridad de criterio **comisión G/P** (texto vs `clasificacion_movimiento` ENUM, alineado a `migracion_gp_operativa_panel.sql`):
+
+```bash
+npm run test:unit-clasificacion-gp
+```
+
+Inferencia **sync CC/caja** y payload transacción (réplica de `main.js` antes de `sync_cc_caja_orden`; mantener alineado al cambiar reglas):
+
+```bash
+npm run test:unit-clasificacion
+```
+
+Ese último comando incluye **GP + inferencia** (todos los tests de `tests/unit/clasificacion-*.test.mjs`). No requieren `.env.test` ni app levantada.
+
+### Smoke G/P **solo lectura** (producción u otro proyecto con datos)
+
+Los E2E de Playwright usan **Supabase de desarrollo** y suelen partir de base casi vacía: **no validan** bien el agregado G/P contra un libro grande. Para comprobar **sin alterar datos** que las RPC de panel siguen sanas en **producción** (o en cualquier proyecto con volumen real), el repo incluye un script que **solo** llama a `gp_operativa_resumen` (y opcionalmente `gp_operativa_detalle` en la bolsa `caja_manual`):
+
+```bash
+npm run smoke:gp-operativa-readonly
+```
+
+**Qué hace:** lectura vía RPC (`STABLE`); **no** inserta, actualiza ni borra filas; **no** llama a `rpc_limpiar_base_e2e` ni a sync.
+
+**Pasos (zsh / bash; copiá una línea por vez, sin comentarios de markdown):**
+
+1. Crear el archivo local (no se sube a git):
+
+```bash
+cp .env.smoke-prod-readonly.example .env.smoke-prod-readonly
+```
+
+2. Abrí `.env.smoke-prod-readonly` en el editor y completá **solo** `SMOKE_GP_SUPABASE_URL` y `SMOKE_GP_SUPABASE_SERVICE_ROLE_KEY` del proyecto que querés (misma URL y clave del mismo proyecto). Dejá `SMOKE_GP_READONLY_CONFIRM=yes` como está en el ejemplo: así **no hace falta** `export` en la terminal.
+
+3. Ejecutá de nuevo:
+
+```bash
+npm run smoke:gp-operativa-readonly
+```
+
+**Si ves `zsh: no matches found`:** pegaste en la terminal líneas con asteriscos dobles (`**`) típicos de Markdown, o un comentario sin `#` al inicio. No pegues párrafos de la guía en la consola; solo los comandos de arriba o editá el `.env` a mano.
+
+**Si ves `export: not valid in this context`:** no pegues la frase “o dejalo en el .env” junto con `export`; o bien usá solo el archivo `.env.smoke-prod-readonly` (recomendado), o en terminal solo:
+
+```bash
+export SMOKE_GP_READONLY_CONFIRM=yes
+```
+
+(sin nada después en la misma línea).
+
+**Opcionales (en el mismo `.env`):** `SMOKE_GP_DESDE` y `SMOKE_GP_HASTA` (YYYY-MM-DD, UTC). `SMOKE_GP_INCLUDE_DETALLE=1` para también invocar `gp_operativa_detalle` (bolsa `caja_manual`).
+
+**Límites:** no reemplaza una auditoría contable; solo verifica que las RPC responden y que el JSON de resumen trae las **siete** claves (`caja_manual`, `caja_ordenes`, `cc_cliente`, `cc_intermediario`, `cc_resultado_economico_compensatorio`, `comisiones_acuerdo_pandy`, `comisiones_acuerdo_intermediario`). Si el proyecto **no** tiene aún desplegado el panel G/P con séptima bolsa, el smoke fallará en la comprobación de claves hasta alinear `migracion_gp_operativa_panel.sql` en esa base. Con `SMOKE_GP_INCLUDE_DETALLE=1`, `gp_operativa_detalle` debe existir y responder (si la función en servidor es vieja y falla con 42P01, aplicar el `migracion_gp_operativa_detalle.sql` actual del repo en **ese** proyecto Supabase). Si el período es enorme en prod, acotá fechas para aligerar la consulta.
+
+Script: `scripts/smoke-gp-operativa-readonly.mjs`.
 
 ---
 

@@ -10,8 +10,9 @@ const { E2E_CAJA_SEED, withSeedCajaTipo2tx } = require('./e2e-caja-seed-saldos')
  * detalleCliente: montos en modal Ver detalle (todas las celdas USD/ARS con valor), ordenados ascendente.
  * cajaEfectivoUSD / cajaEfectivoARS: vista Cajas efectivo tras la combinación.
  *
- * Fuente de verdad: sync. USD-ARS, ARS-USD y USD-USD sin int → `reglas_de_negocio` (comisión implícita mr−me en USD-USD; ver docs/USD_USD_SIN_INTERMEDIARIO.md). Saldo = suma simple por moneda de movimientos persistidos (no anulados).
- * P,E (USD-USD): solo Tx1 ingreso pendiente (+mr); Tx2 egreso ejecutado −me/+me anula el pago en CC; saldo +mr (deuda cliente a favor Pandy).
+ * Fuente de verdad: sync. USD-ARS, ARS-USD y USD-USD sin int → `reglas_de_negocio` (comisión implícita mr−me en USD-USD; ver docs/USD_USD_SIN_INTERMEDIARIO.md).
+ * **Saldo resumen CC (cliente):** suma algebraica de movimientos **pendiente y cerrado** (no anulados), misma regla que `ccMovimientoIncluirEnSaldoResumen` en `main.js`: lo pendiente **sí** entra en el saldo, no es un subconjunto aparte.
+ * **USD-USD fixture (`USD_USD_FIJOS`):** el **margen del acuerdo** es siempre **mr − me = comisión (318)**. Eso **no** implica que el **saldo USD de la fila cliente** sea 318 en **todas** las combinaciones P/E: según qué patas estén pendientes o ejecutadas, el neto es distinto (p. ej. P,P → 318; E,P → 0 con cobro **−me**, comisión **−318** cerrada y compromiso **+mr** pendiente; P,E → +mr; E,E → 0). El test fija por combinación los valores coherentes con la tabla de reglas y el motor; ver `docs/USD_USD_SIN_INTERMEDIARIO.md` § Invariante fixture E2E.
  */
 
 /** ARS-USD: TC 1000, recibir 5.000.000 ARS, entregar 5.000 USD */
@@ -45,7 +46,17 @@ const USD_USD_FIJOS = {
  * @type {Array<{ id: string, tx1: string, tx2: string, saldoUSD: number, saldoARS: number, detalleCliente: number[], cajaUSD: number, cajaARS: number }>}
  */
 const COMBINACIONES_ARS_USD_RAW = [
-  { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
+  {
+    id: 'P,P',
+    tx1: 'P',
+    tx2: 'P',
+    saldoUSD: -5000,
+    saldoARS: 5000000,
+    // Modal «Ver detalle»: todas las celdas con valor (USD + ARS + EUR) por fila, orden asc.; P,P = −me USD y +mr ARS.
+    detalleCliente: [-5000, 5000000],
+    cajaUSD: 0,
+    cajaARS: 0,
+  },
   { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -5000, saldoARS: 0, detalleCliente: [-5000000, -5000, 5000000], cajaUSD: 0, cajaARS: 5000000 },
   {
     id: 'P,E',
@@ -71,7 +82,16 @@ const COMBINACIONES_ARS_USD_RAW = [
 ];
 
 const COMBINACIONES_USD_ARS_RAW = [
-  { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
+  {
+    id: 'P,P',
+    tx1: 'P',
+    tx2: 'P',
+    saldoUSD: 5000,
+    saldoARS: -5000000,
+    detalleCliente: [-5000000, 5000],
+    cajaUSD: 0,
+    cajaARS: 0,
+  },
   { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: 0, saldoARS: -5000000, detalleCliente: [-5000000, -5000, 5000], cajaUSD: 5000, cajaARS: 0 },
   {
     id: 'P,E',
@@ -97,10 +117,21 @@ const COMBINACIONES_USD_ARS_RAW = [
   },
 ];
 
+/** Combinaciones Tx1/Tx2 para USD-USD (sin int. en catálogo). `saldoUSD` = resumen cliente post-sync; el spread del acuerdo sigue siendo `USD_USD_FIJOS.comision` (= mr−me) en todas. */
 const COMBINACIONES_USD_USD_RAW = [
-  { id: 'P,P', tx1: 'P', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [], cajaUSD: 0, cajaARS: 0 },
-  // E,P: cobro −mr; egreso pendiente +mr y −mr (no −me) cuando hay comisión E,P en catálogo, + comisión pendiente +318 → saldo neto −me.
-  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: -4982, saldoARS: 0, detalleCliente: [-5300, -5300, 318, 5300], cajaUSD: 5300, cajaARS: 0 },
+  /** P,P: solo pendientes + comisión; neto cliente = 318 (= mr−me). */
+  {
+    id: 'P,P',
+    tx1: 'P',
+    tx2: 'P',
+    saldoUSD: 318,
+    saldoARS: 0,
+    detalleCliente: [318, 4982, -4982],
+    cajaUSD: 0,
+    cajaARS: 0,
+  },
+  // E,P: cobro cerrado −me; comisión acuerdo cerrada −318; compromiso entrega pendiente +mr → saldo neto 0.
+  { id: 'E,P', tx1: 'E', tx2: 'P', saldoUSD: 0, saldoARS: 0, detalleCliente: [-4982, -318, 5300], cajaUSD: 5300, cajaARS: 0 },
   // P,E: compromiso cobrar +mr; pago Pandy anulado en CC (−me/+me); saldo +mr.
   {
     id: 'P,E',
@@ -131,15 +162,23 @@ const COMBINACIONES_USD_USD = COMBINACIONES_USD_USD_RAW.map(withSeedCajaTipo2tx)
 /**
  * USD-USD con intermediario: mismas expectativas **cliente** / detalle que sin int (`reglas_de_negocio` cliente + mr_menos_me).
  * **Caja:** con patrón cp_ic (Tx2 = Intermediario→Cliente), el egreso del intermediario **no** mueve la caja de Pandy; solo cuenta el ingreso Cliente→Pandy cuando está ejecutado (E,E → +mr; P,E → 0; E,P → +mr).
- * CC intermediario (**cp_ic**): saldo USD = −(me + parte comisión int.) con **E,E** o **P,E** (Int→Cliente ejecutado aunque C→P pendiente). E2E: tasa intermediario 1,5% **sobre mr** (5300) → comisión int. = 80.
+ * CC intermediario (**cp_ic**): con **E,E** o **P,E** (Int→Cliente ejecutado), saldo USD = −(me + comisión int.). Con **P,P**, el motor agrega el espejo **+|me|** al **−|me|** del egreso pendiente → el resumen netea el par y queda **−comisión int.** Comisión int.: **min(mr×tasa%, mr−me)** como al guardar la orden (`pandiBuildComisionesOrdenOutboxRows`); con mr=5300 y 1,5% → 79,5.
  */
-const COMISION_USD_USD_INT_INTERMEDIARIO = Math.round(USD_USD_FIJOS.mr * 0.015);
+const COMISION_USD_USD_INT_INTERMEDIARIO = Math.min(
+  USD_USD_FIJOS.mr * 0.015,
+  Math.max(0, USD_USD_FIJOS.mr - USD_USD_FIJOS.me),
+);
 /** Negativo en resumen = Pandy debe al intermediario (suma movimientos CC int). */
 const SALDO_INT_USD_USD_EE = -(USD_USD_FIJOS.me + COMISION_USD_USD_INT_INTERMEDIARIO);
 const COMBINACIONES_USD_USD_INT = COMBINACIONES_USD_USD.map((c) => {
   const base = {
     ...c,
-    saldoIntermediarioUSD: c.id === 'E,E' || c.id === 'P,E' ? SALDO_INT_USD_USD_EE : 0,
+    saldoIntermediarioUSD:
+      c.id === 'E,E' || c.id === 'P,E'
+        ? SALDO_INT_USD_USD_EE
+        : c.id === 'P,P'
+          ? -COMISION_USD_USD_INT_INTERMEDIARIO
+          : 0,
   };
   const seedUsd = E2E_CAJA_SEED.efectivoUSD;
   if (c.id === 'E,E') return { ...base, cajaUSD: USD_USD_FIJOS.mr + seedUsd };

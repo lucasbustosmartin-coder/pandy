@@ -54,6 +54,7 @@ En **toda** tarea que implique **modificar archivos** (código, SQL, tests, conf
 
 ## Cierre de tarea
 
+- **Criterio duro:** si hubo edición en el repo, sin el bloque **`Verificación de impacto:`** la entrega **no cuenta** como cerrada (también en **reglas-pandi** § «Verificación de impacto productivo»); el agente lo completa en el mismo hilo sin esperar que el usuario lo reclame.
 - En la **respuesta final al usuario** (cuando hubo edición en el repo), incluir un bloque visible titulado exactamente **`Verificación de impacto:`** con una de estas formas:
   - **Sin riesgo colateral razonable** — motivo breve (p. ej. “solo string en vista X; sin imports compartidos”).
   - **Riesgos identificados:** … — **Usuario autorizó** … / **Quedó fuera de alcance** …

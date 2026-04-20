@@ -40,6 +40,9 @@ config.js
 # Credenciales para tests E2E (no subir)
 .env.test
 
+# Smoke read-only G/P contra prod u otro proyecto (service role; no subir)
+.env.smoke-prod-readonly
+
 # Exploración / one-off local (no subir)
 scratch.js
 scratch*.js

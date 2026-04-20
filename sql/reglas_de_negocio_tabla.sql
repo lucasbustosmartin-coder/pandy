@@ -1,6 +1,6 @@
 -- Pandi – Tabla **reglas_de_negocio**: reglas explícitas de CC (y futuros dominios) por tipo de operación.
 -- Sin intermediario: **USD-ARS**, **ARS-USD** y **USD-USD** (`usa_intermediario = false`).
--- Con intermediario: **USD-ARS** y **ARS-USD** (flujo inverso 2 tx C→Int + P→C), **USD-USD**, **CHEQUE-ARS** — todo en este archivo; scripts puntuales: `sql/reglas_usd_ars_int_inversa_reglas_de_negocio.sql`, `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql`, `sql/migracion_reglas_de_negocio_cheque_ars.sql`, `sql/migracion_reglas_cheque_ars_signos_cc_intermediario.sql`, `sql/migracion_usd_usd_intermediario_tipo_y_reglas.sql`, `sql/migracion_reglas_pendiente_contrapartida_false_usd_usd_int_y_cheque_tx4.sql` (P,P y Tx4 Int→Pandy pendiente; ya integrado en los INSERT de abajo), `sql/migracion_reglas_usd_ars_ar_usd_pp_contrapartida_false.sql` (USD-ARS / ARS-USD sin int. P,P; en bootstrap ya van en los INSERT de USD-ARS / ARS-USD sin int.), `sql/migracion_reglas_usd_usd_sin_int_pp_contrapartida_false.sql` (USD-USD sin int. P,P; también en los INSERT de USD-USD sin int. abajo).
+-- Con intermediario: **USD-ARS** y **ARS-USD** (flujo inverso 2 tx C→Int + P→C), **USD-USD**, **CHEQUE-ARS** — todo en este archivo; scripts puntuales: `sql/reglas_usd_ars_int_inversa_reglas_de_negocio.sql`, `sql/reglas_ars_usd_int_inversa_reglas_de_negocio.sql`, `sql/migracion_reglas_de_negocio_cheque_ars.sql`, `sql/migracion_reglas_cheque_ars_signos_cc_intermediario.sql`, `sql/migracion_usd_usd_intermediario_tipo_y_reglas.sql`, `sql/migracion_reglas_pendiente_contrapartida_false_usd_usd_int_y_cheque_tx4.sql` (P,P y Tx4 Int→Pandy pendiente; ya integrado en los INSERT de abajo), `sql/migracion_reglas_usd_ars_ar_usd_pp_contrapartida_false.sql` (USD-ARS / ARS-USD sin int. P,P; en bootstrap ya van en los INSERT de USD-ARS / ARS-USD sin int.), `sql/migracion_reglas_pp_sin_int_signo_compromiso_cobrar_ingreso.sql` (ajuste signo +1 en ingreso P,P ya desplegados), `sql/migracion_reglas_usd_usd_sin_int_pp_contrapartida_false.sql` (USD-USD sin int. P,P; también en los INSERT de USD-USD sin int. abajo).
 -- Con intermediario: usar **entidad_cc** `cliente` | `intermediario` (ver `sql/migracion_reglas_de_negocio_entidad_cc.sql`).
 -- Una fila = un movimiento CC cliente. Varios movimientos = varias filas (linea).
 -- Varios movimientos de **transacción** (2..N) que suman el acuerdo: usar **monto_transaccion**,
@@ -87,8 +87,8 @@ INSERT INTO public.reglas_de_negocio (
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'USD', 1, 'mr_prorrateado', true, 'compromiso_pago'),
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
-  -- P,P: ninguna pata ejecutada → el front usa contrapartida_ejecutada = false (no matchea filas pendiente+true). Signos alineados a migracion_reglas_todos_cruces_dos_monedas_sin_int_canonico.sql.
-  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  -- P,P: ninguna pata ejecutada → contrapartida_ejecutada = false. Mismo signo (+1) que ingreso pendiente+true «compromiso_cobrar» (positivo = pendiente de cobro en CC cliente).
+  ('USD-ARS', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
   ('USD-ARS', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
@@ -117,11 +117,20 @@ INSERT INTO public.reglas_de_negocio (
   ('USD-ARS', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'USD', 1, 'mr', true, 'cobro_realizado'),
   ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'ARS', 1, 'me', true, 'compromiso_cobrar'),
   ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 1, 'USD', 1, 'mr', true, 'compromiso_cobrar'),
+  -- P,E (ci_pc): ingreso C→I **pendiente** pero ya hay egreso P→C ejecutado → `contrapartida_ejecutada = true`. El intermediario debe ver el **cobro pendiente** en CC (+mr moneda recibida del acuerdo), igual criterio que P,P línea 123 pero con `true`.
+  ('USD-ARS', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'USD', 1, 'mr', true, 'compromiso_cobrar'),
+  -- P,P (ci_pc, ninguna pata ejecutada): `contrapartidaEjecutada` es **false**; sin estas filas el motor no matchea y la sync no persiste CC (avisos «sin fila en reglas»). Espejo de USD-ARS sin int. líneas 91–92.
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', false, 0, 'ARS', 1, 'me', true, 'compromiso_cobrar'),
+  ('USD-ARS', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', false, 1, 'USD', 1, 'mr', true, 'compromiso_cobrar'),
+  ('USD-ARS', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', false, 0, 'USD', 1, 'mr', true, 'compromiso_cobrar'),
+  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  -- E,P: ingreso C→I ya ejecutado → `contrapartidaEjecutada` del egreso P→C **pendiente** es **true** (sin fila quedaba «sin reglas»). Espejo USD-ARS sin int. línea 89.
+  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
   -- P,E: ingreso pendiente aporta +me ARS (compromiso_cobrar); egreso ejecutado con contrapartida false → solo línea −monto_transaccion (anula compromiso pendiente del ingreso).
-  -- E,E: ingreso cliente (C→Inter en ci_pc, o C→P en otros patrones) ya ejecutado → contrapartida true en egreso P→C; hace falta par +/− monto_transaccion en ARS (como egreso Inter→Cliente). Sin linea=1 −1 el motor solo aplicaba linea=0 +1 y quedaba saldo abierto. Varios egresos P→C: una vuelta del motor por trx → (+m_i −m_i) por cada una.
+  -- E,E: espejo **USD-ARS sin int.** líneas 87–88: linea 0 **+monto_transacción** en moneda entregada (ARS); linea 1 **+mr_prorrateado** en moneda recibida (USD). Un **−ARS** en linea 1 (migración antigua ci_pc) neteaba el egreso en ARS en 0 y no compensaba el **−me** del ingreso C→I ejecutado → residual −me e invariante «no netea a cero».
   ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago')
+  ('USD-ARS', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'USD', 1, 'mr_prorrateado', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc,
   pagador, cobrador, tipo_transaccion, es_comision,
@@ -182,8 +191,8 @@ INSERT INTO public.reglas_de_negocio (
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'ARS', 1, 'mr_prorrateado', true, 'compromiso_pago'),
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
-  -- P,P: contrapartida_ejecutada = false (signos alineados a migracion_reglas_todos_cruces_dos_monedas_sin_int_canonico.sql).
-  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  -- P,P: contrapartida_ejecutada = false. Mismo signo (+1) que ingreso pendiente+true «compromiso_cobrar» (positivo = pendiente de cobro ARS en CC cliente).
+  ('ARS-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
   ('ARS-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
@@ -212,10 +221,19 @@ INSERT INTO public.reglas_de_negocio (
   ('ARS-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'ARS', 1, 'mr', true, 'cobro_realizado'),
   ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'USD', 1, 'me', true, 'compromiso_cobrar'),
   ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 1, 'ARS', 1, 'mr', true, 'compromiso_cobrar'),
-  -- Espejo USD-ARS+int: P,E − solo false; E,E par +/− en moneda entregada (USD).
+  -- P,E (ci_pc): intermediario con cobro pendiente (+mr ARS) cuando el ingreso C→I va con `pendiente`+`true` (egreso P→C ya ejecutado).
+  ('ARS-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'ARS', 1, 'mr', true, 'compromiso_cobrar'),
+  -- P,P (ci_pc): espejo USD-ARS+int (`contrapartida_ejecutada` false con ambas patas pendientes).
+  ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', false, 0, 'USD', 1, 'me', true, 'compromiso_cobrar'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', false, 1, 'ARS', 1, 'mr', true, 'compromiso_cobrar'),
+  ('ARS-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', false, 0, 'ARS', 1, 'mr', true, 'compromiso_cobrar'),
+  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  -- E,P: egreso P→C pendiente con ingreso C→I ejecutado → contrapartida **true** (moneda entregada USD).
+  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
+  -- Espejo USD-ARS+int: P,E − solo false; E,E como **ARS-USD sin int.** líneas 191–192 (+USD entrega, +mr_prorrateado en moneda recibida ARS).
   ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago')
+  ('ARS-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 1, 'ARS', 1, 'mr_prorrateado', true, 'compromiso_pago')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc,
   pagador, cobrador, tipo_transaccion, es_comision,
@@ -264,22 +282,22 @@ INSERT INTO public.reglas_de_negocio (
   estado_transaccion, contrapartida_ejecutada, linea,
   moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
 ) VALUES
-  ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  -- Ingreso C→P ejecutado sin egreso ejecutado (E,P): cobro en CC por **me** (entrega neta); el **mr** queda en el compromiso de entrega pendiente (+mr en egreso).
+  ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'me', true, 'cobro_realizado'),
   ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
-  -- P,P sin int.: ninguna pata ejecutada → contrapartida_ejecutada false (misma idea que USD-ARS sin int y USD-USD+int).
-  ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  -- P,P sin int.: compromiso a cobrar en **me** (entrega neta); comisión **mr_menos_me** aparte — evita duplicar el nominal **mr** con el egreso pendiente.
+  ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'USD', 1, 'me', true, 'compromiso_cobrar'),
   -- P,E: ingreso pendiente +monto_transacción (cliente nos debe). Egreso ejecutado: −/+ monto_transacción anula pago Pandy; saldo neto +mr.
   ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
   ('USD-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
-  ('USD-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
   ('USD-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
+  -- E,P: egreso pendiente con ingreso ya ejecutado (contrapartida true): solo **+mr** «Compromiso de Pago»; la comisión **mr−me** va aparte en **es_comision** (no duplicar −me aquí).
   ('USD-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
-  ('USD-USD', false, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
   ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true, 0, 'USD', 1, 'mr_menos_me', true, 'comision_acuerdo'),
-  -- E,P sin int.: ingreso C→P ejecutado y egreso a cliente pendiente → comisión mr−me visible en CC como pendiente (gp_operativa_resumen solo suma cerrados → sin doble conteo con caja +mr).
-  ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'pendiente', false, 0, 'USD', 1, 'mr_menos_me', true, 'comision_acuerdo')
+  -- E,P sin int.: comisión **cerrada** en CC (ingreso ya ejecutado); signo **−1** (cargo al cliente); sin fila −me en el egreso pendiente (solo +mr).
+  ('USD-USD', false, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 0, 'USD', -1, 'mr_menos_me', true, 'comision_acuerdo')
 ON CONFLICT (
   tipo_operacion_codigo, usa_intermediario, entidad_cc, pagador, cobrador, tipo_transaccion, es_comision,
   estado_transaccion, contrapartida_ejecutada, linea
@@ -296,16 +314,16 @@ INSERT INTO public.reglas_de_negocio (
   estado_transaccion, contrapartida_ejecutada, linea,
   moneda, signo, monto_origen, incluir_en_detalle, concepto_leyenda
 ) VALUES
-  ('USD-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
+  ('USD-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'me', true, 'cobro_realizado'),
   ('USD-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('USD-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
   -- cp_ic / ci_pc: ambas patas pendientes → contrapartida_ejecutada false (la otra pata aún no está ejecutada).
-  ('USD-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  ('USD-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'USD', 1, 'me', true, 'compromiso_cobrar'),
   -- Ingreso Cliente→Intermediario (patrón alternativo USD-USD+int; misma matriz que cobro a Pandy).
   ('USD-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('USD-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('USD-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
-  ('USD-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', false, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  ('USD-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', false, 'pendiente', false, 0, 'USD', 1, 'me', true, 'compromiso_cobrar'),
   -- ci_pc: CC intermediario por ingreso Cliente→Intermediario (cobro mr; espejo USD-ARS+int). Sin esto solo figuraba el egreso Pandy→Cliente (+me) y parecía un cobro de 9.800 en lugar de los 10.000 recibidos del cliente.
   ('USD-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', false, 0, 'USD', 1, 'monto_transaccion', true, 'cobro_realizado'),
   ('USD-USD', true, 'intermediario', 'cliente', 'intermediario', 'ingreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'cobro_realizado'),
@@ -315,18 +333,14 @@ INSERT INTO public.reglas_de_negocio (
   ('USD-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
-  ('USD-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
-  ('USD-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
   -- Misma matriz de egreso cuando la pata de entrega es Intermediario→Cliente (instrumentación canónica USD-USD+int).
   ('USD-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
-  ('USD-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', true, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
-  ('USD-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', false, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', false, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
-  -- CC intermediario (cp_ic): egreso Int→Cliente con ingreso C→P aún pendiente → una sola línea −me (deuda de Pandy por lo entregado; no par +/− que neteaba a cero). Con par cerrado → línea contrapartida true (igual que antes).
+  -- CC intermediario (cp_ic): egreso Int→Cliente con ingreso C→P aún pendiente → una sola línea −|monto| en tabla (deuda nominal); el motor añade +|monto| en P,P para netear compromiso en resumen y aislar comisión int. (main.js). Con par cerrado → líneas ejecutada según contrapartida.
   ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'pendiente', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
@@ -335,10 +349,9 @@ INSERT INTO public.reglas_de_negocio (
   ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
-  ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'pendiente', true, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
-  ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
   ('USD-USD', true, 'intermediario', 'pandy', 'cliente', 'egreso', false, 'pendiente', false, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
   ('USD-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'ejecutada', true, 0, 'USD', 1, 'mr_menos_me', true, 'comision_acuerdo'),
+  ('USD-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', true, 'ejecutada', false, 0, 'USD', -1, 'mr_menos_me', true, 'comision_acuerdo'),
   -- ci_pc: comisión implícita (spread) con ingreso Cliente→Intermediario (no hay fila C→Pandy en instrumentación).
   ('USD-USD', true, 'cliente', 'cliente', 'intermediario', 'ingreso', true, 'ejecutada', true, 0, 'USD', 1, 'mr_menos_me', true, 'comision_acuerdo'),
   ('USD-USD', true, 'intermediario', 'pandy', 'intermediario', 'egreso', true, 'ejecutada', true, 0, 'USD', -1, 'comision_intermediario', true, 'comision_acuerdo'),

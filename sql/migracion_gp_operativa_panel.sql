@@ -35,13 +35,44 @@ COMMENT ON FUNCTION public.gp_concepto_es_comision_caja_ordenes_gp(text) IS 'G/P
 GRANT EXECUTE ON FUNCTION public.gp_concepto_es_linea_comision_cc_gp(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.gp_concepto_es_comision_caja_ordenes_gp(text) TO authenticated;
 
+-- True si la fila CC cuenta como línea comisión del acuerdo para G/P: texto (legacy) o ENUM explícito (fase clasificación).
+CREATE OR REPLACE FUNCTION public.gp_movimiento_cc_cuenta_es_linea_comision_gp(concepto text, clasificacion public.movimiento_clasificacion)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT public.gp_concepto_es_linea_comision_cc_gp(concepto)
+    OR clasificacion IN (
+      'CC_COMISION_ACUERDO'::public.movimiento_clasificacion,
+      'CC_COMISION_SINTETICA_SIN_TRX'::public.movimiento_clasificacion
+    );
+$$;
+
+-- True si el movimiento de caja por orden es comisión sintética del acuerdo: texto o ENUM CAJA_COMISION_ACUERDO.
+CREATE OR REPLACE FUNCTION public.gp_movimiento_caja_ordenes_es_comision_gp(concepto text, clasificacion public.movimiento_clasificacion)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT public.gp_concepto_es_comision_caja_ordenes_gp(concepto)
+    OR clasificacion = 'CAJA_COMISION_ACUERDO'::public.movimiento_clasificacion;
+$$;
+
+COMMENT ON FUNCTION public.gp_movimiento_cc_cuenta_es_linea_comision_gp(text, public.movimiento_clasificacion) IS 'G/P Operativa: comisión acuerdo en CC por concepto (gp_concepto_es_linea_comision_cc_gp) o por clasificacion_movimiento ENUM.';
+COMMENT ON FUNCTION public.gp_movimiento_caja_ordenes_es_comision_gp(text, public.movimiento_clasificacion) IS 'G/P Operativa: comisión acuerdo en caja por orden por concepto o por clasificacion_movimiento ENUM.';
+
+GRANT EXECUTE ON FUNCTION public.gp_movimiento_cc_cuenta_es_linea_comision_gp(text, public.movimiento_clasificacion) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.gp_movimiento_caja_ordenes_es_comision_gp(text, public.movimiento_clasificacion) TO authenticated;
+
 ALTER TABLE public.tipos_movimiento_caja
   ADD COLUMN IF NOT EXISTS incluye_gp_operativo boolean NOT NULL DEFAULT true;
 
 COMMENT ON COLUMN public.tipos_movimiento_caja.incluye_gp_operativo IS 'Si true, movimientos de caja manuales con este tipo suman en G/P Operativa del Panel (junto a sumas de CC cliente e intermediario en el período).';
 
 INSERT INTO public.app_permission (permission, description) VALUES
-  ('ver_inicio_gp_operativo', 'Panel de Control: ver tarjeta G/P Operativa (caja manual + caja por órdenes + CC cliente/intermediario pendiente+cerrado + comisiones del acuerdo por período)')
+  ('ver_inicio_gp_operativo', 'Panel de Control: ver tarjeta G/P Operativa (caja manual + caja por órdenes + CC cliente/intermediario pendiente+cerrado + resultado económico compensatorio en CC + comisiones del acuerdo por período)')
 ON CONFLICT (permission) DO UPDATE SET description = EXCLUDED.description;
 
 INSERT INTO public.app_role_permission (role, permission) VALUES
@@ -82,7 +113,7 @@ AS $$
          FROM public.movimientos_caja m
          WHERE m.orden_id IS NOT NULL
            AND m.estado = 'cerrado'
-           AND NOT public.gp_concepto_es_comision_caja_ordenes_gp(COALESCE(m.concepto, ''))
+           AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
            AND (p_desde IS NULL OR m.fecha >= p_desde)
            AND (p_hasta IS NULL OR m.fecha <= p_hasta)
          GROUP BY m.moneda
@@ -96,7 +127,8 @@ AS $$
          SELECT m.moneda, SUM(m.monto)::numeric AS s
          FROM public.movimientos_cuenta_corriente m
          WHERE m.estado IN ('pendiente', 'cerrado')
-           AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+           AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+           AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
            AND (p_desde IS NULL OR m.fecha >= p_desde)
            AND (p_hasta IS NULL OR m.fecha <= p_hasta)
          GROUP BY m.moneda
@@ -110,7 +142,8 @@ AS $$
          SELECT m.moneda, SUM(m.monto)::numeric AS s
          FROM public.movimientos_cuenta_corriente_intermediario m
          WHERE m.estado IN ('pendiente', 'cerrado')
-           AND NOT public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+           AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+           AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
            AND (p_desde IS NULL OR m.fecha >= p_desde)
            AND (p_hasta IS NULL OR m.fecha <= p_hasta)
          GROUP BY m.moneda
@@ -136,7 +169,7 @@ AS $$
            SELECT m.moneda, m.monto::numeric AS monto
            FROM public.movimientos_cuenta_corriente m
            WHERE m.estado IN ('pendiente', 'cerrado')
-             AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+             AND public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
              AND (p_desde IS NULL OR m.fecha >= p_desde)
              AND (p_hasta IS NULL OR m.fecha <= p_hasta)
              AND (
@@ -179,7 +212,7 @@ AS $$
            SELECT m.moneda, m.monto::numeric AS monto
            FROM public.movimientos_cuenta_corriente_intermediario m
            WHERE m.estado IN ('pendiente', 'cerrado')
-             AND public.gp_concepto_es_linea_comision_cc_gp(COALESCE(m.concepto, ''))
+             AND public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
              AND (p_desde IS NULL OR m.fecha >= p_desde)
              AND (p_hasta IS NULL OR m.fecha <= p_hasta)
              AND (
@@ -195,10 +228,35 @@ AS $$
          GROUP BY u.moneda
        ) q),
       '{}'::jsonb
+    ),
+    /* Resultado económico compensatorio (Modelo B): solo filas CC con ENUM dedicado; excluidas de cc_cliente/cc_intermediario arriba para no duplicar en el Total. */
+    'cc_resultado_economico_compensatorio',
+    COALESCE(
+      (SELECT jsonb_object_agg(q.moneda, q.s)
+       FROM (
+         SELECT u.moneda, SUM(u.monto)::numeric AS s
+         FROM (
+           SELECT m.moneda, m.monto::numeric AS monto
+           FROM public.movimientos_cuenta_corriente m
+           WHERE m.estado IN ('pendiente', 'cerrado')
+             AND m.clasificacion_movimiento = 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+             AND (p_desde IS NULL OR m.fecha >= p_desde)
+             AND (p_hasta IS NULL OR m.fecha <= p_hasta)
+           UNION ALL
+           SELECT m.moneda, m.monto::numeric AS monto
+           FROM public.movimientos_cuenta_corriente_intermediario m
+           WHERE m.estado IN ('pendiente', 'cerrado')
+             AND m.clasificacion_movimiento = 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+             AND (p_desde IS NULL OR m.fecha >= p_desde)
+             AND (p_hasta IS NULL OR m.fecha <= p_hasta)
+         ) u
+         GROUP BY u.moneda
+       ) q),
+      '{}'::jsonb
     )
   );
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'P&L operativo de la empresa por moneda (seis bolsas, sin doble conteo): caja manual y caja por órdenes solo cerrado no anulado; CC cliente e intermediario pendiente+cerrado (excl. anulado), excl. líneas «Comisión del acuerdo…» en el flujo; comisiones_acuerdo_pandy desde comisiones_orden+CC huérfanas; comisiones_acuerdo_intermediario: NEGADO solo para filas intermediario sin par Pandy misma orden+moneda (reparto ya neteado en fila Pandy). Total = suma de las seis claves. Fechas inclusive; NULL = sin límite.';
+COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'P&L operativo de la empresa por moneda (siete bolsas, sin doble conteo): caja manual y caja por órdenes solo cerrado no anulado; CC cliente e intermediario pendiente+cerrado (excl. anulado), excl. comisión del acuerdo en flujo y excl. clasificación CC_RESULTADO_ECONOMICO_COMPENSATORIO (va en su bolsa); bolsa cc_resultado_economico_compensatorio = suma CC cliente+intermediario con ese ENUM; comisiones_acuerdo_pandy desde comisiones_orden+CC huérfanas; comisiones_acuerdo_intermediario: NEGADO solo para filas intermediario sin par Pandy misma orden+moneda. Total = suma de las siete claves. Fechas inclusive; NULL = sin límite.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_resumen(date, date) TO authenticated;
