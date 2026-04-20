@@ -104,3 +104,43 @@ test('leyenda legacy «parcial o total» sigue en suma exenta', () => {
   ];
   assert.equal(sumaCompCerradas(rows, cid, oid, 'USD'), 77);
 });
+
+/** Réplica mínima de la política «comp total → quitar compromiso duplicado I→C» (main.js `filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsdUsdInt`). */
+function quitarCompromisoSiCompTotal(rows, egresoId, monto) {
+  const k = String(Number(monto).toFixed(4));
+  const rowsOut = rows.filter((r) => {
+    const c = String(r.concepto || '');
+    if (!c.includes('Compromiso de Pago')) return true;
+    if (c.includes('Pandy cumple pata') || c.includes('Tercero cumple pata')) return true;
+    if (String(r.transaccion_id) !== String(egresoId)) return true;
+    if (String(Number(r.monto).toFixed(4)) !== k) return true;
+    return false;
+  });
+  return rowsOut;
+}
+
+test('compensación total: se elimina Compromiso de Pago duplicado del egreso I→C mismo monto', () => {
+  const rows = [
+    {
+      cliente_id: 'c1',
+      orden_id: 'o1',
+      transaccion_id: 'eg1',
+      concepto: 'Compromiso de Pago - Orden 82 y Trans 191',
+      monto: 2000,
+      moneda: 'USD',
+      estado: 'cerrado',
+    },
+    {
+      cliente_id: 'c1',
+      orden_id: 'o1',
+      transaccion_id: 'in1',
+      concepto: 'Compensación total en cuenta corriente- Orden 82 y Trans 191',
+      monto: 2000,
+      moneda: 'USD',
+      estado: 'cerrado',
+    },
+  ];
+  const out = quitarCompromisoSiCompTotal(rows, 'eg1', 2000);
+  assert.equal(out.length, 1);
+  assert.ok(String(out[0].concepto).includes('Compensación total'));
+});

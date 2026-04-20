@@ -10842,6 +10842,75 @@ function inyectarFilasCompensacionCcClienteDesdeTransacciones(rowsCcCliente, ord
   }
 }
 
+/**
+ * USD-USD + intermediario, `monR === monE`, sin MC: si un **ingreso** tiene `compensacion_cc_monto_aplicado` en **total**
+ * (~ monto de la trx) por el flip C→P a P→C, el motor ya emite **además** «Compromiso de Pago» del egreso Intermediario→Cliente (+me).
+ * Esa segunda fila duplica el efecto en el **saldo** (el invariante las resta por separado y cuadra; la suma visible no).
+ * Se elimina la fila CC cliente de compromiso **plano** ligada a ese egreso I→C cuando el monto coincide con una compensación total persistida.
+ */
+function filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsdUsdInt(
+  rowsCcCliente,
+  orden,
+  ordenId,
+  clienteId,
+  transacciones,
+  usarMulticontraparteSync,
+) {
+  if (!Array.isArray(rowsCcCliente) || !orden || !clienteId || !ordenId) return;
+  if (!esOrdenUsdUsdConIntermediarioSinMcParaCompensacionCc(orden, !!usarMulticontraparteSync)) return;
+  const monR = String(orden.moneda_recibida || 'USD').toUpperCase();
+  const monE = String(orden.moneda_entregada || 'USD').toUpperCase();
+  if (monR !== monE) return;
+
+  /** Valores de `compensacion_cc_monto_aplicado` con ingreso en compensación **total** (comp ~ monto trx). */
+  const montosCompTotal = [];
+  for (const tRaw of transacciones || []) {
+    if (!tRaw) continue;
+    const comp = Number(tRaw.compensacion_cc_monto_aplicado);
+    if (!Number.isFinite(comp) || comp < 1e-6) continue;
+    if (String(tRaw.tipo || '').toLowerCase() !== 'ingreso') continue;
+    const st = transaccionEstadoTextoNormalizado(tRaw);
+    if (st !== 'ejecutada' && st !== 'pendiente') continue;
+    const montoTrx = Number(tRaw.monto);
+    if (!Number.isFinite(montoTrx) || montoTrx < 1e-6) continue;
+    if (comp + EPS_CC_NETEO_CLIENTE_ORDEN < montoTrx) continue;
+    montosCompTotal.push(comp);
+  }
+  if (montosCompTotal.length === 0) return;
+
+  /** Egresos Inter→Cliente (misma moneda acuerdo): la fila CC puede usar **me** de la orden aunque `transacciones.monto` del egreso difiera (p. ej. 1900 vs nominal 2000). */
+  const egresoIntermediarioClienteIds = new Set();
+  for (const tRaw of transacciones || []) {
+    if (!tRaw || tRaw.id == null) continue;
+    const st = transaccionEstadoTextoNormalizado(tRaw);
+    if (st !== 'ejecutada' && st !== 'pendiente') continue;
+    if (String(tRaw.tipo || '').toLowerCase() !== 'egreso') continue;
+    const tn = transaccionNormalizarPagCobVacios(tRaw);
+    const { pag, cob } = pagCobEfectivosTransaccionSync(tn);
+    if (pag !== 'intermediario' || cob !== 'cliente') continue;
+    const mon = String(tRaw.moneda || '').toUpperCase();
+    if (mon !== monR) continue;
+    egresoIntermediarioClienteIds.add(String(tRaw.id));
+  }
+  if (egresoIntermediarioClienteIds.size === 0) return;
+
+  for (let i = rowsCcCliente.length - 1; i >= 0; i--) {
+    const r = rowsCcCliente[i];
+    if (!r || r.es_movimiento_manual === true) continue;
+    if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
+    const c = String(r.concepto || '');
+    if (!c.includes('Compromiso de Pago')) continue;
+    if (c.includes(SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR) || c.includes(SUBSTRING_LEYENDA_CC_TERcERO_PATA_MONR)) continue;
+    const m = Number(r.monto);
+    if (!Number.isFinite(m) || m < 1e-6) continue;
+    const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id).trim() : '';
+    if (!tid || !egresoIntermediarioClienteIds.has(tid)) continue;
+    const montoIgualAlgunComp = montosCompTotal.some((c0) => Math.abs(c0 - m) <= 0.02);
+    if (!montoIgualAlgunComp) continue;
+    rowsCcCliente.splice(i, 1);
+  }
+}
+
 /** True si la orden cruza dos monedas distintas (ARS-USD, EUR-USD, etc.); no aplica a USD-USD (monR === monE). */
 function ordenEsCruceDosMonedasDistintas(orden) {
   const mr = String((orden && orden.moneda_recibida) || '').toUpperCase().trim();
@@ -23646,6 +23715,14 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               ahora,
               transacciones,
               ordenAnuladaSync,
+            );
+            filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsdUsdInt(
+              rowsCcCliente,
+              orden,
+              ordenId,
+              clienteId,
+              transacciones,
+              usarMulticontraparteSync,
             );
           }
 
