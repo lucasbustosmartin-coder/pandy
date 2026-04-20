@@ -9218,6 +9218,28 @@ function completarPayloadIdsContraparteDesdeOrden(payload, orden) {
 }
 
 /**
+ * Copia en memoria para motor / invariante: instrumentación **sin** multicontraparte manual, un solo cliente del acuerdo.
+ * Si el rol es `cliente` en un solo extremo y el UUID falta en BD, usa `orden.cliente_id` (misma política que `completarPayloadIdsContraparteDesdeOrden` al guardar).
+ * No aplica a Cliente→Cliente (dos UUID distintos) ni a MC.
+ */
+function transaccionesEnriquecerIdsClienteAcuerdoSingleClienteInstrumentacion(transacciones, orden, multicontraparteManual) {
+  if (!orden || multicontraparteManual) return transacciones || [];
+  const cid = orden.cliente_id != null && String(orden.cliente_id).trim() !== '' ? String(orden.cliente_id).trim() : null;
+  if (!cid) return transacciones || [];
+  const vac = (x) => x == null || String(x).trim() === '';
+  return (transacciones || []).map((t) => {
+    if (!t) return t;
+    const tn = transaccionNormalizarPagCobVacios(t);
+    const { pag, cob } = pagCobEfectivosTransaccionSync(tn);
+    if (pag === 'cliente' && cob === 'cliente') return t;
+    const out = { ...t };
+    if (pag === 'cliente' && cob !== 'cliente' && vac(out.pagador_cliente_id)) out.pagador_cliente_id = cid;
+    if (cob === 'cliente' && pag !== 'cliente' && vac(out.cobrador_cliente_id)) out.cobrador_cliente_id = cid;
+    return out;
+  });
+}
+
+/**
  * Fecha contable (`fecha`) y `estado_fecha` para movimientos CC/caja derivados de una transacción.
  * Ancla al hecho: `fecha_ejecucion` y, si aplica, `updated_at`; si falta ejecución y la trx está **anulada**, priorizar el fallback (día de la orden en sync), no `updated_at` (evita que un resync «mueva» el día contable).
  * Prepara etapa posterior de sync por diff (opción 2).
@@ -9505,7 +9527,7 @@ function pushMcClienteRow(rowsCcCliente, cid, ordenId, fecha, ahora, partial, fi
  * ingreso ejecutado acuerdo→Pandy en monR: par **−m (Cobro realizado) +m (Ajuste libro acuerdo)** en CC del acuerdo — **neteo cero** de esa transacción en el libro del acuerdo (distinto de regla B);
  * egreso en moneda entregada pendiente: cobrador cliente (acuerdo u otro) → +m «Entrega … pendiente»; **pagador** cliente (acuerdo u otro, p. ej. Cliente→Pandy o C→C) → −m «Instrumentación pendiente» en la CC de ese pagador (simétrico al ingreso monR);
  * ingreso en moneda recibida pendiente con pagador cliente (acuerdo u **otro** cliente, p. ej. Lucas→Pandy) → −m en la **CC de ese pagador** (misma fila «Instrumentación pendiente» que si fuera el acuerdo);
- * egreso ejecutado con cobrador = cliente del acuerdo en monE (pagador Pandy u otro cliente): −m (Pago realizado) +m (ajuste libro acuerdo) en CC del acuerdo, **salvo** cruce USD-ARS/ARS-USD sin int. con ingreso Pandy→cliente en monR (ejecutado o pendiente) + este egreso Pandy→cliente en monE → una sola fila **−m** «Pago realizado» con leyenda «Pandy cumple pata en moneda entregada» (equivale a la pata **−m** del par sin el +m de ajuste libro); si pagador es otro cliente, también −m (Cobro realizado) en su CC.
+ * egreso ejecutado con cobrador = cliente del acuerdo en monE (pagador Pandy u otro cliente): −m (Pago realizado) +m (ajuste libro acuerdo) en CC del acuerdo. Cruce USD-ARS/ARS-USD sin int. con ingreso Pandy→cliente en monR (ejecutado o pendiente) + egreso Pandy→cliente en monE: el **−m** «Pago realizado» lleva leyenda «Pandy cumple pata en moneda entregada» y el **+m** «Ajuste libro acuerdo» misma transacción (neteo cero en monE en el libro del acuerdo, misma semántica que el par clásico); si pagador es otro cliente, también −m (Cobro realizado) en su CC.
  * Resto de clientes y egresos/ingresos ejecutados: movimientos por entidad. Intermediario: delega en aplicarCcMulticontraparteManualTrx.
  */
 function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt, fallbackUId) {
@@ -9752,6 +9774,14 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
             moneda: mon,
             monto: -monto,
             ...montosCcPorMoneda(mon, -monto),
+          }, finalUId);
+          pushMcClienteRow(rowsCcCliente, cidAcuerdo, ordenId, feMc.fecha, feMc.estado_fecha, {
+            transaccion_id: t.id,
+            transaccion_numero: nro,
+            concepto: `Ajuste libro acuerdo — Orden ${ordenNumero} · Trans ${nro != null ? nro : '–'}`,
+            moneda: mon,
+            monto,
+            ...montosCcPorMoneda(mon, monto),
           }, finalUId);
           return;
         }
@@ -10702,7 +10732,7 @@ const SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR = 'Pandy cumple pata en moned
 /** Gemelo +m del −m regla B monR: préstamo operativo al cliente (misma transacción); exento de neteo en monR junto a la pata. */
 const SUBSTRING_LEYENDA_CC_PRESTAMO_PANDY_REGULA_B_MONR = 'cobertura Pandy — moneda recibida';
 
-/** Par con regla B + egreso Pandy→cliente en monE: una sola fila gross en moneda entregada (sin par −/+ «ajuste libro»). Exenta neteo en invariante como monR. */
+/** Leyenda en el **−m** «Pago realizado» del egreso Pandy→cliente en monE (cruce dos monedas sin int.); el **+m** «Ajuste libro acuerdo» misma trx netea en CC. El invariante suma pata + ajuste pareado en `sumaMovimientosPataMonEExentosNeteo`. */
 const SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONE = 'Pandy cumple pata en moneda entregada';
 
 /** Ingreso otro cliente → cliente del acuerdo en monR (misma familia contable que B; leyenda distinta para auditoría). */
@@ -11408,16 +11438,43 @@ function completarCcClientePrestamoReglaBPandyMonSiFalta(rowsCcCliente, orden, o
   }
 }
 
-/** Suma montos en monE de filas «regla B moneda entregada» (Pandy→cliente en monE, sin neteo en libro); exentas de exigencia de neteo cero en esa moneda. */
+/**
+ * Suma montos en monE del **cluster** regla B moneda entregada: filas con leyenda «Pandy cumple pata en moneda entregada»
+ * y, si existen, los **+m** «Ajuste libro acuerdo» con el mismo `transaccion_id` o `transaccion_numero` (par −m/+m → 0).
+ * Así el residual del invariante queda 0 con neteo visible en CC; si solo hubiera la pata −m (datos viejos), sigue contando −m.
+ */
 function sumaMovimientosPataMonEExentosNeteo(rowsCliente, clienteId, ordenId, monE) {
   const mon = String(monE || '').toUpperCase();
-  let s = 0;
   const subP = SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONE;
+  const tids = new Set();
+  const tnums = new Set();
   for (const r of rowsCliente || []) {
     if (!r || String(r.estado || '').toLowerCase() !== 'cerrado') continue;
     if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
     if (String(r.moneda || '').toUpperCase() !== mon) continue;
     if (!String(r.concepto || '').includes(subP)) continue;
+    const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id) : '';
+    const tn = r.transaccion_numero != null && String(r.transaccion_numero).trim() !== '' ? String(r.transaccion_numero) : '';
+    if (tid) tids.add(tid);
+    if (tn) tnums.add(tn);
+  }
+  let s = 0;
+  for (const r of rowsCliente || []) {
+    if (!r || String(r.estado || '').toLowerCase() !== 'cerrado') continue;
+    if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
+    if (String(r.moneda || '').toUpperCase() !== mon) continue;
+    const c = String(r.concepto || '');
+    if (c.includes(subP)) {
+      const m = Number(r.monto);
+      if (Number.isFinite(m)) s += m;
+      continue;
+    }
+    if (!tids.size && !tnums.size) continue;
+    if (!c.includes('Ajuste libro acuerdo')) continue;
+    const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id) : '';
+    const tn = r.transaccion_numero != null && String(r.transaccion_numero).trim() !== '' ? String(r.transaccion_numero) : '';
+    const linked = (tid && tids.has(tid)) || (tn && tnums.has(tn));
+    if (!linked) continue;
     const m = Number(r.monto);
     if (Number.isFinite(m)) s += m;
   }
@@ -11537,9 +11594,9 @@ function sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUs
 }
 
 /**
- * Invariante dura: solo cuando **no queda ninguna transacción pendiente** (todas ejecutada o anulada, al menos una ejecutada) **y** además: derivación sin motor completo (`multicontraparte manual` **o** `instrumentacion_ajustada_manual`) con todas las trx ejecutadas/anuladas, **o** (sin esa derivación) par clásico ingreso C→P/I + egreso entrega ambos ejecutados, **o** la orden está en `orden_ejecutada` / `instrumentacion_cerrada_ejecucion`.
+ * Invariante dura: solo cuando **no queda ninguna transacción pendiente** (todas ejecutada o anulada, al menos una ejecutada) **y** además: derivación sin motor completo (**solo** `multicontraparte manual`, flag `usarDerivacionCcSinMotorReglas` en sync) con todas las trx ejecutadas/anuladas, **o** (sin esa derivación) par clásico ingreso C→P/I + egreso entrega ambos ejecutados, **o** la orden está en `orden_ejecutada` / `instrumentacion_cerrada_ejecucion`.
  * Entonces la CC del cliente del acuerdo (filas **cerradas** de esta orden) debe netear a cero por moneda,
- * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata» o «Préstamo al cliente (cobertura Pandy — moneda recibida)» (gemelo +m de la pata −m regla B; el **+m** préstamo se **resta** del total bruto antes del residual porque el par ± ya está en `sumaMovimientosPataMonRExentosNeteo` y si no se resta bloquea el sync), y en moneda entregada la fila «Pandy cumple pata en moneda entregada» (doble pata empresa→cliente en monR+monE),
+ * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata» o «Préstamo al cliente (cobertura Pandy — moneda recibida)» (gemelo +m de la pata −m regla B; el **+m** préstamo se **resta** del total bruto antes del residual porque el par ± ya está en `sumaMovimientosPataMonRExentosNeteo` y si no se resta bloquea el sync), y en moneda entregada el cluster «Pandy cumple pata en moneda entregada» + «Ajuste libro acuerdo» pareado (misma transacción; doble pata empresa→cliente en monR+monE),
  * y en la moneda correspondiente la fila sintética «Comisión del acuerdo» **sin** `transaccion_id` (spread mr−me; alineada a refuerzo `cerrado` con toda la instrumentación ejecutada);
  * y filas **«Compensación parcial/total en cuenta corriente- Orden … y Trans …»** (ingreso USD-USD+int invertido C→P a P→C con `compensacion_cc_monto_aplicado` en la transacción; legacy «parcial o total»);
  * y en **USD-USD + int.** con `monR===monE` y compensación persistida en transacciones, el **Compromiso de Pago** del egreso **Intermediario→Cliente** (+me) en esa moneda (`sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUsdConCompensacionTrx`).
@@ -11792,12 +11849,43 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         const esTerceroPagAcuerdo =
           pag === 'cliente' && cob === 'cliente' && cidPag && cidCob && cidCob === cidAc && cidPag !== cidCob;
         if ((esPandyPagCobAcuerdo || esTerceroPagAcuerdo) && !(esTerceroPagAcuerdo && estado === 'pendiente')) {
+          /**
+           * Pandy→cliente del acuerdo en monR con `cobrador_cliente_id` explícito: **siempre** camino regla B
+           * (leyenda «Pandy cumple pata en moneda recibida»), aunque `reglas_de_negocio` tenga filas para esta trx.
+           * Si no, el motor podía emitir «Compromiso de Pago» sin pata y el invariante de neteo bloqueaba el sync
+           * pese a instrumentación válida (misma semántica que multicontraparte manual).
+           */
+          if (esPandyPagCobAcuerdo) {
+            const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
+            const nro = t.numero != null ? t.numero : null;
+            const estadoFilaPata = ordenAnuladaMotor ? 'anulado' : (estado === 'ejecutada' ? 'cerrado' : 'pendiente');
+            rowsCcCliente.push({
+              cliente_id: clienteId,
+              orden_id: ordenId,
+              transaccion_id: t.id,
+              transaccion_numero: nro,
+              concepto:
+                conceptoCcLeyenda('compromiso_pago', orden.numero, nro) +
+                ' (' +
+                SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR +
+                ')',
+              fecha: feT.fecha,
+              usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(t, orden),
+              moneda: monTrx,
+              monto: -montoT,
+              estado: estadoFilaPata,
+              estado_fecha: feT.estado_fecha,
+              incluir_en_detalle: true,
+              ...montosCcPorMoneda(monTrx, -montoT),
+            });
+            return;
+          }
           const reglasTry = lookupReglasDeNegocio(reglasDeNegocio, tipoOperacionCodigo, pag, cob, tipo, false, estado, contrapartida);
           if (!reglasTry.length) {
             const feT = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
             const nro = t.numero != null ? t.numero : null;
-            const leyPata = esPandyPagCobAcuerdo ? SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR : SUBSTRING_LEYENDA_CC_TERcERO_PATA_MONR;
-            const montoPataMonR = esPandyPagCobAcuerdo ? -montoT : montoT;
+            const leyPata = SUBSTRING_LEYENDA_CC_TERcERO_PATA_MONR;
+            const montoPataMonR = montoT;
             const estadoFilaPata = ordenAnuladaMotor ? 'anulado' : (estado === 'ejecutada' ? 'cerrado' : 'pendiente');
             rowsCcCliente.push({
               cliente_id: clienteId,
@@ -11852,6 +11940,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     if (crucesSinIntDoblePataBp && clienteId) {
       const feTg = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
       const nroG = t.numero != null ? t.numero : null;
+      const ordNum = orden.numero != null ? orden.numero : '–';
       rowsCcCliente.push({
         cliente_id: clienteId,
         orden_id: ordenId,
@@ -11870,6 +11959,21 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         estado_fecha: feTg.estado_fecha,
         incluir_en_detalle: true,
         ...montosCcPorMoneda(monEOrdMotor, -montoT),
+      });
+      rowsCcCliente.push({
+        cliente_id: clienteId,
+        orden_id: ordenId,
+        transaccion_id: t.id,
+        transaccion_numero: nroG,
+        concepto: `Ajuste libro acuerdo — Orden ${ordNum} · Trans ${nroG != null ? nroG : '–'}`,
+        fecha: feTg.fecha,
+        usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(t, orden),
+        moneda: monEOrdMotor,
+        monto: montoT,
+        estado: estadoMov,
+        estado_fecha: feTg.estado_fecha,
+        incluir_en_detalle: true,
+        ...montosCcPorMoneda(monEOrdMotor, montoT),
       });
       return;
     }
@@ -23265,7 +23369,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               Promise.resolve([rTr, rCom, rModos, rIntNom, trxFinal]),
             );
           })
-          .then(([rTr, rCom, rModos, rIntNom, transacciones]) => {
+          .then(([rTr, rCom, rModos, rIntNom, trxSyncIn]) => {
+          const transacciones = transaccionesEnriquecerIdsClienteAcuerdoSingleClienteInstrumentacion(
+            trxSyncIn,
+            orden,
+            multicontraparteManual,
+          );
           const orderUId = usuarioIdRegistroCajaFallbackUltimaEjecutadaConUsuario(transacciones) || orden.usuario_id;
           const comisiones = rCom.data || [];
           const modosMap = {};
@@ -23376,7 +23485,11 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             codNorm === 'CHEQUE-ARS' && intermediarioId && mr > me + 1e-6 ? mr - me : 0;
           const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr;
           const usarMulticontraparteSync = multicontraparteManual && instrumentacionMulticontraparteManualPermitida(orden, toJoin);
-          const usarDerivacionCcSinMotorReglas = usarMulticontraparteSync || instrumentacionAjustadaManual;
+          /**
+           * Solo **multicontraparte manual** desactiva el motor completo por trx (`soloComisiones` + patas en `aplicarCcMulticontraparteManualConciliacionCompleta`).
+           * `instrumentacion_ajustada_manual` (p. ej. USD-ARS editado tras plantilla) **no** debe apagar el motor: si no, el bucle legacy emite «Compromiso de Pago» sin leyenda regla B en Pandy→Cliente monR y rompe el neteo.
+           */
+          const usarDerivacionCcSinMotorReglas = usarMulticontraparteSync;
           const usarMotorEfectivo = usarMotorReglasNegocio && !usarDerivacionCcSinMotorReglas;
 
           const rowsCcCliente = [];
@@ -23574,8 +23687,8 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             );
           }
 
-          // Con MC manual + reglas (o instrumentación ajustada manual + reglas): las patas van en legacy/MC según corresponda; comisiones = motor sin recorrer trx.
-          if (usarDerivacionCcSinMotorReglas && tieneReglasNeg) {
+          // Con MC manual + reglas: las patas van en `aplicarCcMulticontraparteManualConciliacionCompleta`; comisiones = motor sin recorrer trx.
+          if (usarMulticontraparteSync && tieneReglasNeg) {
             aplicarMotorCcDesdeReglasDeNegocio({
               tipoOperacionCodigo: codNorm,
               transacciones,
@@ -23623,7 +23736,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               filasComisionIntermediario: filasComisionIntermediarioMotor,
               motorCcWarnings,
             });
-          } else if (!(usarDerivacionCcSinMotorReglas && tieneReglasNeg) && esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id) {
+          } else if (
+            !usarMotorEfectivo &&
+            !(usarMulticontraparteSync && tieneReglasNeg) &&
+            esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) &&
+            orden.intermediario_id
+          ) {
             const nroTransComisionChequeFb = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
             const feSynthChequeFb = nroTransComisionChequeFb != null
               ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionChequeFb, fecha, ahora)
@@ -23703,9 +23821,9 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             }
           }
 
-          // CHEQUE-ARS + (MC o ajustada manual) + reglas: el motor `soloComisiones` no escribe caja; reutilizar solo el egreso caja por comisión int. (mismo criterio que el fallback legacy cuando el par cliente está cerrado).
+          // CHEQUE-ARS + MC + reglas: el motor `soloComisiones` no escribe caja; reutilizar solo el egreso caja por comisión int. (mismo criterio que el fallback legacy cuando el par cliente está cerrado).
           if (
-            usarDerivacionCcSinMotorReglas &&
+            usarMulticontraparteSync &&
             tieneReglasNeg &&
             esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) &&
             intermediarioId &&
@@ -23747,7 +23865,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           // Cierre sintético dos monedas (CC cliente): +montoRecibido en monR y −montoEntregado en monE cuando el “par cliente” está ejecutado.
           // Ingreso: Cliente→Pandy o Cliente→Intermediario (misma semántica que ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado).
           // Egreso entrega al cliente: Pandy→Cliente **o** Intermediario→Cliente (cp_ic: cobro a Pandy + entrega vía int.).
-          // Solo **legacy** si NO corre el motor completo (`reglas_de_negocio` sin derivación MC/Aj): con `usarMotorEfectivo` el motor ya cierra la CC por transacción; el cierre sintético duplicaría +monR/−monE (ej. ARS-USD+int E,E). Con **instrumentacion_ajustada_manual** o MC + reglas el motor va en `soloComisiones` y **no** recorre trx: el **+monR** netea el cobro en CC cliente; en **USD-ARS/ARS-USD + int. cp_ic** no se inserta el **−monE** en CC cliente (la pata en moneda entregada es frente al intermediario → **CC intermediario**). Multicontraparte manual: CC patas en `aplicarCcMulticontraparteManualConciliacionCompleta` (no duplicar cierre aquí).
+          // Solo **legacy** si NO corre el motor completo (`reglas_de_negocio` sin MC): con `usarMotorEfectivo` el motor ya cierra la CC por transacción; el cierre sintético duplicaría +monR/−monE (ej. ARS-USD+int E,E). Con **MC + reglas** el motor va en `soloComisiones` y **no** recorre trx: el **+monR** netea el cobro en CC cliente; en **USD-ARS/ARS-USD + int. cp_ic** no se inserta el **−monE** en CC cliente (la pata en moneda entregada es frente al intermediario → **CC intermediario**). Multicontraparte manual: CC patas en `aplicarCcMulticontraparteManualConciliacionCompleta` (no duplicar cierre aquí).
           if (clienteId && monR !== monE && !usarMotorEfectivo && !usarMulticontraparteSync) {
             const trxEjecutadaCierre = (t) => (t.estado || '').toString().toLowerCase() === 'ejecutada';
             const ingresosCli = transacciones.filter((t) => {
@@ -27456,10 +27574,12 @@ function saveTransaccion() {
     payload.pagador_intermediario_id = idsMcSave.pagador_intermediario_id;
     payload.cobrador_intermediario_id = idsMcSave.cobrador_intermediario_id;
   } else {
-    payload.pagador_cliente_id = null;
-    payload.cobrador_cliente_id = null;
-    payload.pagador_intermediario_id = null;
-    payload.cobrador_intermediario_id = null;
+    const pR = String(pagador || '').toLowerCase();
+    const cR = String(cobrador || '').toLowerCase();
+    if (pR !== 'cliente') payload.pagador_cliente_id = null;
+    if (cR !== 'cliente') payload.cobrador_cliente_id = null;
+    if (pR !== 'intermediario') payload.pagador_intermediario_id = null;
+    if (cR !== 'intermediario') payload.cobrador_intermediario_id = null;
   }
   completarPayloadIdsContraparteDesdeOrden(payload, ordenParaCompletarIdsTransaccion);
   asegurarClasificacionTransaccionEnPayload(payload);

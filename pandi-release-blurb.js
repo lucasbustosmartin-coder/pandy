@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.61',
+  versionLabel: 'v3.7.62',
   lines: [
-    'Mejoras de estabilidad en cuenta corriente para acuerdos dólar–peso (o peso–dólar) con intermediario en el patrón habitual: el resumen deja de alternar filas al sincronizar.',
-    'Si notabas que el saldo “iba y volvía”, actualizá la app o recargá con la nueva versión; el comportamiento queda alineado con lo acordado para el libro del cliente con Pandy.',
+    'En órdenes dólar–peso o peso–dólar sin intermediario, cuando Pandy cumple la entrega al cliente, en cuenta corriente vas a ver el par de movimientos en la moneda entregada (pago + ajuste libro), así el detalle de la orden suma cero en esa moneda.',
+    'Si la instrumentación se ajustó a mano, la cuenta corriente sigue aplicando las reglas acordadas para la pata en moneda recibida (incluida la leyenda cuando Pandy cumple esa pata).',
   ],
 };
