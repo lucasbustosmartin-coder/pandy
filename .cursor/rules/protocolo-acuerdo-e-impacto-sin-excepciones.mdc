@@ -1,0 +1,38 @@
+---
+description: Cumplimiento estricto sin excepciones — acuerdo antes de implementar + verificación de impacto antes de cualquier mutación (repo o Supabase).
+alwaysApply: true
+---
+
+# Protocolo obligatorio (sin excepciones)
+
+Esta regla **no se omite** por rapidez, por mensaje informal (“fijate”, “revisá”, “ver con MCP”), por confianza en el diagnóstico, ni porque otra regla sea larga. Si entrara en conflicto con la rapidez, **gana este protocolo**.
+
+## Dos reglas críticas (siempre, en este orden)
+
+### 1) Acuerdo antes de implementar (mutación o repo)
+
+**Mutar** = editar/crear/borrar archivos del repo **o** ejecutar en Supabase (u otro backend) SQL que **INSERT/UPDATE/DELETE/TRUNCATE/DDL** o equivalente que cambie datos o esquema.
+
+Hasta que el usuario **acepte explícitamente** el plan (qué archivos, qué alcance, qué entorno: local / dev / prod):
+
+- **Prohibido:** `apply_patch`, escribir/borrar archivos, cambiar tests/expectativas, ejecutar migraciones o SQL mutativo vía herramientas, “dejo listo el fix” sin su OK.
+- **Permitido:** leer archivos, buscar en el repo, explicar causa, **consultas de solo lectura** a Supabase (p. ej. `SELECT`), proponer opciones y preguntar.
+
+**Palabras de pedido que autorizan implementación** (ejemplos): “implementá”, “aplicá el cambio”, “hacelo”, “commiteá”, “ejecutá la migración en dev”, “sí, opción A”, “confirmado”. Si **no** están, se asume **solo análisis / propuesta** salvo que en el mismo mensaje el usuario deje explícito lo contrario.
+
+### 2) Verificación de impacto productivo (antes de la primera mutación)
+
+Antes del **primer** cambio en repo **o** primera mutación en base (según punto 1), cumplir **al pie** el protocolo de **`.cursor/rules/verificacion-impacto-productivo.mdc`**: núcleo vs colateral, inventario de riesgo, **pregunta** si hay efecto razonable fuera del pedido.
+
+Si hubo **cualquier** edición en el repo en la tarea: la respuesta final **debe** incluir el bloque titulado exactamente **`Verificación de impacto:`** (contenido según esa regla). Sin ese bloque, la entrega **no está cerrada**.
+
+## Disparadores explícitos (no son opcionales)
+
+- **“Investigar”, “ver con MCP”, “¿por qué falla?”, “diagnóstico”, “RCA”** → **no** implican permiso para mutar repo ni datos.
+- **MCP Supabase / SQL Editor / `execute_sql` con escritura** → mismo umbral que un patch: **acuerdo + impacto** antes.
+- **Diff “chico” o “obvio”** → **no** exime acuerdo ni verificación de impacto.
+
+## Relación con otras reglas
+
+- **`reglas-pandi.mdc`** — sección «Regla estricta: acuerdo antes de implementar» y «Verificación de impacto productivo»: **mismo obligatorio**; este archivo las **refuerza** para cumplimiento estricto sin excepciones.
+- **`preguntas-solo-respuesta.mdc`**: si el usuario **solo** hace una pregunta, **no** implementar salvo que pida código o cambios en el mismo mensaje (no se debilita con excepciones implícitas).

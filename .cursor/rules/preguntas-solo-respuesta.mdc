@@ -10,4 +10,4 @@ Cuando el mensaje del usuario sea **claramente una pregunta** (por ejemplo termi
 - **Respondé solo con texto**: explicación, aclaración o respuesta directa.
 - **No empecés a escribir ni modificar código** ni a proponer cambios en archivos, a menos que en el mismo mensaje pidan explícitamente implementación, código o cambios ("agregá...", "implementá...", "cambiar...", etc.).
 
-Si después de tu respuesta el usuario pide que sí hagas cambios o código, ahí sí aplicá las herramientas y edits con normalidad.
+Si después de tu respuesta el usuario pide que sí hagas cambios o código, recién ahí podés usar herramientas y edits — **siempre** cumpliendo **`.cursor/rules/protocolo-acuerdo-e-impacto-sin-excepciones.mdc`** y **`.cursor/rules/verificacion-impacto-productivo.mdc`** (acuerdo explícito del alcance + protocolo antes de la primera mutación en repo o base).

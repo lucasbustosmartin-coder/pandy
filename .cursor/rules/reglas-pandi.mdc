@@ -7,7 +7,8 @@ alwaysApply: true
 
 ## Verificación de impacto productivo (obligatoria — no omitir)
 
-- **Archivo:** `.cursor/rules/verificacion-impacto-productivo.mdc` (`alwaysApply: true`). Vale para **cualquier** cambio en el repo (un carácter o mil líneas).
+- **Cumplimiento estricto sin excepciones:** ver también **`.cursor/rules/protocolo-acuerdo-e-impacto-sin-excepciones.mdc`** (`alwaysApply: true`). Mensajes del estilo “fijate”, “revisá con MCP”, “investigá” **no** sustituyen el protocolo ni autorizan a mutar repo o base sin acuerdo explícito.
+- **Archivo:** `.cursor/rules/verificacion-impacto-productivo.mdc` (`alwaysApply: true`). Vale para **cualquier** cambio en el repo (un carácter o mil líneas) **y** para la **primera mutación** en Supabase u otro backend (INSERT/UPDATE/DELETE/DDL vía MCP, CLI o script), salvo que el usuario haya pedido explícitamente esa ejecución en el mensaje.
 - **Antes del primer edit** en rutas compartidas (`main.js` sync CC/caja o motor, `utils.js`, `sql/` RPC, PWA/SW, tests e2e): cumplir el **protocolo obligatorio** de esa regla (núcleo vs territorio protegido, inventario de riesgo, **preguntar** si hay colateral razonable).
 - **Al cerrar la tarea:** en la respuesta al usuario, incluir el bloque **`Verificación de impacto:`** como exige esa regla. Si no se cumplió, **no dar por cerrada** la tarea: completar el bloque o la pregunta pendiente.
 - **Criterio duro de cierre (sin que el usuario lo repita):** si en la sesión se **modificó** cualquier archivo del repo (`apply_patch`, escritura, borrado), la respuesta final **debe** incluir el bloque titulado exactamente **`Verificación de impacto:`** (contenido según `verificacion-impacto-productivo.mdc`). **Sin ese título y ese contenido, la tarea no se considera entregada:** el agente debe completar el bloque en el mismo hilo antes de terminar; el usuario no tiene que volver a pedirlo.
@@ -85,16 +86,18 @@ alwaysApply: true
 - **Expectativas de tests (única fuente de verdad):** Los valores esperados en tests (p. ej. `cc-combinaciones-esperado.js`, o cualquier assert de saldos/resultados) **no pueden modificarse sin analizar y acordar con el usuario**. El propósito del test es asegurar la única fuente de verdad: si se cambia el esperado sin análisis ni acuerdo, se viola ese principio.
 - **Impacto cruzado (productivo, estricto):** Ver también la sección **«Verificación de impacto productivo»** al inicio de este archivo. Detalle operativo: **verificacion-impacto-productivo** (`.cursor/rules/verificacion-impacto-productivo.mdc`) — si el cambio puede afectar **otra funcionalidad**, **preguntar siempre al usuario antes de aplicarlo** y no implementar esa parte sin respuesta explícita; al cerrar, el bloque **`Verificación de impacto:`** con alcance vs. riesgos descartados o autorizados.
 
-## Regla estricta: acuerdo antes de implementar (no omitir)
+## Regla estricta: acuerdo antes de implementar (no omitir — sin excepciones)
 
-Ante un fallo de test, un cambio de comportamiento o una decisión que implique tocar código, tests o expectativas:
+Ante un fallo de test, un cambio de comportamiento, una investigación (MCP, RCA, “¿por qué pasa X?”) o cualquier decisión que **pueda** llevar a tocar código, tests, expectativas **o datos** (incluye ejecutar SQL mutativo en Supabase, aplicar migraciones en un proyecto, o escribir archivos en `sql/` pensados para ejecutarse en servidor):
 
-1. **Explicar** qué falló o cuál es el problema (mensaje de error, combinación, pantalla, etc.).
-2. **Proponer** soluciones (cambios en app, en test, en expectativas o en varios; con opciones si aplica).
-3. **Acordar** con el usuario el plan de acción. El usuario debe aceptar explícitamente qué se va a hacer.
-4. **No tocar nada** (no editar archivos, no cambiar expectativas, no modificar tests ni app) hasta tener ese acuerdo. Solo después de acordar se implementa lo pactado.
+1. **Explicar** qué falló o cuál es el problema (mensaje de error, combinación, pantalla, evidencia de consultas de solo lectura, etc.).
+2. **Proponer** soluciones (cambios en app, en test, en expectativas, en `reglas_de_negocio`, en varios; con opciones si aplica).
+3. **Acordar** con el usuario el plan de acción. El usuario debe aceptar **explícitamente** qué se va a hacer (alcance y entorno si aplica: solo repo / dev / prod).
+4. **No tocar nada** hasta tener ese acuerdo: no editar archivos, no cambiar expectativas, no modificar tests ni app, **no ejecutar SQL que mute datos o esquema** en Supabase ni en otros backends. Solo después de acordar se implementa lo pactado.
 
-Esta regla es obligatoria. No implementar cambios “para que pase el test” o “para arreglar rápido” sin haber explicado, propuesto y acordado con el usuario.
+**Sin excepción:** un pedido de “investigar”, “ver con MCP” o “entender el error” **no** cuenta como acuerdo para implementar ni para mutar la base. Refuerzo dedicado: **`.cursor/rules/protocolo-acuerdo-e-impacto-sin-excepciones.mdc`**.
+
+Esta regla es obligatoria. No implementar cambios “para que pase el test”, “para cerrar el caso” o “para arreglar rápido” sin haber explicado, propuesto y acordado con el usuario.
 
 ## Despliegue
 

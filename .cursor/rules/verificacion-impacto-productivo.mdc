@@ -8,18 +8,21 @@ alwaysApply: true
 El sistema está **en producción**. El objetivo no es revisar “algunas áreas típicas”, sino **garantizar que el cambio no altere ninguna funcionalidad que el usuario no haya pedido tocar**.
 
 > **Recordatorio para el agente (no negociable):** Esta regla tiene `alwaysApply: true`. **No se omite** por rapidez, por diff chico, por confianza en el cambio ni porque el usuario no la mencionó. Si vas a tocar el repo y **aún no** hiciste el protocolo de abajo (núcleo vs colateral, inventario, **pregunta** si aplica), **pará**: completalo en el mensaje **antes** del primer `apply_patch`/edición.
+>
+> **Misma barrera para Supabase / SQL mutativo:** la primera **INSERT/UPDATE/DELETE/TRUNCATE/DDL** (p. ej. vía MCP `execute_sql`, migración aplicada contra un proyecto, o script que altere datos) se trata como **primer cambio**: protocolo completo **y** acuerdo explícito del usuario para esa ejecución (ver **`.cursor/rules/protocolo-acuerdo-e-impacto-sin-excepciones.mdc`**). Las consultas **solo lectura** (`SELECT`) para diagnóstico no sustituyen el acuerdo para mutar.
 
 ## Protocolo obligatorio antes del primer cambio en el repo
 
-En **toda** tarea que implique **modificar archivos** (código, SQL, tests, config):
+En **toda** tarea que implique **modificar archivos** (código, SQL, tests, config) **o mutar datos/esquema en base** sin que el mensaje sea únicamente de lectura/diagnóstico acordado:
 
 1. **Núcleo permitido:** qué pidió el usuario (alcance mínimo interpretado).
 2. **Superficies enlazadas:** nombrar qué otras partes del sistema comparten ese código, esos datos o esa RPC (aunque sea en una frase: p. ej. “`sincronizarCcYCajaDesdeOrden` corre para **todas** las órdenes al sincronizar CC”).
 3. **Barrera:** si hay **posibilidad razonable** de que cambie el comportamiento **fuera** del núcleo → **no editar todavía**; preguntar con alcance concreto y esperar confirmación explícita.
 4. **Excepción muy acotada (igual cerrar con texto):** typo en un string de una sola vista sin imports compartidos, variable local, archivo nuevo aún no cableado — igual conviene una línea **Verificación de impacto:** “sin riesgo colateral razonable porque …”.
 
-### Disparadores (protocolo completo obligatorio: pasos 1–4 antes de editar)
+### Disparadores (protocolo completo obligatorio: pasos 1–4 antes de editar o mutar)
 
+- **MCP Supabase / SQL remoto:** cualquier herramienta o comando que pueda **cambiar** `reglas_de_negocio`, datos de órdenes, RPC en uso, etc. (no solo `SELECT`). Incluye “dejo aplicada la migración en dev”.
 - **`main.js`:** sync CC/caja (`sincronizarCcYCajaDesdeOrden`, `fallbackSyncCcCaja`), motor CC (`aplicarMotorCcDesdeReglasDeNegocio`), multicontraparte manual, invariante de neteo, filas insertadas a Supabase desde el cliente.
 - **`utils.js`** u otros helpers usados desde muchos flujos.
 - **`sql/`** RPC, triggers o vistas leídas por más de un informe o pantalla.

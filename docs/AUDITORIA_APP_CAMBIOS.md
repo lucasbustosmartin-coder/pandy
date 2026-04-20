@@ -21,6 +21,7 @@ Otros campos frecuentes en `metadata` (según el flujo):
 
 - `entidad`: p. ej. `transaccion`, `orden`, `cc_manual`, `movimiento_caja`.
 - `registro_id`, `orden_id`, `transaccion_id`, `instrumentacion_id`, `movimiento_caja_id`: identificadores en string cuando aplica.
+- **`orden_numero`** y **`transaccion_numero`**: números de negocio visibles (no solo UUID). Se persisten al insertar en `auditoria_app` (enriquecimiento automático antes del `INSERT` desde `main.js`). Las filas antiguas sin estos campos se completan en memoria al listar/exportar cuando hay `orden_id` / `transaccion_id`.
 
 ## Flujos que registran `cambios` (front `main.js`)
 
@@ -52,6 +53,6 @@ Permiso **`ver_auditoria`** para `SELECT` vía RLS.
 
 ## Vista «Auditoría» en la app (admin)
 
-- Menú lateral **Auditoría** (visible con permiso `ver_auditoria`): filtros por rango de fecha (Argentina), categoría, acción y texto en detalle; tabla con relectura paginada (**Cargar más**); export a Excel; fila **Ver** abre modal.
-- **Modal de detalle (lectura práctica):** bloque **Cuándo** (fecha y hora Argentina) y **Quién** (nombre o email desde `usuario_id` + `usuario_snapshot`); categoría y acción; descripción (`detalle`); tabla **Qué se modificó** con columnas **Campo** (etiqueta en español), **Valor anterior** y **Valor nuevo**. Los UUID de catálogos habituales (cliente, intermediario, tipo de operación, modo de pago, usuario, tipo de movimiento de caja, instrumentación→orden, orden) se **resuelven al abrir** contra Supabase y no se muestran como UUID en esa tabla; si no hay resolución, se muestra **—**. Estados, roles (pagador/cobrador), montos y fechas YYYY-MM-DD se formatean para lectura. El JSON completo queda en **Referencia técnica** (`<details>`, colapsado por defecto).
+- Menú lateral **Auditoría** (visible con permiso `ver_auditoria`): filtros por rango de fecha (Argentina), categoría, acción y texto en detalle; tabla con relectura paginada (**Cargar más**); columnas **Nº orden** y **Nº trans.** (números de negocio) a la derecha de **Categoría**; export a Excel incluye esas columnas; fila **Ver** abre modal de detalle; botón **Orden** (solo si el registro tiene contexto de orden o transacción) abre modal de **solo lectura** con orden + instrumentación + transacciones + comisiones al momento del clic.
+- **Modal de detalle (lectura práctica):** bloque **Cuándo** (fecha y hora Argentina) y **Quién** (nombre o email desde `usuario_id` + `usuario_snapshot`); categoría y acción; descripción (`detalle`); tabla **Qué se modificó** con columnas **Campo**, **Nº orden**, **Nº trans.** (mismo contexto que el registro), **Valor anterior** y **Valor nuevo**. Los UUID de catálogos habituales (cliente, intermediario, tipo de operación, modo de pago, usuario, tipo de movimiento de caja, instrumentación→orden, orden) se **resuelven al abrir** contra Supabase y no se muestran como UUID en esa tabla; si no hay resolución, se muestra **—**. Estados, roles (pagador/cobrador), montos y fechas YYYY-MM-DD se formatean para lectura. El JSON completo queda en **Referencia técnica** (`<details>`, colapsado por defecto).
 - Los refrescos en segundo plano del listado global de la app **no** vuelven a ejecutar la carga de esta vista (evita vaciar la grilla si el timer corre mientras estás en Auditoría).

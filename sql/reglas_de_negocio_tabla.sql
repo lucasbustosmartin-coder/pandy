@@ -11,6 +11,7 @@
 -- 2) Si venías de `cc_reglas_usd_ars`, ejecutá antes/alternativa: `sql/migracion_cc_reglas_usd_ars_a_reglas_de_negocio.sql`.
 -- 3) Si la tabla ya existía sin `monto_origen = mr_menos_me` en el CHECK, ejecutá antes `sql/migracion_reglas_usd_usd_sin_int.sql` (o el ALTER del mismo) para ampliar la restricción; luego los INSERT de USD-USD.
 -- 4) Desplegar front.
+-- 5) Si falla instrumentación P,P **cp_ic** USD-ARS / ARS-USD + int.: `sql/migracion_reglas_usd_ars_ars_usd_int_cp_ic_pp_contrapartida_false.sql`.
 -- E,P USD-ARS / ARS-USD sin int. (cobro recibido ejecutado + entrega pendiente): ver `sql/migracion_usd_ars_ars_usd_ep_contra_moneda_recibida.sql` si ya tenías la matriz anterior.
 
 CREATE TABLE IF NOT EXISTS public.reglas_de_negocio (
@@ -153,6 +154,8 @@ INSERT INTO public.reglas_de_negocio (
   ('USD-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('USD-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 1, 'USD', 1, 'monto_transaccion', true, 'cobro_realizado'),
   ('USD-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  -- P,P cp_ic: ambas patas pendientes → `contrapartida_ejecutada` false (ver `migracion_reglas_usd_ars_ars_usd_int_cp_ic_pp_contrapartida_false.sql`).
+  ('USD-ARS', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
   ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_pago'),
@@ -160,6 +163,8 @@ INSERT INTO public.reglas_de_negocio (
   -- E,E: par ± en ingreso C→Pandy (moneda recibida USD), espejo del par ± en egreso Int→Cliente (ARS).
   ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', true, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
   ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', true, 1, 'ARS', -1, 'me', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', false, 0, 'USD', 1, 'mr', true, 'compromiso_pago'),
+  ('USD-ARS', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', false, 1, 'ARS', -1, 'me', true, 'compromiso_pago'),
   -- P,E cp_ic CC intermediario: una sola línea −me (moneda entregada), alineado a USD-USD+int (sin par +/− que netee en cero).
   ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('USD-ARS', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'ARS', -1, 'monto_transaccion', true, 'compromiso_pago')
@@ -256,6 +261,7 @@ INSERT INTO public.reglas_de_negocio (
   ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 0, 'ARS', -1, 'monto_transaccion', true, 'cobro_realizado'),
   ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'ejecutada', true, 1, 'ARS', 1, 'monto_transaccion', true, 'cobro_realizado'),
   ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', true, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
+  ('ARS-USD', true, 'cliente', 'cliente', 'pandy', 'ingreso', false, 'pendiente', false, 0, 'ARS', 1, 'monto_transaccion', true, 'compromiso_cobrar'),
   ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 1, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', 1, 'monto_transaccion', true, 'compromiso_pago'),
@@ -263,6 +269,8 @@ INSERT INTO public.reglas_de_negocio (
   -- E,E: par ± en ingreso C→Pandy (moneda recibida ARS), espejo del par ± en egreso Int→Cliente (USD).
   ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', true, 0, 'ARS', 1, 'mr', true, 'compromiso_pago'),
   ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', true, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', false, 0, 'ARS', 1, 'mr', true, 'compromiso_pago'),
+  ('ARS-USD', true, 'cliente', 'intermediario', 'cliente', 'egreso', false, 'pendiente', false, 1, 'USD', -1, 'me', true, 'compromiso_pago'),
   ('ARS-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', false, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago'),
   ('ARS-USD', true, 'intermediario', 'intermediario', 'cliente', 'egreso', false, 'ejecutada', true, 0, 'USD', -1, 'monto_transaccion', true, 'compromiso_pago')
 ON CONFLICT (

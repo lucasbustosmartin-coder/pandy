@@ -2827,3 +2827,8 @@
     .modal-auditoria-detalle .auditoria-tabla-cambios th,
     .modal-auditoria-detalle .auditoria-tabla-cambios td { vertical-align: top; }
     .modal-auditoria-detalle .auditoria-tabla-cambios td { word-break: break-word; }
+    /* Modal «Ver orden» desde Auditoría: mismo ancho útil que detalle */
+    .modal-auditoria-orden-snapshot.modal {
+      max-width: min(96vw, 1100px);
+      width: 96%;
+    }

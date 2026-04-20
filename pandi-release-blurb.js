@@ -5,9 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.62',
+  versionLabel: 'v3.7.63',
   lines: [
-    'En órdenes dólar–peso o peso–dólar sin intermediario, cuando Pandy cumple la entrega al cliente, en cuenta corriente vas a ver el par de movimientos en la moneda entregada (pago + ajuste libro), así el detalle de la orden suma cero en esa moneda.',
-    'Si la instrumentación se ajustó a mano, la cuenta corriente sigue aplicando las reglas acordadas para la pata en moneda recibida (incluida la leyenda cuando Pandy cumple esa pata).',
+    'En pantallas de administración interna, los listados y el Excel muestran el número de orden y de transacción como en el día a día operativo, para leer más rápido sin códigos técnicos largos.',
+    'Cuando un registro está ligado a una orden, podés abrir desde el listado una vista de solo lectura con el detalle vigente de esa orden en el servidor.',
+    'Ajustes de maquetación en modales anchos para aprovechar mejor el espacio en pantallas grandes.',
   ],
 };

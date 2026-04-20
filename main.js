@@ -862,6 +862,24 @@ function pandiModosPagoEfectivoTransferenciaDesdeCache(cache) {
   return { efectivo: by.efectivo || null, transferencia: by.transferencia || null };
 }
 
+/**
+ * Modo de pago por defecto en plantilla **sin intermediario**: **transferencia** si existe en catálogo; si no, efectivo.
+ * **CHEQUE-ARS** (tipo cheque, misma lógica que `esTipoOperacionChequeArs`) sigue en **efectivo** — no se reemplaza por transferencia.
+ */
+function pandiModoPagoPlantillaSinIntermediarioIdDesdeModosRows(modosRows, codigoTipo, monedaIn, monedaOut) {
+  const rows = modosRows || [];
+  const idEf = (rows.find((m) => String(m.codigo || '').toLowerCase().trim() === 'efectivo') || {}).id;
+  if (esTipoOperacionChequeArs(codigoTipo, monedaIn, monedaOut)) return idEf != null ? idEf : null;
+  const idTr = (rows.find((m) => String(m.codigo || '').toLowerCase().trim() === 'transferencia') || {}).id;
+  return idTr || idEf || null;
+}
+
+/** Misma regla que `pandiModoPagoPlantillaSinIntermediarioIdDesdeModosRows` usando `cache.modos_pago`. */
+function pandiModoPagoPlantillaSinIntermediarioIdDesdeCache(cache, tipoRow) {
+  if (!tipoRow) return pandiModoPagoEfectivoIdDesdeCache(cache);
+  return pandiModoPagoPlantillaSinIntermediarioIdDesdeModosRows(cache && cache.modos_pago, tipoRow.codigo, tipoRow.moneda_in, tipoRow.moneda_out);
+}
+
 /** Flag persistido en orden: parte del intermediario por transferencia (no CHEQUE-ARS; requiere intermediario). */
 function ordenIntermediarioPagoTransferenciaDesdeDom() {
   const selTipo = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
@@ -4022,14 +4040,22 @@ async function marcarListaMovimientosCajaVinculoCcManual(list) {
 /** Registro de auditoría (tabla auditoria_app tras migración). Falla silenciosa si la tabla no existe aún. */
 function registrarAuditoriaApp(categoria, accion, detalle, metadata) {
   if (!currentUserId) return Promise.resolve();
-  return client.from('auditoria_app').insert({
-    usuario_id: currentUserId,
-    categoria: categoria || 'app',
-    accion: accion || '',
-    detalle: (detalle || '').slice(0, 8000),
-    metadata: metadata || null,
-  }).then((r) => {
-    if (r.error) console.warn('auditoria_app:', r.error.message || r.error);
+  const base = metadata != null && typeof metadata === 'object' ? { ...metadata } : {};
+  return auditoriaEnriquecerMetadataConNumerosNegocio(base).then((metaEnr) => {
+    const metaFinal =
+      metaEnr && typeof metaEnr === 'object' && Object.keys(metaEnr).length ? metaEnr : null;
+    return client
+      .from('auditoria_app')
+      .insert({
+        usuario_id: currentUserId,
+        categoria: categoria || 'app',
+        accion: accion || '',
+        detalle: (detalle || '').slice(0, 8000),
+        metadata: metaFinal,
+      })
+      .then((r) => {
+        if (r.error) console.warn('auditoria_app:', r.error.message || r.error);
+      });
   });
 }
 
@@ -4082,6 +4108,148 @@ function auditoriaUsuarioSnapshotMeta() {
   const dn = (currentUserDisplayName && String(currentUserDisplayName).trim()) || '';
   if (!em && !dn) return null;
   return { usuario_email: em || null, usuario_display_name: dn || null };
+}
+
+/**
+ * Añade `orden_numero` y `transaccion_numero` en metadata de auditoría (opción B: persistir números de negocio).
+ * Resuelve `orden_id` desde la transacción si falta. No elimina claves existentes.
+ * @param {Record<string, *>} meta
+ * @returns {Promise<Record<string, *>>}
+ */
+function auditoriaEnriquecerMetadataConNumerosNegocio(meta) {
+  if (!meta || typeof meta !== 'object') return Promise.resolve(meta || {});
+  const m = { ...meta };
+  const needTrxNum = m.transaccion_id && (m.transaccion_numero == null || m.transaccion_numero === '');
+  const tasks = [];
+  if (m.transaccion_id && (needTrxNum || !m.orden_id)) {
+    tasks.push(
+      client
+        .from('transacciones')
+        .select('numero, instrumentacion(orden_id)')
+        .eq('id', String(m.transaccion_id).trim())
+        .maybeSingle()
+        .then((r) => {
+          if (!r.data) return;
+          if (needTrxNum && r.data.numero != null) m.transaccion_numero = r.data.numero;
+          const inst = r.data.instrumentacion;
+          const oid = inst && typeof inst === 'object' && inst.orden_id != null ? String(inst.orden_id).trim() : '';
+          if (oid && !m.orden_id) m.orden_id = oid;
+        })
+        .catch(() => {}),
+    );
+  }
+  return Promise.all(tasks).then(() => {
+    const oid = m.orden_id != null && String(m.orden_id).trim() !== '' ? String(m.orden_id).trim() : '';
+    const stillNeedOrdNum = m.orden_numero == null || m.orden_numero === '';
+    if (!oid || !stillNeedOrdNum) return m;
+    return client
+      .from('ordenes')
+      .select('numero')
+      .eq('id', oid)
+      .maybeSingle()
+      .then((r) => {
+        if (r.data && r.data.numero != null) m.orden_numero = r.data.numero;
+        return m;
+      })
+      .catch(() => m);
+  });
+}
+
+/**
+ * Para filas ya guardadas sin `orden_numero` / `transaccion_numero`, completa en memoria antes de pintar/exportar.
+ * @param {Array<{ metadata?: object }>} rows
+ */
+function auditoriaRellenarNumerosFaltantesEnFilas(rows) {
+  if (!rows || !rows.length) return Promise.resolve();
+  const ordenIds = new Set();
+  const trxIds = new Set();
+  for (const r of rows) {
+    const md = r.metadata && typeof r.metadata === 'object' ? r.metadata : {};
+    if ((md.orden_numero == null || md.orden_numero === '') && md.orden_id) ordenIds.add(String(md.orden_id).trim());
+    if ((md.transaccion_numero == null || md.transaccion_numero === '') && md.transaccion_id) trxIds.add(String(md.transaccion_id).trim());
+  }
+  const mapOrd = Object.create(null);
+  const mapTrx = Object.create(null);
+  const mapTrxOrd = Object.create(null);
+  const tasks = [];
+  if (ordenIds.size) {
+    tasks.push(
+      client
+        .from('ordenes')
+        .select('id, numero')
+        .in('id', [...ordenIds])
+        .then((r) => {
+          (r.data || []).forEach((o) => {
+            if (o.id != null && o.numero != null) mapOrd[String(o.id)] = o.numero;
+          });
+        })
+        .catch(() => {}),
+    );
+  }
+  if (trxIds.size) {
+    tasks.push(
+      client
+        .from('transacciones')
+        .select('id, numero, instrumentacion(orden_id)')
+        .in('id', [...trxIds])
+        .then((r) => {
+          (r.data || []).forEach((t) => {
+            if (!t.id) return;
+            const id = String(t.id);
+            if (t.numero != null) mapTrx[id] = t.numero;
+            const inst = t.instrumentacion;
+            const oid = inst && typeof inst === 'object' && inst.orden_id != null ? String(inst.orden_id).trim() : '';
+            if (oid) mapTrxOrd[id] = oid;
+          });
+        })
+        .catch(() => {}),
+    );
+  }
+  return Promise.all(tasks).then(() => {
+    const ordenIdsExtra = new Set();
+    for (const r of rows) {
+      const md0 = r.metadata && typeof r.metadata === 'object' ? r.metadata : {};
+      const md = { ...md0 };
+      let changed = false;
+      if ((md.orden_numero == null || md.orden_numero === '') && md.orden_id && mapOrd[String(md.orden_id)] != null) {
+        md.orden_numero = mapOrd[String(md.orden_id)];
+        changed = true;
+      }
+      if ((md.transaccion_numero == null || md.transaccion_numero === '') && md.transaccion_id && mapTrx[String(md.transaccion_id)] != null) {
+        md.transaccion_numero = mapTrx[String(md.transaccion_id)];
+        changed = true;
+      }
+      const tid = md.transaccion_id ? String(md.transaccion_id).trim() : '';
+      if (!md.orden_id && tid && mapTrxOrd[tid]) {
+        md.orden_id = mapTrxOrd[tid];
+        changed = true;
+        if ((md.orden_numero == null || md.orden_numero === '') && mapOrd[md.orden_id] != null) {
+          md.orden_numero = mapOrd[md.orden_id];
+        } else if ((md.orden_numero == null || md.orden_numero === '') && mapOrd[md.orden_id] == null) {
+          ordenIdsExtra.add(String(md.orden_id));
+        }
+      }
+      if (changed) r.metadata = md;
+    }
+    if (!ordenIdsExtra.size) return;
+    return client
+      .from('ordenes')
+      .select('id, numero')
+      .in('id', [...ordenIdsExtra])
+      .then((r) => {
+        const m2 = Object.create(null);
+        (r.data || []).forEach((o) => {
+          if (o.id != null && o.numero != null) m2[String(o.id)] = o.numero;
+        });
+        for (const row of rows) {
+          const md = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
+          if (md.orden_id && (md.orden_numero == null || md.orden_numero === '') && m2[String(md.orden_id)] != null) {
+            row.metadata = { ...md, orden_numero: m2[String(md.orden_id)] };
+          }
+        }
+      })
+      .catch(() => {});
+  });
 }
 
 /**
@@ -21290,8 +21458,8 @@ async function pandiWizardGuardarEnColaLocalConPlantillaInstrumentacion() {
         colaV2Plantilla = 'cheque4';
       } else {
         const { efectivo: midEf, transferencia: midTr } = pandiModosPagoEfectivoTransferenciaDesdeCache(cache);
-        if (!midEf) {
-          showToast('Falta el modo de pago «efectivo» en caché. Conectate para refrescar el catálogo.', 'error');
+        if (!midEf && !midTr) {
+          showToast('Falta al menos un modo de pago «efectivo» o «transferencia» en caché. Conectate para refrescar el catálogo.', 'error');
           return;
         }
         if (ordenLike.intermediario_pago_transferencia === true && !midTr) {
@@ -21299,14 +21467,16 @@ async function pandiWizardGuardarEnColaLocalConPlantillaInstrumentacion() {
           return;
         }
         const patronInt = getOrdenPatronInstrumentacionInt();
-        const modoInt = ordenLike.intermediario_pago_transferencia === true && midTr ? midTr : midEf;
-        plant = buildPlantillaRowsTransaccionesConIntermediario(ordenLike, null, tipoRow, midEf, patronInt, modoInt);
+        const modoCli = midTr || midEf;
+        const modoInt =
+          ordenLike.intermediario_pago_transferencia === true && midTr ? midTr : (midTr || midEf);
+        plant = buildPlantillaRowsTransaccionesConIntermediario(ordenLike, null, tipoRow, modoCli, patronInt, modoInt);
         colaV2Plantilla = 'int2';
       }
     } else {
-      const modoId = pandiModoPagoEfectivoIdDesdeCache(cache);
+      const modoId = pandiModoPagoPlantillaSinIntermediarioIdDesdeCache(cache, tipoRow);
       if (!modoId) {
-        showToast('Falta el modo de pago «efectivo» en caché. Conectate para refrescar el catálogo.', 'error');
+        showToast('Falta modo de pago en caché (efectivo o transferencia). Conectate para refrescar el catálogo.', 'error');
         return;
       }
       plant = buildPlantillaRowsTransaccionesSinIntermediario(ordenLike, null, tipoRow, modoId);
@@ -24677,7 +24847,7 @@ function borrarTransaccionesPlantillaEstandarParaMulticontraparte(instrumentacio
  * @param {object} orden
  * @param {string|null|undefined} instrumentacionId
  * @param {{ codigo?: string, moneda_in?: string, moneda_out?: string }} tipoRow
- * @param {string} modoPagoEfectivoId
+ * @param {string} modoPagoPlantillaId Modo por fila: **transferencia** si existe en catálogo (salvo **CHEQUE-ARS**: efectivo).
  */
 /**
  * Plantillas de instrumentación (2 tx, CHEQUE+int, etc.): persiste UUID de **cliente del acuerdo** o **intermediario de la orden** cuando el rol es cliente/intermediario.
@@ -24697,8 +24867,8 @@ function plantillaTransaccionEnriquecerIdsParticipantesDesdeOrden(extra, orden) 
   return o;
 }
 
-function buildPlantillaRowsTransaccionesSinIntermediario(orden, instrumentacionId, tipoRow, modoPagoEfectivoId) {
-  if (!orden || !orden.tipo_operacion_id || !tipoRow || !modoPagoEfectivoId) return [];
+function buildPlantillaRowsTransaccionesSinIntermediario(orden, instrumentacionId, tipoRow, modoPagoPlantillaId) {
+  if (!orden || !orden.tipo_operacion_id || !tipoRow || !modoPagoPlantillaId) return [];
   if (orden.intermediario_id) return [];
   const codigo = tipoRow.codigo || '';
   const mi = (tipoRow.moneda_in || '').toString().toUpperCase().trim();
@@ -24719,7 +24889,7 @@ function buildPlantillaRowsTransaccionesSinIntermediario(orden, instrumentacionI
     if (instrumentacionId != null && instrumentacionId !== '') o.instrumentacion_id = instrumentacionId;
     return o;
   }
-  const E = modoPagoEfectivoId;
+  const E = modoPagoPlantillaId;
   const rows = [];
   if (esUsdUsd) {
     rows.push(fila({ tipo: 'ingreso', modo_pago_id: E, moneda: monR, monto: mr, cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'pendiente', concepto: '', tipo_cambio: null }));
@@ -24762,7 +24932,8 @@ function buildPlantillaRowsTransaccionesChequeConIntermediario(orden, instrument
 
 /**
  * USD-USD o cruce fiat+USD + intermediario: 2 filas (`cp_ic` | `ci_pc`).
- * @param {string} [modoPagoIntermediarioIdOpt] Modo de pago en la pata Cliente↔Intermediario; si null/undefined, se usa `modoPagoEfectivoId` en ambas patas.
+ * @param {string} modoPagoEfectivoId Modo en la pata **Cliente↔Pandy** (por defecto transferencia si existe en catálogo).
+ * @param {string} [modoPagoIntermediarioIdOpt] Modo en la pata Cliente↔Intermediario; si null/undefined, se iguala al de Cliente↔Pandy.
  */
 function buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionId, tipoRow, modoPagoEfectivoId, patronInt, modoPagoIntermediarioIdOpt) {
   if (!orden || !orden.intermediario_id || !tipoRow || !modoPagoEfectivoId) return [];
@@ -24946,6 +25117,13 @@ function pandiPersistInstrumentacionAjustadaManualParaOrden(ordenId) {
       const idEf = (modosRows.find((m) => String(m.codigo || '').toLowerCase() === 'efectivo') || {}).id;
       const idChq = (modosRows.find((m) => String(m.codigo || '').toLowerCase() === 'cheque') || {}).id;
       if (!idEf) return Promise.resolve();
+      const tipoRow = toJoin || {};
+      const esChqTipo = esTipoOperacionChequeArs(tipoRow.codigo, tipoRow.moneda_in, tipoRow.moneda_out);
+      const idModoPlantRef =
+        orden.intermediario_id && esChqTipo
+          ? idEf
+          : pandiModoPagoPlantillaSinIntermediarioIdDesdeModosRows(modosRows, tipoRow.codigo, tipoRow.moneda_in, tipoRow.moneda_out);
+      if (!idModoPlantRef) return Promise.resolve();
 
       return client
         .from('transacciones')
@@ -24956,12 +25134,11 @@ function pandiPersistInstrumentacionAjustadaManualParaOrden(ordenId) {
         .order('numero', { ascending: true })
         .then((rTrx) => {
           const trxList = (rTrx.data || []).map((x) => transaccionNormalizarPagCobVacios(x));
-          const tipoRow = toJoin || {};
           const patronInt =
             orden.intermediario_id && !esTipoOperacionChequeArs(tipoRow.codigo, tipoRow.moneda_in, tipoRow.moneda_out)
               ? patronInstrumentacionIntDesdeTransacciones(trxList)
               : 'cp_ic';
-          const desvio = pandiEvaluarDesvioInstrumentacionVsPlantillaSistema(orden, tipoRow, trxList, patronInt, idEf, idChq || null);
+          const desvio = pandiEvaluarDesvioInstrumentacionVsPlantillaSistema(orden, tipoRow, trxList, patronInt, idModoPlantRef, idChq || null);
           if (desvio === null) return Promise.resolve();
           const nuevo = !!desvio;
           const actual = !!inst.instrumentacion_ajustada_manual;
@@ -24986,7 +25163,7 @@ function pandiPersistInstrumentacionAjustadaManualParaOrden(ordenId) {
  * Si la orden es sin intermediario y la instrumentación está vacía, crea dos transacciones por defecto
  * (ingreso moneda recibida, egreso moneda entregada). Por **monedas del tipo** (IN/OUT), no solo por código:
  * USD-USD, cualquier cruce fiat+USD (ARS, EUR, … vía patronTipoCambioOrden) y CHEQUE-ARS (ARS/ARS vía cheque).
- * Modo de pago efectivo, estado pendiente.
+ * Modo de pago por defecto: **transferencia** si existe en catálogo; **CHEQUE-ARS** sigue en efectivo. Estado pendiente.
  */
 function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId, orden) {
   if (!ordenId || !instrumentacionId || !orden || !orden.tipo_operacion_id) return Promise.resolve();
@@ -25002,10 +25179,12 @@ function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId
     const esArsArs = esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out);
     if (!esUsdUsd && !esArsArs && !patronTc) return Promise.resolve();
     if (patronTc && !(Number(orden.cotizacion) > 0)) return Promise.resolve();
-    return client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle().then((rModo) => {
-      const modoPagoEfectivoId = (rModo.data && rModo.data.id) || null;
-      if (!modoPagoEfectivoId) return Promise.resolve();
-      const rows = buildPlantillaRowsTransaccionesSinIntermediario(orden, instrumentacionId, row, modoPagoEfectivoId);
+    return client.from('modos_pago').select('id, codigo').in('codigo', ['efectivo', 'transferencia']).then((rModos) => {
+      if (rModos.error) return Promise.resolve();
+      const listM = rModos.data || [];
+      const modoPagoPlantillaId = pandiModoPagoPlantillaSinIntermediarioIdDesdeModosRows(listM, codigo, row.moneda_in, row.moneda_out);
+      if (!modoPagoPlantillaId) return Promise.resolve();
+      const rows = buildPlantillaRowsTransaccionesSinIntermediario(orden, instrumentacionId, row, modoPagoPlantillaId);
       if (!rows.length) return Promise.resolve();
       // Orden por pagador (Cliente, Pandy). Insertar en secuencia para que numero quede 1, 2.
       return rows.reduce((prom, insRow) => prom.then(() => {
@@ -25335,10 +25514,11 @@ function autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instrumenta
         if (c === 'efectivo') modoPagoEfectivoId = m.id;
         if (c === 'transferencia') modoPagoTransferenciaId = m.id;
       });
-      if (!modoPagoEfectivoId) return Promise.resolve();
+      if (!modoPagoEfectivoId && !modoPagoTransferenciaId) return Promise.resolve();
+      const modoCli = modoPagoTransferenciaId || modoPagoEfectivoId;
       const usarTr = orden.intermediario_pago_transferencia === true && modoPagoTransferenciaId;
-      const modoInt = usarTr ? modoPagoTransferenciaId : modoPagoEfectivoId;
-      const rows = buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionId, rowTipo, modoPagoEfectivoId, pat, modoInt);
+      const modoInt = usarTr ? modoPagoTransferenciaId : (modoPagoTransferenciaId || modoPagoEfectivoId);
+      const rows = buildPlantillaRowsTransaccionesConIntermediario(orden, instrumentacionId, rowTipo, modoCli, pat, modoInt);
       if (!rows.length) return Promise.resolve();
       return rows.reduce((prom, row) => prom.then(() => {
         const rowIns = { ...row };
@@ -27623,6 +27803,7 @@ function saveTransaccion() {
                 entidad: 'transaccion',
                 registro_id: id,
                 transaccion_id: id,
+                orden_id: orden && orden.id ? String(orden.id) : null,
                 instrumentacion_id: instrumentacionId || null,
                 cambios,
               });
@@ -30555,6 +30736,241 @@ function formatAuditoriaFechaHoraArt(iso) {
   }
 }
 
+/** Texto para columnas de auditoría: prioriza números de negocio en metadata (opción B + relleno en memoria). */
+function auditoriaTextoNumeroOrdenYTransDesdeMetadata(md) {
+  const m = md && typeof md === 'object' ? md : {};
+  const nOrd =
+    m.orden_numero != null && String(m.orden_numero).trim() !== ''
+      ? String(m.orden_numero).trim()
+      : '—';
+  const nTrx =
+    m.transaccion_numero != null && String(m.transaccion_numero).trim() !== ''
+      ? String(m.transaccion_numero).trim()
+      : '—';
+  return { nOrd, nTrx };
+}
+
+/** True si la fila puede abrir «Ver orden» (hay orden o transacción ligada a instrumentación). */
+function auditoriaFilaTieneContextoOrden(r) {
+  const md = r && r.metadata && typeof r.metadata === 'object' ? r.metadata : {};
+  if (md.orden_id && String(md.orden_id).trim() !== '') return true;
+  if (md.transaccion_id && String(md.transaccion_id).trim() !== '') return true;
+  return String((r && r.categoria) || '').toLowerCase() === 'orden';
+}
+
+/** Resuelve UUID de orden para el botón (metadata o categoría orden + registro_id). */
+function auditoriaOrdenIdDesdeFilaAuditoria(r) {
+  const md = r && r.metadata && typeof r.metadata === 'object' ? r.metadata : {};
+  if (md.orden_id && String(md.orden_id).trim() !== '') return Promise.resolve(String(md.orden_id).trim());
+  if (md.transaccion_id && String(md.transaccion_id).trim() !== '') {
+    return client
+      .from('transacciones')
+      .select('instrumentacion(orden_id)')
+      .eq('id', String(md.transaccion_id).trim())
+      .maybeSingle()
+      .then((res) => {
+        const inst = res.data && res.data.instrumentacion;
+        const oid = inst && typeof inst === 'object' && inst.orden_id != null ? String(inst.orden_id).trim() : '';
+        return oid || null;
+      })
+      .catch(() => null);
+  }
+  if (String((r && r.categoria) || '').toLowerCase() === 'orden' && md.registro_id && String(md.registro_id).trim() !== '') {
+    return Promise.resolve(String(md.registro_id).trim());
+  }
+  return Promise.resolve(null);
+}
+
+function cerrarModalAuditoriaOrdenSnapshot() {
+  const b = document.getElementById('modal-auditoria-orden-snapshot-backdrop');
+  if (b) b.classList.remove('activo');
+}
+
+/**
+ * Carga orden + instrumentación + transacciones + comisiones y pinta HTML solo lectura (foto al momento del clic).
+ * @param {string} ordenId
+ */
+function abrirModalAuditoriaOrdenSnapshotPorOrdenId(ordenId) {
+  if (!ordenId || pandiSinConexionServidorViva()) {
+    if (!ordenId) showToast('No hay orden asociada a este registro.', 'info');
+    else showToast('Sin conexión: no se puede cargar la orden.', 'info');
+    return;
+  }
+  const backdrop = document.getElementById('modal-auditoria-orden-snapshot-backdrop');
+  const body = document.getElementById('modal-auditoria-orden-snapshot-body');
+  const titulo = document.getElementById('modal-auditoria-orden-snapshot-titulo');
+  if (!backdrop || !body) return;
+  if (titulo) titulo.textContent = 'Orden (vista de solo lectura)';
+  body.innerHTML = '<p class="auditoria-snapshot-loading" style="padding:1rem;color:#6b7280;">Cargando datos de la orden…</p>';
+  backdrop.classList.add('activo');
+
+  const selOrd =
+    'id, numero, usuario_id, estado, fecha, observaciones, cliente_id, intermediario_id, tipo_operacion_id, operacion_directa, ' +
+    'moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, ' +
+    'intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, ' +
+    'usd_usd_tasa_cliente_modo, created_at, updated_at, ' +
+    'clientes(nombre), intermediarios(nombre), tipos_operacion(codigo, nombre, usa_intermediario, moneda_in, moneda_out)';
+
+  client
+    .from('ordenes')
+    .select(selOrd)
+    .eq('id', ordenId)
+    .maybeSingle()
+    .then((rOrd) => {
+      if (!rOrd.data) {
+        body.innerHTML = '<p style="padding:1rem;color:#b91c1c;">No se encontró la orden.</p>';
+        return;
+      }
+      const o = rOrd.data;
+      return client
+        .from('instrumentacion')
+        .select('*')
+        .eq('orden_id', ordenId)
+        .maybeSingle()
+        .then((rI) => {
+          const inst = rI.data || null;
+          const iid = inst && inst.id;
+          const promTrx = iid
+            ? client
+                .from('transacciones')
+                .select(
+                  'id, numero, tipo, estado, moneda, monto, modo_pago_id, pagador, cobrador, owner, concepto, tipo_cambio, fecha_ejecucion, usuario_id, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, compensacion_cc_monto_aplicado, compensacion_cc_saldo_cliente_moneda_antes, created_at, updated_at, modos_pago(codigo)',
+                )
+                .eq('instrumentacion_id', iid)
+                .order('numero', { ascending: true })
+            : Promise.resolve({ data: [] });
+          return promTrx.then((rT) => {
+            const trx = rT.data || [];
+            return client
+              .from('comisiones_orden')
+              .select('*')
+              .eq('orden_id', ordenId)
+              .then((rC) => {
+                const comis = rC.data || [];
+                const ahoraTxt = formatAuditoriaFechaHoraArt(new Date().toISOString());
+                const nro = o.numero != null ? String(o.numero) : ordenId.slice(0, 8);
+                if (titulo) titulo.textContent = `Orden nº ${nro} — solo lectura`;
+                const cliNom = o.clientes && o.clientes.nombre != null ? String(o.clientes.nombre) : '—';
+                const intNom = o.intermediarios && o.intermediarios.nombre != null ? String(o.intermediarios.nombre) : '—';
+                const to = o.tipos_operacion;
+                const tipoTxt =
+                  to && typeof to === 'object'
+                    ? [to.codigo, to.nombre].filter(Boolean).join(' · ') || '—'
+                    : '—';
+
+                const filasOrden = [];
+                const pushOmit = (k, label, val) => {
+                  if (['clientes', 'intermediarios', 'tipos_operacion'].includes(k)) return;
+                  if (val != null && typeof val === 'object') return;
+                  const t = val != null && val !== '' ? String(val) : '—';
+                  filasOrden.push(
+                    `<tr><th scope="row" style="text-align:left;white-space:nowrap;padding:0.35rem 0.75rem 0.35rem 0;border-bottom:1px solid #e5e7eb;">${escapeHtml(label)}</th><td style="padding:0.35rem 0;border-bottom:1px solid #e5e7eb;word-break:break-word;">${escapeHtml(t)}</td></tr>`,
+                  );
+                };
+                pushOmit('numero', 'Número', o.numero);
+                pushOmit('estado', 'Estado', o.estado);
+                pushOmit('fecha', 'Fecha acuerdo', o.fecha);
+                pushOmit('cliente_id', 'Cliente (nombre)', cliNom);
+                pushOmit('intermediario_id', 'Intermediario (nombre)', intNom);
+                pushOmit('tipo_operacion_id', 'Tipo de operación', tipoTxt);
+                pushOmit('operacion_directa', 'Operación directa', o.operacion_directa);
+                pushOmit('moneda_recibida', 'Moneda recibida', o.moneda_recibida);
+                pushOmit('moneda_entregada', 'Moneda entregada', o.moneda_entregada);
+                pushOmit('monto_recibido', 'Monto recibido', o.monto_recibido != null ? formatImporteDisplay(Number(o.monto_recibido)) : '—');
+                pushOmit('monto_entregado', 'Monto entregado', o.monto_entregado != null ? formatImporteDisplay(Number(o.monto_entregado)) : '—');
+                pushOmit('cotizacion', 'Cotización', o.cotizacion != null ? formatImporteDisplay(Number(o.cotizacion)) : '—');
+                pushOmit('tasa_descuento_intermediario', 'Tasa desc. intermediario', o.tasa_descuento_intermediario);
+                pushOmit('intermediario_pago_transferencia', 'Interm. pago transferencia', o.intermediario_pago_transferencia);
+                pushOmit('intermediario_transferencia_cobra_tasa', 'Interm. transf. cobra tasa', o.intermediario_transferencia_cobra_tasa);
+                pushOmit('intermediario_transferencia_tasa', 'Interm. transf. tasa', o.intermediario_transferencia_tasa);
+                pushOmit('usd_usd_tasa_cliente_modo', 'Modo tasa USD cliente', o.usd_usd_tasa_cliente_modo);
+                pushOmit('observaciones', 'Observaciones', o.observaciones);
+                pushOmit('usuario_id', 'Usuario (id orden)', o.usuario_id);
+                pushOmit('created_at', 'Creada (UTC)', o.created_at);
+                pushOmit('updated_at', 'Actualizada (UTC)', o.updated_at);
+                pushOmit('id', 'Id interno orden', o.id);
+
+                let instHtml = '<p style="color:#6b7280;">Sin fila de instrumentación.</p>';
+                if (inst) {
+                  const instPairs = Object.keys(inst)
+                    .sort()
+                    .map((k) => {
+                      const v = inst[k];
+                      const t = v != null && typeof v !== 'object' ? String(v) : JSON.stringify(v);
+                      return `<tr><th scope="row" style="text-align:left;padding:0.3rem 0.65rem 0.3rem 0;border-bottom:1px solid #eee;">${escapeHtml(k)}</th><td style="padding:0.3rem 0;border-bottom:1px solid #eee;word-break:break-all;">${escapeHtml(t)}</td></tr>`;
+                    })
+                    .join('');
+                  instHtml = `<table class="auditoria-tabla-cambios" style="width:100%;"><tbody>${instPairs}</tbody></table>`;
+                }
+
+                const trxRows = (trx || [])
+                  .map((t) => {
+                    const modo = t.modos_pago && t.modos_pago.codigo != null ? String(t.modos_pago.codigo) : '—';
+                    const monto = t.monto != null ? formatImporteDisplay(Number(t.monto)) : '—';
+                    return `<tr>
+                      <td>${escapeHtml(t.numero != null ? String(t.numero) : '—')}</td>
+                      <td>${escapeHtml(auditoriaLegibleTipoTrx(t.tipo))}</td>
+                      <td>${escapeHtml(auditoriaLegibleEstadoTrx(t.estado))}</td>
+                      <td>${escapeHtml(String(t.moneda || '—'))}</td>
+                      <td style="text-align:right;">${escapeHtml(monto)}</td>
+                      <td>${escapeHtml(modo)}</td>
+                      <td>${escapeHtml(auditoriaLegibleRolParte(t.pagador))}</td>
+                      <td>${escapeHtml(auditoriaLegibleRolParte(t.cobrador))}</td>
+                      <td>${escapeHtml(auditoriaLegibleRolParte(t.owner))}</td>
+                      <td>${escapeHtml(t.concepto != null ? String(t.concepto) : '—')}</td>
+                      <td>${escapeHtml(t.tipo_cambio != null ? String(t.tipo_cambio) : '—')}</td>
+                      <td>${escapeHtml(t.fecha_ejecucion != null ? String(t.fecha_ejecucion) : '—')}</td>
+                    </tr>`;
+                  })
+                  .join('');
+
+                let comHtml = '';
+                if (comis.length) {
+                  const heads = Object.keys(comis[0] || {})
+                    .map((k) => `<th>${escapeHtml(k)}</th>`)
+                    .join('');
+                  const crows = comis
+                    .map((c) => {
+                      const tds = Object.keys(comis[0] || {})
+                        .map((k) => {
+                          const v = c[k];
+                          const t = v != null && typeof v !== 'object' ? String(v) : JSON.stringify(v);
+                          return `<td style="word-break:break-word;">${escapeHtml(t)}</td>`;
+                        })
+                        .join('');
+                      return `<tr>${tds}</tr>`;
+                    })
+                    .join('');
+                  comHtml = `<h3 style="margin:1rem 0 0.4rem 0;font-size:0.95rem;">Comisiones del acuerdo</h3>
+                    <div class="tabla-clientes-wrap tabla-wrap-con-scroll" style="max-height:min(28vh,240px);overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;">
+                    <table class="auditoria-tabla-cambios" style="width:max-content;min-width:100%;"><thead><tr>${heads}</tr></thead><tbody>${crows}</tbody></table></div>`;
+                }
+
+                body.innerHTML =
+                  `<p style="margin:0 0 0.75rem 0;font-size:0.88rem;color:#4b5563;">Instantánea al abrir: <strong>${escapeHtml(ahoraTxt)}</strong> (ART). Los datos reflejan el estado actual en el servidor.</p>` +
+                  `<h3 style="margin:0 0 0.4rem 0;font-size:0.95rem;">Orden</h3>` +
+                  `<div class="tabla-clientes-wrap tabla-wrap-con-scroll" style="max-height:min(40vh,320px);overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;margin-bottom:0.85rem;">
+                    <table class="auditoria-tabla-cambios" style="width:100%;"><tbody>${filasOrden.join('')}</tbody></table>
+                  </div>` +
+                  `<h3 style="margin:0 0 0.4rem 0;font-size:0.95rem;">Instrumentación</h3>` +
+                  `<div class="tabla-clientes-wrap tabla-wrap-con-scroll" style="max-height:min(28vh,220px);overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;margin-bottom:0.85rem;">${instHtml}</div>` +
+                  `<h3 style="margin:0 0 0.4rem 0;font-size:0.95rem;">Transacciones</h3>` +
+                  `<div class="tabla-clientes-wrap tabla-wrap-con-scroll" style="max-height:min(44vh,380px);overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;">
+                    <table class="auditoria-tabla-cambios" style="width:max-content;min-width:100%;"><thead><tr>
+                      <th>Nro</th><th>Tipo</th><th>Estado</th><th>Moneda</th><th>Monto</th><th>Modo pago</th><th>Pagador</th><th>Cobrador</th><th>Dueño</th><th>Concepto</th><th>TC</th><th>Fecha ejec.</th>
+                    </tr></thead><tbody>${trx && trx.length ? trxRows : '<tr><td colspan="12">Sin transacciones.</td></tr>'}</tbody></table>
+                  </div>` +
+                  comHtml;
+              });
+          });
+        });
+    })
+    .catch((e) => {
+      console.warn('auditoria snapshot orden', e);
+      body.innerHTML = '<p style="padding:1rem;color:#b91c1c;">Error al cargar la orden.</p>';
+    });
+}
+
 function cerrarModalAuditoriaDetalle() {
   const b = document.getElementById('modal-auditoria-detalle-backdrop');
   if (b) b.classList.remove('activo');
@@ -30606,10 +31022,11 @@ function abrirModalAuditoriaDetallePorId(id) {
 
   if (wrapCambios && tbodyCam) {
     const cambios = Array.isArray(md.cambios) ? md.cambios : [];
+    const { nOrd: nOrdCam, nTrx: nTrxCam } = auditoriaTextoNumeroOrdenYTransDesdeMetadata(md);
     if (cambios.length) {
       wrapCambios.style.display = 'block';
       tbodyCam.innerHTML =
-        '<tr><td colspan="3" style="padding:0.75rem;color:#6b7280;">Resolviendo nombres…</td></tr>';
+        '<tr><td colspan="5" style="padding:0.75rem;color:#6b7280;">Resolviendo nombres…</td></tr>';
       const buckets = auditoriaColectarBucketsDesdeCambios(cambios);
       void auditoriaResolverMapaEtiquetasAuditoria(buckets).then((mapa) => {
         tbodyCam.innerHTML = cambios
@@ -30617,7 +31034,7 @@ function abrirModalAuditoriaDetallePorId(id) {
             const lab = auditoriaEtiquetaCampo(c.campo);
             const ant = auditoriaFormatearValorCambio(c.campo, c.anterior, mapa, md);
             const neu = auditoriaFormatearValorCambio(c.campo, c.nuevo, mapa, md);
-            return `<tr><td>${escapeHtml(lab)}</td><td>${escapeHtml(ant)}</td><td>${escapeHtml(neu)}</td></tr>`;
+            return `<tr><td>${escapeHtml(lab)}</td><td>${escapeHtml(nOrdCam)}</td><td>${escapeHtml(nTrxCam)}</td><td>${escapeHtml(ant)}</td><td>${escapeHtml(neu)}</td></tr>`;
           })
           .join('');
       });
@@ -30659,14 +31076,23 @@ function renderAuditoriaVistaFilas(rows, usuarioMap, append) {
       const nCam = r.metadata && Array.isArray(r.metadata.cambios) ? r.metadata.cambios.length : 0;
       const badge = nCam ? `<span class="auditoria-badge-cambios" title="${nCam} cambio(s)">${nCam}</span>` : '–';
       const rid = r.id ? escapeHtml(String(r.id)) : '';
+      const mdR = r.metadata && typeof r.metadata === 'object' ? r.metadata : {};
+      const { nOrd, nTrx } = auditoriaTextoNumeroOrdenYTransDesdeMetadata(mdR);
+      const verOrdVisible = auditoriaFilaTieneContextoOrden(r);
+      const btnOrd = verOrdVisible
+        ? `<button type="button" class="btn-secondary btn-auditoria-ver-orden" data-auditoria-ver-orden="${rid}" title="Ver orden (solo lectura, estado actual)"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/></svg></span>Orden</button>`
+        : '<span class="auditoria-celda-sin-orden" aria-hidden="true"></span>';
       return `<tr data-auditoria-id="${rid}">
         <td>${escapeHtml(formatAuditoriaFechaHoraArt(r.creado_en))}</td>
         <td>${escapeHtml(uLab)}</td>
         <td>${escapeHtml(r.categoria || '')}</td>
+        <td style="text-align:center;">${escapeHtml(nOrd)}</td>
+        <td style="text-align:center;">${escapeHtml(nTrx)}</td>
         <td>${escapeHtml(r.accion || '')}</td>
         <td class="auditoria-col-detalle">${escapeHtml(detShort)}</td>
         <td style="text-align:center;">${badge}</td>
         <td><button type="button" class="btn-secondary btn-auditoria-ver" data-auditoria-open="${rid}" title="Ver detalle y metadata"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/></svg></span>Ver</button></td>
+        <td style="text-align:center;width:1%;">${btnOrd}</td>
       </tr>`;
     })
     .join('');
@@ -30752,11 +31178,14 @@ function loadAuditoriaVista(opts) {
     pandiAuditoriaHayMas = rows.length >= AUDITORIA_PAGE_SIZE;
     pandiAuditoriaAcumulado = append ? pandiAuditoriaAcumulado.concat(rows) : rows;
     const ids = pandiAuditoriaAcumulado.map((x) => x.usuario_id).filter(Boolean);
-    return fetchMapaEtiquetaUsuarioPorIds(ids).then((map) => {
+    const filasNumeros = append ? rows : pandiAuditoriaAcumulado;
+    return auditoriaRellenarNumerosFaltantesEnFilas(filasNumeros)
+      .then(() => fetchMapaEtiquetaUsuarioPorIds(ids))
+      .then((map) => {
       pandiAuditoriaUltimoMapaUsuarios = map || {};
       if (rows.length === 0 && !append) {
         tbody.innerHTML =
-          '<tr><td colspan="7" style="padding:1.25rem;text-align:center;color:#6b7280;">Sin resultados con los filtros actuales.</td></tr>';
+          '<tr><td colspan="10" style="padding:1.25rem;text-align:center;color:#6b7280;">Sin resultados con los filtros actuales.</td></tr>';
         if (outer) outer.style.display = 'block';
         if (btnMas) btnMas.style.display = 'none';
       } else {
@@ -30775,16 +31204,30 @@ function exportarAuditoriaVistaExcel() {
     showToast('No hay filas cargadas. Buscá primero o cargá más resultados.', 'info');
     return;
   }
-  const header = ['Fecha (ART)', 'Usuario', 'Categoría', 'Acción', 'Detalle', 'Nº cambios', 'Metadata JSON'];
+  const header = [
+    'Fecha (ART)',
+    'Usuario',
+    'Categoría',
+    'Nº orden',
+    'Nº trans.',
+    'Acción',
+    'Detalle',
+    'Nº cambios',
+    'Metadata JSON',
+  ];
   const rows = pandiAuditoriaAcumulado.map((r) => {
     const uid = r.usuario_id != null ? String(r.usuario_id) : '';
     const uLab = uid ? (pandiAuditoriaUltimoMapaUsuarios[uid] || uid) : '';
     const nCam = r.metadata && Array.isArray(r.metadata.cambios) ? r.metadata.cambios.length : 0;
     const metaStr = r.metadata != null ? JSON.stringify(r.metadata) : '';
+    const mdE = r.metadata && typeof r.metadata === 'object' ? r.metadata : {};
+    const { nOrd, nTrx } = auditoriaTextoNumeroOrdenYTransDesdeMetadata(mdE);
     return [
       formatAuditoriaFechaHoraArt(r.creado_en),
       uLab,
       r.categoria || '',
+      nOrd,
+      nTrx,
       r.accion || '',
       r.detalle || '',
       nCam,
@@ -30815,6 +31258,8 @@ function setupAuditoriaVistaUi() {
   const tbody = document.getElementById('auditoria-tbody');
   const back = document.getElementById('modal-auditoria-detalle-backdrop');
   const close = document.getElementById('modal-auditoria-detalle-close');
+  const backOrd = document.getElementById('modal-auditoria-orden-snapshot-backdrop');
+  const closeOrd = document.getElementById('modal-auditoria-orden-snapshot-close');
 
   if (btnBuscar) {
     btnBuscar.addEventListener('click', () => {
@@ -30829,6 +31274,18 @@ function setupAuditoriaVistaUi() {
   if (btnExp) btnExp.addEventListener('click', () => exportarAuditoriaVistaExcel());
   if (tbody) {
     tbody.addEventListener('click', (e) => {
+      const btnOrd = e.target && e.target.closest && e.target.closest('[data-auditoria-ver-orden]');
+      if (btnOrd) {
+        const rid = btnOrd.getAttribute('data-auditoria-ver-orden');
+        const row = rid ? pandiAuditoriaRowIndexPorId[rid] : null;
+        if (row) {
+          void auditoriaOrdenIdDesdeFilaAuditoria(row).then((oid) => {
+            if (oid) abrirModalAuditoriaOrdenSnapshotPorOrdenId(oid);
+            else showToast('No se pudo determinar la orden de este registro.', 'info');
+          });
+        }
+        return;
+      }
       const btn = e.target && e.target.closest && e.target.closest('[data-auditoria-open]');
       if (!btn) return;
       const id = btn.getAttribute('data-auditoria-open');
@@ -30839,8 +31296,17 @@ function setupAuditoriaVistaUi() {
   if (back) {
     setupBackdropCloseOnlyOnRealClick(back, () => cerrarModalAuditoriaDetalle());
   }
+  if (closeOrd) closeOrd.addEventListener('click', () => cerrarModalAuditoriaOrdenSnapshot());
+  if (backOrd) {
+    setupBackdropCloseOnlyOnRealClick(backOrd, () => cerrarModalAuditoriaOrdenSnapshot());
+  }
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    const bdOrd = document.getElementById('modal-auditoria-orden-snapshot-backdrop');
+    if (bdOrd && bdOrd.classList.contains('activo')) {
+      cerrarModalAuditoriaOrdenSnapshot();
+      return;
+    }
     const bd = document.getElementById('modal-auditoria-detalle-backdrop');
     if (bd && bd.classList.contains('activo')) cerrarModalAuditoriaDetalle();
   });
