@@ -4153,7 +4153,7 @@ function registrarAuditoriaTransaccionMonto(transaccionId, t, ordenId, oldMonto,
 const TRANSACCION_CAMPOS_EDICION_MODAL = [
   'instrumentacion_id', 'tipo', 'modo_pago_id', 'moneda', 'monto', 'cobrador', 'pagador', 'owner', 'estado', 'concepto', 'tipo_cambio',
   'pagador_cliente_id', 'cobrador_cliente_id', 'pagador_intermediario_id', 'cobrador_intermediario_id',
-  'fecha_ejecucion', 'usuario_id', 'compensacion_cc_monto_aplicado',
+  'fecha_ejecucion', 'usuario_id', 'compensacion_cc_monto_aplicado', 'compensacion_cc_saldo_cliente_moneda_antes',
 ];
 
 /** Instrumentación 1:1 con orden: transacciones e id de instrumentación para anulación. */
@@ -10806,8 +10806,19 @@ function sumaMovimientosCompensacionParcialTotalCcExentosNeteo(rowsCliente, clie
 
 /**
  * Tras motor + préstamo regla B: fila CC «Compensación parcial/total en cuenta corriente- …» si `transacciones.compensacion_cc_monto_aplicado` > 0.
+ * **Total** = el monto compensado cubre la **deuda de Pandy con el cliente antes de esta transacción** (`compensacion_cc_saldo_cliente_moneda_antes` < 0 y `comp ≈ −saldo`).
+ * Sin saldo persistido (legado): si `comp` es menor que el monto del ingreso, se asume que la deuda era menor que el ingreso y quedó saldada (**total**); si `comp` iguala el ingreso, **parcial** por defecto.
  */
-function inyectarFilasCompensacionCcClienteDesdeTransacciones(rowsCcCliente, orden, ordenId, clienteId, fecha, ahora, transacciones, ordenAnuladaSync) {
+function inyectarFilasCompensacionCcClienteDesdeTransacciones(
+  rowsCcCliente,
+  orden,
+  ordenId,
+  clienteId,
+  fecha,
+  ahora,
+  transacciones,
+  ordenAnuladaSync,
+) {
   if (!Array.isArray(rowsCcCliente) || !orden || !clienteId || !ordenId) return;
   for (const tRaw of transacciones || []) {
     if (!tRaw) continue;
@@ -10822,8 +10833,16 @@ function inyectarFilasCompensacionCcClienteDesdeTransacciones(rowsCcCliente, ord
     const nro = t.numero != null ? t.numero : null;
     const estadoFila = ordenAnuladaSync ? 'anulado' : (st === 'ejecutada' ? 'cerrado' : 'pendiente');
     const montoTrx = Number(t.monto);
-    const esCompTotal =
-      Number.isFinite(montoTrx) && montoTrx > 0 && comp + 1e-6 >= montoTrx;
+    const saldoAntes = Number(tRaw.compensacion_cc_saldo_cliente_moneda_antes);
+    const tolCc = 0.02;
+    let esCompTotal = false;
+    if (Number.isFinite(saldoAntes) && saldoAntes < -tolCc) {
+      const deudaAntes = -saldoAntes;
+      esCompTotal = comp + tolCc >= deudaAntes - tolCc;
+    } else if (Number.isFinite(montoTrx) && montoTrx > tolCc && comp + tolCc < montoTrx - tolCc) {
+      /** Legado sin `compensacion_cc_saldo_cliente_moneda_antes`: `comp = min(m, deuda)` y `comp < m` ⇒ deuda < m y quedó cubierta entera. */
+      esCompTotal = true;
+    }
     rowsCcCliente.push({
       cliente_id: clienteId,
       orden_id: ordenId,
@@ -10843,10 +10862,10 @@ function inyectarFilasCompensacionCcClienteDesdeTransacciones(rowsCcCliente, ord
 }
 
 /**
- * USD-USD + intermediario, `monR === monE`, sin MC: si un **ingreso** tiene `compensacion_cc_monto_aplicado` en **total**
- * (~ monto de la trx) por el flip C→P a P→C, el motor ya emite **además** «Compromiso de Pago» del egreso Intermediario→Cliente (+me).
+ * USD-USD + intermediario, `monR === monE`, sin MC: con flip C→P a P→C y `compensacion_cc_monto_aplicado` > 0 en el ingreso,
+ * el motor puede emitir **además** «Compromiso de Pago» del egreso Intermediario→Cliente (a menudo al **mr** nominal aunque **me** difiera).
  * Esa segunda fila duplica el efecto en el **saldo** (el invariante las resta por separado y cuadra; la suma visible no).
- * Se elimina la fila CC cliente de compromiso **plano** ligada a ese egreso I→C cuando el monto coincide con una compensación total persistida.
+ * Se elimina la fila CC cliente de compromiso **plano** cuando el importe coincide con algún `compensacion_cc_monto_aplicado` persistido en un ingreso y la fila está anclada al **egreso** Inter→Cliente **o** a ese mismo **ingreso** (el motor en pendiente suele usar el id del ingreso P→C, no el del egreso I→C).
  */
 function filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsdUsdInt(
   rowsCcCliente,
@@ -10862,8 +10881,8 @@ function filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsd
   const monE = String(orden.moneda_entregada || 'USD').toUpperCase();
   if (monR !== monE) return;
 
-  /** Valores de `compensacion_cc_monto_aplicado` con ingreso en compensación **total** (comp ~ monto trx). */
-  const montosCompTotal = [];
+  /** Cada `compensacion_cc_monto_aplicado` > 0 en un ingreso (flip con compensación, parcial o total). */
+  const montosCompAplicados = [];
   for (const tRaw of transacciones || []) {
     if (!tRaw) continue;
     const comp = Number(tRaw.compensacion_cc_monto_aplicado);
@@ -10871,12 +10890,9 @@ function filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsd
     if (String(tRaw.tipo || '').toLowerCase() !== 'ingreso') continue;
     const st = transaccionEstadoTextoNormalizado(tRaw);
     if (st !== 'ejecutada' && st !== 'pendiente') continue;
-    const montoTrx = Number(tRaw.monto);
-    if (!Number.isFinite(montoTrx) || montoTrx < 1e-6) continue;
-    if (comp + EPS_CC_NETEO_CLIENTE_ORDEN < montoTrx) continue;
-    montosCompTotal.push(comp);
+    montosCompAplicados.push(comp);
   }
-  if (montosCompTotal.length === 0) return;
+  if (montosCompAplicados.length === 0) return;
 
   /** Egresos Inter→Cliente (misma moneda acuerdo): la fila CC puede usar **me** de la orden aunque `transacciones.monto` del egreso difiera (p. ej. 1900 vs nominal 2000). */
   const egresoIntermediarioClienteIds = new Set();
@@ -10892,7 +10908,20 @@ function filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsd
     if (mon !== monR) continue;
     egresoIntermediarioClienteIds.add(String(tRaw.id));
   }
-  if (egresoIntermediarioClienteIds.size === 0) return;
+
+  /** Ingresos con `compensacion_cc_monto_aplicado` (flip C→P a P→C): el «Compromiso de Pago» +mr a veces referencia esta trx, no la I→C (sobre todo pendiente/pendiente). */
+  const ingresoIdsConCompCcFlip = new Set();
+  for (const tRaw of transacciones || []) {
+    if (!tRaw || tRaw.id == null) continue;
+    const comp0 = Number(tRaw.compensacion_cc_monto_aplicado);
+    if (!Number.isFinite(comp0) || comp0 < 1e-6) continue;
+    if (String(tRaw.tipo || '').toLowerCase() !== 'ingreso') continue;
+    const st0 = transaccionEstadoTextoNormalizado(tRaw);
+    if (st0 !== 'ejecutada' && st0 !== 'pendiente') continue;
+    ingresoIdsConCompCcFlip.add(String(tRaw.id));
+  }
+
+  if (egresoIntermediarioClienteIds.size === 0 && ingresoIdsConCompCcFlip.size === 0) return;
 
   for (let i = rowsCcCliente.length - 1; i >= 0; i--) {
     const r = rowsCcCliente[i];
@@ -10904,8 +10933,10 @@ function filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsd
     const m = Number(r.monto);
     if (!Number.isFinite(m) || m < 1e-6) continue;
     const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id).trim() : '';
-    if (!tid || !egresoIntermediarioClienteIds.has(tid)) continue;
-    const montoIgualAlgunComp = montosCompTotal.some((c0) => Math.abs(c0 - m) <= 0.02);
+    const enlazaEgresoIc = tid && egresoIntermediarioClienteIds.has(tid);
+    const enlazaIngresoComp = tid && ingresoIdsConCompCcFlip.has(tid);
+    if (!tid || (!enlazaEgresoIc && !enlazaIngresoComp)) continue;
+    const montoIgualAlgunComp = montosCompAplicados.some((c0) => Math.abs(c0 - m) <= 0.02);
     if (!montoIgualAlgunComp) continue;
     rowsCcCliente.splice(i, 1);
   }
@@ -21685,7 +21716,7 @@ function renderOrdenWizardInstrumentacion(instId) {
         };
         const estadoTexto = (t) => (String(t.estado || '').toLowerCase() === 'anulada' ? 'Anulada' : (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente'));
         const listaSorted = sortTransaccionesPorNumero(lista);
-        const selTrxWizardCols = 'id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, compensacion_cc_monto_aplicado';
+        const selTrxWizardCols = 'id, usuario_id, numero, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, compensacion_cc_monto_aplicado, compensacion_cc_saldo_cliente_moneda_antes';
         function paintWizardTabla(maps, mapUsuario) {
           mapUsuario = mapUsuario || {};
           const cobradorL = (t) => transaccionParticipanteCeldaHtml(t, orden, 'cobrador', maps);
@@ -23112,7 +23143,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
         const multicontraparteManual = !!(rInst.data && rInst.data.multicontraparte_manual);
         const instrumentacionAjustadaManual = !!(rInst.data && rInst.data.instrumentacion_ajustada_manual);
         const selectColsTrxInstrumentacionSync =
-          'id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at, compensacion_cc_monto_aplicado';
+          'id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at, compensacion_cc_monto_aplicado, compensacion_cc_saldo_cliente_moneda_antes';
         return Promise.all([
           client.from('transacciones').select(selectColsTrxInstrumentacionSync).eq('instrumentacion_id', instId),
           client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
@@ -27155,7 +27186,7 @@ function saveTransaccion() {
       client
         .from('transacciones')
         .select(
-          'id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id, compensacion_cc_monto_aplicado',
+          'id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id, compensacion_cc_monto_aplicado, compensacion_cc_saldo_cliente_moneda_antes',
         )
         .eq('instrumentacion_id', instrumentacionId)
         .then((rTr) => {
@@ -27175,7 +27206,7 @@ function saveTransaccion() {
         const aplicarCompensacionCcFlipSiCorrespondeYLuegoGuardar = () => {
           const trPrev = id ? list.find((t) => String(t.id) === String(id)) : null;
           const prevNorm = trPrev ? transaccionNormalizarPagCobVacios(trPrev) : null;
-          /** Saldo global CC + persistencia de `compensacion_cc_monto_aplicado` al pasar ingreso C→P a P→C (USD-USD+int sin MC). */
+          /** Saldo global CC + persistencia de `compensacion_cc_monto_aplicado` y `compensacion_cc_saldo_cliente_moneda_antes` al pasar ingreso C→P a P→C (USD-USD+int sin MC). */
           const persistirCompensacionCcFlipUsdUsdSaldoYComp = () => {
             fetchSaldoClienteCcGlobalPorMonedaSumaMonto(orden.cliente_id, moneda)
               .then((saldo) => {
@@ -27201,7 +27232,7 @@ function saveTransaccion() {
                   return;
                 }
                 const comp = Math.min(monto, cap);
-                guardarTransaccionPayload(undefined, comp);
+                guardarTransaccionPayload(undefined, comp, saldo);
               })
               .catch((e) => {
                 showToast('No se pudo validar el saldo de cuenta corriente: ' + (e && e.message ? e.message : String(e)), 'error');
@@ -27288,7 +27319,7 @@ function saveTransaccion() {
     });
   });
 
-  function guardarTransaccionPayload(montoCompensatorio, compensacionCcMontoAplicado) {
+  function guardarTransaccionPayload(montoCompensatorio, compensacionCcMontoAplicado, compensacionCcSaldoClienteMonedaAntes) {
   const wrapMcSave = document.getElementById('transaccion-multicontraparte-contrapartes-wrap');
   const usarMcSave = wrapMcSave && wrapMcSave.style.display !== 'none';
   const idsMcSave = leerIdsContraparteMulticontraparteForm(ordenClienteIdParaIdsMc);
@@ -27322,12 +27353,22 @@ function saveTransaccion() {
   if (estado === 'ejecutada') payload.fecha_ejecucion = fechaHoyYYYYMMDDArgentina();
   if (estado === 'ejecutada') payload.usuario_id = currentUserId;
   if (compensacionCcMontoAplicado !== undefined && id) {
-    payload.compensacion_cc_monto_aplicado =
+    const compVal =
       compensacionCcMontoAplicado != null && Number(compensacionCcMontoAplicado) >= 1e-6 ? Number(compensacionCcMontoAplicado) : null;
+    payload.compensacion_cc_monto_aplicado = compVal;
+    if (compVal == null) {
+      payload.compensacion_cc_saldo_cliente_moneda_antes = null;
+    } else if (
+      compensacionCcSaldoClienteMonedaAntes !== undefined &&
+      compensacionCcSaldoClienteMonedaAntes != null &&
+      Number.isFinite(Number(compensacionCcSaldoClienteMonedaAntes))
+    ) {
+      payload.compensacion_cc_saldo_cliente_moneda_antes = Number(compensacionCcSaldoClienteMonedaAntes);
+    }
   }
 
   const TRANSACCION_SELECT_PREV_MODAL =
-    'id, instrumentacion_id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, usuario_id, numero, compensacion_cc_monto_aplicado';
+    'id, instrumentacion_id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, usuario_id, numero, compensacion_cc_monto_aplicado, compensacion_cc_saldo_cliente_moneda_antes';
   const prom = id
     ? client
       .from('transacciones')

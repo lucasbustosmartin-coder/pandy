@@ -1,6 +1,6 @@
 /**
  * Política numérica del flip ingreso Cliente→Pandy a Pandy→Cliente (USD-USD+int sin MC).
- * Debe coincidir con `aplicarCompensacionCcFlipSiCorrespondeYLuegoGuardar` en main.js (~25797–25821).
+ * Debe coincidir con `persistirCompensacionCcFlipUsdUsdSaldoYComp` / `inyectarFilasCompensacionCcClienteDesdeTransacciones` en main.js.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -96,6 +96,35 @@ test('residual USD-USD+int flip: incluye offset egreso +me con compensación per
   assert.ok(Math.abs(residual) <= EPS);
 });
 
+/** Réplica de parcial/total CC flip vs deuda previa (`inyectarFilasCompensacionCcClienteDesdeTransacciones`, main.js). */
+function esCompTotalLeyendaCcFlip(comp, montoTrx, saldoClienteAntes) {
+  const tol = 0.02;
+  const s = Number(saldoClienteAntes);
+  if (Number.isFinite(s) && s < -tol) {
+    const deuda = -s;
+    return comp + tol >= deuda - tol;
+  }
+  const m = Number(montoTrx);
+  if (Number.isFinite(m) && m > tol && comp + tol < m - tol) return true;
+  return false;
+}
+
+test('deuda -4627 y comp 2000: parcial (queda deuda)', () => {
+  assert.equal(esCompTotalLeyendaCcFlip(2000, 2000, -4627), false);
+});
+
+test('deuda -2000 y comp 2000: total (liquida toda la deuda previa)', () => {
+  assert.equal(esCompTotalLeyendaCcFlip(2000, 2000, -2000), true);
+});
+
+test('legado sin saldo: comp < monto ingreso → total (deuda menor que el ingreso)', () => {
+  assert.equal(esCompTotalLeyendaCcFlip(1500, 2000, null), true);
+});
+
+test('legado sin saldo: comp = monto ingreso → parcial por defecto', () => {
+  assert.equal(esCompTotalLeyendaCcFlip(2000, 2000, null), false);
+});
+
 test('leyenda legacy «parcial o total» sigue en suma exenta', () => {
   const cid = 'c1';
   const oid = 'o1';
@@ -105,14 +134,18 @@ test('leyenda legacy «parcial o total» sigue en suma exenta', () => {
   assert.equal(sumaCompCerradas(rows, cid, oid, 'USD'), 77);
 });
 
-/** Réplica mínima de la política «comp total → quitar compromiso duplicado I→C» (main.js `filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsdUsdInt`). */
-function quitarCompromisoSiCompTotal(rows, egresoId, monto) {
+/** Réplica mínima de `filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsdUsdInt`: quita Compromiso plano si `transaccion_id` es egreso I→C **o** ingreso con comp CC, y el monto coincide con `comp`. */
+function quitarCompromisoSiCompAplicado(rows, monto, opts) {
+  const { egresoId, ingresoIdConComp } = opts || {};
   const k = String(Number(monto).toFixed(4));
   const rowsOut = rows.filter((r) => {
     const c = String(r.concepto || '');
     if (!c.includes('Compromiso de Pago')) return true;
     if (c.includes('Pandy cumple pata') || c.includes('Tercero cumple pata')) return true;
-    if (String(r.transaccion_id) !== String(egresoId)) return true;
+    const tid = String(r.transaccion_id || '');
+    const matchTrx =
+      (egresoId != null && tid === String(egresoId)) || (ingresoIdConComp != null && tid === String(ingresoIdConComp));
+    if (!matchTrx) return true;
     if (String(Number(r.monto).toFixed(4)) !== k) return true;
     return false;
   });
@@ -140,7 +173,59 @@ test('compensación total: se elimina Compromiso de Pago duplicado del egreso I�
       estado: 'cerrado',
     },
   ];
-  const out = quitarCompromisoSiCompTotal(rows, 'eg1', 2000);
+  const out = quitarCompromisoSiCompAplicado(rows, 2000, { egresoId: 'eg1' });
   assert.equal(out.length, 1);
   assert.ok(String(out[0].concepto).includes('Compensación total'));
+});
+
+test('compensación parcial (mismo comp que monto fila compromiso): también se elimina Compromiso de Pago duplicado del egreso I→C', () => {
+  const rows = [
+    {
+      cliente_id: 'c1',
+      orden_id: 'o1',
+      transaccion_id: 'eg1',
+      concepto: 'Compromiso de Pago - Orden 82 y Trans 191',
+      monto: 2000,
+      moneda: 'USD',
+      estado: 'cerrado',
+    },
+    {
+      cliente_id: 'c1',
+      orden_id: 'o1',
+      transaccion_id: 'in1',
+      concepto: 'Compensación parcial en cuenta corriente- Orden 82 y Trans 191',
+      monto: 2000,
+      moneda: 'USD',
+      estado: 'cerrado',
+    },
+  ];
+  const out = quitarCompromisoSiCompAplicado(rows, 2000, { egresoId: 'eg1' });
+  assert.equal(out.length, 1);
+  assert.ok(String(out[0].concepto).includes('Compensación parcial'));
+});
+
+test('P,P: Compromiso anclado al ingreso (mismo id que compensación) también se elimina', () => {
+  const rows = [
+    {
+      cliente_id: 'c1',
+      orden_id: 'o1',
+      transaccion_id: 'trx11',
+      concepto: 'Compromiso de Pago - Orden 5 y Trans 11',
+      monto: 2000,
+      moneda: 'USD',
+      estado: 'pendiente',
+    },
+    {
+      cliente_id: 'c1',
+      orden_id: 'o1',
+      transaccion_id: 'trx11',
+      concepto: 'Compensación parcial en cuenta corriente- Orden 5 y Trans 11',
+      monto: 2000,
+      moneda: 'USD',
+      estado: 'pendiente',
+    },
+  ];
+  const out = quitarCompromisoSiCompAplicado(rows, 2000, { ingresoIdConComp: 'trx11' });
+  assert.equal(out.length, 1);
+  assert.ok(String(out[0].concepto).includes('Compensación parcial'));
 });

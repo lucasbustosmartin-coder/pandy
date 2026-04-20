@@ -7,4 +7,4 @@ ALTER TABLE public.transacciones
   ADD COLUMN IF NOT EXISTS compensacion_cc_monto_aplicado numeric;
 
 COMMENT ON COLUMN public.transacciones.compensacion_cc_monto_aplicado IS
-  'USD-USD con intermediario (sin multicontraparte manual): al guardar ingreso invertido C→P a P→C, monto reconocido contra deuda previa de Pandy con el cliente (CC). El sync genera movimiento «Compensación parcial/total en cuenta corriente- Orden … y Trans …». NULL si no aplica.';
+  'USD-USD con intermediario (sin multicontraparte manual): al guardar ingreso invertido C→P a P→C, monto reconocido contra deuda previa de Pandy con el cliente (CC). El sync genera movimiento «Compensación parcial/total en cuenta corriente- Orden … y Trans …». NULL si no aplica. Ver también `compensacion_cc_saldo_cliente_moneda_antes` (script `migracion_transacciones_compensacion_cc_saldo_cliente_antes.sql`).';
