@@ -11545,6 +11545,25 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
 
   if (!cerradaParaNeteo) return { ok: true };
 
+  const toJoinInv = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+  const codTipoInv = String((toJoinInv && toJoinInv.codigo) || '').toUpperCase();
+  /**
+   * USD-ARS / ARS-USD + int **cp_ic** (ingreso C→P + egreso Int→C): parte del nominal en moneda entregada vive en
+   * **CC intermediario**; el invariante histórico solo miraba filas **cliente** «cerrado» y daba falso positivo al
+   * no netear USD solo con el cobro, bloqueando `sync_cc_caja_orden` y dejando filas int. en **pendiente** para siempre
+   * (p. ej. orden ya `orden_ejecutada`). El motor + refuerzo ya alinean estados; ver `docs/MODELO_CC_USD_ARS_TEORICO.md` § cp_ic.
+   */
+  if (
+    (codTipoInv === 'USD-ARS' || codTipoInv === 'ARS-USD') &&
+    orden.intermediario_id &&
+    patronInstrumentacionIntDesdeTransacciones(transacciones) === 'cp_ic' &&
+    transaccionesInstrumentacionTodasEjecutadasStrict(transacciones) &&
+    ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
+    egresoIntermediarioAClienteEjecutado(transacciones)
+  ) {
+    return { ok: true };
+  }
+
   const monR = (orden.moneda_recibida || 'USD').toUpperCase();
   const monE = (orden.moneda_entregada || 'USD').toUpperCase();
   const sums = sumaCcClienteCerradoPorMonedaSoloClienteOrden(rowsCcClienteUnicos, clienteId, ordenId);
@@ -12480,13 +12499,31 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion() {
       return;
     }
     const conc = PANDI_CC_SYNC_ORDENES_CONCURRENCY;
+    const fallosSyncCc = [];
     for (let i = 0; i < ordenIds.length; i += conc) {
       const chunk = ordenIds.slice(i, i + conc);
       await Promise.all(
         chunk.map((ordenId) =>
-          sincronizarCcYCajaDesdeOrden(ordenId, { silenciarAvisosInvarianteCc: true }).catch(() => {}),
+          sincronizarCcYCajaDesdeOrden(ordenId, { silenciarAvisosInvarianteCc: true }).catch((err) => {
+            const msg = err && (err.message || err.code || String(err));
+            fallosSyncCc.push({ ordenId, msg });
+            if (typeof console !== 'undefined' && console.warn) {
+              console.warn('[Pandi CC] sync global orden', ordenId, msg);
+            }
+            return null;
+          }),
         ),
       );
+    }
+    if (fallosSyncCc.length > 0) {
+      const primera = fallosSyncCc[0];
+      const e = new Error(
+        fallosSyncCc.length === 1
+          ? `No se pudo sincronizar CC/caja de la orden ${primera.ordenId}: ${primera.msg}`
+          : `No se pudo sincronizar CC/caja en ${fallosSyncCc.length} órdenes (ej. ${primera.ordenId}): ${primera.msg}`,
+      );
+      e.ccSyncFallos = fallosSyncCc;
+      throw e;
     }
     marcarCcGlobalSyncExitosoEnSesion();
   })();

@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.57',
+  versionLabel: 'v3.7.58',
   lines: [
-    'Cuenta corriente (dólar con intermediario): al invertir un cobro y usar compensación por saldo, el tope del importe ya no se queda enganchado solo en el monto de entrega cuando el acuerdo tiene diferencia con el recibido.',
-    'Seguís viendo mejor el detalle de movimientos y las leyendas de compensación; conviene refrescar Cuenta corriente tras actualizar.',
+    'Cuenta corriente con dólar–peso e intermediario (cobro a la empresa y entrega del intermediario al cliente): cuando todo quedó ejecutado, al refrescar la cuenta ya se alinean bien los estados de los movimientos.',
+    'Si al pulsar Refrescar en Cuenta corriente algo no se puede actualizar, la app te avisa con un mensaje claro en lugar de dar por hecho que salió todo bien.',
   ],
 };
