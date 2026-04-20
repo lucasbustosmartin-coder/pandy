@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.58',
+  versionLabel: 'v3.7.59',
   lines: [
-    'Cuenta corriente con dólar–peso e intermediario (cobro a la empresa y entrega del intermediario al cliente): cuando todo quedó ejecutado, al refrescar la cuenta ya se alinean bien los estados de los movimientos.',
-    'Si al pulsar Refrescar en Cuenta corriente algo no se puede actualizar, la app te avisa con un mensaje claro en lugar de dar por hecho que salió todo bien.',
+    'Cruce en dos monedas con instrumentación ajustada manual (badge Aj) y reglas: el sync vuelve a generar el par de cierre «Cierre orden» (+recibido en una moneda y −entregado en la otra) cuando hace falta, porque en ese modo el motor solo suma comisiones y no repone sola la pata intermediario→cliente en la cuenta del cliente.',
+    'Se corrige un cambio previo que en ese caso dejaba solo el cobro en dólares sin la contrapartida libro en pesos.',
   ],
 };

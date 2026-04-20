@@ -23704,7 +23704,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           // Cierre sintético dos monedas (CC cliente): +montoRecibido en monR y −montoEntregado en monE cuando el “par cliente” está ejecutado.
           // Ingreso: Cliente→Pandy o Cliente→Intermediario (misma semántica que ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado).
           // Egreso entrega al cliente: Pandy→Cliente **o** Intermediario→Cliente (cp_ic: cobro a Pandy + entrega vía int.).
-          // Solo **legacy** si NO corre el motor (`reglas_de_negocio`): con `aplicarMotorCcDesdeReglasDeNegocio` el cierre duplicaría monR/monE y rompe el cierre (ej. ARS-USD+int E,E: +5M ARS y −5k USD extra). Multicontraparte manual: CC la arma aplicarCcMulticontraparteManualConciliacionCompleta (no duplicar cierre aquí).
+          // Solo **legacy** si NO corre el motor completo (`reglas_de_negocio` sin derivación MC/Aj): con `usarMotorEfectivo` el motor ya cierra la CC por transacción; el cierre sintético duplicaría +monR/−monE (ej. ARS-USD+int E,E). Con **instrumentacion_ajustada_manual** o MC + reglas el motor va en `soloComisiones` y **no** recorre trx: las patas cliente de egreso Int→Cliente no entran en el bucle legacy (`pag === 'intermediario'`); el cierre sintético sigue siendo el que netea USD del cobro con **monR** y refleja **monE** en ARS (ver orden 1 Adriana prod). Multicontraparte manual: CC patas en `aplicarCcMulticontraparteManualConciliacionCompleta` (no duplicar cierre aquí).
           if (clienteId && monR !== monE && !usarMotorEfectivo && !usarMulticontraparteSync) {
             const trxEjecutadaCierre = (t) => (t.estado || '').toString().toLowerCase() === 'ejecutada';
             const ingresosCli = transacciones.filter((t) => {
