@@ -10950,6 +10950,36 @@ function ordenEsCruceDosMonedasDistintas(orden) {
 }
 
 /**
+ * Quita de la lista hacia `sync_cc_caja_orden` la fila **«Cierre orden …»** en **moneda entregada** con **monto negativo**
+ * cuando el acuerdo es **USD-ARS / ARS-USD + intermediario** y patrón **cp_ic** (entrega Intermediario→Cliente).
+ * Defensa estable: si `instrumentacion_ajustada_manual` oscila tras `pandiPersistInstrumentacionAjustadaManualParaOrden`,
+ * alternan `usarMotorEfectivo` y el bloque sintético; sin este filtro la RPC puede **reinsertar** esa línea en un ciclo
+ * y borrarla en el siguiente (misma clave lógica distinta vs huérfanos).
+ */
+function filasCcClienteQuitarCierreOrdenMonedaEntregadaCpIcUsdArsSiCorresponde(rowsCcCliente, opts) {
+  const { orden, ordenId, clienteId, intermediarioId, transacciones, codNorm } = opts || {};
+  const list = rowsCcCliente || [];
+  if (!list.length || !clienteId || !ordenId || !intermediarioId) return list;
+  const cn = String(codNorm || '').toUpperCase();
+  if (cn !== 'USD-ARS' && cn !== 'ARS-USD') return list;
+  if (patronInstrumentacionIntDesdeTransacciones(transacciones) !== 'cp_ic') return list;
+  const monE = String((orden && orden.moneda_entregada) || '').toUpperCase().trim();
+  if (!monE) return list;
+  const cid = String(clienteId);
+  const oid = String(ordenId);
+  const pref = 'cierre orden ';
+  return list.filter((r) => {
+    if (!r || r.es_movimiento_manual === true) return true;
+    if (String(r.cliente_id || '') !== cid || String(r.orden_id || '') !== oid) return true;
+    const c = String(r.concepto || '').trim().toLowerCase();
+    if (!c.startsWith(pref)) return true;
+    if (String(r.moneda || '').toUpperCase().trim() !== monE) return true;
+    if ((Number(r.monto) || 0) >= -1e-6) return true;
+    return false;
+  });
+}
+
+/**
  * Antes de `sync_cc_caja_orden`: si quedaron **dos** filas CC cliente con el mismo «Compromiso de Pago» **plano**
  * (sin leyenda de pata), misma `transaccion_id` o mismo `transaccion_numero`, misma moneda y cliente, y montos **opuestos**
  * que netean ~0: con **multicontraparte manual** elimina la **positiva** (duplicado motor+MC / +nominal MC vs −matriz);
@@ -19929,6 +19959,18 @@ function openModalOrden(registro) {
           aplicarOrdenRegistroIntermediarioTransferenciaYTasa(registroActual);
           ordenWizardActualizarComisionesRepartoInformativo();
           pandiOrdenWizardNotificarSiParVinculadoConIntermediario(vinculosRows);
+          const codPNorm = String(normalizarCodigoTipoOperacion(codP) || codP || '').toUpperCase();
+          const estOrdL = String(registroActual.estado || '').toLowerCase();
+          if (
+            registroActual.intermediario_id &&
+            (codPNorm === 'USD-ARS' || codPNorm === 'ARS-USD') &&
+            (estOrdL === 'orden_ejecutada' || estOrdL === 'instrumentacion_cerrada_ejecucion')
+          ) {
+            void sincronizarCcYCajaDesdeOrden(registroActual.id, {
+              silenciarAvisosInvarianteCc: true,
+              silenciarErrorSync: true,
+            });
+          }
         });
       } else {
         syncOrdenIntPatronInstrumentacionWrap();
@@ -23117,12 +23159,13 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
  * Si `ordenes.estado` es **anulada** y alguna transacción de la instrumentación no está **anulada**, antes del cálculo se intenta **UPDATE** en `transacciones` (coherencia orden↔instrumentación); si falla el UPDATE, se alinean estados en memoria para el sync y se deja traza en consola.
  * **Invariante neteo CC cliente del acuerdo:** si el acuerdo está “cerrado” para este criterio (par ingreso+egreso clásico ejecutados, o multicontraparte manual con todas las transacciones ejecutadas o anuladas), la suma por moneda de las filas CC cerradas de ese cliente y orden debe ser cero, salvo el residual explicado por patas regla B y por la fila sintética «Comisión del acuerdo» sin `transaccion_id` (spread mr−me). Si no cumple, **no** se llama a `sync_cc_caja_orden` (no se persiste CC/caja derivada de este cálculo).
  * @param {string} ordenId
- * @param {{ silenciarAvisosInvarianteCc?: boolean, propagarError?: boolean }} [optsSyncCc] Si `silenciarAvisosInvarianteCc`, no muestra toasts de diagnóstico del motor ni del neteo (p. ej. sync global encadenado); el bloqueo por neteo igual evita la RPC. Si `propagarError`, el `.catch` final **rechaza** la promesa (p. ej. tras anular orden) en lugar de resolver en silencio.
+ * @param {{ silenciarAvisosInvarianteCc?: boolean, propagarError?: boolean, silenciarErrorSync?: boolean }} [optsSyncCc] Si `silenciarAvisosInvarianteCc`, no muestra toasts de diagnóstico del motor ni del neteo (p. ej. sync global encadenado); el bloqueo por neteo igual evita la RPC. Si `propagarError`, el `.catch` final **rechaza** la promesa (p. ej. tras anular orden) en lugar de resolver en silencio. Si `silenciarErrorSync`, ante fallo distinto del invariante de neteo no se muestra toast (solo consola; p. ej. sync en segundo plano al abrir orden).
  * @returns {Promise<void>}
  */
 function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
   optsSyncCc = optsSyncCc || {};
   const silenciarAvisosInvarianteCc = optsSyncCc.silenciarAvisosInvarianteCc === true;
+  const silenciarErrorSync = optsSyncCc.silenciarErrorSync === true;
   if (!ordenId || !currentUserId) return Promise.resolve();
   const fechaHoySync = fechaHoyYYYYMMDDArgentina();
   const ahora = new Date().toISOString();
@@ -23815,7 +23858,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
 
           // Evitar duplicados: clave debe distinguir dos líneas válidas con mismo monto (p. ej. ARS-USD inversa P,E: +me USD en Tx1 pendiente y en Tx2 ejecutada).
           const seenCli = new Set();
-          const rowsCcClienteUnicos = (filasCcClienteSinCompromisoPagoPlanoEspejoMismaTrx(
+          let rowsCcClienteUnicos = (filasCcClienteSinCompromisoPagoPlanoEspejoMismaTrx(
             rowsCcCliente,
             ordenId,
             usarMulticontraparteSync,
@@ -23833,6 +23876,14 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             if (seenCli.has(key)) return false;
             seenCli.add(key);
             return true;
+          });
+          rowsCcClienteUnicos = filasCcClienteQuitarCierreOrdenMonedaEntregadaCpIcUsdArsSiCorresponde(rowsCcClienteUnicos, {
+            orden,
+            ordenId,
+            clienteId,
+            intermediarioId,
+            transacciones,
+            codNorm,
           });
           const seenInt = new Set();
           const rowsCcIntUnicos = (rowsCcInt || []).filter((r) => {
@@ -23950,7 +24001,9 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
       if (err && err.code === PANDI_CC_NETEO_INVARIANT_CODE) {
         return Promise.resolve();
       }
-      showToast('Error al sincronizar CC para una orden: ' + (err && (err.message || err.details) || String(err)), 'error', 6000);
+      if (!silenciarErrorSync) {
+        showToast('Error al sincronizar CC para una orden: ' + (err && (err.message || err.details) || String(err)), 'error', 6000);
+      }
       return Promise.resolve();
     });
 }
