@@ -9063,6 +9063,8 @@ let ccDetalleMovimientosRangoInicializado = false;
 let ccCargaSerial = 0;
 /** Filtro opcional por cliente_id o intermediario_id en solapa Movimientos (vacío = todos). */
 let ccDetalleFiltroEntidadId = '';
+/** Filtro opcional por número de orden en Movimientos (texto exacto sobre `orden_numero`; vacío = todas). */
+let ccDetalleFiltroNroOrden = '';
 /** Texto de búsqueda en solapa Saldos (nombre de cliente o intermediario según Tipo). */
 let ccResumenFiltroNombre = '';
 /** Columnas extra movimientos CC manuales (pagador/cobrador) en SELECT Supabase. */
@@ -13635,6 +13637,59 @@ function poblarSelectCcDetalleEntidad() {
   sel.setAttribute('aria-label', ariaEnt);
 }
 
+/**
+ * Lista de movimientos CC detalle filtrada por tipo, entidad, rango de fechas y nº orden (lee estado global).
+ */
+function filtrarCcMovimientosDetalleLista(list) {
+  let filtrados = list.filter((m) => pandiCcDetallePasaFiltroTipo(m, ccFiltroTipo));
+  if (ccDetalleFiltroEntidadId) {
+    const fid = String(ccDetalleFiltroEntidadId);
+    if (ccFiltroTipo === 'cliente') {
+      filtrados = filtrados.filter((m) => String(m.cliente_id) === fid);
+    } else if (ccFiltroTipo === 'intermediario') {
+      filtrados = filtrados.filter(
+        (m) =>
+          (m.tipo === 'intermediario' && String(m.intermediario_id) === fid) ||
+          String(m.cc_intermediario_consolidado_id || '') === fid
+      );
+    } else if (ccFiltroTipo === 'total') {
+      if (fid.startsWith('c:')) {
+        const cid = fid.slice(2);
+        filtrados = filtrados.filter(
+          (m) => m.tipo === 'cliente' && String(m.cliente_id) === cid && m.cc_intermediario_consolidado_id == null
+        );
+      } else if (fid.startsWith('i:')) {
+        const iid = fid.slice(2);
+        filtrados = filtrados.filter(
+          (m) =>
+            (m.tipo === 'intermediario' && String(m.intermediario_id) === iid) ||
+            String(m.cc_intermediario_consolidado_id || '') === iid
+        );
+      }
+    }
+  }
+  if (!ccMovimientosMostrarTodoHistorial) {
+    const hoyStr = fechaHoyYYYYMMDDArgentina();
+    const desde = ccDetalleDesde || hoyStr;
+    const hasta = ccDetalleHasta || hoyStr;
+    filtrados = filtrados.filter((m) => {
+      const f = (m.fecha || '').toString().slice(0, 10);
+      if (desde && f < desde) return false;
+      if (hasta && f > hasta) return false;
+      return true;
+    });
+  }
+  const qOrden = String(ccDetalleFiltroNroOrden || '').trim();
+  if (qOrden) {
+    filtrados = filtrados.filter((m) => {
+      const on = m.orden_numero;
+      if (on == null || on === '') return false;
+      return String(on) === qOrden;
+    });
+  }
+  return filtrados;
+}
+
 /** Muestra el panel Saldos o Movimientos y actualiza solapas (clase activo y aria-selected). */
 function syncCcPestañasYPaneles() {
   const panelSaldos = document.getElementById('cc-panel-saldos');
@@ -13663,44 +13718,7 @@ function aplicarFiltroCcResumen() {
     if (detalleWrap) detalleWrap.style.display = 'block';
     const rangoWrap = document.getElementById('cc-detalle-rango-wrap');
     if (rangoWrap) rangoWrap.style.display = 'flex';
-    let filtrados = ccMovimientosDetalleList.filter((m) => pandiCcDetallePasaFiltroTipo(m, ccFiltroTipo));
-    if (ccDetalleFiltroEntidadId) {
-      const fid = String(ccDetalleFiltroEntidadId);
-      if (ccFiltroTipo === 'cliente') {
-        filtrados = filtrados.filter((m) => String(m.cliente_id) === fid);
-      } else if (ccFiltroTipo === 'intermediario') {
-        filtrados = filtrados.filter(
-          (m) =>
-            (m.tipo === 'intermediario' && String(m.intermediario_id) === fid) ||
-            String(m.cc_intermediario_consolidado_id || '') === fid
-        );
-      } else if (ccFiltroTipo === 'total') {
-        if (fid.startsWith('c:')) {
-          const cid = fid.slice(2);
-          filtrados = filtrados.filter(
-            (m) => m.tipo === 'cliente' && String(m.cliente_id) === cid && m.cc_intermediario_consolidado_id == null
-          );
-        } else if (fid.startsWith('i:')) {
-          const iid = fid.slice(2);
-          filtrados = filtrados.filter(
-            (m) =>
-              (m.tipo === 'intermediario' && String(m.intermediario_id) === iid) ||
-              String(m.cc_intermediario_consolidado_id || '') === iid
-          );
-        }
-      }
-    }
-    if (!ccMovimientosMostrarTodoHistorial) {
-      const hoyStr = fechaHoyYYYYMMDDArgentina();
-      const desde = ccDetalleDesde || hoyStr;
-      const hasta = ccDetalleHasta || hoyStr;
-      filtrados = filtrados.filter((m) => {
-        const f = (m.fecha || '').toString().slice(0, 10);
-        if (desde && f < desde) return false;
-        if (hasta && f > hasta) return false;
-        return true;
-      });
-    }
+    const filtrados = filtrarCcMovimientosDetalleLista(ccMovimientosDetalleList);
     actualizarRangoDetalleDefaults();
     // Tras recarga de datos (Refrescar, tick ~30 s en segundo plano, sync post-orden): mantener el orden elegido por columna.
     let filasVista = filtrados;
@@ -13949,47 +13967,15 @@ function setupCcDetalleVistaSortHeaders() {
   });
 }
 
+/** Sufijo `Cli` | `Int` | `Tot` según el filtro tipo de la vista Cuenta corriente (nombres de archivo Excel). */
+function ccExcelSufijoFiltroTipo() {
+  return ccFiltroTipo === 'intermediario' ? 'Int' : ccFiltroTipo === 'total' ? 'Tot' : 'Cli';
+}
+
 /** Exporta la tabla actual de cuenta corriente (resumen o detalle según vista, filtro tipo e incluir cero). */
 function exportarCcResumenExcel() {
   if (ccVistaToggle === 'detalle') {
-    let filtrados = ccMovimientosDetalleList.filter((m) => pandiCcDetallePasaFiltroTipo(m, ccFiltroTipo));
-    if (ccDetalleFiltroEntidadId) {
-      const fid = String(ccDetalleFiltroEntidadId);
-      if (ccFiltroTipo === 'cliente') {
-        filtrados = filtrados.filter((m) => String(m.cliente_id) === fid);
-      } else if (ccFiltroTipo === 'intermediario') {
-        filtrados = filtrados.filter(
-          (m) =>
-            (m.tipo === 'intermediario' && String(m.intermediario_id) === fid) ||
-            String(m.cc_intermediario_consolidado_id || '') === fid
-        );
-      } else if (ccFiltroTipo === 'total') {
-        if (fid.startsWith('c:')) {
-          const cid = fid.slice(2);
-          filtrados = filtrados.filter(
-            (m) => m.tipo === 'cliente' && String(m.cliente_id) === cid && m.cc_intermediario_consolidado_id == null
-          );
-        } else if (fid.startsWith('i:')) {
-          const iid = fid.slice(2);
-          filtrados = filtrados.filter(
-            (m) =>
-              (m.tipo === 'intermediario' && String(m.intermediario_id) === iid) ||
-              String(m.cc_intermediario_consolidado_id || '') === iid
-          );
-        }
-      }
-    }
-    if (!ccMovimientosMostrarTodoHistorial) {
-      const hoyStr = fechaHoyYYYYMMDDArgentina();
-      const desde = ccDetalleDesde || hoyStr;
-      const hasta = ccDetalleHasta || hoyStr;
-      filtrados = filtrados.filter((m) => {
-        const f = (m.fecha || '').toString().slice(0, 10);
-        if (desde && f < desde) return false;
-        if (hasta && f > hasta) return false;
-        return true;
-      });
-    }
+    let filtrados = filtrarCcMovimientosDetalleLista(ccMovimientosDetalleList);
     if (ccDetalleSortCol) {
       filtrados = [...filtrados].sort((a, b) => compareCcDetalleRow(a, b, ccDetalleSortCol, ccDetalleSortDir));
     }
@@ -14025,7 +14011,7 @@ function exportarCcResumenExcel() {
         return [(m.fecha || '').toString().slice(0, 10), tipoOp, nroOrden, nroTrans, m.concepto || '', ...celdasMon, estado, m.ccPagador || '', m.ccCobrador || '', mailReg || '–'];
       });
       const aoa = aoaExcelConMetaExportacion(header, rows);
-      const nombreArchivo = 'cc_detalle_movimientos_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
+      const nombreArchivo = 'Mov_CC_' + ccExcelSufijoFiltroTipo() + '_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
       import('./excel-export.js').then((mExport) => {
         mExport.generarArchivoExcel(nombreArchivo, { 'CC detalle movimientos': aoa });
         showToast('Exportado: ' + nombreArchivo, 'success');
@@ -14067,7 +14053,7 @@ function exportarCcResumenExcel() {
   });
   rows.push(totalFila);
   const aoa = aoaExcelConMetaExportacion(header, rows);
-  const nombreArchivo = 'cuenta_corriente_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
+  const nombreArchivo = 'Sal_CC_' + ccExcelSufijoFiltroTipo() + '_' + fechaHoyYYYYMMDDArgentina() + '.xlsx';
   import('./excel-export.js').then((mExport) => {
     mExport.generarArchivoExcel(nombreArchivo, { 'Cuenta corriente': aoa });
     showToast('Exportado: ' + nombreArchivo, 'success');
@@ -16196,6 +16182,18 @@ function setupCuentaCorriente() {
     ccDetalleEntidadSel.addEventListener('change', () => {
       ccDetalleFiltroEntidadId = ccDetalleEntidadSel.value || '';
       aplicarFiltroCcResumen();
+    });
+  }
+  const ccDetalleNroOrdenEl = document.getElementById('cc-detalle-filtro-nro-orden');
+  if (ccDetalleNroOrdenEl) {
+    let persistNroOrdenTmr = null;
+    ccDetalleNroOrdenEl.addEventListener('input', () => {
+      ccDetalleFiltroNroOrden = ccDetalleNroOrdenEl.value || '';
+      aplicarFiltroCcResumen();
+      if (persistNroOrdenTmr) clearTimeout(persistNroOrdenTmr);
+      persistNroOrdenTmr = setTimeout(() => {
+        void pandiPersistCcVistaSnapshot();
+      }, 450);
     });
   }
 
@@ -19101,6 +19099,7 @@ function pandiPersistCcVistaSnapshot() {
       ccVistaToggle,
       ccResumenFiltroNombre,
       ccDetalleFiltroEntidadId,
+      ccDetalleFiltroNroOrden,
       ccDetalleDesde,
       ccDetalleHasta,
       ccMovimientosMostrarTodoHistorial: !!ccMovimientosMostrarTodoHistorial,
@@ -19146,6 +19145,8 @@ function pandiSyncCcFiltrosDomDesdeEstado() {
   const ccNomEl = document.getElementById('cc-resumen-filtro-nombre');
   if (ccNomEl) ccNomEl.value = ccResumenFiltroNombre || '';
   syncCcResumenFiltroNombreAccesibilidad();
+  const ccNroOrdenEl = document.getElementById('cc-detalle-filtro-nro-orden');
+  if (ccNroOrdenEl) ccNroOrdenEl.value = ccDetalleFiltroNroOrden || '';
 }
 
 /** Snapshots IDB antiguos sin `cc_cliente_vinculado_intermediario`: inferir clientes vinculados desde movimientos consolidados (vista Total sin duplicar). */
@@ -19181,6 +19182,7 @@ async function pandiTryRestoreCcVistaDesdeSnapshot() {
     ccVistaToggle = rec.ccVistaToggle === 'detalle' ? 'detalle' : 'resumen';
     ccResumenFiltroNombre = rec.ccResumenFiltroNombre != null ? String(rec.ccResumenFiltroNombre) : '';
     ccDetalleFiltroEntidadId = rec.ccDetalleFiltroEntidadId ? String(rec.ccDetalleFiltroEntidadId) : '';
+    ccDetalleFiltroNroOrden = rec.ccDetalleFiltroNroOrden != null ? String(rec.ccDetalleFiltroNroOrden) : '';
     ccDetalleDesde = rec.ccDetalleDesde != null ? String(rec.ccDetalleDesde) : '';
     ccDetalleHasta = rec.ccDetalleHasta != null ? String(rec.ccDetalleHasta) : '';
     ccMovimientosMostrarTodoHistorial = !!rec.ccMovimientosMostrarTodoHistorial;

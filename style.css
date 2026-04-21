@@ -2105,6 +2105,48 @@
       margin-left: auto;
       flex: 0 0 auto;
     }
+    .cc-toolbar-mov-col-orden {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+    .cc-input-nro-orden {
+      width: 5.5rem;
+      max-width: 100%;
+      padding: 0.45rem 0.5rem;
+      min-height: 2.25rem;
+      box-sizing: border-box;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #fff;
+      font-size: 0.9rem;
+      font-family: inherit;
+      color: #374151;
+      line-height: 1.25;
+    }
+    .cc-input-nro-orden:hover { border-color: #9ca3af; }
+    .cc-input-nro-orden:focus { outline: none; border-color: #0d7d3d; box-shadow: 0 0 0 2px rgba(13, 125, 61, 0.2); }
+    #cc-toolbar-movimientos-filtros .btn-excel.btn-icon-only {
+      padding: 0.45rem;
+      min-width: 2.25rem;
+    }
+    #cc-toolbar-movimientos-filtros .btn-excel.btn-icon-only .btn-icon {
+      margin: 0;
+    }
+    @media (min-width: 960px) {
+      .cc-toolbar-mov-filtros-grid {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .cc-toolbar-mov-filtros-grupo {
+        flex-wrap: nowrap;
+      }
+      .cc-toolbar-mov-col-fechas {
+        flex-wrap: nowrap;
+      }
+    }
     @media (max-width: 720px) {
       .cc-toolbar-mov-filtros-grupo {
         flex-basis: 100%;

@@ -260,7 +260,7 @@
         <span class="menu-label">Auditoría</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.65</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.66</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -766,30 +766,34 @@
                   <option value="">Todos</option>
                 </select>
               </div>
+              <div class="cc-toolbar-mov-col-orden">
+                <label for="cc-detalle-filtro-nro-orden" class="sr-only">Número de orden</label>
+                <input type="search" id="cc-detalle-filtro-nro-orden" class="cc-input-nro-orden" inputmode="numeric" autocomplete="off" placeholder="Orden" title="Filtrar por número de orden (coincidencia exacta). Vacío = todas." aria-label="Filtrar movimientos por número de orden"/>
+              </div>
               <div class="cc-toolbar-mov-col-fechas">
                 <span id="cc-detalle-rango-wrap">
                   <label class="ordenes-filtro-label cc-fecha-filtro-label"><span>Desde:</span><input type="date" id="cc-detalle-desde" class="cc-input-fecha" aria-label="Fecha desde"/></label>
                   <label class="ordenes-filtro-label cc-fecha-filtro-label"><span>Hasta:</span><input type="date" id="cc-detalle-hasta" class="cc-input-fecha" aria-label="Fecha hasta"/></label>
                 </span>
                 <div class="cc-detalle-rango-acciones">
-                  <button type="button" class="btn-secondary" id="cc-detalle-btn-hoy" title="Ver solo movimientos del día de hoy (Argentina)" aria-label="Filtrar movimientos al día de hoy">
-                    <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#icon-sprite-33"></use></svg></span>Hoy
+                  <button type="button" class="btn-secondary btn-icon-only" id="cc-detalle-btn-hoy" title="Hoy: solo movimientos del día (Argentina)" aria-label="Filtrar movimientos al día de hoy">
+                    <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#icon-sprite-33"></use></svg></span>
                   </button>
-                  <button type="button" class="btn-secondary" id="cc-detalle-btn-todo-historial" title="Ver todos los movimientos sin filtro de fechas" aria-label="Ver histórico completo de movimientos">
-                    <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-38"></use></svg></span>Histórico
+                  <button type="button" class="btn-secondary btn-icon-only" id="cc-detalle-btn-todo-historial" title="Histórico: todos los movimientos sin filtro de fechas" aria-label="Ver histórico completo de movimientos">
+                    <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-38"></use></svg></span>
                   </button>
                 </div>
               </div>
             </div>
             <div class="cc-toolbar-mov-col-acciones">
-              <button type="button" class="btn-secondary" id="cc-btn-refrescar-movimientos" title="Recalcular saldos y movimientos" aria-label="Refrescar movimientos cuenta corriente">
-                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span>Refrescar
+              <button type="button" class="btn-secondary btn-icon-only" id="cc-btn-refrescar-movimientos" title="Refrescar: recalcular saldos y movimientos desde órdenes" aria-label="Refrescar movimientos cuenta corriente">
+                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span>
               </button>
-              <button type="button" class="btn-primary" id="cc-btn-movimiento-manual-mov" title="Registrar movimiento de cuenta corriente sin orden" aria-label="Nuevo movimiento en cuenta corriente" style="display:none;">
-                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-37"></use></svg></span>Nuevo movimiento
+              <button type="button" class="btn-primary btn-icon-only" id="cc-btn-movimiento-manual-mov" title="Nuevo movimiento manual (sin orden)" aria-label="Nuevo movimiento en cuenta corriente" style="display:none;">
+                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-37"></use></svg></span>
               </button>
-              <button type="button" class="btn-excel" id="cc-btn-exportar-movimientos" title="Exportar movimientos a Excel" aria-label="Exportar movimientos a Excel">
-                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-35"></use></svg></span>Exportar
+              <button type="button" class="btn-excel btn-icon-only" id="cc-btn-exportar-movimientos" title="Exportar movimientos a Excel (mismos filtros y orden que en pantalla)" aria-label="Exportar movimientos a Excel">
+                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-35"></use></svg></span>
               </button>
             </div>
           </div>

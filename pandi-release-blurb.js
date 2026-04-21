@@ -5,10 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.65',
+  versionLabel: 'v3.7.66',
   lines: [
-    'Corrección en cuenta corriente: cuando una operación tenía compensación por saldo (cambio de sentido del cobro respecto del modelo típico), al sincronizar ya no se fuerza un modo de instrumentación que podía alterar los importes mostrados.',
-    'Si desactivás multicontraparte manual en una orden, seguimos respetando tu elección al sincronizar.',
-    'Textos de ayuda actualizados en la guía de cuenta corriente para estos casos.',
+    'En Cuenta corriente → Movimientos, la barra de filtros queda más clara en una línea: los botones muestran solo el ícono y al pasar el mouse ves qué hace cada uno.',
+    'Podés acotar la lista por número de orden; al exportar a Excel, el nombre del archivo indica si estabas viendo Cliente, Intermediario o Total, tanto en Saldos como en Movimientos.',
   ],
 };
