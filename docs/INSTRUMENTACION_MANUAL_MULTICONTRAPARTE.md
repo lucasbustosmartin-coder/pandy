@@ -1,6 +1,6 @@
 # Instrumentación manual multicontraparte — definiciones acordadas
 
-**Estado:** implementado en app (`main.js`, `index.html`) + migraciones `sql/migracion_instrumentacion_multicontraparte.sql` y `sql/migracion_transaccion_chk_pagador_cobrador_multicontraparte.sql` (este último corrige el `CHECK` que impedía dos roles `cliente` con entidades distintas). Ejecutar las migraciones en Supabase antes de usar el checkbox y las columnas en transacciones.
+**Estado:** implementado en app (`main.js`, `index.html`) + migraciones `sql/migracion_instrumentacion_multicontraparte.sql` y `sql/migracion_transaccion_chk_pagador_cobrador_multicontraparte.sql` (este último corrige el `CHECK` que impedía dos roles `cliente` con entidades distintas). Además `sql/migracion_instrumentacion_multicontraparte_sync_no_auto.sql` (`instrumentacion.multicontraparte_sync_no_auto`: el operador puede declinar que el sync vuelva a prender Multi automáticamente; ver §10 y `docs/SUPABASE_REQUISITOS.md`). Ejecutar las migraciones en Supabase antes de usar el checkbox y las columnas en transacciones.
 
 **Relacionado:** `docs/INSTRUMENTACION_MULTITRANSACCION_Y_CC.md`, `docs/CORAZON_SISTEMA_CC_Y_CAJA.md`, `docs/CC_MOVIMIENTO_MANUAL.md`, reglas en `reglas_de_negocio`.
 
@@ -87,6 +87,7 @@ Al abrir **Nueva transacción** con el flag activo, se cargan las transacciones 
 
 ## 10. Historial
 
+- 2026-04-17: Columna `instrumentacion.multicontraparte_sync_no_auto` + lógica en `sincronizarCcYCajaDesdeOrden`: el sync puede activar `multicontraparte_manual` automáticamente (Aj o desvío pag/cob vs plantilla) **salvo** que el operador haya desactivado Multi (flag en true). El wizard setea el flag al desmarcar y lo limpia al marcar Multi o al auto-activar. Migración `sql/migracion_instrumentacion_multicontraparte_sync_no_auto.sql` — **aplicada en dev y producción** (documentado en `docs/SUPABASE_REQUISITOS.md`).
 - 2026-03-24: Definiciones iniciales (alcance, actores, CC, caja, cierre, Fase 1).
 - 2026-03-24: Cierre de definiciones (1) mismo signo CC acuerdo con n pagos; (2) IDs obligatorios; (3) suma ARS = compromiso cliente, suma USD = compromiso entrega Pandy / quien actúa en su nombre; (4) manual totalmente libre hasta cerrar acuerdo, resto igual.
 - 2026-03-27: Migración `migracion_transaccion_chk_pagador_cobrador_multicontraparte.sql`: el `CHECK` en BD alineado a dos clientes con rol `cliente` y UUID distintos.

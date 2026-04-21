@@ -38,6 +38,7 @@ const BOOTSTRAP_FILES = [
   'migracion_transaccion_cobrador_pagador.sql',
   'migracion_instrumentacion_multicontraparte.sql',
   'migracion_instrumentacion_ajustada_manual.sql',
+  'migracion_instrumentacion_multicontraparte_sync_no_auto.sql',
   'migracion_transaccion_chk_pagador_cobrador_multicontraparte.sql',
   'migracion_app_empresa.sql',
   'app_config_session_timeout.sql',

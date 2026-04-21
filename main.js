@@ -8777,8 +8777,8 @@ function openModalOrdenesPendientes(estadoFilter) {
   const selEstado = document.getElementById('ordenes-pendientes-filtro-estado');
   if (selEstado) selEstado.value = estadoFilter || '';
   const selectOrdPend = ordenesTieneNumeroColumn
-    ? 'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual)'
-    : 'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual)';
+    ? 'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual,multicontraparte_sync_no_auto)'
+    : 'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual,multicontraparte_sync_no_auto)';
   client.from('ordenes').select(selectOrdPend).neq('estado', 'orden_ejecutada').neq('estado', 'anulada').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((res) => {
       if (res.error) {
         loadingEl.style.display = 'none';
@@ -11762,12 +11762,39 @@ function sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUs
 }
 
 /**
+ * Solo `vite dev` (`import.meta.env.DEV`): permite que `sync_cc_caja_orden` persista aunque la CC del acuerdo **no** netee a cero (p. ej. descubierto deliberado en multicontraparte).
+ *
+ * Activar **una** de:
+ * - Consola: `localStorage.setItem('pandi_dev_omitir_invariante_neteo_cc','1')` — desactivar: `localStorage.removeItem('pandi_dev_omitir_invariante_neteo_cc')`.
+ * - `.env.local`: `VITE_PANDI_DEV_OMITIR_INVARIANTE_NETEO_CC=1` y reiniciar `npm run dev`.
+ *
+ * En build de producción o `vite preview` **no** aplica aunque exista la clave en `localStorage`.
+ * @returns {boolean}
+ */
+function pandiDevOmitirInvarianteNeteoCcClientePermitido() {
+  try {
+    const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : null;
+    if (!env || env.DEV !== true) return false;
+    if (String(env.VITE_PANDI_DEV_OMITIR_INVARIANTE_NETEO_CC || '').trim() === '1') return true;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('pandi_dev_omitir_invariante_neteo_cc') === '1') {
+      return true;
+    }
+    return false;
+  } catch (_e) {
+    return false;
+  }
+}
+
+/**
  * Invariante dura: solo cuando **no queda ninguna transacción pendiente** (todas ejecutada o anulada, al menos una ejecutada) **y** además: derivación sin motor completo (**solo** `multicontraparte manual`, flag `usarDerivacionCcSinMotorReglas` en sync) con todas las trx ejecutadas/anuladas, **o** (sin esa derivación) par clásico ingreso C→P/I + egreso entrega ambos ejecutados, **o** la orden está en `orden_ejecutada` / `instrumentacion_cerrada_ejecucion`.
  * Entonces la CC del cliente del acuerdo (filas **cerradas** de esta orden) debe netear a cero por moneda,
  * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata» o «Préstamo al cliente (cobertura Pandy — moneda recibida)» (gemelo +m de la pata −m regla B; el **+m** préstamo se **resta** del total bruto antes del residual porque el par ± ya está en `sumaMovimientosPataMonRExentosNeteo` y si no se resta bloquea el sync), y en moneda entregada el cluster «Pandy cumple pata en moneda entregada» + «Ajuste libro acuerdo» pareado (misma transacción; doble pata empresa→cliente en monR+monE),
  * y en la moneda correspondiente la fila sintética «Comisión del acuerdo» **sin** `transaccion_id` (spread mr−me; alineada a refuerzo `cerrado` con toda la instrumentación ejecutada);
  * y filas **«Compensación parcial/total en cuenta corriente- Orden … y Trans …»** (ingreso USD-USD+int invertido C→P a P→C con `compensacion_cc_monto_aplicado` en la transacción; legacy «parcial o total»);
  * y en **USD-USD + int.** con `monR===monE` y compensación persistida en transacciones, el **Compromiso de Pago** del egreso **Intermediario→Cliente** (+me) en esa moneda (`sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUsdConCompensacionTrx`).
+ * @param {boolean} [opts.omitirInvarianteNeteoCcClienteAcuerdoCerrado] Si true (multicontraparte manual elegible, o
+ *   desvío **solo** de pagador/cobrador + UUIDs participantes vs plantilla, vía `pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo`),
+ *   **no** se exige neteo a cero. No aplica por solo monto/modo/TC distintos del estándar.
  * @returns {{ ok: true } | { ok: false, msg: string, sums: Record<string, number>, mon?: string }}
  */
 function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
@@ -11777,6 +11804,7 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
     clienteId,
     rowsCcClienteUnicos,
     usarDerivacionCcSinMotorReglas,
+    omitirInvarianteNeteoCcClienteAcuerdoCerrado,
     transacciones,
   } = opts || {};
   if (!clienteId || !ordenId) return { ok: true };
@@ -11799,6 +11827,17 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
     (derivacionSinMotorCompleta || (!usarDerivacionCcSinMotorReglas && parClasico) || ordenInstrumentacionCerrada);
 
   if (!cerradaParaNeteo) return { ok: true };
+
+  if (pandiDevOmitirInvarianteNeteoCcClientePermitido()) {
+    console.warn(
+      '[Pandi CC dev] Invariante neteo cliente omitido: se llamará sync_cc_caja_orden aunque el libro no netee a cero. Ver pandiDevOmitirInvarianteNeteoCcClientePermitido en main.js.',
+    );
+    return { ok: true };
+  }
+
+  if (omitirInvarianteNeteoCcClienteAcuerdoCerrado === true) {
+    return { ok: true };
+  }
 
   const toJoinInv = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
   const codTipoInv = String((toJoinInv && toJoinInv.codigo) || '').toUpperCase();
@@ -19321,9 +19360,9 @@ function loadOrdenes() {
   }
 
   const selectBase =
-    'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual)';
+    'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual,multicontraparte_sync_no_auto)';
   const selectConNumero =
-    'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual)';
+    'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual,multicontraparte_sync_no_auto)';
 
   function runLoadOrdenes(selectCols) {
     return client
@@ -19364,9 +19403,9 @@ function loadOrdenes() {
           }
           if (
             (msg.includes('instrumentacion') || msg.includes('multicontraparte')) &&
-            selectCols.includes('instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual)')
+            selectCols.includes('instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual,multicontraparte_sync_no_auto)')
           ) {
-            const sinMc = selectCols.replace(', instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual)', '');
+            const sinMc = selectCols.replace(', instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual,multicontraparte_sync_no_auto)', '');
             return runLoadOrdenes(sinMc);
           }
           return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(async () => {
@@ -21953,7 +21992,15 @@ function renderOrdenWizardInstrumentacion(instId) {
           : () => {
             const checked = chkMcInst.checked;
             if (!checked) {
-              client.from('instrumentacion').update({ multicontraparte_manual: false, updated_at: new Date().toISOString() }).eq('id', instId).then((rUp) => {
+              client
+                .from('instrumentacion')
+                .update({
+                  multicontraparte_manual: false,
+                  multicontraparte_sync_no_auto: true,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', instId)
+                .then((rUp) => {
                 if (rUp.error) {
                   chkMcInst.checked = true;
                   showToast('No se pudo guardar la opción multicontraparte.', 'error');
@@ -21975,7 +22022,15 @@ function renderOrdenWizardInstrumentacion(instId) {
               'Activar',
               () => {
                 chkMcInst.disabled = true;
-                client.from('instrumentacion').update({ multicontraparte_manual: true, updated_at: new Date().toISOString() }).eq('id', instId).then((rUp) => {
+                client
+                  .from('instrumentacion')
+                  .update({
+                    multicontraparte_manual: true,
+                    multicontraparte_sync_no_auto: false,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', instId)
+                  .then((rUp) => {
                   if (rUp.error) {
                     chkMcInst.checked = false;
                     chkMcInst.disabled = false;
@@ -22003,7 +22058,15 @@ function renderOrdenWizardInstrumentacion(instId) {
                     .catch((err) => {
                       chkMcInst.checked = false;
                       chkMcInst.disabled = false;
-                      client.from('instrumentacion').update({ multicontraparte_manual: false, updated_at: new Date().toISOString() }).eq('id', instId).then(() => {
+                      client
+                        .from('instrumentacion')
+                        .update({
+                          multicontraparte_manual: false,
+                          multicontraparte_sync_no_auto: false,
+                          updated_at: new Date().toISOString(),
+                        })
+                        .eq('id', instId)
+                        .then(() => {
                         renderOrdenWizardInstrumentacion(instId);
                       });
                       showToast('No se pudo completar la activación: ' + (err && (err.message || err.code) ? String(err.message || err.code) : 'error'), 'error');
@@ -23488,14 +23551,15 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           const usarMotorReglasNegocio = tieneReglasNeg;
           return client
             .from('instrumentacion')
-            .select('id, multicontraparte_manual, instrumentacion_ajustada_manual')
+            .select('id, multicontraparte_manual, instrumentacion_ajustada_manual, multicontraparte_sync_no_auto')
             .eq('orden_id', ordenId)
             .maybeSingle()
             .then((rInst) => {
         if (!rInst.data || !rInst.data.id) return Promise.resolve();
         const instId = rInst.data.id;
-        const multicontraparteManual = !!(rInst.data && rInst.data.multicontraparte_manual);
-        const instrumentacionAjustadaManual = !!(rInst.data && rInst.data.instrumentacion_ajustada_manual);
+        const multicontraparteManualDb = !!(rInst.data && rInst.data.multicontraparte_manual);
+        const multicontraparteSyncNoAuto = !!(rInst.data && rInst.data.multicontraparte_sync_no_auto);
+        const instrumentacionAjustadaManualDb = !!(rInst.data && rInst.data.instrumentacion_ajustada_manual);
         const selectColsTrxInstrumentacionSync =
           'id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at, compensacion_cc_monto_aplicado, compensacion_cc_saldo_cliente_moneda_antes';
         return Promise.all([
@@ -23540,6 +23604,39 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             );
           })
           .then(([rTr, rCom, rModos, rIntNom, trxSyncIn]) => {
+          const eligibleMcInst = instrumentacionMulticontraparteManualPermitida(orden, toJoin);
+          const roleDesvioParaAutoMc =
+            !multicontraparteManualDb &&
+            eligibleMcInst &&
+            pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo(orden, toJoin || {}, trxSyncIn, rModos.data || []);
+          const activarMcAutoSync =
+            !multicontraparteManualDb &&
+            !multicontraparteSyncNoAuto &&
+            eligibleMcInst &&
+            (instrumentacionAjustadaManualDb || roleDesvioParaAutoMc);
+          const promActivarMcAuto =
+            activarMcAutoSync
+              ? client
+                  .from('instrumentacion')
+                  .update({
+                    multicontraparte_manual: true,
+                    multicontraparte_sync_no_auto: false,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', instId)
+              : Promise.resolve(null);
+          return promActivarMcAuto.then((rMcAuto) => {
+            let multicontraparteManual = multicontraparteManualDb;
+            if (activarMcAutoSync && rMcAuto && rMcAuto.error) {
+              if (typeof console !== 'undefined' && console.warn) {
+                console.warn(
+                  'sincronizarCcYCajaDesdeOrden: multicontraparte automático (instrumentación ajustada o desvío pag/cob) no persistido:',
+                  rMcAuto.error.message || rMcAuto.error,
+                );
+              }
+            } else if (activarMcAutoSync && rMcAuto && !rMcAuto.error) {
+              multicontraparteManual = true;
+            }
           const transacciones = transaccionesEnriquecerIdsClienteAcuerdoSingleClienteInstrumentacion(
             trxSyncIn,
             orden,
@@ -23661,6 +23758,11 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
            */
           const usarDerivacionCcSinMotorReglas = usarMulticontraparteSync;
           const usarMotorEfectivo = usarMotorReglasNegocio && !usarDerivacionCcSinMotorReglas;
+          /** Producto: no exigir neteo CC acuerdo–Pandy a cero si MC manual, o (sin MC) solo si pag/cob + UUIDs participantes difieren de la plantilla — no basta monto/modo/TC ni el flag Aj por otros desvíos. */
+          const omitirInvarianteNeteoCcClienteAcuerdoCerrado =
+            usarMulticontraparteSync ||
+            (!usarMulticontraparteSync &&
+              pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo(orden, toJoin || {}, transacciones, rModos.data || []));
 
           const rowsCcCliente = [];
           const rowsCcInt = [];
@@ -24237,17 +24339,21 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               14000
             );
           }
-          // Invariante dura: acuerdo cerrado (par clásico o MC con todas las trx ejecutadas/anuladas) → CC del cliente del acuerdo netea por moneda; MC permite residual en monR solo por movimientos con leyenda regla B. Si falla, no se llama a la RPC (no persistir CC incoherente).
+          // Invariante dura: acuerdo cerrado (par clásico o MC con todas las trx ejecutadas/anuladas) → CC del cliente del acuerdo netea por moneda; MC permite residual en monR solo por movimientos con leyenda regla B. Si falla, no se llama a la RPC (no persistir CC incoherente). Con MC, o sin MC pero pag/cob+UUIDs ≠ plantilla, no se exige neteo a cero (no basta monto/modo/TC).
           const invNet = validarInvarianteNeteoCcClienteAcuerdoCerrado({
             orden,
             ordenId,
             clienteId,
             rowsCcClienteUnicos,
             usarDerivacionCcSinMotorReglas,
+            omitirInvarianteNeteoCcClienteAcuerdoCerrado,
             transacciones,
           });
           if (!invNet.ok) {
-            console.error('[Pandi CC] Bloqueo sync_cc_caja_orden — neteo:', invNet.msg, invNet.sums || {});
+            /** Con `silenciarAvisosInvarianteCc` (p. ej. sync global al cargar) no usar `console.error`: duplica ruido y asusta en cada F5; el `.catch` de `sincronizarCcYCajaDesdeOrden` ya hace `console.warn` con el mensaje. */
+            if (!silenciarAvisosInvarianteCc) {
+              console.error('[Pandi CC] Bloqueo sync_cc_caja_orden — neteo:', invNet.msg, invNet.sums || {});
+            }
             if (!silenciarAvisosInvarianteCc) {
               showToast(invNet.msg, 'error', 16000);
             }
@@ -24275,6 +24381,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                 .then(() => pandiPersistInstrumentacionAjustadaManualParaOrden(ordenId));
             }
             return pandiPersistInstrumentacionAjustadaManualParaOrden(ordenId);
+          });
           });
         });
       });
@@ -25038,9 +25145,10 @@ function modosPlantilla2txDesdeTransaccionesOrdenadas(rowsSorted, patronInt) {
 }
 
 /**
- * @returns {boolean|null} null = no aplica plantilla estándar para esta orden (no se toca el flag).
+ * Construye plantilla estándar y lista de transacciones no anuladas ordenadas por número (misma lógica que el flag Aj).
+ * @returns {{ plantilla: unknown[], actSorted: unknown[] } | null}
  */
-function pandiEvaluarDesvioInstrumentacionVsPlantillaSistema(orden, tipoRow, transacciones, patronInt, modoEfectivoId, modoChequeId) {
+function pandiConstruirPlantillaYTrxActualesOrdenadasInst(orden, tipoRow, transacciones, patronInt, modoEfectivoId, modoChequeId) {
   if (!orden || !tipoRow || !modoEfectivoId) return null;
   const codigo = String(tipoRow.codigo || '');
   const mi = (tipoRow.moneda_in || '').toString().toUpperCase().trim();
@@ -25075,15 +25183,77 @@ function pandiEvaluarDesvioInstrumentacionVsPlantillaSistema(orden, tipoRow, tra
     return transaccionEstadoTextoNormalizado(t) !== 'anulada';
   });
   if (listaFiltrada.length === 0) return null;
-  if (listaFiltrada.length !== plantilla.length) return true;
-
   const actSorted = listaFiltrada.slice().sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0));
+  return { plantilla, actSorted };
+}
+
+function firmasPlantillaInstParticipantesIguales(esp, act) {
+  return (
+    esp.pag === act.pag &&
+    esp.cob === act.cob &&
+    esp.pci === act.pci &&
+    esp.cci === act.cci &&
+    esp.pii === act.pii &&
+    esp.cii === act.cii
+  );
+}
+
+/**
+ * Solo desvío de **pagador/cobrador** (strings pag/cob + UUIDs cliente/intermediario) frente a la plantilla.
+ * No considera monto, modo de pago ni TC. Si cantidad de trx ≠ plantilla o tipo/moneda de una fila ≠ plantilla, no califica (false).
+ * @returns {boolean|null} null = no aplica plantilla estándar para esta orden.
+ */
+function pandiEvaluarDesvioPagadorCobradorVsPlantillaSistema(orden, tipoRow, transacciones, patronInt, modoEfectivoId, modoChequeId) {
+  const pair = pandiConstruirPlantillaYTrxActualesOrdenadasInst(orden, tipoRow, transacciones, patronInt, modoEfectivoId, modoChequeId);
+  if (!pair) return null;
+  const { plantilla, actSorted } = pair;
+  if (actSorted.length !== plantilla.length) return false;
+  for (let i = 0; i < plantilla.length; i++) {
+    const esp = firmaTransaccionParaCompararPlantillaInst(plantilla[i]);
+    const act = firmaTransaccionParaCompararPlantillaInst(actSorted[i]);
+    if (esp.tipo !== act.tipo || esp.moneda !== act.moneda) return false;
+    if (!firmasPlantillaInstParticipantesIguales(esp, act)) return true;
+  }
+  return false;
+}
+
+/**
+ * @returns {boolean|null} null = no aplica plantilla estándar para esta orden (no se toca el flag).
+ */
+function pandiEvaluarDesvioInstrumentacionVsPlantillaSistema(orden, tipoRow, transacciones, patronInt, modoEfectivoId, modoChequeId) {
+  const pair = pandiConstruirPlantillaYTrxActualesOrdenadasInst(orden, tipoRow, transacciones, patronInt, modoEfectivoId, modoChequeId);
+  if (!pair) return null;
+  const { plantilla, actSorted } = pair;
+  if (actSorted.length !== plantilla.length) return true;
   for (let i = 0; i < plantilla.length; i++) {
     const esp = firmaTransaccionParaCompararPlantillaInst(plantilla[i]);
     const act = firmaTransaccionParaCompararPlantillaInst(actSorted[i]);
     if (!firmasPlantillaInstCoincidenTol(esp, act)) return true;
   }
   return false;
+}
+
+/**
+ * Desvío **vivo** solo pagador/cobrador (+ UUIDs participantes) respecto de la plantilla; no monto/modo/TC. Para omitir invariante neteo sin MC.
+ * @returns {boolean}
+ */
+function pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo(orden, tipoRow, transacciones, modosRows) {
+  if (!orden || !tipoRow || !Array.isArray(modosRows) || modosRows.length === 0) return false;
+  const idEf = (modosRows.find((m) => String(m.codigo || '').toLowerCase() === 'efectivo') || {}).id;
+  const idChq = (modosRows.find((m) => String(m.codigo || '').toLowerCase() === 'cheque') || {}).id;
+  if (!idEf) return false;
+  const esChqTipo = esTipoOperacionChequeArs(tipoRow.codigo, tipoRow.moneda_in, tipoRow.moneda_out);
+  const idModoPlantRef =
+    orden.intermediario_id && esChqTipo
+      ? idEf
+      : pandiModoPagoPlantillaSinIntermediarioIdDesdeModosRows(modosRows, tipoRow.codigo, tipoRow.moneda_in, tipoRow.moneda_out);
+  if (!idModoPlantRef) return false;
+  const patronInt =
+    orden.intermediario_id && !esTipoOperacionChequeArs(tipoRow.codigo, tipoRow.moneda_in, tipoRow.moneda_out)
+      ? patronInstrumentacionIntDesdeTransacciones(transacciones)
+      : 'cp_ic';
+  const desvioRoles = pandiEvaluarDesvioPagadorCobradorVsPlantillaSistema(orden, tipoRow, transacciones, patronInt, idModoPlantRef, idChq || null);
+  return desvioRoles === true;
 }
 
 /**

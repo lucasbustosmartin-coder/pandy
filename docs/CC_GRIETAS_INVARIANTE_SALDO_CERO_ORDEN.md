@@ -165,6 +165,46 @@ Helpers: `motorCcTransaccionEsperaReglaEnTabla`, `sumaCcClienteCerradoPorMonedaD
 
 ---
 
+## Producción: cuándo **no** se exige neteo a cero (cualquier tipo de operación)
+
+Antes de `sync_cc_caja_orden`, si la orden está en la rama «cerrada para neteo» (`validarInvarianteNeteoCcClienteAcuerdoCerrado`), el chequeo duro **se omite** cuando se cumple **alguna** de:
+
+1. **Multicontraparte manual elegible** en sync (`usarMulticontraparteSync` / `usarDerivacionCcSinMotorReglas`): mismas reglas que el armado MC en `sincronizarCcYCajaDesdeOrden`.
+2. **Sin MC:** desvío **solo** de **pagador/cobrador** (strings `pag`/`cob` efectivos) y **UUIDs** de participantes (`pagador_cliente_id`, `cobrador_cliente_id`, `pagador_intermediario_id`, `cobrador_intermediario_id`) respecto de la plantilla estándar del tipo, fila a fila (mismo orden por `numero` que el flag Aj). **No** alcanza con cambiar solo monto, modo de pago o tipo de cambio: en ese caso el invariante **sí** corre. Implementación: `pandiConstruirPlantillaYTrxActualesOrdenadasInst` + `pandiEvaluarDesvioPagadorCobradorVsPlantillaSistema` + `pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo`. Si la cantidad de transacciones comparables ≠ cantidad de filas de plantilla, o `tipo`/`moneda` de una fila ≠ plantilla, **no** se omite por esta vía (no se considera “solo roles”).
+
+El badge **Aj** y `instrumentacion_ajustada_manual` en BD siguen reflejando **cualquier** desvío frente a la plantilla (incl. monto/modo); eso **no** omite el invariante por sí solo.
+
+**Alcance:** aplica a **todos** los códigos de tipo de operación soportados por la plantilla / MC, **no** solo USD-USD con intermediario.
+
+**Efectos colaterales:**
+
+| Área | Efecto |
+|------|--------|
+| **CC cliente / caja persistidos** | Puede quedar saldo distinto de cero en el libro del acuerdo con Pandy **a propósito** (p. ej. descubierto), coherente con el armado de filas del sync. |
+| **CC intermediario, caja, comisiones** | Mismo payload de siempre hacia la RPC; sin cambio de esquema. |
+| **G/P operativa, control de calidad, informes SQL** | Leen lo persistido; **no** invocan este invariante del front. |
+| **Operador / datos** | Monto o modo mal cargados respecto del estándar **no** apagan el neteo; un error solo en pag/cob sí. |
+| **Solo MC** | `pandiPersistInstrumentacionAjustadaManualParaOrden` no toca el flag Aj; la omisión la cubre la rama MC. |
+
+---
+
+## Prueba local: omitir el invariante de neteo (solo `vite dev`)
+
+Para **persistir** CC/caja aunque `validarInvarianteNeteoCcClienteAcuerdoCerrado` fallaría (p. ej. multicontraparte con descubierto intencional en el libro del acuerdo), en desarrollo local:
+
+1. **`npm run dev`** (no aplica en build de producción ni en `vite preview` con bundle prod).
+2. Activar **una** opción:
+   - En la consola del navegador: `localStorage.setItem('pandi_dev_omitir_invariante_neteo_cc','1')` y disparar el sync (guardar trx, abrir orden, etc.). Quitar al terminar: `localStorage.removeItem('pandi_dev_omitir_invariante_neteo_cc')`.
+   - O en `.env.local`: `VITE_PANDI_DEV_OMITIR_INVARIANTE_NETEO_CC=1` y reiniciar Vite.
+
+En consola aparece un `console.warn` explícito cuando se omite la validación. **Riesgo:** datos incoherentes con el invariante de producto en Supabase; usar solo en bases de desarrollo.
+
+**Al cargar el panel sin bypass:** el sync global (`sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion`) llama a `sincronizarCcYCajaDesdeOrden` con `silenciarAvisosInvarianteCc: true`; si una orden no netea, **no** se emite `console.error` en el bloque del invariante (evita rojo en cada F5); el rechazo sigue registrándose en el `console.warn` del `.catch` de `sincronizarCcYCajaDesdeOrden`.
+
+Implementación: `pandiDevOmitirInvarianteNeteoCcClientePermitido` y el early return en `validarInvarianteNeteoCcClienteAcuerdoCerrado` (`main.js`).
+
+---
+
 ## Pendiente / endurecimiento futuro
 
 1. **Validación dura al guardar** instrumentación: pagador/cobrador deben matchear al menos una clave prevista para el tipo (bloquear guardado con mensaje).
