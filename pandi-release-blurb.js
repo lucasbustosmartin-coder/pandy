@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.7.64',
+  versionLabel: 'v3.7.65',
   lines: [
-    'Si desactivás la instrumentación multicontraparte manual en una orden, esa elección se respeta: al sincronizar cuenta corriente no se vuelve a encender sola hasta que vos la marques de nuevo.',
-    'Cuando la instrumentación se alejó del modelo sugerido o hay varias patas de cobro y pago, el sistema puede activar multicontraparte donde el tipo de orden lo permite, para que los movimientos sigan alineados con lo cargado.',
-    'Ajustes y textos de ayuda para operar con más claridad en esos casos.',
+    'Corrección en cuenta corriente: cuando una operación tenía compensación por saldo (cambio de sentido del cobro respecto del modelo típico), al sincronizar ya no se fuerza un modo de instrumentación que podía alterar los importes mostrados.',
+    'Si desactivás multicontraparte manual en una orden, seguimos respetando tu elección al sincronizar.',
+    'Textos de ayuda actualizados en la guía de cuenta corriente para estos casos.',
   ],
 };

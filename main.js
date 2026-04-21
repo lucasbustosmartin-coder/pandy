@@ -10913,6 +10913,21 @@ const SUBSTRING_LEYENDA_CC_TERcERO_PATA_MONR = 'Tercero cumple pata en moneda re
  */
 const SUBSTRING_LEYENDA_CC_COMISION_ACUERDO = 'Comisión del acuerdo';
 
+/**
+ * Si alguna transacción tiene compensación CC por flip persistida (`compensacion_cc_monto_aplicado`),
+ * el armado de CC **sin** multicontraparte manual usa dedupe y reglas dedicadas (p. ej. `filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsdUsdInt`).
+ * No debe activarse **multicontraparte_manual** automáticamente en sync: el desvío pag/cob frente a la plantilla es esperado en ese flujo y MC rompería saldos (p. ej. residual +m que pasaba a netear en 0).
+ * @param {Array<{ compensacion_cc_monto_aplicado?: number|string|null }>} trxList
+ * @returns {boolean}
+ */
+function transaccionesListTieneCompensacionCcMontoAplicado(trxList) {
+  for (const t of trxList || []) {
+    const c = Number(t && t.compensacion_cc_monto_aplicado);
+    if (Number.isFinite(c) && c >= 1e-6) return true;
+  }
+  return false;
+}
+
 function esOrdenUsdUsdConIntermediarioSinMcParaCompensacionCc(orden, totMcSv) {
   if (totMcSv) return false;
   if (!orden || !orden.intermediario_id) return false;
@@ -23609,10 +23624,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             !multicontraparteManualDb &&
             eligibleMcInst &&
             pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo(orden, toJoin || {}, trxSyncIn, rModos.data || []);
+          const bloquearAutoMcPorCompensacionCcFlip = transaccionesListTieneCompensacionCcMontoAplicado(trxSyncIn);
           const activarMcAutoSync =
             !multicontraparteManualDb &&
             !multicontraparteSyncNoAuto &&
             eligibleMcInst &&
+            !bloquearAutoMcPorCompensacionCcFlip &&
             (instrumentacionAjustadaManualDb || roleDesvioParaAutoMc);
           const promActivarMcAuto =
             activarMcAutoSync
