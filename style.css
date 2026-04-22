@@ -180,6 +180,11 @@
     .user-bar .btn-refresh { display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; min-width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; color: #555; box-sizing: border-box; }
     .user-bar .btn-refresh:hover { background: #f0f0f0; color: #1a1a1a; }
     .user-bar .btn-refresh svg { width: 18px; height: 18px; }
+    .user-bar .btn-refresh:disabled { cursor: wait; opacity: 0.88; }
+    .user-bar .btn-refresh.pandi-btn-refresh-busy svg { animation: vista-spin 0.7s linear infinite; transform-origin: center; }
+    @media (prefers-reduced-motion: reduce) {
+      .user-bar .btn-refresh.pandi-btn-refresh-busy svg { animation: none; opacity: 0.65; }
+    }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee; }
     th { font-weight: 600; color: #555; }
@@ -991,6 +996,26 @@
     .modal.modal-ancho { max-width: 920px; width: 95%; }
     /* min-height: evita caja casi vacía en “Nueva orden”; el listbox de tipo va en position:fixed (main.js) para no recortarlo por overflow del modal */
     .modal.modal-orden { max-width: min(90vw, 720px); width: 90%; margin-left: auto; margin-right: auto; min-height: 220px; }
+    .modal.modal-orden .modal-body { position: relative; }
+    #modal-orden-loading.modal-orden-loading-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 12;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 0.75rem;
+      padding: 1.25rem;
+      box-sizing: border-box;
+      background: rgba(255, 255, 255, 0.93);
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+      border-radius: 0 0 8px 8px;
+    }
+    #modal-orden-backdrop.modal-orden-cargando #modal-orden-loading.modal-orden-loading-overlay {
+      display: flex;
+    }
     /* Detalles / instrumentación: usar casi toda la altura útil del viewport (backdrop padding + cabecera modal + pie Listo/Cerrar) */
     /* Casi todo el viewport; crece con la tabla (max-content) hasta el tope; backdrop flex centra */
     .modal.modal-orden.modal-orden-con-instrumentacion {
@@ -1203,6 +1228,31 @@
     .btn-excel .btn-icon { width: 18px; height: 18px; flex-shrink: 0; }
     .btn-excel .btn-icon svg { width: 100%; height: 100%; stroke: currentColor; }
     .clientes-loading { color: #666; }
+    /* Spinner compacto junto al texto «Guardar» en modal transacción */
+    .transaccion-mini-spinner[hidden] { display: none !important; }
+    .transaccion-mini-spinner:not([hidden]) {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      margin-left: 0.4rem;
+      vertical-align: middle;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: vista-spin 0.7s linear infinite;
+      flex-shrink: 0;
+      box-sizing: border-box;
+    }
+    .transaccion-mini-spinner.transaccion-mini-spinner--on-secondary:not([hidden]) {
+      margin-left: 0;
+      border: 2px solid #cbd5e1;
+      border-top-color: #0d7d3d;
+    }
+    .btn-secondary.btn-icon-only.pandi-cc-refresh-busy { min-width: 2.75rem; }
+    @media (prefers-reduced-motion: reduce) {
+      .transaccion-mini-spinner:not([hidden]):not(.transaccion-mini-spinner--on-secondary) { animation: none; border-color: rgba(255, 255, 255, 0.65); }
+      .transaccion-mini-spinner--on-secondary:not([hidden]) { animation: none; border-color: #94a3b8; border-top-color: #0d7d3d; opacity: 0.95; }
+    }
     .vista-loading-spinner { display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 1.5rem; min-height: 3rem; box-sizing: border-box; }
     .vista-loading-spinner::before { content: ''; display: inline-block; width: 26px; height: 26px; border: 2px solid #e5e7eb; border-top-color: #0d7d3d; border-radius: 50%; animation: vista-spin 0.7s linear infinite; flex-shrink: 0; }
     @keyframes vista-spin { to { transform: rotate(360deg); } }
@@ -2577,6 +2627,7 @@
       /* Nueva orden / wizard: contención y toque (los tipos muestran u ocultan bloques distintos) */
       .modal.modal-orden .modal-body,
       #modal-orden-offline-backdrop .modal .modal-body {
+        position: relative;
         min-width: 0;
         max-width: 100%;
         overflow-x: hidden;

@@ -1,0 +1,8 @@
+---
+description: Recordar el plan de performance de sync CC y carga Cuenta corriente cuando el usuario hable de lentitud, sincronización, RPC sync_cc_caja_orden o optimización de CC.
+alwaysApply: true
+---
+
+# Plan performance sync CC (recordatorio)
+
+Si el usuario menciona **lentitud**, **performance**, **sincronización** de cuenta corriente/caja, **`loadCuentaCorriente`**, **`sync_cc_caja_orden`**, **`pandiSupabaseFetchAll`** en CC, o **optimizar** la carga/sync de movimientos: recordarle que el plan detallado está en **`docs/PLAN_MEJORA_PERFORMANCE_SYNC_CC.md`** y ofrecer retomarlo o actualizarlo según el tema.

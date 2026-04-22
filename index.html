@@ -260,7 +260,7 @@
         <span class="menu-label">Auditoría</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.7.66</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.8.0</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -724,7 +724,7 @@
               <input type="search" id="cc-resumen-filtro-nombre" class="cc-input-filtro-nombre" placeholder="Nombre…" autocomplete="off" enterkeyhint="search" />
             </div>
             <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Alinear cuenta corriente y caja desde órdenes con instrumentación" aria-label="Refrescar cuenta corriente">
-              <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span>Refrescar
+              <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span><span id="cc-btn-refrescar-label">Refrescar</span><span id="cc-btn-refrescar-spinner" class="transaccion-mini-spinner transaccion-mini-spinner--on-secondary cc-refrescar-inline-spinner" hidden aria-hidden="true"></span>
             </button>
             <button type="button" class="btn-primary" id="cc-btn-movimiento-manual" title="Registrar movimiento de cuenta corriente sin orden" aria-label="Nuevo movimiento en cuenta corriente" style="display:none;">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-37"></use></svg></span>Nuevo movimiento
@@ -787,7 +787,7 @@
             </div>
             <div class="cc-toolbar-mov-col-acciones">
               <button type="button" class="btn-secondary btn-icon-only" id="cc-btn-refrescar-movimientos" title="Refrescar: recalcular saldos y movimientos desde órdenes" aria-label="Refrescar movimientos cuenta corriente">
-                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span>
+                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span><span id="cc-btn-refrescar-movimientos-spinner" class="transaccion-mini-spinner transaccion-mini-spinner--on-secondary cc-refrescar-inline-spinner" hidden aria-hidden="true"></span>
               </button>
               <button type="button" class="btn-primary btn-icon-only" id="cc-btn-movimiento-manual-mov" title="Nuevo movimiento manual (sin orden)" aria-label="Nuevo movimiento en cuenta corriente" style="display:none;">
                 <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-37"></use></svg></span>
@@ -1868,6 +1868,9 @@
           </div>
           </div>
         </form>
+        <div id="modal-orden-loading" class="modal-orden-loading-overlay" role="status" aria-live="polite" aria-atomic="true">
+          <div class="clientes-loading vista-loading-spinner">Cargando datos del formulario…</div>
+        </div>
       </div>
     </div>
   </div>
@@ -2129,7 +2132,7 @@
             <input type="text" id="transaccion-concepto" maxlength="255" placeholder="Opcional" />
           </div>
           <div class="form-actions">
-            <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar</button>
+            <button type="submit" class="btn-primary" id="transaccion-btn-guardar"><span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span><span id="transaccion-btn-guardar-label">Guardar</span><span id="transaccion-btn-guardar-spinner" class="transaccion-mini-spinner" hidden aria-hidden="true"></span></button>
             <button type="button" class="btn-secondary" id="modal-transaccion-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-42"></use></svg></span>Cancelar</button>
           </div>
         </form>

@@ -22,6 +22,8 @@
     "dev:open": "node scripts/build-config.js && vite --open --port 5173",
     "preview": "node scripts/build-config.js && vite preview",
     "test:unit-cc-flip": "node --test tests/unit/compensacion-cc-flip-logica.test.mjs",
+    "test:unit-cc-patron-nueva-regla": "node --test tests/unit/cc-patron-nueva-regla-monr-mone.test.mjs",
+    "test:unit-cc-invariante-nueva-regla": "node --test tests/unit/cc-invariante-nueva-regla-neteo.test.mjs",
     "test:unit-clasificacion-gp": "node --test tests/unit/clasificacion-gp-sql-paridad.test.mjs",
     "test:unit-clasificacion": "node --test tests/unit/clasificacion-gp-sql-paridad.test.mjs tests/unit/clasificacion-sync-inferencia.test.mjs",
     "smoke:gp-operativa-readonly": "node scripts/smoke-gp-operativa-readonly.mjs",
