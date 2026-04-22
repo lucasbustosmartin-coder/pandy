@@ -5,10 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.0',
+  versionLabel: 'v3.8.1',
   lines: [
-    'En Cuenta corriente → Movimientos, al exportar a Excel ves columnas Libro y Entidad (cliente o intermediario y el nombre), y una solapa aparte con movimientos anulados que no suman al saldo.',
-    'En la vista Cliente, el detalle de movimientos coincide con Saldos: no se mezclan filas del cliente vinculado uno a uno con el intermediario.',
-    'Ajustes en cómo se arman los movimientos de acuerdo cuando hay cobro al cliente y entrega hacia el cliente en la misma operación, para que el libro quede más claro y estable al sincronizar.',
+    'Cuenta corriente: al reabrir o sincronizar ciertas órdenes en dólar–peso con intermediario, el registro de movimientos vuelve al criterio anterior al de la última actualización, para alinear saldos con lo que ya tenías.',
+    'El export de Movimientos a Excel sigue igual: columnas Libro y Entidad, y movimientos anulados en su propia solapa.',
   ],
 };

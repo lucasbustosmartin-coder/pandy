@@ -145,11 +145,14 @@ export function esPatronAmplioCcMonrMoneNuevaRegla(orden, transacciones) {
 }
 
 /**
- * Números de orden (`ordenes.numero`) excluidos del rollout: heurística §4.4 — saldo CC cliente **afectado**
- * al aplicar la nueva regla (revisión 2026-04-17). No aplicar el motor nuevo a estas órdenes hasta caso a caso.
+ * Números de orden (`ordenes.numero`) excluidos del rollout:
+ * - §4.4 (2026-04-17): saldo CC cliente **afectado** por heurística diff vs legacy.
+ * - Post-deploy prod (2026-04-22): órdenes **14, 22, 44, 52, 69, 70, 71** que habían tomado el motor nuevo y se excluyen para volver a **legacy** al re-sincronizar (convivencia de lotes / decisión de producto).
  * @see docs/NUEVA_REGLA_CC_PATA_MONR_MONE.md §1.3.3 y §4.4
  */
-export const NUEVA_REGLA_CC_ROLLOUT_EXCLUIR_NUMEROS_ORDEN_SALDO_4_4 = Object.freeze([17, 45, 57, 64, 68, 81, 87, 91]);
+export const NUEVA_REGLA_CC_ROLLOUT_EXCLUIR_NUMEROS_ORDEN_SALDO_4_4 = Object.freeze([
+  14, 17, 22, 44, 45, 52, 57, 64, 68, 69, 70, 71, 81, 87, 91,
+]);
 
 const _exclSet = new Set(NUEVA_REGLA_CC_ROLLOUT_EXCLUIR_NUMEROS_ORDEN_SALDO_4_4);
 

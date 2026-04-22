@@ -115,6 +115,13 @@ test('rollout: orden 68 (§4.4) excluida aunque el patrón sea true', () => {
   assert.equal(nuevaReglaCcRolloutActivoParaOrden(orden, txs), false);
 });
 
+test('rollout: orden 14 (post-deploy prod) excluida aunque el patrón sea true', () => {
+  const orden = ordenBase({ numero: 14 });
+  const txs = [trxIngMonR(), trxEgMonE()];
+  assert.equal(esPatronAmplioCcMonrMoneNuevaRegla(orden, txs), true);
+  assert.equal(nuevaReglaCcRolloutActivoParaOrden(orden, txs), false);
+});
+
 test('rollout: orden número 999 no excluida → activo si patrón true', () => {
   const orden = ordenBase({ numero: 999 });
   const txs = [trxIngMonR(), trxEgMonE()];
@@ -128,6 +135,6 @@ test('rollout: sin numero de orden → no activo', () => {
   assert.equal(nuevaReglaCcRolloutActivoParaOrden(orden, txs), false);
 });
 
-test('lista exclusión §4.4 tiene 8 números', () => {
-  assert.equal(NUEVA_REGLA_CC_ROLLOUT_EXCLUIR_NUMEROS_ORDEN_SALDO_4_4.length, 8);
+test('lista exclusión rollout tiene 15 números (§4.4 + post-deploy prod)', () => {
+  assert.equal(NUEVA_REGLA_CC_ROLLOUT_EXCLUIR_NUMEROS_ORDEN_SALDO_4_4.length, 15);
 });

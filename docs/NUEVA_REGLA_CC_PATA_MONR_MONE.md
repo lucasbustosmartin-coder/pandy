@@ -1,6 +1,6 @@
 # Nueva regla — CC patas MonR (ingreso) y MonE (egreso)
 
-**Estado (2026-04-21):** **Fase 0 (producto)** cerrada en este documento (MonE §1.2, MonR §1.3, CC intermediario §1.1.1, rollout §1.3.3, cierre inventario §4.4). **Fase 1** (detector canónico + tests unitarios del patrón) y **Fase 2** (motor en `main.js` condicionado a `nuevaReglaCcRolloutActivoParaOrden`, exclusión de las **8** órdenes §4.4) están **implementadas en el repositorio**; el detalle por archivo y tema está en la **sección 7**. **QA manual en dev:** órdenes **32–39**, front local, todos los tipos de operación alcanzados por la nueva regla — **exitoso** (**sección 7.5**). **§8.1 (invariante / neteo / dedupe / compensación, alcance revisión + tests de paridad):** **cerrada** en repo — ver **sección 8.1**. **§4.5–§4.7** (re-MCP prod, paridad deploy ↔ Git, SQL diff alineado al detector y re-ejecución): **cerrados y documentados** en el cuerpo del doc (**§4.5–§4.7**). **§8.2** — **decisión de producto cerrada:** las **8** órdenes §4.4 **no** deben verse afectadas por el nuevo motor; siguen en **legacy** mediante `NUEVA_REGLA_CC_ROLLOUT_EXCLUIR_NUMEROS_ORDEN_SALDO_4_4` (sin migración ni re-sync forzado para aplicarles la nueva regla). **§8.3** — solo **aclaración técnica** del informe SQL (ver cuerpo §8.3); **no** es un paso de implementación pendiente. **Pendiente operativo:** **§8.4** — publicar el bundle con motor nuevo, smoke fuera de las 8, re-correr §4.5 si aplica y cierre documental post-deploy.
+**Estado (2026-04-21, actualizado 2026-04-22):** **Fase 0 (producto)** cerrada en este documento (MonE §1.2, MonR §1.3, CC intermediario §1.1.1, rollout §1.3.3, cierre inventario §4.4). **Fase 1** y **Fase 2** implementadas en el repositorio; el **IN de exclusión del rollout** pasó de **8** (§4.4) a **15** números al sumar **14, 22, 44, 52, 69, 70, 71** (post-deploy prod, **§1.3.3**). **QA manual en dev** §7.5 exitoso. **§8.1** cerrada en repo. **§4.5–§4.7** documentados. **§8.2:** las excluidas **no** reciben motor nuevo hasta decisión explícita; **§8.3** aclaración SQL sin pendiente de código. **§8.4:** despliegues según bitácora; tras ampliar el IN conviene **re-sincronizar** las órdenes afectadas en prod para regenerar CC en **legacy**.
 
 **Imagen de referencia (captura angosta):** `assets/image-7e7970e1-d3b7-4d49-b8b4-dc99accb4f3b.png`.
 
@@ -140,7 +140,12 @@ Si se cumple la condición (**pagador del ingreso = Pandy**, **cliente** = el de
 La nueva regla **ignora por completo** los movimientos CC marcados como manuales (`es_movimiento_manual`): no participan en la lógica de detección ni en los netos/atribución de la regla.
 
 **1.3.3 — Rollout (IN controlado)**  
-El nuevo motor de esta regla **solo** corre en órdenes donde **no** se espera (heurística §4.3–**§4.4**) que el cambio **afecte el saldo** CC cliente frente al modelo mínimo actual. En implementación eso se traduce en **excluir** por **`ordenes.numero`** las **8** órdenes ya inventariadas como afectadas al saldo (**§4.4**): **17, 45, 57, 64, 68, 81, 87, 91**. El **resto** de órdenes que entren al patrón amplio pueden usar la nueva regla; las ocho quedan en **legacy** hasta revisión caso a caso y eventual ampliación del IN.  
+El nuevo motor de esta regla **solo** corre en órdenes donde **no** se espera (heurística §4.3–**§4.4**) que el cambio **afecte el saldo** CC cliente frente al modelo mínimo actual, **salvo** ampliaciones explícitas del IN por decisión de producto. En implementación se **excluyen** por **`ordenes.numero`**:
+
+- **§4.4 (2026-04-17):** **8** órdenes inventariadas como afectadas al saldo bajo diff: **17, 45, 57, 64, 68, 81, 87, 91**.  
+- **Post-deploy producción (2026-04-22):** **7** órdenes que habían tomado el motor nuevo y se excluyen para volver a **legacy** al re-sincronizar: **14, 22, 44, 52, 69, 70, 71** (convivencia de lotes en **14**; resto alineado a revertir criterio hasta revisión).
+
+**IN canónico (15 números):** **14, 17, 22, 44, 45, 52, 57, 64, 68, 69, 70, 71, 81, 87, 91**. El **resto** de órdenes que entren al patrón amplio pueden usar la nueva regla; las excluidas quedan en **legacy** hasta revisión caso a caso.  
 Constante y función canónicas: `utils/cc-patron-nueva-regla-monr-mone.mjs` (`NUEVA_REGLA_CC_ROLLOUT_EXCLUIR_NUMEROS_ORDEN_SALDO_4_4`, `nuevaReglaCcRolloutActivoParaOrden`). Si `ordenes.numero` es **ausente** o no numérico, el rollout **no** activa el motor nuevo (no se asume «no excluida»).
 
 **1.3.4 — Leyenda fija (solo pata MonR ingreso)**  
@@ -384,17 +389,19 @@ Orden pensado para **no** mezclar saldos en prod: cada ítem puede cerrarse con 
 
 **Mantenimiento:** si se edita el invariante en `main.js`, actualizar las réplicas en el archivo de test o extraer helpers compartidos. **Regresión en prod:** si una orden vuelve a bloquear sync por neteo, anotar **número de orden** y **moneda** y sumar un caso mínimo al `.test.mjs`.
 
-### 8.2 Paso 2 — Las 8 órdenes §4.4 (**cerrado — decisión de producto**)
+### 8.2 Paso 2 — IN de exclusión del rollout (**cerrado — decisión de producto**)
 
-**Decisión:** esas órdenes (**17, 45, 57, 64, 68, 81, 87, 91**) **no** tienen que verse afectadas por el nuevo motor: permanecen con comportamiento **legacy** y quedan **excluidas del rollout** en código (`NUEVA_REGLA_CC_ROLLOUT_EXCLUIR_NUMEROS_ORDEN_SALDO_4_4`). **No** se planifica re-sync ni migración masiva para “pasarlas” a la nueva regla.
+**Decisión §4.4:** las órdenes **17, 45, 57, 64, 68, 81, 87, 91** **no** deben tomar el motor nuevo (riesgo de saldo bajo heurística diff); quedan en **legacy** vía `NUEVA_REGLA_CC_ROLLOUT_EXCLUIR_NUMEROS_ORDEN_SALDO_4_4`.
 
-La verificación previa (paridad deploy ↔ código ↔ BD) quedó documentada en **§4.5–§4.6**; el inventario **§4.4** sigue siendo la referencia de **riesgo de saldo** si *hipotéticamente* se aplicara la nueva emisión, pero **operativamente** el cierre es: **exclusión fija**, sin tocar esas órdenes para aplicar MonR/MonE nuevo.
+**Ampliación 2026-04-22 (prod):** se sumaron **14, 22, 44, 52, 69, 70, 71** al mismo IN (convivencia de lotes en **14**; resto para revertir a legacy al re-sync). **IN total: 15 números** (ver **§1.3.3**).
+
+**No** se planifica migración masiva para “pasarlas” a la nueva regla; con código desplegado, **re-sincronizar** cada orden excluida regenera CC en **legacy**. La verificación §4.5–§4.6 y el inventario **§4.4** siguen válidos para el subconjunto §4.4; las siete añadidas son decisión operativa aparte.
 
 ### 8.3 Aclaración — Qué quería decir “SQL diff vs §1.3 MonR” (**no es un pendiente**)
 
 **En una frase:** el script `inventario_nueva_regla_diff_monr_mone_cliente_prod.sql` sirve para el informe “¿el neto CC **hoy** (legacy) se parece al objetivo teórico de la regla nueva?”. Para la pata **MonR**, el SQL usa las reglas del **§2** (p. ej. en **cruce de divisas** compara **magnitudes**; en **misma moneda** compara **neto con signo**). Eso es **solo la definición del informe / heurística de diff**, no es lo mismo que redactar palabra por palabra cómo la app **emite** cada fila bajo **§1.3** (leyenda, + por trx, etc.).
 
-**Por qué existía el párrafo “§8.3” en el plan:** por si algún día querían que el **texto del “afectado MonR”** en el SQL coincidiera **exactamente** con el criterio de emisión **§1.3** (un solo criterio semántico en doc + SQL). **No** es necesario para que el producto funcione: el rollout y las **8** excluidas ya están cerrados; **§4.7** alineó al detector lo que hacía falta para **quién entra** al patrón y **mismos conteos**. Si el informe SQL y el §1.3 no usan la misma frase para “afectado”, es una **diferencia de definición en el reporte**, no un bug del motor ni un paso obligatorio antes del deploy.
+**Por qué existía el párrafo “§8.3” en el plan:** por si algún día querían que el **texto del “afectado MonR”** en el SQL coincidiera **exactamente** con el criterio de emisión **§1.3** (un solo criterio semántico en doc + SQL). **No** es necesario para que el producto funcione: el rollout y el **IN** de exclusiones están cerrados por producto (§4.4 + ampliación **§1.3.3**); **§4.7** alineó al detector lo que hacía falta para **quién entra** al patrón y **mismos conteos**. Si el informe SQL y el §1.3 no usan la misma frase para “afectado”, es una **diferencia de definición en el reporte**, no un bug del motor ni un paso obligatorio antes del deploy.
 
 ### 8.4 Paso 4 — Despliegue y cierre documental
 
