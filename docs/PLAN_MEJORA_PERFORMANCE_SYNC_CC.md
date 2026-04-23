@@ -2,20 +2,20 @@
 
 > **Recordatorio:** retomar este documento cuando se trabaje en lentitud, sync, RPC `sync_cc_caja_orden` o carga de la vista CC.
 
-## Estado (retomado 2026-04-21; actualizado 2026-04-22 — pausa Fase 2 documentada)
+## Estado (retomado 2026-04-21; actualizado 2026-04-22 — pausa Fase 2; **prod 1.2 aplicada** antes del deploy v3.8.2)
 
 | Fase | Estado | Notas |
 |------|--------|--------|
 | **0 — Medir** | **Hecho 2026-04-22** | Evidencia Network en §«Network post-fix»; SQL `sql/util_cc_performance_diagnostico_counts.sql` sigue recomendable para dimensionar N vs filas CC. |
 | **1.0 — Menos RPCs sync global** | **Hecho 2026-04-22** | `loadOrdenes` sin sync; Inicio/Cajas con cooldown; excluye `anulada`; concurrencia **4** (no saturar pool HTTP). Sync post-login **diferido 2 s** (`PANDI_CC_GLOBAL_SYNC_DEFER_LOGIN_MS`) para no competir con la primera carga de CC. |
 | **1.1 — Caché `getReglasDeNegocio`** | **Hecho** | `main.js`: TTL 2 min + invalidación ABM reglas. |
-| **1.2 — RPC huérfanos O(n+m)** | **Hecho 2026-04-22** | `sync_cc_caja_orden`: anti-join huérfanos. **Pandy-Dev:** aplicado. **Producción:** ejecutar `sql/migracion_sync_cc_caja_orden_huerfanos_antijoin.sql` en ventana no productiva cuando se confirme (paridad con dev). Índice 1.3 ya está en prod. |
+| **1.2 — RPC huérfanos O(n+m)** | **Hecho 2026-04-22** | `sync_cc_caja_orden`: anti-join huérfanos. **Pandy-Dev** y **producción (Pandy):** migración `sql/migracion_sync_cc_caja_orden_huerfanos_antijoin.sql` **aplicada en prod antes del deploy front v3.8.2** (confirmado por operador). Paridad con dev. Índice 1.3 en prod desde antes. |
 | **1.3 — Índices** | **Hecho 2026-04-22** | `EXPLAIN ANALYZE` en **Pandy-Dev**: CC cliente por `orden_id` era **Seq Scan**; índice `idx_mov_cc_orden_id` (`sql/migracion_cc_indice_mov_cliente_orden_id.sql`). **Pandy (prod) + Pandy-Dev:** migración aplicada (MCP). |
 | **2 — CC que escala** | **Pausado** | Ver §«Pausa y retoma». Sin queja de cliente aún; retomar cuando suba volumen CC/pendientes o haya prioridad de producto. |
 
 ### Pausa y retoma (2026-04-22)
 
-**Cierre de esta etapa:** Fases **0** y **1** (0 → 1.3) quedaron resueltas en código y en **Pandy-Dev**; en **producción** falta solo aplicar la migración **1.2** (RPC anti-join) cuando elijas la ventana. La **Fase 2** no se implementa ahora.
+**Cierre de esta etapa:** Fases **0** y **1** (0 → 1.3) quedaron resueltas en **código**, **Pandy-Dev** y **producción** (incluye migración **1.2** RPC anti-join en prod, ejecutada antes del deploy v3.8.2). La **Fase 2** no se implementa ahora.
 
 **Perspectiva interna:** el operador puede seguir notando lentitud sobre todo en **Refrescar** CC (muchas RPC `sync_cc_caja_orden` × RTT — diseño actual). **Cliente / usuario final:** hasta aquí **no hubo reclamos**; no hay presión comercial inmediata para batch en servidor ni para filtro/agregación masiva.
 
