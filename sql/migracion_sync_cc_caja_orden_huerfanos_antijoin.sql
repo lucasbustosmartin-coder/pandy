@@ -1,12 +1,5 @@
--- RPC: sincronizar CC (cliente e intermediario) y caja para una orden en una sola transacción.
--- El front construye los rows (misma lógica que hoy) y los envía en JSONB.
--- Versión **diff**: INSERT filas nuevas, UPDATE si cambió algo útil, DELETE huérfanos (anti-join BD vs JSON, O(n+m) en el motor).
--- No hace DELETE masivo + reinsert: menos escrituras/WAL y conserva `id` cuando la fila lógica es la misma.
--- No toca filas CC con `es_movimiento_manual = true`. Caja: solo `tipo_movimiento_id IS NULL` (derivados).
--- Ejecutar en Supabase SQL Editor (reemplaza la función anterior).
--- Nota: transaccion_numero / orden_numero vía ->> y cast para JSON null (igual que antes).
--- Clasificación: JSON opcional `clasificacion_movimiento` (tipo public.movimiento_clasificacion). Si falta o es inválido → LEGACY_SIN_CLASIFICAR. La clave lógica incluye clasificación + left(concepto,72).
--- Requiere migración: sql/migracion_movimiento_clasificacion_fase0_ddl.sql
+-- Fase 1.2 performance: huérfanos en sync_cc_caja_orden vía DELETE … NOT EXISTS (anti-join).
+-- Paridad con el script canónico sql/rpc_sync_cc_caja_orden.sql (líneas 11–401).
 
 CREATE OR REPLACE FUNCTION public.parse_movimiento_clasificacion_desde_jsonb(
   j jsonb,

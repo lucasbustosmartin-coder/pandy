@@ -43,6 +43,8 @@
       document.head.appendChild(alt);
     })();
   </script>
+  <!-- Estándar (Chrome): evita aviso de deprecación; apple-* sigue útil en Safari iOS instalado a pantalla completa. -->
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Pandi" />
@@ -260,7 +262,7 @@
         <span class="menu-label">Auditoría</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.8.1</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.8.2</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -723,7 +725,7 @@
               <label id="cc-resumen-filtro-nombre-label" for="cc-resumen-filtro-nombre" class="ordenes-filtro-label cc-resumen-filtro-nombre-label">Buscar cliente</label>
               <input type="search" id="cc-resumen-filtro-nombre" class="cc-input-filtro-nombre" placeholder="Nombre…" autocomplete="off" enterkeyhint="search" />
             </div>
-            <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Alinear cuenta corriente y caja desde órdenes con instrumentación" aria-label="Refrescar cuenta corriente">
+            <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Sincroniza todas las órdenes con instrumentación (una petición al servidor por orden). Con muchas órdenes puede tardar más de un minuto; no es un fallo de la base." aria-label="Refrescar cuenta corriente">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span><span id="cc-btn-refrescar-label">Refrescar</span><span id="cc-btn-refrescar-spinner" class="transaccion-mini-spinner transaccion-mini-spinner--on-secondary cc-refrescar-inline-spinner" hidden aria-hidden="true"></span>
             </button>
             <button type="button" class="btn-primary" id="cc-btn-movimiento-manual" title="Registrar movimiento de cuenta corriente sin orden" aria-label="Nuevo movimiento en cuenta corriente" style="display:none;">
@@ -786,7 +788,7 @@
               </div>
             </div>
             <div class="cc-toolbar-mov-col-acciones">
-              <button type="button" class="btn-secondary btn-icon-only" id="cc-btn-refrescar-movimientos" title="Refrescar: recalcular saldos y movimientos desde órdenes" aria-label="Refrescar movimientos cuenta corriente">
+              <button type="button" class="btn-secondary btn-icon-only" id="cc-btn-refrescar-movimientos" title="Igual que Refrescar: sync global de todas las órdenes con instrumentación (una petición por orden; puede tardar si hay muchas)." aria-label="Refrescar movimientos cuenta corriente">
                 <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span><span id="cc-btn-refrescar-movimientos-spinner" class="transaccion-mini-spinner transaccion-mini-spinner--on-secondary cc-refrescar-inline-spinner" hidden aria-hidden="true"></span>
               </button>
               <button type="button" class="btn-primary btn-icon-only" id="cc-btn-movimiento-manual-mov" title="Nuevo movimiento manual (sin orden)" aria-label="Nuevo movimiento en cuenta corriente" style="display:none;">

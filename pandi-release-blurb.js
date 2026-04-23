@@ -5,9 +5,11 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.1',
+  versionLabel: 'v3.8.2',
   lines: [
-    'Cuenta corriente: al reabrir o sincronizar ciertas órdenes en dólar–peso con intermediario, el registro de movimientos vuelve al criterio anterior al de la última actualización, para alinear saldos con lo que ya tenías.',
-    'El export de Movimientos a Excel sigue igual: columnas Libro y Entidad, y movimientos anulados en su propia solapa.',
+    'Cuenta corriente, Inicio y Cajas: si acabás de alinear todo, la app no vuelve a disparar el mismo proceso pesado al instante al cambiar de pantalla.',
+    'Después de iniciar sesión, la primera pantalla que abrís tiene prioridad para cargar; el alineado general de órdenes espera unos segundos para no competir con esa carga.',
+    'Al actualizar la cuenta corriente de muchas órdenes, la app reutiliza un momento las mismas reglas de negocio para sentirse más fluida.',
+    'Si agregás Pandi a la pantalla de inicio del celular, mejor compatibilidad con los navegadores actuales.',
   ],
 };

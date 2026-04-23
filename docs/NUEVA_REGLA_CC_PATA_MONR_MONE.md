@@ -1,6 +1,6 @@
 # Nueva regla — CC patas MonR (ingreso) y MonE (egreso)
 
-**Estado (2026-04-21, actualizado 2026-04-22):** **Fase 0 (producto)** cerrada en este documento (MonE §1.2, MonR §1.3, CC intermediario §1.1.1, rollout §1.3.3, cierre inventario §4.4). **Fase 1** y **Fase 2** implementadas en el repositorio; el **IN de exclusión del rollout** pasó de **8** (§4.4) a **15** números al sumar **14, 22, 44, 52, 69, 70, 71** (post-deploy prod, **§1.3.3**). **QA manual en dev** §7.5 exitoso. **§8.1** cerrada en repo. **§4.5–§4.7** documentados. **§8.2:** las excluidas **no** reciben motor nuevo hasta decisión explícita; **§8.3** aclaración SQL sin pendiente de código. **§8.4:** despliegues según bitácora; tras ampliar el IN conviene **re-sincronizar** las órdenes afectadas en prod para regenerar CC en **legacy**.
+**Estado (2026-04-21, actualizado 2026-04-22):** **Fase 0 (producto)** cerrada en este documento (MonE §1.2, MonR §1.3, CC intermediario §1.1.1, rollout §1.3.3, cierre inventario §4.4). **Fase 1** y **Fase 2** implementadas en el repositorio; el **IN de exclusión del rollout** pasó de **8** (§4.4) a **15** números al sumar **14, 22, 44, 52, 69, 70, 71** (post-deploy prod, **§1.3.3**). **QA manual en dev** §7.5 exitoso. **§8.1** cerrada en repo. **§4.5–§4.7** documentados. **§8.2:** las excluidas **no** reciben motor nuevo hasta decisión explícita; **§8.3** aclaración SQL sin pendiente de código. **§8.4:** despliegues según bitácora; tras ampliar el IN conviene **re-sincronizar** las órdenes afectadas en prod para regenerar CC en **legacy**. **Post-deploy prod y re-sync (2026-04-22):** verificación MCP y lección operativa **§8.5** (leyendas persistidas, diff, **re-sync no restaura histórico** ni aísla solo el IN frente a signos compartidos).
 
 **Imagen de referencia (captura angosta):** `assets/image-7e7970e1-d3b7-4d49-b8b4-dc99accb4f3b.png`.
 
@@ -406,6 +406,42 @@ Orden pensado para **no** mezclar saldos en prod: cada ítem puede cerrarse con 
 ### 8.4 Paso 4 — Despliegue y cierre documental
 
 Deploy a producción cuando corresponda; verificación en app de muestra del patrón amplio **fuera** de las 8; actualizar referencias cruzadas en `docs/CUENTA_CORRIENTE_Y_CAJA.md` y, si aplica, `docs/CC_GRIETAS_INVARIANTE_SALDO_CERO_ORDEN.md`.
+
+### 8.5 Post-deploy producción (2026-04-22) — MCP, leyendas en BD y lección del re-sync
+
+Queda asentado para retomar con frescura (dueño de producto + técnico).
+
+#### 8.5.1 Verificación Supabase MCP (Pandy **prod**)
+
+- **Patrón amplio** MonR/MonE (misma definición que `sql/inventario_nueva_regla_diff_monr_mone_cliente_prod.sql`, sin anuladas): **16** órdenes.
+- **Diff CC cliente** (heurística §2, umbral **0,02**): **7** órdenes con diff en alguna pata — **17, 45, 57, 64, 68, 87, 91**. Todas están en el **IN** de **15** (legacy **a propósito**). La **81** ya **no** figuraba entre las diff en esa corrida (alineación tras re-sync respecto del informe).
+- **Órdenes con rollout** (mismo patrón amplio y `numero` **fuera** del IN): **1** orden en ese universo; **0** diffs MonR/MonE en cliente y **0** incumplimientos de textos:
+  - movimientos CC enlazados a ingreso **MonR** del patrón con `|monto| > 0,02` debían contener la leyenda **§1.3.4** (*«La empresa asume el compromiso de pago del cliente ( Afecta CC Cliente ).»*);
+  - movimientos enlazados a egreso **MonE** del patrón debían usar plantillas **§1.2.1** (*«Compromiso de pago hacia el cliente - …»* / *«Pago hacia el cliente - …»*, alineado a `main.js`).
+
+#### 8.5.2 Leyendas nuevas **persistidas** en `movimientos_cuenta_corriente` (prod)
+
+Conteo global (movimientos no anulados, no manuales):
+
+| Texto buscado | Movimientos | Órdenes distintas |
+|----------------|------------:|------------------:|
+| Leyenda MonR §1.3.4 (substring canónico) | **1** | **1** |
+| Plantillas MonE §1.2.1 (compromiso / pago hacia el cliente) | **2** | **1** |
+
+La orden con filas que ya llevan esa redacción en prod fue la **48** (ej.: concepto tipo catálogo *Compromiso de Pago - Orden 48 y Trans …* con el sufijo §1.3.4 entre paréntesis). **No** implica que el resto del universo esté “mal”: las **15** del IN **no** deben mostrar motor nuevo hasta decisión explícita; fuera del patrón amplio puede haber otras órdenes con el tiempo.
+
+#### 8.5.3 Lección operativa — El deploy no fue “solo leyendas”
+
+**Hecho:** además de leyendas y plantillas MonR/MonE, el trabajo en `main.js` tocó **signos y ramas compartidas** del motor de CC (intermediario §1.1.1, compensación, neteos, invariantes, tipos con patrones parecidos, etc.).
+
+**Consecuencia al re-sincronizar:** la sync **regenera** movimientos con la **regla vigente en código**, no hace **rollback** al estado previo al deploy.
+
+- Los **saldos netos** por moneda pueden **casi no moverse** si el cierre contable con las trx actuales sigue siendo el mismo.
+- Igual puede **no** recuperarse el **desglose “original”** (línea a línea, signos intermedios, textos) respecto de un export o una expectativa “pre-cambio”.
+
+**IN de exclusión del rollout:** excluye el **bloque nueva regla MonR/MonE** (rollout §1.3.3); **no** aísla por completo a una orden de **todo** cambio de signo o helper que el motor siga ejecutando por otras condiciones.
+
+**Si hiciera falta el histórico literal pre-deploy:** no alcanza con “volver a sincronizar”; hay que acordar **restauración desde backup** o **backfill** explícito.
 
 ---
 

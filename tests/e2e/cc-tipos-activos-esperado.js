@@ -283,7 +283,7 @@ const TIPOS_ACTIVOS_CATALOGO = [
   { codigo: 'USD-USD', activo: true, nTx: 2, intermediario: false },
   { codigo: 'USD-USD', activo: true, nTx: 2, intermediario: true },
   { codigo: 'USD-ARS', activo: true, nTx: 2, intermediario: false },
-  { codigo: 'USD-ARS', activo: true, nTx: 4, intermediario: true },
+  { codigo: 'USD-ARS', activo: true, nTx: 2, intermediario: true },
   { codigo: 'EUR-USD', activo: true, nTx: 2, intermediario: false },
   { codigo: 'USD-EUR', activo: true, nTx: 2, intermediario: false },
   { codigo: 'EUR-ARS', activo: true, nTx: 2, intermediario: false },

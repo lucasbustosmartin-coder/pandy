@@ -4,6 +4,8 @@
 
 **Relacionado:** `docs/INSTRUMENTACION_MULTITRANSACCION_Y_CC.md`, `docs/CORAZON_SISTEMA_CC_Y_CAJA.md`, `docs/CC_MOVIMIENTO_MANUAL.md`, reglas en `reglas_de_negocio`.
 
+**Matriz Excel (resumen ejecutivo):** las filas `[main] MC manual …` y `[main] MC automático en sync` en la hoja **Matriz** de `docs/MATRIZ_CC_REGLAS_MOVIMIENTOS.xlsx` (ver `docs/MATRIZ_CC_REGLAS_EXCEL.md`, `npm run excel:matriz-cc-reglas`) complementan este documento con **arquetipos** (mapa N patas, monR, monE, Int↔C, soloComisiones); no sustituyen §3 ni el código en `main.js`.
+
 ---
 
 ## 1. Alcance (producto)

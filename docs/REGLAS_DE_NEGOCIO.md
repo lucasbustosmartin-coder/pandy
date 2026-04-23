@@ -4,6 +4,8 @@
 
 **`reglas_de_negocio`** es la **única** fuente de verdad en la app para reglas que definen CC (y caja vía transacciones/sync). **`cc_modelo_reglas`** ya **no** la consulta el front; puede borrarse en DB con **`sql/migracion_drop_cc_modelo_reglas.sql`**. Checklist: **`docs/MIGRACION_UNA_TABLA_REGLAS_DE_NEGOCIO.md`**.
 
+**Export Excel de la matriz cargada en Supabase** (revisiones / detección de huecos frente a `main.js`): **`docs/MATRIZ_CC_REGLAS_EXCEL.md`** — comando `npm run excel:matriz-cc-reglas`.
+
 ---
 
 Reglas explícitas que la sync traduce en **movimientos de cuenta corriente** (y se puede extender a otros efectos de negocio). Nombre alineado al modelo: **reglas de negocio**, no “motor CC” genérico.

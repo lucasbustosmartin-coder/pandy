@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "bitacora": "node scripts/crear-bitacora-excel.js",
+    "excel:matriz-cc-reglas": "node scripts/export-matriz-cc-reglas-excel.js",
     "excel:matriz-clasificacion-gp": "node scripts/crear-matriz-clasificacion-gp-xlsx.js",
     "excel:matriz-clasificacion-trx": "node scripts/crear-matriz-clasificacion-transaccion-xlsx.js",
     "sql:vuelco-inicial": "node scripts/generar-sql-vuelco-inicial.js",

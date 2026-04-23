@@ -7208,9 +7208,13 @@ function loadCajas(opts) {
     cajasSaldoIds.forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = '–'; });
   }
 
-  sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
-    .catch(() => {})
-    .then(() => refrescarVistaCajasTrasSyncGlobal());
+  if (!silentCajas && !debeOmitirCcGlobalSyncPorCooldownSesion()) {
+    sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
+      .catch(() => {})
+      .then(() => refrescarVistaCajasTrasSyncGlobal());
+  } else {
+    refrescarVistaCajasTrasSyncGlobal();
+  }
 
   const promCajas = Promise.all([
     fetchMovimientosCajaCerradosParaPanelInicio(silentCajas ? {} : { rejectOnError: true }),
@@ -8525,7 +8529,8 @@ function loadInicio() {
 
   // Refresco automático (~30 s): no encadenar sync global de todas las órdenes (pesado y vacía/repinta G/P).
   // Igual criterio que loadCuentaCorriente con isPandiBackgroundRefresh.
-  if (!isPandiBackgroundRefresh()) {
+  // Cooldown: evita re-disparar N RPCs al volver a Inicio si el sync global ya corrió hace poco (p. ej. login + Órdenes).
+  if (!isPandiBackgroundRefresh() && !debeOmitirCcGlobalSyncPorCooldownSesion()) {
     sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
       .catch(() => {})
       .then(() => refrescarPanelInicioCajasTrasSyncGlobal());
@@ -11095,18 +11100,55 @@ function getCondicionComisionReglasNegocio(reglas, tipoCodigo, pagador, cobrador
   return (withC && withC.condicion_estado_comision) ? withC.condicion_estado_comision : null;
 }
 
+/** TTL caché `getReglasDeNegocio` (ms). Tras ABM de reglas se invalida; el TTL cubre sync repetido de muchas órdenes del mismo tipo. */
+const REGLAS_DE_NEGOCIO_FETCH_CACHE_TTL_MS = 120000;
+
+/** @type {Map<string, { rows: any[]; expires: number }>} */
+const reglasDeNegocioFetchCache = new Map();
+
+function reglasDeNegocioCacheKey(codigoUpper, usaIntermediario) {
+  return `${codigoUpper}|${usaIntermediario ? '1' : '0'}`;
+}
+
+/** Vacía la caché de reglas (toda o una clave). Llamar tras mutar `reglas_de_negocio` desde la app. */
+function invalidateReglasDeNegocioFetchCache(codigoTipoOperacion, usaIntermediario) {
+  if (codigoTipoOperacion == null && usaIntermediario === undefined) {
+    reglasDeNegocioFetchCache.clear();
+    return;
+  }
+  const c = String(codigoTipoOperacion || '').trim().toUpperCase();
+  if (!c) return;
+  reglasDeNegocioFetchCache.delete(reglasDeNegocioCacheKey(c, !!usaIntermediario));
+}
+
 /**
  * Reglas de negocio (`reglas_de_negocio`): fuente de verdad del motor CC (ver docs/MIGRACION_UNA_TABLA_REGLAS_DE_NEGOCIO.md).
  * Si no hay filas para el par `(codigo, usa_intermediario)`, el sync usa fallbacks legacy (sin motor de tabla).
+ * Caché en cliente (TTL `REGLAS_DE_NEGOCIO_FETCH_CACHE_TTL_MS`) para reducir round-trips en `sincronizarCcYCajaDesdeOrden` y auxiliares; invalidación en ABM reglas.
  */
 function getReglasDeNegocio(codigoTipoOperacion, usaIntermediario) {
   const c = String(codigoTipoOperacion || '').trim().toUpperCase();
   if (!c) return Promise.resolve([]);
-  return client.from('reglas_de_negocio').select('*')
+  const now = Date.now();
+  const key = reglasDeNegocioCacheKey(c, !!usaIntermediario);
+  const hit = reglasDeNegocioFetchCache.get(key);
+  if (hit && hit.expires > now) {
+    return Promise.resolve(hit.rows.slice());
+  }
+  return client
+    .from('reglas_de_negocio')
+    .select('*')
     .eq('tipo_operacion_codigo', c)
     .eq('usa_intermediario', !!usaIntermediario)
-    .then((r) => (r.data && Array.isArray(r.data) ? r.data : []))
-    .catch(() => []);
+    .then((r) => {
+      const rows = r.data && Array.isArray(r.data) ? r.data : [];
+      reglasDeNegocioFetchCache.set(key, { rows, expires: now + REGLAS_DE_NEGOCIO_FETCH_CACHE_TTL_MS });
+      return rows.slice();
+    })
+    .catch(() => {
+      reglasDeNegocioFetchCache.set(key, { rows: [], expires: now + REGLAS_DE_NEGOCIO_FETCH_CACHE_TTL_MS });
+      return [];
+    });
 }
 
 function lookupReglasDeNegocioTipos(reglas, tiposOperacionCodigo, pagador, cobrador, tipoTransaccion, esComision, estadoTransaccion, contrapartidaEjecutada) {
@@ -13456,7 +13498,15 @@ function setCcSaldoCards(saldos) {
  * - **Una sola corrida en vuelo:** si Cajas, Inicio y CC piden sync a la vez, comparten la misma promesa.
  * - **Cooldown (sessionStorage):** tras un sync exitoso, `loadCuentaCorriente` puede omitir repetirlo al reabrir el menú antes de `PANDI_CC_GLOBAL_SYNC_COOLDOWN_MS` (el botón Refrescar y los flujos con `skipSyncGlobal: false` tras error siguen forzando lectura coherente cuando aplica).
  */
+/**
+ * Paralelismo de `sincronizarCcYCajaDesdeOrden` en sync global.
+ * Valores altos (~8+) pueden **saturar** el pool HTTP del navegador: la vista CC (fetch movimientos) compite
+ * con cientos de `sync_cc_caja_orden` y la UI “tarda una eternidad” aunque la BD sea chica.
+ */
 const PANDI_CC_SYNC_ORDENES_CONCURRENCY = 4;
+
+/** Atrasar el sync global del primer login para que `loadCuentaCorriente` / otras vistas ganen la red primero (ms). */
+const PANDI_CC_GLOBAL_SYNC_DEFER_LOGIN_MS = 2000;
 const PANDI_CC_GLOBAL_SYNC_COOLDOWN_MS = 60000;
 const PANDI_LS_CC_LAST_FULL_SYNC_MS = 'pandi_cc_last_full_sync_ms';
 
@@ -13485,7 +13535,23 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion() {
   const p = (async () => {
     const r = await client.from('instrumentacion').select('orden_id');
     if (r.error) return;
-    const ordenIds = [...new Set((r.data || []).map((x) => x.orden_id).filter(Boolean))];
+    let ordenIds = [...new Set((r.data || []).map((x) => x.orden_id).filter(Boolean))];
+    if (ordenIds.length === 0) {
+      marcarCcGlobalSyncExitosoEnSesion();
+      return;
+    }
+    const anulada = new Set();
+    const chunkEst = 150;
+    for (let j = 0; j < ordenIds.length; j += chunkEst) {
+      const rEst = await client.from('ordenes').select('id, estado').in('id', ordenIds.slice(j, j + chunkEst));
+      if (rEst.error) break;
+      (rEst.data || []).forEach((o) => {
+        if (String(o.estado || '').toLowerCase() === 'anulada') anulada.add(String(o.id));
+      });
+    }
+    if (anulada.size > 0) {
+      ordenIds = ordenIds.filter((id) => id != null && !anulada.has(String(id)));
+    }
     if (ordenIds.length === 0) {
       marcarCcGlobalSyncExitosoEnSesion();
       return;
@@ -20222,10 +20288,9 @@ function loadOrdenes() {
       });
   }
 
-  // Sincronizar CC/caja sin bloquear el listado: la grilla solo necesita `ordenes` + catálogos (rápido con pocas filas).
-  // Antes se encadenaba sync → runLoadOrdenes; el sync recorre cada orden con instrumentación en serie (`sincronizarCcYCajaDesdeOrden`)
-  // y domina el tiempo aunque haya 7 órdenes — no es un tema de índices en `ordenes`. CC y Cajas siguen llamando al mismo sync al entrar.
-  sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().catch(() => {});
+  // No disparar sync global acá: cada orden implica una RPC `sync_cc_caja_orden`; al abrir Órdenes muchas veces
+  // eso generaba miles de requests (ver docs/PLAN_MEJORA_PERFORMANCE_SYNC_CC.md). El sync queda en login, Inicio/Cajas
+  // (con cooldown), botón Refrescar en CC y otros flujos explícitos.
   return runLoadOrdenes(selectConNumero).catch((err) => {
     const msg = err && err.message != null ? String(err.message) : String(err || '');
     return delayMinLoadingSiNoEsBackground(loadingShownAtOrdenes).then(async () => {
@@ -31084,6 +31149,7 @@ function ejecutarGuardarReglaNegocio(form) {
       showToast('Error al guardar: ' + (res.error.message || '') + (res.error.code === '23505' ? ' (clave duplicada)' : ''), 'error');
       return;
     }
+    invalidateReglasDeNegocioFetchCache();
     cerrarModalReglaNegocio();
     showToast(id ? 'Regla actualizada.' : 'Regla creada.', 'success');
     loadReglasNegocioVista();
@@ -31125,6 +31191,7 @@ function eliminarReglaNegocio(id) {
       client.from('reglas_de_negocio').delete().eq('id', id).then((res) => {
         if (res.error) showToast('Error: ' + (res.error.message || ''), 'error');
         else {
+          invalidateReglasDeNegocioFetchCache();
           showToast('Fila eliminada.', 'success');
           loadReglasNegocioVista();
         }
@@ -31317,6 +31384,7 @@ function reglasNegocioInsertarReplicaBatch(srcRows, destCod, destUsa) {
   const chunk = 80;
   function send(i) {
     if (i >= batch.length) {
+      invalidateReglasDeNegocioFetchCache();
       cerrarModalReplicarReglas();
       showToast('Replicación completada (' + batch.length + ' filas).', 'success');
       loadReglasNegocioVista();
@@ -32510,8 +32578,11 @@ async function finalizeSessionUiSetup() {
   });
   startSessionTimeoutCheck();
   showAppContent();
-  // Recalcular CC y caja desde orden + transacciones (modelo autónomo); en segundo plano para no bloquear la UI.
-  sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().catch(() => {});
+  // Sync global post-login: si arranca en el mismo tick que la navegación a CC, cientos de RPC compiten con
+  // los SELECT de movimientos y la pestaña Red “explota”. Diferir unos segundos deja pintar CC/Inicio primero.
+  setTimeout(() => {
+    sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().catch(() => {});
+  }, PANDI_CC_GLOBAL_SYNC_DEFER_LOGIN_MS);
   const userEmailEl = document.getElementById('user-email');
   if (userEmailEl) userEmailEl.textContent = currentUserEmail;
   const userDisplayInp = document.getElementById('user-display-name-input');
