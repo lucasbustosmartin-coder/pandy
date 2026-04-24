@@ -262,7 +262,7 @@
         <span class="menu-label">Auditoría</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.8.2</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.8.3</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -827,11 +827,30 @@
         <h3 style="margin:0 0 0.75rem 0; font-size:1.1rem; display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem;">
           <span class="card-icon" style="width:22px; height:22px; color:#555;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-22"></use></svg></span>
           Control de calidad
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Control de calidad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><strong>Control de calidad</strong> agrupa alertas sobre <strong>caja</strong>, los libros de <strong>cuenta corriente cliente e intermediario</strong> y las <strong>transacciones</strong> de la orden en el período (calendario <strong>Argentina</strong>; semana <strong>lunes a domingo</strong>). Las parejas CC↔caja miran movimientos con <code>movimiento_caja_id</code> en ambas tablas de CC. Las secciones por transacción usan la <strong>fecha de la orden</strong> (incluye órdenes anuladas) y no filtran por dueño: en ejecutada/pendiente debe haber CC coherente en los dos libros; en <strong>transacción anulada</strong> los movimientos CC derivados (no manuales) deben quedar en estado anulado. Requiere <code>ver_control_calidad</code> (o permiso heredado de control G/P). Ejecutá en Supabase <code>sql/migracion_control_calidad_vista_informe.sql</code> si falta la función <code>control_calidad_informe</code>.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Control de calidad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><strong>Control de calidad</strong> agrupa alertas sobre <strong>caja</strong>, los libros de <strong>cuenta corriente cliente e intermediario</strong> y las <strong>transacciones</strong> de la orden en el período (calendario <strong>Argentina</strong>; semana <strong>lunes a domingo</strong>). Incluye revisión de <strong>intermediarios sin vínculo</strong> con cliente (sin fila en <code>contraparte_vinculo</code>), independiente del período. Las parejas CC↔caja miran movimientos con <code>movimiento_caja_id</code> en ambas tablas de CC. Las secciones por transacción usan la <strong>fecha de la orden</strong> (incluye órdenes anuladas) y no filtran por dueño: en ejecutada/pendiente debe haber CC coherente en los dos libros; en <strong>transacción anulada</strong> los movimientos CC derivados (no manuales) deben quedar en estado anulado. Requiere <code>ver_control_calidad</code> (o permiso heredado de control G/P). Ejecutá en Supabase <code>sql/migracion_control_calidad_vista_informe.sql</code> si falta la función <code>control_calidad_informe</code>.</span></span>
         </h3>
         <div id="control-calidad-sin-permiso" class="panel-reglas-negocio-aviso" role="status" style="display:none;">
           No tenés permiso para ver esta vista (<code>ver_control_calidad</code> o el permiso heredado de control G/P).
         </div>
+        <section id="control-calidad-inter-sin-vinculo-block" class="control-calidad-inter-sin-vinculo" style="display:none; margin:0 0 1rem 0; padding:0.85rem 1rem; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc;">
+          <h4 id="control-calidad-inter-sin-vinculo-h" style="margin:0 0 0.35rem 0; font-size:0.95rem; font-weight:600; color:#1e293b;">Intermediarios sin vínculo con cliente</h4>
+          <p style="margin:0 0 0.5rem 0; font-size:0.82rem; color:#64748b; line-height:1.45;">Intermediarios que <strong>no</strong> tienen fila en <code>contraparte_vinculo</code> (no están como «Mismo registro que…» con un cliente). Revisión de catálogo; no depende del período del informe.</p>
+          <p id="control-calidad-inter-sin-vinculo-resumen" style="margin:0 0 0.45rem 0; font-size:0.82rem; font-weight:600; color:#334155;" aria-live="polite"></p>
+          <div id="control-calidad-inter-sin-vinculo-loading" class="vista-loading-spinner" style="display:none; margin:0.35rem 0;">Cargando…</div>
+          <div id="control-calidad-inter-sin-vinculo-outer" class="tabla-clientes-wrap tabla-wrap-con-scroll" style="display:none; max-height:min(32vh, 320px);">
+            <table class="tabla-listado-ordenes control-calidad-tabla">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Activo</th>
+                  <th>Alta (ART)</th>
+                  <th style="width:1%;"></th>
+                </tr>
+              </thead>
+              <tbody id="control-calidad-inter-sin-vinculo-tbody"></tbody>
+            </table>
+          </div>
+        </section>
         <div class="inicio-gp-toolbar" style="margin-bottom:0.35rem;">
           <div class="inicio-gp-periodos" role="tablist" aria-label="Período control de calidad">
             <button type="button" class="btn-secondary inicio-gp-pill" data-control-calidad-periodo="dia" aria-selected="false">Día</button>
