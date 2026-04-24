@@ -3629,6 +3629,16 @@ function setupControlCalidadVista() {
   if (controlCalidadListenersAttached) return;
   const root = document.getElementById('vista-control-calidad');
   if (!root) return;
+  root.addEventListener('click', (e) => {
+    const btnIr = e.target && e.target.closest && e.target.closest('.btn-control-calidad-ir-intermediarios');
+    if (!btnIr) return;
+    e.preventDefault();
+    if (!userPermissions.includes('ver_intermediarios')) {
+      showToast('No tenés permiso para abrir Intermediarios.', 'info');
+      return;
+    }
+    showView('vista-intermediarios', 'Intermediarios');
+  });
   root.querySelectorAll('[data-control-calidad-periodo]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const p = btn.getAttribute('data-control-calidad-periodo');
@@ -7649,6 +7659,78 @@ function renderControlCalidadTrxAnuladaCcNoAnulado(block) {
   );
 }
 
+/** Panel Control de calidad: intermediarios sin fila en `contraparte_vinculo` (pendientes de vincular a cliente). */
+function loadControlCalidadIntermediariosSinVinculoPanel() {
+  const block = document.getElementById('control-calidad-inter-sin-vinculo-block');
+  const loading = document.getElementById('control-calidad-inter-sin-vinculo-loading');
+  const outer = document.getElementById('control-calidad-inter-sin-vinculo-outer');
+  const tbody = document.getElementById('control-calidad-inter-sin-vinculo-tbody');
+  const resumen = document.getElementById('control-calidad-inter-sin-vinculo-resumen');
+  if (!block || !loading || !outer || !tbody || !resumen) return Promise.resolve();
+  if (!puedeVerControlCalidad()) {
+    block.style.display = 'none';
+    return Promise.resolve();
+  }
+  if (pandiSinConexionServidorViva()) {
+    block.style.display = 'block';
+    loading.style.display = 'none';
+    outer.style.display = 'none';
+    tbody.innerHTML = '';
+    resumen.textContent = 'Sin conexión: no se pudo revisar vínculos intermediario–cliente.';
+    return Promise.resolve();
+  }
+
+  block.style.display = 'block';
+  loading.style.display = 'block';
+  outer.style.display = 'none';
+  tbody.innerHTML = '';
+  resumen.textContent = '';
+
+  return Promise.all([
+    pandiSupabaseFetchAll(() =>
+      client.from('intermediarios').select('id, nombre, activo, created_at').order('nombre', { ascending: true }),
+    ),
+    pandiSupabaseFetchAll(() => client.from('contraparte_vinculo').select('intermediario_id')),
+  ]).then(([rInt, rVin]) => {
+    loading.style.display = 'none';
+    if (rInt.error || rVin.error) {
+      const msg = pandiExtractErrorTexto(rInt.error || rVin.error);
+      resumen.textContent = msg ? `Error al cargar datos: ${msg}` : 'Error al cargar datos.';
+      showToast('Error al cargar intermediarios sin vínculo.', 'error');
+      return;
+    }
+    const vinculados = new Set((rVin.data || []).map((v) => v && v.intermediario_id).filter(Boolean));
+    const sinV = (rInt.data || []).filter((i) => i && i.id && !vinculados.has(i.id));
+    sinV.sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return tb - ta;
+    });
+    const n = sinV.length;
+    resumen.textContent =
+      n === 0
+        ? 'Ningún intermediario sin vínculo (todos tienen fila en contraparte_vinculo o no hay intermediarios).'
+        : `${n} intermediario(s) sin vínculo con cliente (orden: más recientes primero).`;
+    const puedeIr = userPermissions.includes('ver_intermediarios');
+    if (n === 0) {
+      tbody.innerHTML =
+        '<tr><td colspan="4" style="padding:1rem;text-align:center;color:#64748b;">No hay filas para revisar.</td></tr>';
+    } else {
+      tbody.innerHTML = sinV
+        .map((i) => {
+          const activoTxt = i.activo === false ? 'No' : 'Sí';
+          const fecha = formatAuditoriaFechaHoraArt(i.created_at);
+          const btn = puedeIr
+            ? '<button type="button" class="btn-secondary btn-control-calidad-ir-intermediarios" title="Abrir la vista Intermediarios" style="padding:0.25rem 0.5rem;font-size:0.8rem;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>Ir</button>'
+            : '—';
+          return `<tr><td>${escapeHtml(i.nombre || '')}</td><td>${escapeHtml(activoTxt)}</td><td>${escapeHtml(fecha)}</td><td>${btn}</td></tr>`;
+        })
+        .join('');
+    }
+    outer.style.display = 'block';
+  });
+}
+
 /** Vista menú Control de calidad: RPC `control_calidad_informe` (requiere migración SQL). */
 function loadControlCalidadVista() {
   setupControlCalidadVista();
@@ -7674,10 +7756,16 @@ function loadControlCalidadVista() {
       loading.style.display = 'none';
       contenido.style.display = 'none';
       contenido.innerHTML = '';
+      const interBlk = document.getElementById('control-calidad-inter-sin-vinculo-block');
+      if (interBlk) interBlk.style.display = 'none';
+      const interTbody = document.getElementById('control-calidad-inter-sin-vinculo-tbody');
+      if (interTbody) interTbody.innerHTML = '';
     }
     return Promise.resolve();
   }
   if (!silent && sinPerm) sinPerm.style.display = 'none';
+
+  if (!silent) void loadControlCalidadIntermediariosSinVinculoPanel();
 
   const rango = inicioGpOperativoRangoFechas(controlCalidadPeriodo);
   if (leyenda) {
@@ -7781,6 +7869,14 @@ let pandiGpDetalleCacheTotalFilas = null;
 const GP_DETALLE_EYE_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 
+/** Icono sub-card «Ejecutado» (caja cerrada / CC cerrado). */
+const GP_DETALLE_SVG_EJECUTADO =
+  '<svg class="gp-detalle-card-ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>';
+
+/** Icono sub-card «Pendiente» (CC pendiente). */
+const GP_DETALLE_SVG_PENDIENTE =
+  '<svg class="gp-detalle-card-ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>';
+
 function inicioGpHtmlBotonVerDetalleMovimientos(bolsa, tituloBtn, more) {
   const mo = more || {};
   const b = escapeHtml(bolsa);
@@ -7838,6 +7934,206 @@ function pandiGpOperativaDetalleRefTexto(row) {
   return parts.length ? parts.join(' · ') : '–';
 }
 
+/** CC manual (o sin orden/transacción en filas CC): no mostrar nº orden ni nº transacción en el detalle G/P. */
+function pandiGpDetalleRowOmitirOrdenYTransaccion(row, bolsaKey) {
+  if (!row) return false;
+  const b = String(bolsaKey || '');
+  if (
+    b !== 'cc_cliente' &&
+    b !== 'cc_intermediario' &&
+    b !== 'cc_resultado_economico_compensatorio'
+  ) {
+    return false;
+  }
+  if (row.es_movimiento_manual === true || String(row.es_movimiento_manual) === 'true') return true;
+  const on = row.orden_numero;
+  const tn = row.transaccion_numero;
+  const noOn = on == null || String(on).trim() === '';
+  const noTn = tn == null || String(tn).trim() === '';
+  return noOn && noTn;
+}
+
+/** Agrupa estado CC/caja para subtotales ejecutado vs pendiente (pendiente solo CC). */
+function pandiGpDetalleCcEstadoBucket(row) {
+  const raw = row && row.cc_estado != null ? String(row.cc_estado).trim().toLowerCase() : '';
+  if (raw === 'pendiente') return 'pendiente';
+  return 'ejecutado';
+}
+
+function pandiAcumuladoGpDetalleIngresoEgresoPorMoneda(rows, moneda) {
+  let ingEj = 0;
+  let ingPen = 0;
+  let egrEj = 0;
+  let egrPen = 0;
+  (rows || []).forEach((r) => {
+    if (moneda && String(r.moneda || '').toUpperCase() !== moneda) return;
+    const m = Number(r.monto) || 0;
+    const pen = pandiGpDetalleCcEstadoBucket(r) === 'pendiente';
+    if (m > 1e-12) {
+      if (pen) ingPen += m;
+      else ingEj += m;
+    } else if (m < -1e-12) {
+      if (pen) egrPen += m;
+      else egrEj += m;
+    }
+  });
+  const ingreso = ingEj + ingPen;
+  const egreso = egrEj + egrPen;
+  return { ingEj, ingPen, egrEj, egrPen, ingreso, egreso, total: ingreso + egreso };
+}
+
+/**
+ * Tres cards (Ingreso / Egreso / Total) con desglose Ejecutado vs Pendiente por moneda.
+ * Ejecutado: movimientos cerrados (caja) o CC en estado cerrado. Pendiente: solo líneas CC en pendiente; en caja suele ser 0.
+ */
+function pandiHtmlGpResumenTresCards(rows, detCtx) {
+  const c = detCtx || {};
+  const monedaFiltro = c.monedaFiltro && MONEDAS_GP_PANEL.includes(String(c.monedaFiltro).toUpperCase())
+    ? String(c.monedaFiltro).toUpperCase()
+    : '';
+  const bolsaKey = c.bolsaKey || '';
+  const esCaja = bolsaKey === 'caja_manual' || bolsaKey === 'caja_ordenes';
+  const esTotalMixto = bolsaKey === 'total';
+  const hintEj = esTotalMixto
+    ? 'Suma de importes positivos en estado cerrado (todas las bolsas del desglose).'
+    : esCaja
+      ? 'Suma de importes positivos en movimientos de caja cerrados (no hay pendientes en esta bolsa).'
+      : 'Suma de importes positivos en estado cerrado (CC o comisión registrada como cerrada).';
+  const hintPen = esTotalMixto
+    ? 'Suma de importes positivos en estado pendiente (líneas de cuenta corriente).'
+    : esCaja
+      ? 'En caja solo entran movimientos cerrados: el pendiente queda en 0.'
+      : 'Suma de importes positivos en estado pendiente en cuenta corriente.';
+  const hintPenEgr = esTotalMixto
+    ? 'Suma de egresos (importes negativos) en estado pendiente (cuenta corriente).'
+    : esCaja
+      ? 'En caja solo entran movimientos cerrados: el pendiente queda en 0.'
+      : 'Suma de importes negativos (egresos) en estado pendiente en cuenta corriente.';
+  const hintEjEgr = esTotalMixto
+    ? 'Suma de egresos en estado cerrado (caja cerrada + CC cerrado + comisiones).'
+    : esCaja
+      ? 'Suma de importes negativos en caja cerrada.'
+      : 'Suma de importes negativos en estado cerrado.';
+
+  if (!rows || rows.length === 0) return '';
+
+  let monedas = [];
+  if (monedaFiltro) monedas = [monedaFiltro];
+  else {
+    monedas = MONEDAS_GP_PANEL.filter((m) =>
+      (rows || []).some((r) => String(r.moneda || '').toUpperCase() === m && Math.abs(Number(r.monto) || 0) > 1e-12),
+    );
+    if (monedas.length === 0) {
+      const set = new Set((rows || []).map((r) => String(r.moneda || 'USD').toUpperCase()));
+      monedas = [...set];
+    }
+  }
+
+  const bloquesMoneda = monedas
+    .map((mon) => {
+      const a = pandiAcumuladoGpDetalleIngresoEgresoPorMoneda(rows, mon);
+      const fmt = (v) => escapeHtml(formatMonto(v, mon));
+      const ingCls = inicioGpClaseSigno(a.ingreso);
+      const egrCls = inicioGpClaseSigno(a.egreso);
+      const totCls = inicioGpClaseSigno(a.total);
+      const subIngEj = inicioGpClaseSigno(a.ingEj);
+      const subIngPe = inicioGpClaseSigno(a.ingPen);
+      const subEgrEj = inicioGpClaseSigno(a.egrEj);
+      const subEgrPe = inicioGpClaseSigno(a.egrPen);
+      const titMon = !monedaFiltro ? '<div class="gp-detalle-cards-moneda-tit">' + escapeHtml(mon) + '</div>' : '';
+      return (
+        titMon +
+        '<div class="gp-detalle-cards-grid" role="group" aria-label="Resumen ' +
+        escapeHtml(mon) +
+        '">' +
+        '<article class="gp-detalle-card gp-detalle-card--ingreso">' +
+        '<h5 class="gp-detalle-card-tit">Ingreso</h5>' +
+        '<div class="gp-detalle-card-monto ' +
+        ingCls +
+        '">' +
+        fmt(a.ingreso) +
+        '</div>' +
+        '<ul class="gp-detalle-card-sub">' +
+        '<li title="' +
+        escapeHtml(hintEj) +
+        '"><span class="gp-detalle-card-sub-ico" aria-hidden="true">' +
+        GP_DETALLE_SVG_EJECUTADO +
+        '</span><span class="gp-detalle-card-sub-lab">Ejecutado</span> <span class="gp-detalle-card-sub-val ' +
+        subIngEj +
+        '">' +
+        fmt(a.ingEj) +
+        '</span></li>' +
+        '<li title="' +
+        escapeHtml(hintPen) +
+        '"><span class="gp-detalle-card-sub-ico" aria-hidden="true">' +
+        GP_DETALLE_SVG_PENDIENTE +
+        '</span><span class="gp-detalle-card-sub-lab">Pendiente</span> <span class="gp-detalle-card-sub-val ' +
+        subIngPe +
+        '">' +
+        fmt(a.ingPen) +
+        '</span></li>' +
+        '</ul></article>' +
+        '<article class="gp-detalle-card gp-detalle-card--egreso">' +
+        '<h5 class="gp-detalle-card-tit">Egreso</h5>' +
+        '<div class="gp-detalle-card-monto ' +
+        egrCls +
+        '">' +
+        fmt(a.egreso) +
+        '</div>' +
+        '<ul class="gp-detalle-card-sub">' +
+        '<li title="' +
+        escapeHtml(hintEjEgr) +
+        '"><span class="gp-detalle-card-sub-ico" aria-hidden="true">' +
+        GP_DETALLE_SVG_EJECUTADO +
+        '</span><span class="gp-detalle-card-sub-lab">Ejecutado</span> <span class="gp-detalle-card-sub-val ' +
+        subEgrEj +
+        '">' +
+        fmt(a.egrEj) +
+        '</span></li>' +
+        '<li title="' +
+        escapeHtml(hintPenEgr) +
+        '"><span class="gp-detalle-card-sub-ico" aria-hidden="true">' +
+        GP_DETALLE_SVG_PENDIENTE +
+        '</span><span class="gp-detalle-card-sub-lab">Pendiente</span> <span class="gp-detalle-card-sub-val ' +
+        subEgrPe +
+        '">' +
+        fmt(a.egrPen) +
+        '</span></li>' +
+        '</ul></article>' +
+        '<article class="gp-detalle-card gp-detalle-card--total">' +
+        '<h5 class="gp-detalle-card-tit">Total</h5>' +
+        '<div class="gp-detalle-card-monto ' +
+        totCls +
+        '">' +
+        fmt(a.total) +
+        '</div>' +
+        '<p class="gp-detalle-card-hint">Ingreso + Egreso (signo) en ' +
+        escapeHtml(mon) +
+        ', misma moneda que la tabla debajo.</p>' +
+        '</article></div>'
+      );
+    })
+    .join('');
+
+  return (
+    '<div class="gp-detalle-cards-wrap" role="region" aria-label="Resumen ingresos, egresos y total por moneda">' +
+    bloquesMoneda +
+    '</div>'
+  );
+}
+
+function pandiHtmlGpOperativaDetalleTablaYCards(rows, tfootCtx, detCtx) {
+  const cards = pandiHtmlGpResumenTresCards(rows, detCtx);
+  const inner = pandiHtmlTablaGpOperativaDetalleFilas(rows, tfootCtx, detCtx);
+  return (
+    '<div class="gp-detalle-table-stack">' +
+    cards +
+    '<table class="tabla-gp-detalle">' +
+    inner +
+    '</table></div>'
+  );
+}
+
 function pandiTotalesGpDetallePorMonedaDesdeFilas(rows) {
   const sums = { USD: 0, ARS: 0, EUR: 0 };
   (rows || []).forEach((r) => {
@@ -7887,7 +8183,7 @@ function pandiHtmlGpDetalleTfootDesdeContexto(rows, ctx) {
   return (
     '<tfoot><tr class="gp-detalle-tfoot-total">' +
     '<td colspan="2" class="gp-detalle-tfoot-total-label"><span class="gp-detalle-tfoot-total-inner"><strong>Total</strong></span></td>' +
-    '<td colspan="4" class="gp-detalle-tfoot-montos gp-detalle-tfoot-montos-grid-wrap">' +
+    '<td colspan="6" class="gp-detalle-tfoot-montos gp-detalle-tfoot-montos-grid-wrap">' +
     '<div class="gp-detalle-tfoot-montos-grid">' +
     blocks +
     '</div></td></tr></tfoot>'
@@ -7937,11 +8233,13 @@ function pandiHtmlGpDetalleSeccionConsolidado(allRows) {
   );
 }
 
-function pandiHtmlTablaGpOperativaDetalleFilas(rows, tfootCtx) {
+function pandiHtmlTablaGpOperativaDetalleFilas(rows, tfootCtx, detCtx) {
+  const d = detCtx || {};
+  const bolsaKey = d.bolsaKey || '';
   const head =
-    '<thead><tr><th>Fecha</th><th>Moneda</th><th>Monto</th><th>Medio de pago</th><th>Concepto</th><th>Referencia</th></tr></thead>';
+    '<thead><tr><th>Fecha</th><th>Entidad</th><th>Orden</th><th>Transacción</th><th>Moneda</th><th>Importe</th><th>Medio de pago</th><th>Concepto</th></tr></thead>';
   const emptyBody =
-    '<tbody><tr><td colspan="6">No hay movimientos en el período con este criterio.</td></tr></tbody>';
+    '<tbody><tr><td colspan="8">No hay movimientos en el período con este criterio.</td></tr></tbody>';
   const foot = pandiHtmlGpDetalleTfootDesdeContexto(rows || [], tfootCtx);
   if (!rows || rows.length === 0) {
     return head + emptyBody + foot;
@@ -7955,9 +8253,26 @@ function pandiHtmlTablaGpOperativaDetalleFilas(rows, tfootCtx) {
       const fec = String(r.fecha || '').slice(0, 10);
       const modoRaw = r.modo_pago != null ? String(r.modo_pago).trim() : '';
       const modoStr = modoRaw ? modoRaw : '–';
+      const entidadStr = r.entidad != null && String(r.entidad).trim() !== '' ? String(r.entidad) : '–';
+      const omitOrdenTrx = pandiGpDetalleRowOmitirOrdenYTransaccion(r, bolsaKey);
+      const on = r.orden_numero;
+      const tn = r.transaccion_numero;
+      const ordenStr = omitOrdenTrx
+        ? '–'
+        : on != null && String(on).trim() !== ''
+          ? '#' + String(on)
+          : '–';
+      const transStr =
+        omitOrdenTrx || tn == null || String(tn).trim() === '' ? '–' : String(tn);
       return (
         '<tr><td>' +
         escapeHtml(fec) +
+        '</td><td class="td-concepto">' +
+        escapeHtml(entidadStr) +
+        '</td><td>' +
+        escapeHtml(ordenStr) +
+        '</td><td>' +
+        escapeHtml(transStr) +
         '</td><td>' +
         escapeHtml(mon) +
         '</td><td class="gp-detalle-monto ' +
@@ -7968,8 +8283,6 @@ function pandiHtmlTablaGpOperativaDetalleFilas(rows, tfootCtx) {
         escapeHtml(modoStr) +
         '</td><td class="td-concepto">' +
         escapeHtml(r.concepto || '–') +
-        '</td><td class="td-concepto">' +
-        escapeHtml(pandiGpOperativaDetalleRefTexto(r)) +
         '</td></tr>'
       );
     })
@@ -8043,12 +8356,13 @@ function openModalGpOperativaDetalle(bolsa, opt) {
       (r) => String(r.moneda || '').toUpperCase() === monedaFiltro,
     );
     content.innerHTML =
-      '<div class="tabla-clientes-wrap tabla-gp-detalle-wrap"><table class="tabla-gp-detalle">' +
-      pandiHtmlTablaGpOperativaDetalleFilas(filas, {
-        bolsaKey: null,
-        mostrarOjosMontoPorMoneda: false,
-      }) +
-      '</table></div>';
+      '<div class="tabla-clientes-wrap tabla-gp-detalle-wrap">' +
+      pandiHtmlGpOperativaDetalleTablaYCards(
+        filas,
+        { bolsaKey: null, mostrarOjosMontoPorMoneda: false },
+        { bolsaKey: null, monedaFiltro },
+      ) +
+      '</div>';
     return;
   }
 
@@ -8068,15 +8382,20 @@ function openModalGpOperativaDetalle(bolsa, opt) {
               return (
                 '<section class="gp-detalle-seccion"><h4 class="gp-detalle-seccion-titulo">' +
                 escapeHtml(t) +
-                '</h4><div class="tabla-clientes-wrap tabla-gp-detalle-wrap"><table class="tabla-gp-detalle">' +
-                pandiHtmlTablaGpOperativaDetalleFilas(rows, {
-                  bolsaKey: k,
-                  mostrarOjosMontoPorMoneda: true,
-                }) +
-                '</table></div></section>'
+                '</h4><div class="tabla-clientes-wrap tabla-gp-detalle-wrap">' +
+                pandiHtmlGpOperativaDetalleTablaYCards(
+                  rows,
+                  { bolsaKey: k, mostrarOjosMontoPorMoneda: true },
+                  { bolsaKey: k, monedaFiltro: '' },
+                ) +
+                '</div></section>'
               );
             })
-            .join('') + pandiHtmlGpDetalleSeccionConsolidado(todasLasFilas);
+            .join('') +
+            '<div class="gp-detalle-antes-consolidado-wrap">' +
+            pandiHtmlGpResumenTresCards(todasLasFilas, { bolsaKey: 'total', monedaFiltro: '' }) +
+            '</div>' +
+            pandiHtmlGpDetalleSeccionConsolidado(todasLasFilas);
       })
       .catch((err) => {
         if (loading) loading.style.display = 'none';
@@ -8113,12 +8432,13 @@ function openModalGpOperativaDetalle(bolsa, opt) {
         r = (rows || []).filter((x) => String(x.moneda || '').toUpperCase() === monedaFiltro);
       }
       content.innerHTML =
-        '<div class="tabla-clientes-wrap tabla-gp-detalle-wrap"><table class="tabla-gp-detalle">' +
-        pandiHtmlTablaGpOperativaDetalleFilas(r, {
-          bolsaKey: bolsa,
-          mostrarOjosMontoPorMoneda: true,
-        }) +
-        '</table></div>';
+        '<div class="tabla-clientes-wrap tabla-gp-detalle-wrap">' +
+        pandiHtmlGpOperativaDetalleTablaYCards(
+          r,
+          { bolsaKey: bolsa, mostrarOjosMontoPorMoneda: true },
+          { bolsaKey: bolsa, monedaFiltro },
+        ) +
+        '</div>';
     })
     .catch((err) => {
       if (loading) loading.style.display = 'none';
@@ -10841,13 +11161,26 @@ function egresoEntregaAClienteEjecutado(transacciones) {
 }
 
 /**
- * Par cliente (ingreso Cliente→Pandy/Intermediario + entrega Pandy o Intermediario→Cliente) **sin ninguna pata ejecutada**,
- * con intermediario. En **USD-USD**, **USD-ARS** y **ARS-USD** + int la matriz `pendiente` mezclaba compromiso de cobro con egreso **+mr/−me** en CC cliente y duplicaba el nominal; el motor alinea al desglose de par cerrado (ver `todoParCliIntAlinearCc` en `aplicarMotorCcDesdeReglasDeNegocio`).
+ * Par cliente con intermediario en **USD-USD**, **USD-ARS** y **ARS-USD**: el motor alinea CC cliente cuando el par
+ * instrumentado sigue en fase “todo pendiente” (ver `todoParCliIntAlinearCc` en `aplicarMotorCcDesdeReglasDeNegocio`).
+ * **Excepción ci_pc E,P:** si el ingreso Cliente→Intermediario (o C→P) ya está ejecutado pero el egreso **Pandy→Cliente**
+ * sigue pendiente, hay que **seguir** alineando para no volver a emitir dos líneas **+mr / −me** de «Compromiso de Pago»
+ * (el colapso a una línea con `|monto|` de la trx solo corre cuando este flag sigue true).
  */
 function todoParClientePendienteConIntParaAlinearCcMotor(codOp, intermediarioId, transacciones) {
   const c = String(codOp || '').toUpperCase();
   if (!intermediarioId) return false;
   if (c !== 'USD-USD' && c !== 'USD-ARS' && c !== 'ARS-USD') return false;
+  if (patronInstrumentacionIntDesdeTransacciones(transacciones) === 'ci_pc') {
+    const hayEgresoPandyClientePendiente = (transacciones || []).some((t) => {
+      if (transaccionEstadoTextoNormalizado(t) !== 'pendiente') return false;
+      if ((t.tipo || '').toLowerCase() !== 'egreso') return false;
+      const tn = transaccionNormalizarPagCobVacios(t);
+      const { pag, cob } = pagCobEfectivosTransaccionSync(tn);
+      return pag === 'pandy' && cob === 'cliente';
+    });
+    if (hayEgresoPandyClientePendiente && !egresoEntregaAClienteEjecutado(transacciones)) return true;
+  }
   if (ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones)) return false;
   if (egresoEntregaAClienteEjecutado(transacciones)) return false;
   return true;
@@ -10956,6 +11289,7 @@ function motorUsdUsdIntCpIcInyectarLineaCompromisoPositivaIntermediarioEgresoPen
  * USD-USD + intermediario: ¿el bucle del motor ya reflejó el spread **mr − me** en CC cliente vía egreso **pendiente**
  * de entrega al cliente (Pandy→Cliente o Intermediario→Cliente), con dos líneas USD y mismo `transaccion_id`?
  * Si sí, no insertar la fila sintética `es_comision` / `mr_menos_me` (evita duplicar). Si no (matriz vieja en BD, solo una pata, etc.), la sintética sigue siendo necesaria para CC desde momento 0.
+ * Incluye egreso **ejecutada**: el mismo criterio (≥2 filas USD mismo `transaccion_id` que suman ≈ mr−me) aplica tras cerrar la entrega.
  */
 function motorUsdUsdInterSpreadClienteYaCubiertoPorEgresoEntregaPendiente(transacciones, rowsCcCliente, ordenId, clienteId, mr, me) {
   if (!clienteId || !ordenId) return false;
@@ -10963,7 +11297,8 @@ function motorUsdUsdInterSpreadClienteYaCubiertoPorEgresoEntregaPendiente(transa
   if (spreadNet < 1e-6) return false;
   const tol = 0.02;
   for (const t of transacciones || []) {
-    if (transaccionEstadoTextoNormalizado(t) !== 'pendiente') continue;
+    const estT = transaccionEstadoTextoNormalizado(t);
+    if (estT !== 'pendiente' && estT !== 'ejecutada') continue;
     if ((t.tipo || '').toLowerCase() !== 'egreso') continue;
     const tNorm = transaccionNormalizarPagCobVacios(t);
     const { pag, cob } = pagCobEfectivosTransaccionSync(tNorm);
@@ -12336,7 +12671,8 @@ function pandiDevOmitirInvarianteNeteoCcClientePermitido() {
  * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata» o «Préstamo al cliente (cobertura Pandy — moneda recibida)» (par pata/préstamo regla B Pandy monR; la suma **|m|** del préstamo cerrado se **resta** del total bruto antes del residual porque el par ± ya está en `sumaMovimientosPataMonRExentosNeteo` y si no se resta bloquea el sync), y en moneda entregada el cluster «Pandy cumple pata en moneda entregada» + «Ajuste libro acuerdo» pareado (misma transacción; doble pata empresa→cliente en monR+monE),
  * y en la moneda correspondiente la fila sintética «Comisión del acuerdo» **sin** `transaccion_id` (spread mr−me; alineada a refuerzo `cerrado` con toda la instrumentación ejecutada);
  * y filas **«Compensación parcial/total en cuenta corriente- Orden … y Trans …»** (ingreso USD-USD+int invertido C→P a P→C con `compensacion_cc_monto_aplicado` en la transacción; legacy «parcial o total»);
- * y en **USD-USD + int.** con `monR===monE` y compensación persistida en transacciones, el **Compromiso de Pago** del egreso **Intermediario→Cliente** (+me) en esa moneda (`sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUsdConCompensacionTrx`).
+ * y en **USD-USD + int.** con `monR===monE` y compensación persistida en transacciones, el **Compromiso de Pago** del egreso **Intermediario→Cliente** (+me) en esa moneda (`sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUsdConCompensacionTrx`);
+ * y **USD-USD + int. `ci_pc`** (misma divisa, **mr > me**): el spread del acuerdo es comisión explícita; si la instrumentación está **toda ejecutada** y el par cobro+entrega cerró, **no** se exige neteo cero en CC cliente (misma idea que el bypass **cp_ic** en cruces; ver rama previa a la suma por moneda).
  * @param {boolean} [opts.omitirInvarianteNeteoCcClienteAcuerdoCerrado] Si true (multicontraparte manual elegible, o
  *   desvío **solo** de pagador/cobrador + UUIDs participantes vs plantilla, vía `pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo`),
  *   **no** se exige neteo a cero. No aplica por solo monto/modo/TC distintos del estándar.
@@ -12399,6 +12735,27 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
     transaccionesInstrumentacionTodasEjecutadasStrict(transacciones) &&
     ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
     egresoIntermediarioAClienteEjecutado(transacciones)
+  ) {
+    return { ok: true };
+  }
+
+  const monRPre = (orden.moneda_recibida || 'USD').toUpperCase();
+  const monEPre = (orden.moneda_entregada || 'USD').toUpperCase();
+  const mrPre = Number(orden.monto_recibido) || 0;
+  const mePre = Number(orden.monto_entregado) || 0;
+  /**
+   * USD-USD + int **ci_pc** (misma divisa): el spread **mr − me** es la comisión/yield explícito del acuerdo (p. ej. 2000 vs 1960 → 40).
+   * En CC cliente suele verse **Cobro realizado −mr** y **Compromiso de pago +me** (o colapso a +|monto trx|); la suma **cerrada** puede quedar en **−(mr−me)** hasta alinear estados o por convención de filas — no es incoherencia de instrumentación. Evitar falso positivo que bloquea `sync_cc_caja_orden` (órdenes 43/44 y similares).
+   */
+  if (
+    codTipoInv === 'USD-USD' &&
+    monRPre === monEPre &&
+    !!orden.intermediario_id &&
+    patronInstrumentacionIntDesdeTransacciones(transacciones) === 'ci_pc' &&
+    transaccionesInstrumentacionTodasEjecutadasStrict(transacciones) &&
+    ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
+    egresoEntregaAClienteEjecutado(transacciones) &&
+    mrPre > mePre + 1e-9
   ) {
     return { ok: true };
   }
@@ -12680,6 +13037,22 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       : (estado === 'ejecutada' ? 'cerrado' : (estado === 'anulada' ? 'anulado' : 'pendiente'));
     const codOp = String(tipoOperacionCodigo || '').toUpperCase();
     const todoParCliIntAlinearCc = todoParClientePendienteConIntParaAlinearCcMotor(codOp, intermediarioId, transacciones);
+    /** E,P **ci_pc**: con ingreso C→I ya ejecutado, `contrapartida` pasa a true en el egreso P→C pendiente y el bloque de inyección quedaba cortado por `!contrapartida` → dos «Compromiso de Pago» (+mr y −me). */
+    const patronIntCcInyeccionCompromiso = patronInstrumentacionIntDesdeTransacciones(transacciones, {
+      orden,
+      comisionPandyMonto: comM,
+      aplicarFiltroIngresoComisionClientePandy: true,
+    });
+    /** **ci_pc** egreso **Pandy→Cliente**: la matriz puede duplicar patas o colapsar a +|trx|; en **USD-USD** el motor reinyecta el par canónico **+mr / −me** (misma `transaccion_id`) en pendiente y ejecutada. */
+    const inyeccionCompromisoUnaLineaCiPcEgresoPandy =
+      (codOp === 'USD-USD' || codOp === 'USD-ARS' || codOp === 'ARS-USD') &&
+      !!intermediarioId &&
+      patronIntCcInyeccionCompromiso === 'ci_pc' &&
+      tipo === 'egreso' &&
+      (estado === 'pendiente' || estado === 'ejecutada') &&
+      pag === 'pandy' &&
+      cob === 'cliente' &&
+      !!clienteId;
     const monEOrdMotor = String(orden.moneda_entregada || 'USD').toUpperCase();
     /** Misma pata monE (+ ajuste) vía atajo que con egreso ejecutado: si solo exigíamos `ejecutada`, P,P usaba reglas crudas y el detalle CC no coincidía con E,E. */
     const crucesSinIntDoblePataBp =
@@ -12859,15 +13232,15 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     let reglasIter = reglasTx;
     let inyectarEgresoClienteCompromisoPagoUnaLinea = false;
     if (
-      todoParCliIntAlinearCc &&
+      (todoParCliIntAlinearCc || inyeccionCompromisoUnaLineaCiPcEgresoPandy) &&
       tipo === 'egreso' &&
-      estado === 'pendiente' &&
-      !contrapartida &&
+      (estado === 'pendiente' || (inyeccionCompromisoUnaLineaCiPcEgresoPandy && estado === 'ejecutada')) &&
+      (!contrapartida || inyeccionCompromisoUnaLineaCiPcEgresoPandy) &&
       (pag === 'intermediario' || pag === 'pandy') &&
       cob === 'cliente' &&
       clienteId
     ) {
-      /** Solo sustituir el par **+mr/−me** por una línea única +|monto trx| cuando la matriz sigue trayendo **ambas** patas; si el catálogo quedó solo **−me** (P,P con comisión), no filtrar ni inyectar — si no se pierde el −me en CC. */
+      /** Filtrar filas cliente `compromiso_pago` del iter cuando la matriz trae **≥2** patas o mr+me; la sustitución en **USD-USD** `ci_pc` es **dos** líneas +mr y −me (no +|trx|). En cruces USD-ARS / ARS-USD se sigue una línea +|monto trx|. Si el catálogo quedó solo **−me** (P,P con comisión), no filtrar ni inyectar. Con **ci_pc** E,P / E,E, `contrapartida` puede ser true aun así se inyecta (`inyeccionCompromisoUnaLineaCiPcEgresoPandy`). */
       const regsClienteCompromisoPago = (reglasTx || []).filter((regla) => {
         const ent = (regla.entidad_cc == null || String(regla.entidad_cc).trim() === '')
           ? 'cliente'
@@ -12878,7 +13251,31 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       const tieneClienteMrMePago =
         regsClienteCompromisoPago.some((r) => String(r.monto_origen || '').toLowerCase() === 'mr') &&
         regsClienteCompromisoPago.some((r) => String(r.monto_origen || '').toLowerCase() === 'me');
-      if (tieneClienteMrMePago) {
+      /** Par canónico **±monto_transacción** (misma base, signos opuestos): ya netea en la matriz; **no** colapsar a una sola línea +|trx|. Cualquier otro par **≥2** filas cliente `compromiso_pago` en **ci_pc** P→C (p. ej. mr vs me asimétricos, o variaciones de catálogo) sí debe pasar por el colapso +|monto trx|. */
+      const mosCliComp = regsClienteCompromisoPago.map((r) => String(r.monto_origen || '').toLowerCase());
+      const soloDosMontoTransaccionSignosOpuestos =
+        regsClienteCompromisoPago.length === 2 &&
+        mosCliComp.every((m) => m === 'monto_transaccion') &&
+        regsClienteCompromisoPago.some((r) => Number(r.signo) < 0) &&
+        regsClienteCompromisoPago.some((r) => Number(r.signo) > 0);
+      /** USD-USD **ci_pc** egreso P→C: en **ejecutada**+contrapartida la matriz suele traer **una** fila cliente `compromiso_pago` (+`monto_transacción` ≈ me); sin colapsar, el motor no inyectaba +mr/−me y quedaba solo +me. No aplica si todas las filas son solo **me** (catálogo P,P con comisión). */
+      const regsClienteCompromisoPagoSoloMe =
+        regsClienteCompromisoPago.length >= 1 &&
+        regsClienteCompromisoPago.every((r) => String(r.monto_origen || '').toLowerCase() === 'me');
+      const colapsarUsdUsdCiPcEgresoClienteCompromisoPago =
+        codOp === 'USD-USD' &&
+        patronIntCcInyeccionCompromiso === 'ci_pc' &&
+        inyeccionCompromisoUnaLineaCiPcEgresoPandy &&
+        regsClienteCompromisoPago.length >= 1 &&
+        !soloDosMontoTransaccionSignosOpuestos &&
+        !regsClienteCompromisoPagoSoloMe;
+      const colapsarCompromisoPagoClienteEgresoCiPc =
+        tieneClienteMrMePago ||
+        (inyeccionCompromisoUnaLineaCiPcEgresoPandy &&
+          regsClienteCompromisoPago.length >= 2 &&
+          !soloDosMontoTransaccionSignosOpuestos) ||
+        colapsarUsdUsdCiPcEgresoClienteCompromisoPago;
+      if (colapsarCompromisoPagoClienteEgresoCiPc) {
         inyectarEgresoClienteCompromisoPagoUnaLinea = true;
         /** La inyección +|monto| ya sustituye el gross; excluir **toda** fila cliente `compromiso_pago` del iter (no solo mr/me), si no queda una segunda regla (p. ej. `monto_transacción` con −) y duplica ± el mismo concepto en CC. */
         reglasIter = reglasTx.filter((regla) => {
@@ -12891,7 +13288,67 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         });
       }
     }
-    if (inyectarEgresoClienteCompromisoPagoUnaLinea && Math.abs(montoT) >= 1e-12) {
+    const inyectarEgresoClienteCompromisoPagoDualMrMeUsdUsdCiPc =
+      inyectarEgresoClienteCompromisoPagoUnaLinea &&
+      codOp === 'USD-USD' &&
+      patronIntCcInyeccionCompromiso === 'ci_pc' &&
+      inyeccionCompromisoUnaLineaCiPcEgresoPandy;
+    if (inyectarEgresoClienteCompromisoPagoDualMrMeUsdUsdCiPc && mr >= 1e-12 && me >= 1e-12) {
+      const feIny = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
+      const nroIny = t.numero != null ? t.numero : null;
+      const monIny = String(t.moneda || 'USD').toUpperCase();
+      const montoMrIny = Math.abs(Number(mr) || 0);
+      const montoMeIny = -Math.abs(Number(me) || 0);
+      rowsCcCliente.push({
+        cliente_id: clienteId,
+        orden_id: ordenId,
+        transaccion_id: t.id,
+        transaccion_numero: nroIny,
+        concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, nroIny),
+        fecha: feIny.fecha,
+        usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(t, orden),
+        moneda: monIny,
+        monto: montoMrIny,
+        estado: estadoMov,
+        estado_fecha: feIny.estado_fecha,
+        incluir_en_detalle: true,
+        ...montosCcPorMoneda(monIny, montoMrIny),
+      });
+      rowsCcCliente.push({
+        cliente_id: clienteId,
+        orden_id: ordenId,
+        transaccion_id: t.id,
+        transaccion_numero: nroIny,
+        concepto: conceptoCcLeyenda('compromiso_pago', orden.numero, nroIny),
+        fecha: feIny.fecha,
+        usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(t, orden),
+        moneda: monIny,
+        monto: montoMeIny,
+        estado: estadoMov,
+        estado_fecha: feIny.estado_fecha,
+        incluir_en_detalle: true,
+        ...montosCcPorMoneda(monIny, montoMeIny),
+      });
+      /** Con **−me** en «Compromiso de Pago» el libro quedaría en **−me** vs el cobro **−mr**; al **ejecutar** el egreso P→C hace falta el espejo **+me** «Pago Realizado» (entrega efectiva al cliente), mismo criterio que una línea única +|trx| antes del desglose +mr/−me. */
+      if (estado === 'ejecutada') {
+        const montoPagoMeIny = Math.abs(Number(me) || 0);
+        rowsCcCliente.push({
+          cliente_id: clienteId,
+          orden_id: ordenId,
+          transaccion_id: t.id,
+          transaccion_numero: nroIny,
+          concepto: conceptoCcLeyenda('pago_realizado', orden.numero, nroIny),
+          fecha: feIny.fecha,
+          usuario_id: usuarioIdMovimientoCcDesdeTransaccionOOrden(t, orden),
+          moneda: monIny,
+          monto: montoPagoMeIny,
+          estado: estadoMov,
+          estado_fecha: feIny.estado_fecha,
+          incluir_en_detalle: true,
+          ...montosCcPorMoneda(monIny, montoPagoMeIny),
+        });
+      }
+    } else if (inyectarEgresoClienteCompromisoPagoUnaLinea && Math.abs(montoT) >= 1e-12) {
       const feIny = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
       const nroIny = t.numero != null ? t.numero : null;
       const monIny = String(t.moneda || 'USD').toUpperCase();
@@ -13330,12 +13787,19 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         });
         const rawComInt = Number(reglaComIntUsd.signo) * baseInt;
         const magComInt = Math.abs(rawComInt);
-        /** Rollout MonR/MonE, o comisión por tasa sobre transferencia al intermediario: CC intermediario en −. Si no: magnitud + pese a `signo` en matriz. */
+        /**
+         * **ci_pc** (ingreso MonR Cliente→Intermediario, ver `patronInstrumentacionIntDesdeTransacciones`): la comisión
+         * debe respetar el **signo** de la regla (típ. −). **cp_ic** (ingreso C→Pandy en MonR): la convención histórica
+         * del motor era **+|monto|** salvo rollout MonR/MonE o tasa transferencia al int. (−); no forzar `signo` ahí
+         * para no invertir casos correctos en + (p. ej. órdenes prod 8, 41, 58, 67, 68, 81).
+         */
         const montoCcInt =
-          nuevaReglaCcRolloutActivoParaOrden(orden, transacciones) ||
-          ordenIntermediarioComisionTasaTransferenciaCcNegativaMotor(orden)
-            ? -magComInt
-            : magComInt;
+          patronIntUsdCom === 'ci_pc'
+            ? rawComInt
+            : nuevaReglaCcRolloutActivoParaOrden(orden, transacciones) ||
+                ordenIntermediarioComisionTasaTransferenciaCcNegativaMotor(orden)
+              ? -magComInt
+              : magComInt;
         if (Math.abs(montoCcInt) >= 1e-12) {
           const monedaInt = String(filaInt.moneda || reglaComIntUsd.moneda || 'USD').toUpperCase();
           if (feComInt) {
@@ -24409,7 +24873,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
         const selectColsTrxInstrumentacionSync =
           'id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at, compensacion_cc_monto_aplicado, compensacion_cc_saldo_cliente_moneda_antes';
         return Promise.all([
-          client.from('transacciones').select(selectColsTrxInstrumentacionSync).eq('instrumentacion_id', instId),
+          client
+            .from('transacciones')
+            .select(selectColsTrxInstrumentacionSync)
+            .eq('instrumentacion_id', instId)
+            .order('numero', { ascending: true })
+            .order('created_at', { ascending: true }),
           client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
           client.from('modos_pago').select('id, codigo'),
           orden.intermediario_id ? client.from('intermediarios').select('nombre').eq('id', orden.intermediario_id).maybeSingle() : Promise.resolve({ data: null }),
@@ -29255,7 +29724,7 @@ function saveTransaccion() {
                 estado_fecha: ahora,
               }).eq('id', rowDebe.id));
             }
-          } else if (!tieneMomentoCero && !multicontraparteManualInst) {
+          } else if (!tieneMomentoCero && !multicontraparteManualInst && !instrumentacionId) {
             const montosCobro = montosCcPorMoneda(moneda || 'USD', monto);
             const montosDeuda = montosCcPorMoneda(moneda || 'USD', -monto);
             // No registrar "Cobro por" en CC cliente cuando es la comisión/ganancia de Pandy (ej. ARS-ARS CHEQUE): el cliente ya la pagó, no es deuda.
