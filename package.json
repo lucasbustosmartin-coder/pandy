@@ -57,6 +57,8 @@
   },
   "dependencies": {
     "exceljs": "^4.4.0",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

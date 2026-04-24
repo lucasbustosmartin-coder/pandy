@@ -608,7 +608,13 @@
     #modal-gp-operativa-detalle-content .gp-detalle-seccion { margin-bottom: 1.25rem; }
     #modal-gp-operativa-detalle-content .gp-detalle-seccion:last-child { margin-bottom: 0; }
     .gp-detalle-seccion-titulo { margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 600; color: #1e293b; }
-    #modal-gp-operativa-detalle-content .tabla-gp-detalle-wrap { max-height: min(50vh, 22rem); overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; margin-top: 0.35rem; }
+    #modal-gp-operativa-detalle-content .tabla-gp-detalle-wrap {
+      max-height: min(58vh, 30rem);
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+      margin-top: 0.35rem;
+    }
     #modal-gp-operativa-detalle-content table.tabla-gp-detalle { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
     #modal-gp-operativa-detalle-content table.tabla-gp-detalle thead th { position: sticky; top: 0; z-index: 1; background: #f1f5f9; box-shadow: 0 1px 0 #e2e8f0; text-align: left; padding: 0.5rem 0.45rem; font-weight: 600; }
     #modal-gp-operativa-detalle-content table.tabla-gp-detalle td { padding: 0.45rem 0.45rem; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
@@ -616,6 +622,89 @@
     #modal-gp-operativa-detalle-content .gp-detalle-monto { font-variant-numeric: tabular-nums; font-weight: 600; }
     #modal-gp-operativa-detalle-content .gp-detalle-monto.positivo { color: #0d7d3d; }
     #modal-gp-operativa-detalle-content .gp-detalle-monto.negativo { color: #b91c1c; }
+    #modal-gp-operativa-detalle-content .gp-detalle-antes-consolidado-wrap { margin: 0.5rem 0 0.75rem 0; }
+    #modal-gp-operativa-detalle-content .gp-detalle-cards-wrap { margin-bottom: 0.35rem; }
+    #modal-gp-operativa-detalle-content .gp-detalle-cards-moneda-tit {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #475569;
+      margin: 0.35rem 0 0.25rem 0;
+      letter-spacing: 0.02em;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+    }
+    @media (max-width: 720px) {
+      #modal-gp-operativa-detalle-content .gp-detalle-cards-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 0.5rem;
+      padding: 0.45rem 0.5rem 0.5rem;
+      background: #fff;
+      box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-card--ingreso { border-top: 3px solid #0d7d3d; }
+    #modal-gp-operativa-detalle-content .gp-detalle-card--egreso { border-top: 3px solid #b91c1c; }
+    #modal-gp-operativa-detalle-content .gp-detalle-card--total { border-top: 3px solid #0d2137; }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-tit {
+      margin: 0 0 0.2rem 0;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-monto {
+      font-size: 1rem;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-monto.positivo { color: #0d7d3d; }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-monto.negativo { color: #b91c1c; }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-sub {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      font-size: 0.78rem;
+      color: #475569;
+      line-height: 1.45;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-sub li {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.2rem 0.35rem;
+      margin-top: 0.15rem;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-sub-ico {
+      display: inline-flex;
+      color: #64748b;
+      flex-shrink: 0;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-ico { width: 0.95rem; height: 0.95rem; display: block; }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-sub-lab { font-weight: 600; color: #334155; }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-sub-val { font-variant-numeric: tabular-nums; font-weight: 600; }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-sub-val.positivo { color: #0d7d3d; }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-sub-val.negativo { color: #b91c1c; }
+    #modal-gp-operativa-detalle-content .gp-detalle-card-hint {
+      margin: 0.35rem 0 0 0;
+      font-size: 0.72rem;
+      color: #64748b;
+      line-height: 1.35;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-table-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      min-height: 0;
+    }
     .modal-gp-operativa-detalle .modal-gp-operativa-detalle-header-main {
       flex: 1;
       min-width: 0;
@@ -764,6 +853,15 @@
     }
     #modal-gp-operativa-detalle-content .gp-detalle-consolidado-titulo-fila .btn-gp-operativa-detalle {
       margin-left: 0;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-consolidado-subhint {
+      margin: 0 0 0.35rem 0;
+      font-size: 0.8rem;
+      color: #64748b;
+      line-height: 1.35;
+    }
+    #modal-gp-operativa-detalle-content .gp-detalle-seccion-consolidado .gp-detalle-seccion-titulo--sub {
+      margin: 1rem 0 0.25rem 0;
     }
     #modal-cc-manual-editar-backdrop.activo,
     #modal-cc-movimiento-manual-backdrop.activo,
@@ -1887,6 +1985,9 @@
     .btn-ver-detalle:hover { color: #0ea5e9; background: rgba(0,0,0,0.04); }
     .btn-ver-detalle .btn-icon { display: inline-flex; }
     .btn-ver-detalle .btn-icon svg { width: 20px; height: 20px; }
+    .cc-resumen-acciones-inline { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; flex-wrap: nowrap; }
+    .cc-resumen-acciones-inline .btn-cc-pdf-informe-saldo { flex-shrink: 0; }
+    .cc-resumen-acciones-inline .btn-cc-pdf-informe-saldo .btn-icon svg { overflow: visible; }
     @media (max-width: 768px) {
       .tabla-cc-resumen { font-size: 0.9rem; }
       .tabla-cc-resumen th, .tabla-cc-resumen td { padding: 0.4rem 0.5rem; }

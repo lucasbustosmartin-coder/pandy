@@ -13,6 +13,7 @@ Al completar una tarea que cambie **comportamiento de la app**, **UI**, **offlin
 2. **No preguntar** al usuario si debe actualizarse la documentación: hacerlo por defecto.
 3. **Regenerar artefactos derivados** cuando el archivo fuente haya cambiado (en la misma sesión, salvo imposibilidad técnica):
    - **`Bitacora_tareas.xlsx`:** `node scripts/crear-bitacora-excel.js` tras editar `scripts/crear-bitacora-excel.js` o al cumplir la regla bitácora (ver **bitacora-tareas**).
+   - **`docs/MATRIZ_CC_REGLAS_MOVIMIENTOS.xlsx`:** `npm run excel:matriz-cc-reglas` cuando el cambio toque **reglas de grabación** en cuenta corriente (`reglas_de_negocio`, motor/sync CC en `main.js`, `scripts/matriz-cc-combinaciones-activas.js` o RPC de movimientos CC). Ver **reglas-pandi** (subsección **Matriz Excel CC**) y `docs/MATRIZ_CC_REGLAS_EXCEL.md`.
    - **`manual_usuario.pdf`** y `manual_usuario_fuente.txt`:** `python3 scripts/export_manual_usuario_pdf.py` si cambió `docs/MANUAL_USUARIO_OFFLINE.md`, textos de ayuda relevantes en `index.html`, o mensajes de usuario masivos en `main.js` que el manual deba reflejar.
    - **`docs/PLAN_PWA_OPERACION_OFFLINE.docx`:** `npm run plan-pwa:docx` si cambió `docs/PLAN_PWA_OPERACION_OFFLINE.md`.
 4. **Coherencia cruzada:** si se toca `docs/PWA_OFFLINE_TECNICO.md` o el plan PWA, revisar que **`docs/MANUAL_USUARIO_OFFLINE.md`** y **`docs/LIGHTHOUSE_PWA.md`** no contradigan el código; actualizar **`.cursor/rules/estructura-proyecto.mdc`** si se agregan rutas nuevas bajo `docs/`.

@@ -2,6 +2,8 @@
 
 Para tener el repo en GitHub y la app desplegada en Vercel (redeploy automático en cada push a `main`).
 
+**Estado actual de Pandi:** el proyecto está enlazado a Vercel con **deploy automático de Production en cada push a `main`**. El flujo operativo debe **asumir eso**: no usar `vercel --prod` como paso rutinario (evita un **segundo build** del mismo commit). Objetivo: **misma paridad** entre prod y preview estable (**§4d**) **sin gastar builds ni upload de más** — **§4e** (cuántos disparadores) y **§4f** (`.vercelignore`).
+
 ---
 
 ## 1. Git: crear repo y conectar
@@ -67,35 +69,33 @@ La URL “fea” que cambia en cada `npx vercel --yes` sigue existiendo en **Dep
 
 Antes del push en el flujo «ok desplegar»: subir versión en `index.html` (`#sidebar-version`), y en **`pandi-release-blurb.js`** el objeto **`PANDI_RELEASE_BLURB`** — en la práctica lo completa el **agente** al cerrar el despliegue; no es un paso manual habitual para quien pide «desplegar» (ver **bitácora-tareas**). El build genera **`pandi-release.json`** en `dist/` para que el modal lea novedades por red. El aviso **«Nueva versión»** usa HTML con logo (empresa o icono por defecto), badge de versión y lista de novedades; `lines` sigue siendo solo texto (se escapa al renderizar). **Prohibido** en `lines` mencionar **Auditoría** o cualquier cambio asociado a registro interno de acciones (copy genérico hacia usuarios si hace falta; detalle en bitácora y **bitácora-tareas** «Auditoría (prohibido en `lines`)»).
 
-Después de push a `main`, desde la raíz:
+Después de push a `main`, en **Pandi** Git ya dispara **Production**; desde la raíz **no hace falta** `vercel --prod` salvo redeploy forzado o fallo del build en Vercel. Detalle de coste: **§4e**.
 
 ```bash
-vercel --prod
-npx vercel --yes
+# Production por CLI: solo si NO tenés auto-deploy en main (no es el caso habitual en Pandi)
+# vercel --prod
+
+# Preview CLI: opcional si enseguida hacés §4c (merge a preview-empleado); ver §4e
+# npx vercel --yes
+
 # Luego §4c + §4d: merge main → preview-empleado + push y verificar SHA
 ```
 
-El segundo comando (sin `--prod`) es **obligatorio**: publica un deployment Preview con el mismo código que prod y config **dev** embebida; **no** actualiza por sí solo el dominio fijo **preview.pandi.company**. Para que **preview.pandi.company** muestre **el mismo commit que ya desplegaste en producción** (`main`), hace falta **§4c** (merge `main` → `preview-empleado`) y **§4d** (SHA iguales en remoto). Variables **Preview** en Vercel → Supabase **desarrollo**. Ver §4b–§4d y la subsección **Dirección de la paridad** arriba.
+El comando **`npx vercel --yes`** (Preview con URL efímera) es **opcional** cuando el **merge a `preview-empleado`** (§4c) se hace enseguida: ese push ya dispara un build Preview con config **dev**; ver **§4e**. Para **preview.pandi.company** sigue siendo obligatorio alinear ramas (**§4c** + **§4d**).
 
-Si Vercel redeploya `main` solo en producción, igual ejecutá **`npx vercel --yes`**, el **sync de rama** de §4c y la **verificación** de §4d para no dejar el preview estable desfasado.
+Ejecutá el **sync de rama** §4c y la **verificación** §4d siempre; **`npx vercel --yes`** solo si aplica lo indicado en §4e.
 
 ### Dirección de la paridad (no al revés)
 
-- **Referencia del front** en el producto es **`main`** en el estado en que quedó **tras publicar en producción** (`vercel --prod` → **https://pandi.company**).  
+- **Referencia del front** en el producto es **`main`** en el estado en que quedó **tras publicar en producción** (deploy **Production** en **https://pandi.company**, disparado por Git al pushear `main` en Pandi — ver **§4e**).  
 - **https://preview.pandi.company** (rama **`preview-empleado`**) debe **igualarse a ese mismo front**: siempre **`git merge main` en `preview-empleado`** y push (§4c). El preview **replica** el código que ya está (o va a estar) en prod.  
 - **No** es la regla de negocio “igualar producción al preview”: **no** se asume que `preview-empleado` manda y prod lo sigue. Publicar en producción es **push/commit en `main` + deploy Production**; el preview estable **solo se pone al día** trayendo `main`.
 
 ### 4b. Preview alineado con producción (mismo front, base dev)
 
-**Siempre** tras cada despliegue a producción (manual o “ok desplegar”), ejecutá desde la raíz:
+**`npx vercel --yes`** (sin `--prod`): genera un deployment Preview con URL efímera y config **dev** en el build. **Opcional** cuando enseguida ejecutás **§4c** (push a `preview-empleado`); ver **§4e** para no duplicar builds. Requiere proyecto enlazado (`vercel link`) y sesión de Vercel CLI, o `VERCEL_TOKEN`. Flujo completo en la regla **bitácora-tareas** (`.cursor/rules/bitacora-tareas.mdc`).
 
-```bash
-npx vercel --yes
-```
-
-Sin `--prod`: genera un deployment Preview; la URL con hash puede cambiar cada vez. Requiere proyecto enlazado (`vercel link`) y sesión de Vercel CLI, o `VERCEL_TOKEN`. Detalle del flujo completo (“ok desplegar”) en la regla **bitácora-tareas** (`.cursor/rules/bitacora-tareas.mdc`).
-
-(Así el build Preview ejecuta `node scripts/build-config.js` y embebe la config dev en `config.js`.)
+El build Preview (CLI o Git en `preview-empleado`) ejecuta `node scripts/build-config.js` y embebe la config dev en `config.js`.
 
 Opcional: repetir el par **dev** también para entorno **Development** si usás `vercel dev` local.
 
@@ -103,7 +103,7 @@ Opcional: repetir el par **dev** también para entorno **Development** si usás 
 
 El hostname **`preview.pandi.company`** está asociado en Vercel a la rama Git **`preview-empleado`**. Un `npx vercel --yes` desde `main` **no** actualiza ese dominio: solo crea un deployment Preview con URL efímera.
 
-**Obligatorio** en el flujo de despliegue del proyecto (misma versión del front en ambos dominios comprados): tras **push a `main`**, `vercel --prod` y `npx vercel --yes`, **fusionar `main` en `preview-empleado` y pushear** para que el subdominio estable muestre el mismo commit que **pandi.company**:
+**Obligatorio** en el flujo de despliegue del proyecto (misma versión del front en ambos dominios comprados): tras **push a `main`** y el deploy de **Production** que dispara Git (en Pandi es el caso habitual; **§4e**), **fusionar `main` en `preview-empleado` y pushear** para que el subdominio estable muestre el mismo commit que **pandi.company**:
 
 ```bash
 git checkout main
@@ -126,6 +126,33 @@ git rev-parse origin/main origin/preview-empleado
 ```
 
 Las dos líneas de salida deben ser **idénticas**. Si difieren, repetir §4c o revisar que el push a `preview-empleado` haya terminado y que Vercel haya tomado el deploy de esa rama.
+
+### 4e. Minutos de build y coste (Vercel)
+
+El cargo típico de facturación es por **minutos de build**. El flujo histórico del proyecto (push → `vercel --prod` → `npx vercel --yes` → merge a `preview-empleado`) puede generar **varios builds completos** del mismo commit.
+
+**Recomendaciones (sin relajar la paridad §4d):**
+
+1. **Evitar doble deploy a Production**  
+   **En Pandi** el repo está enlazado con **deploy automático en cada push a `main`**: el push del “ok desplegar” ya dispara un build de **Production**. **`vercel --prod` no va en el flujo rutinario** (sería un segundo build del mismo commit). Reservá CLI **`vercel --prod`** solo para **forzar redeploy** o si el deploy disparado por Git **falló**. En un fork sin integración Git, ahí sí tendría sentido el CLI como único disparador.
+
+2. **Paso `npx vercel --yes` (Preview con URL efímera)**  
+   Cada ejecución es **un build Preview completo**. El **merge `main` → `preview-empleado` + push** (§4c) **también** dispara un build Preview con variables **Preview** (dev) para **preview.pandi.company**.  
+   **Para ahorrar ~un build por despliegue:** podés **omitir** `npx vercel --yes` cuando vayas a ejecutar enseguida el §4c y confiés en el build que genera Git en `preview-empleado`. **Mantené** `npx vercel --yes` si necesitás validar Preview **antes** del merge, si el build por Git falló, o si el titular pide esa verificación explícita.
+
+3. **Ignored Build Step (opcional, en el dashboard Vercel)**  
+   Script que devuelva `0` para **no** buildear cuando solo cambian rutas irrelevantes al front (p. ej. solo `docs/`, `sql/` sin tocar app, `.md`). Reduce builds accidentales por commits de documentación.
+
+4. **Previews de ramas de trabajo**  
+   Cada rama/PR con Preview suma minutos. Ajustar en Vercel qué ramas generan Preview o usar protección de despliegues si el equipo abre muchos previews.
+
+Lo **obligatorio** para cerrar un despliegue “oficial” sigue siendo: **Production al día**, **mismo SHA** en `main` y `preview-empleado` (§4d), y que **preview.pandi.company** refleje ese commit — no el número de veces que se ejecute `npx vercel --yes`.
+
+### 4f. Upload más liviano al builder (`.vercelignore`)
+
+Además de **no duplicar builds**, conviene **no subir al entorno de build** carpetas y archivos que el front **no usa** (`vite build` solo empaqueta el código de la app, `index.html`, `assets/`, `scripts/build-config.js`, etc.). En la raíz del repo, **`.vercelignore`** (misma idea que `.gitignore`) indica a Vercel qué rutas **excluir del upload** al servidor que ejecuta el build.
+
+En Pandi el archivo lista, entre otras, **`docs/`**, **`sql/`**, **`tests/`**, **`.cursor/`**, **`presentacion/`**, **`Base/`**, bitácora y PDFs/manuales en raíz que no entran en el bundle. **No suma lo mismo que evitar un build completo**, pero reduce **tiempo y ancho de banda** de subida y mantiene el contexto acotado. Si en el futuro un script de build leyera algo de una ruta ignorada, habría que **sacar esa ruta** de `.vercelignore`.
 
 ### Alternativa por Git (si no usás CLI)
 

@@ -26,7 +26,7 @@ Por defecto escribe **`docs/MATRIZ_CC_REGLAS_MOVIMIENTOS.xlsx`**. Otra ruta:
 node scripts/export-matriz-cc-reglas-excel.js --out=/ruta/MATRIZ_CC.xlsx
 ```
 
-3. Tras migraciones SQL en Supabase, **volver a correr** el comando sobre el mismo proyecto para refrescar la matriz.
+3. Tras migraciones SQL en Supabase, **cambios en `reglas_de_negocio`**, o cambios en el **motor / sync CC** en `main.js` (incluye `matriz-cc-combinaciones-activas.js` para la hoja **Matriz**), **volver a correr** el comando sobre el mismo proyecto para refrescar la matriz. Obligatorio en flujo de agente: reglas **reglas-pandi** (Matriz Excel CC) y **documentacion-siempre-actualizada**.
 
 ## Contenido del archivo
 

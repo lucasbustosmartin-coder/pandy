@@ -11,7 +11,7 @@ Al completar una tarea que toque funcionalidad o UI:
 
 1. **Bitácora:** actualizar siempre la bitácora según esta regla (Log y las solapas que correspondan; regenerar Excel). No saltear salvo que el usuario lo pida explícitamente.
 2. **Documentación en `docs/` y artefactos generados (PDF, Word, etc.):** aplicar la regla **documentacion-siempre-actualizada** — mantener guías alineadas al código y regenerar salidas en la misma sesión **sin preguntar** al usuario.
-3. **RPC / funciones en Supabase:** si el cambio afecta lógica que se ejecuta en el backend (funciones en `sql/`, p. ej. `rpc_sync_cc_caja_orden`, `transacciones_cambiar_estado`), **hay que revisar si las RPC deben adaptarse** y actualizar los scripts en `sql/` y la documentación si aplica. **No puede omitirse este paso:** si la regla de negocio o los datos que se persisten cambian, verificar si la RPC construye esos datos (y actualizarla) o si solo recibe lo que envía el front (en ese caso puede no hacer falta tocar la RPC). **Fechas:** si el cambio toca día contable, `CURRENT_DATE`, defaults `fecha` o comparación de fechas en SQL, aplicar la regla estricta **fechas-argentina-negocio** (no omitir).
+3. **RPC / funciones en Supabase:** si el cambio afecta lógica que se ejecuta en el backend (funciones en `sql/`, p. ej. `rpc_sync_cc_caja_orden`, `transacciones_cambiar_estado`), **hay que revisar si las RPC deben adaptarse** y actualizar los scripts en `sql/` y la documentación si aplica. **No puede omitirse este paso:** si la regla de negocio o los datos que se persisten cambian, verificar si la RPC construye esos datos (y actualizarla) o si solo recibe lo que envía el front (en ese caso puede no hacer falta tocar la RPC). **Fechas:** si el cambio toca día contable, `CURRENT_DATE`, defaults `fecha` o comparación de fechas en SQL, aplicar la regla estricta **fechas-argentina-negocio** (no omitir). Si el cambio toca **reglas de grabación** en cuenta corriente (`reglas_de_negocio`, motor CC, matriz `[main]`), aplicar también **reglas-pandi** (matriz Excel `docs/MATRIZ_CC_REGLAS_MOVIMIENTOS.xlsx` vía `npm run excel:matriz-cc-reglas`) y **documentacion-siempre-actualizada**.
 4. **Tests:** si el cambio afecta flujos o pantallas cubiertos por tests (E2E en `tests/e2e/`, o tests unitarios si los hubiera), **hay que adaptar o ampliar los tests** para que sigan pasando y reflejen el nuevo comportamiento. No omitir este paso: revisar selectores, textos, columnas, conceptos o pasos que hayan cambiado y actualizar los tests en la misma sesión.
 
 Si se cambia un ID, un texto de columna, un botón que los tests usan, o un flujo que los E2E recorren, los tests deben actualizarse en consecuencia.
@@ -71,12 +71,12 @@ Esta regla **no se relaja**: ante “desplegar” / “ok desplegar”, el agent
    Ese comando crea un deployment Preview con URL **efímera** (hash distinto cada vez). **No** actualiza por sí solo el dominio fijo **preview.pandi.company**. Por tanto **no sustituye** el merge + push de `preview-empleado`.
 
 3. **Obligatorio en cada despliegue**  
-   Después de `vercel --prod`: ejecutar **`npx vercel --yes`** (paso 6) **y** **`git merge main` en `preview-empleado` + `git push origin preview-empleado`** (paso 7), luego **verificación** (paso 8).
+   Después del deploy a **Production** (paso 5; en Pandi disparado por Git al pushear `main`): ejecutar **`git merge main` en `preview-empleado` + `git push origin preview-empleado`** (paso 7) y la **verificación** (paso 8). El paso 6 (`npx vercel --yes`) es **opcional** para ahorrar minutos de build en Vercel cuando el paso 7 se hace enseguida (el push a `preview-empleado` ya dispara un build Preview con config dev); ver **`docs/GIT_Y_VERCEL.md` §4e**. **Mantener** el paso 6 si hace falta validar Preview antes del merge o ante fallo del build por Git. Upload al builder: **§4f**.
 
 4. **Cierre solo con verificación**  
    **Prohibido** responder “despliegue listo” sin haber comprobado que **`origin/main` y `origin/preview-empleado` apuntan al mismo commit** (p. ej. `git fetch origin && git rev-parse origin/main origin/preview-empleado`). Si difieren, completar el paso 7 o declarar explícitamente el bloqueo y qué falta. En el mensaje al usuario, **indicar** que ambos remotos están alineados (idealmente SHA corto) o el error.
 
-Detalle operativo: pasos numerados abajo y `docs/GIT_Y_VERCEL.md` §4c–§4d.
+Detalle operativo: pasos numerados abajo y `docs/GIT_Y_VERCEL.md` §4c–§4f.
 
 ---
 
@@ -120,11 +120,11 @@ Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK de
    *(La presentación PowerPoint se regenera solo cuando se desee actualizar la propuesta comercial; no forma parte del flujo de despliegue.)*
 
 5. **Desplegar a producción**  
-   Ejecutar `vercel --prod` desde la raíz (mismo commit que el push a `main`). Dominio fijo de producción: **https://pandi.company** (más alias Vercel si aplica).
+   **En este repo está confirmado:** integración **Git → Vercel** y el push a `main` ya dispara **Production**. **No** ejecutar `vercel --prod` en el flujo habitual (evita **dos builds** del mismo commit). Usar **`vercel --prod`** solo para **forzar redeploy** o si el deploy automático **falló**. En otro clon/fork sin auto-deploy, el paso sería **`vercel --prod`** desde la raíz. Dominio fijo de producción: **https://pandi.company** (más alias Vercel si aplica). Reducir también upload innecesario: **`.vercelignore`** en la raíz y **`docs/GIT_Y_VERCEL.md` §4f**.
 
-6. **Preview por CLI (obligatorio; base dev embebida)**  
-   **No omitir:** inmediatamente después del paso 5, con **`main`** al día en el working tree, ejecutar **`npx vercel --yes`** **sin** `--prod`. Publica un deployment Preview con el mismo código que prod y build con variables **Preview** → Supabase **dev**. La URL con hash de ese deploy puede cambiar cada vez; **eso no actualiza `preview.pandi.company`** (lo cubre el paso 7).  
-   Requisitos: proyecto enlazado (`vercel link` / `.vercel/`) y sesión CLI o `VERCEL_TOKEN`. Si falla, indicar al usuario que ejecute `npx vercel --yes` desde la raíz; igualmente intentar el paso 7.
+6. **Preview por CLI (`npx vercel --yes`; base dev embebida — opcional)**  
+   **Opcional por defecto** para **reducir coste** (minutos de build): un `npx vercel --yes` **sin** `--prod` es un build Preview completo adicional; el **paso 7** (push a `preview-empleado`) **ya** dispara un build Preview con variables **Preview** → Supabase **dev** para **preview.pandi.company**.  
+   **Ejecutar el paso 6** si hace falta un Preview con URL efímera **antes** del merge, si falló el build por Git, o si el titular pide validación explícita. Si se omite, **no** dar el despliegue por cerrado sin **7** y **8**. Requisitos si se usa: proyecto enlazado (`vercel link` / `.vercel/`) y sesión CLI o `VERCEL_TOKEN`. Detalle: **`docs/GIT_Y_VERCEL.md` §4e**.
 
 7. **Paridad de dominios fijos prod + preview (obligatorio)**  
    Para que **https://preview.pandi.company** muestre **el mismo commit** que **https://pandi.company**, **fusionar `main` en la rama `preview-empleado` y hacer `git push origin preview-empleado`** (Vercel redespliega Preview y el subdominio comprado queda alineado). Comandos: `docs/GIT_Y_VERCEL.md` §4c; al terminar **`git checkout main`**.  
@@ -139,7 +139,7 @@ No hacer push ni desplegar hasta que el usuario lo indique explícitamente.
 
 ## Deploy Preview (Vercel + Supabase dev) — misma app que prod, otra base
 
-**Objetivo:** que los dos **hostnames fijos** del producto (**pandi.company** y **preview.pandi.company**) sirvan el **mismo commit** del front; solo cambia la base (prod vs dev). **Tras “ok desplegar”** son obligatorios el **6** (CLI Preview + config dev), el **7** (merge `main` → `preview-empleado` + push) y el **8** (verificación `git rev-parse` — ver **REGLA ESTRICTA** arriba). Detalle: `docs/GIT_Y_VERCEL.md` §4b–§4d.
+**Objetivo:** que los dos **hostnames fijos** del producto (**pandi.company** y **preview.pandi.company**) sirvan el **mismo commit** del front; solo cambia la base (prod vs dev). **Tras “ok desplegar”** son obligatorios el **7** (merge `main` → `preview-empleado` + push) y el **8** (verificación `git rev-parse` — ver **REGLA ESTRICTA** arriba). El **6** (`npx vercel --yes`) es **opcional** salvo necesidad de validación previa o fallo de build Git (ver **`docs/GIT_Y_VERCEL.md` §4e**). Eficiencia de upload: **§4f** (`.vercelignore`). Detalle: `docs/GIT_Y_VERCEL.md` §4b–§4f.
 
 ### Requisito en Vercel (una sola vez por proyecto)
 

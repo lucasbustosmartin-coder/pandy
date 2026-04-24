@@ -5,10 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.3',
+  versionLabel: 'v3.8.4',
   lines: [
-    'En cuenta corriente, órdenes en dólares con intermediario muestran el detalle de la entrega alineado al acuerdo al sincronizar.',
-    'Corrección al ver movimientos cuando el acuerdo tiene distinto importe recibido y entregado en la misma moneda.',
-    'Menos avisos de error al guardar o actualizar la cuenta en esos casos.',
+    'Desde Cuenta corriente → Saldos (clientes) podés generar un informe en PDF por período, con fechas y saldo inicial opcional.',
+    'En el panel, G/P Operativa muestra primero el resultado devengado (libro y caja por órdenes) y aparte la caja manual, con textos de ayuda más claros.',
   ],
 };

@@ -1,0 +1,14 @@
+# Rutas que el build del front (Vite + scripts/build-config.js) no usa.
+# Vercel deja de subirlas al entorno de build: menos datos en upload y contexto más liviano.
+# Si un paso de build llegara a leer algo de esta lista, sacarlo de acá.
+
+.cursor/
+docs/
+sql/
+tests/
+presentacion/
+Base/
+Bitacora_tareas.xlsx
+manual_usuario.pdf
+manual_usuario_fuente.txt
+main_js.pdf

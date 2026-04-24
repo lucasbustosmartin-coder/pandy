@@ -50,6 +50,16 @@ alwaysApply: true
 - Si un flujo no cierra o un test espera un resultado distinto: **primero revisar y ajustar la matriz en Supabase** (`reglas_de_negocio`); solo si el modelo tabular no alcanza, extender el **modelo de reglas** (columnas / semántica documentada), no parchear el saldo en el front. Si hace falta **más de un movimiento CC** para la misma transacción y la misma clave lógica, usar **filas adicionales** con distinto **`linea`** en `reglas_de_negocio` (el motor aplica todas ordenadas); **prohibido** agregar ramas en `main.js` del estilo `if (codigoTipo === '…')` para verdad contable.
 - Referencia alineada: `docs/CORAZON_SISTEMA_CC_Y_CAJA.md` (principio de una sola fuente de verdad).
 
+### Matriz Excel CC — reglas de grabación de movimientos (obligatoria)
+
+Siempre que algo toque **cómo se graban** movimientos en **cuenta corriente** (cliente y/o intermediario) —incluye: **SQL / migraciones** que modifiquen `reglas_de_negocio` (o tablas que el motor use para armar filas CC), **motor o sync** en `main.js` (`aplicarMotorCcDesdeReglasDeNegocio`, `sincronizarCcYCajaDesdeOrden`, filtros/dedupes/invariantes que cambien el payload hacia `sync_cc_caja_orden`), **`scripts/matriz-cc-combinaciones-activas.js`** (hoja **Matriz**, filas `[main] …`), o **RPC** en `sql/` que alteren upsert/borrado de movimientos CC— el agente debe **en la misma sesión**:
+
+1. **Regenerar** `docs/MATRIZ_CC_REGLAS_MOVIMIENTOS.xlsx` con `npm run excel:matriz-cc-reglas` desde la raíz (`.env` con acceso de lectura a Supabase según `docs/MATRIZ_CC_REGLAS_EXCEL.md`). Si no hay credenciales en el entorno del agente, **dejar explícito** en la respuesta al usuario y en bitácora (Log) que el export quedó pendiente para ejecutarlo localmente; no dar por cerrada la coherencia documental sin ese aviso.
+2. **Commitear** el `.xlsx` regenerado junto con el código/SQL/docs del cambio (salvo que el usuario indique lo contrario para binarios).
+3. Si cambia el procedimiento o el significado de las hojas, actualizar **`docs/MATRIZ_CC_REGLAS_EXCEL.md`** y, si aplica, **`docs/CUENTA_CORRIENTE_Y_CAJA.md`** u otras guías CC tocadas.
+
+**Referencia de línea base (deploy / motor ya entregado):** ajustes **USD-USD + intermediario `ci_pc`** (colapso de compromisos, inyección +mr/−me, +me «Pago Realizado» cuando en BD la entrega es **Pandy→cliente**; invariante spread mr−me; orden de sync por transacción), inventario **`sql/inventario_ordenes_afectadas_resync_cc_usd_usd_ci_pc.sql`** y nota operativa **`docs/CC_FIX_COMISION_INTERMEDIARIO_USD_USD_CI_PC.md`**. Tras cualquier evolución en esa línea, la matriz Excel debe **volver a exportarse** contra el proyecto donde se aplicaron las reglas (prod y/o dev según alcance) para que el artefacto siga siendo la foto tabular auditable alineada al código y a Supabase.
+
 ## Mensajería interna (no usar diálogos del navegador)
 
 - **Toda comunicación con el usuario** debe usar la **mensajería interna** de la app:

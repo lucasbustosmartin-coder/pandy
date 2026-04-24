@@ -68,6 +68,9 @@ supabase/.temp/
 # Credenciales Supabase dev (Excel local; no subir)
 docs/Pandy_Dev_Supabase.xlsx
 
+# Backups locales de export CC / análisis (no versionar)
+docs/BackUp_*/
+
 # Prefijo `_` en sql/: bootstrap generado, particiones MCP, JSON/SQL de chunks (no versionar)
 sql/_*
 

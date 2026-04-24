@@ -7444,7 +7444,7 @@ function setupInicioGpOperativo() {
   inicioGpOperativoListenersAttached = true;
 }
 
-/** Total G/P por moneda (P&L operativo empresa): suma algebraica de siete bolsas; comisión intermediario ya viene negativa desde el RPC. */
+/** Total caja + libro (siete bolsas del RPC); útil como chequeo; comisión intermediario ya viene negativa desde el RPC. */
 function inicioGpSumarSieteBolsas(cajaMan, cajaOrd, ccC, ccI, ccResultadoEco, comP, comI) {
   const monedas = ['USD', 'ARS', 'EUR'];
   const tot = {};
@@ -7457,6 +7457,27 @@ function inicioGpSumarSieteBolsas(cajaMan, cajaOrd, ccC, ccI, ccResultadoEco, co
     const p = Number(comP && comP[m] != null ? comP[m] : 0);
     const i = Number(comI && comI[m] != null ? comI[m] : 0);
     tot[m] = a + o + b + c + r + p + i;
+  });
+  return tot;
+}
+
+/**
+ * P&L de la primera fila del panel: libro (CC + compensatorio + comisiones) + caja por órdenes cerrada
+ * (alineado al cierre operativo de la orden; la caja manual queda fuera como liquidez).
+ * Comisión intermediario ya viene con el signo del RPC.
+ */
+function inicioGpSumarPlDevengadoCc(ccC, ccI, ccResultadoEco, comP, comI, cajaOrd) {
+  const monedas = ['USD', 'ARS', 'EUR'];
+  const ord = cajaOrd && typeof cajaOrd === 'object' && !Array.isArray(cajaOrd) ? cajaOrd : {};
+  const tot = {};
+  monedas.forEach((m) => {
+    const b = Number(ccC[m] != null ? ccC[m] : 0);
+    const c = Number(ccI[m] != null ? ccI[m] : 0);
+    const r = Number(ccResultadoEco && ccResultadoEco[m] != null ? ccResultadoEco[m] : 0);
+    const p = Number(comP && comP[m] != null ? comP[m] : 0);
+    const i = Number(comI && comI[m] != null ? comI[m] : 0);
+    const o = Number(ord[m] != null ? ord[m] : 0);
+    tot[m] = b + c + r + p + i + o;
   });
   return tot;
 }
@@ -7481,18 +7502,18 @@ const GP_OPERATIVA_DETALLE_BOLSAS = [
 
 /** Textos para alertas de parejas CC↔caja en `control_calidad_informe`. */
 const GP_QC_TIPO_LABEL = {
-  cc_caja_manual_cliente_mismo_signo: 'Cliente + caja manual: mismos signos en CC y caja (riesgo de doble efecto en el Total).',
+  cc_caja_manual_cliente_mismo_signo: 'Cliente + caja manual: mismos signos en CC y caja (riesgo de doble efecto al comparar libro y caja).',
   cc_caja_manual_cliente_monto_no_opuesto: 'Cliente + caja manual: montos no contrapuestos (CC + caja ≠ 0).',
-  cc_caja_manual_cliente_caja_fuera_gp: 'Cliente + caja manual: el tipo de caja no incluye G/P pero la CC sí entra al Total.',
+  cc_caja_manual_cliente_caja_fuera_gp: 'Cliente + caja manual: el tipo de caja no incluye G/P pero la CC sí entra al P&L devengado.',
   cc_caja_orden_cliente_mismo_signo: 'Cliente + caja por orden: mismos signos en CC y caja.',
   cc_caja_orden_cliente_monto_no_opuesto: 'Cliente + caja por orden: montos no contrapuestos (CC + caja ≠ 0).',
-  cc_caja_orden_cliente_caja_fuera_gp: 'Cliente + caja por orden: caja excluida de G/P por tipo pero la CC sí suma.',
+  cc_caja_orden_cliente_caja_fuera_gp: 'Cliente + caja por orden: caja excluida de G/P por tipo pero la CC sí entra al P&L devengado.',
   cc_caja_manual_intermediario_mismo_signo: 'Intermediario + caja manual: mismos signos en CC y caja.',
   cc_caja_manual_intermediario_monto_no_opuesto: 'Intermediario + caja manual: montos no contrapuestos (CC + caja ≠ 0).',
-  cc_caja_manual_intermediario_caja_fuera_gp: 'Intermediario + caja manual: el tipo de caja no incluye G/P pero la CC sí entra al Total.',
+  cc_caja_manual_intermediario_caja_fuera_gp: 'Intermediario + caja manual: el tipo de caja no incluye G/P pero la CC sí entra al P&L devengado.',
   cc_caja_orden_intermediario_mismo_signo: 'Intermediario + caja por orden: mismos signos en CC y caja.',
   cc_caja_orden_intermediario_monto_no_opuesto: 'Intermediario + caja por orden: montos no contrapuestos (CC + caja ≠ 0).',
-  cc_caja_orden_intermediario_caja_fuera_gp: 'Intermediario + caja por orden: caja excluida de G/P por tipo pero la CC sí suma.',
+  cc_caja_orden_intermediario_caja_fuera_gp: 'Intermediario + caja por orden: caja excluida de G/P por tipo pero la CC sí entra al P&L devengado.',
 };
 
 function puedeVerControlCalidad() {
@@ -7863,7 +7884,7 @@ function loadControlCalidadVista() {
     });
 }
 
-/** Filas planas del último desglose «total» (P&L: siete bolsas); para ver solo una moneda en todas las filas. */
+/** Filas planas del último desglose «total» (siete bolsas, cada fila con `_gpBolsa`); para ver solo una moneda en todas las filas. */
 let pandiGpDetalleCacheTotalFilas = null;
 
 const GP_DETALLE_EYE_SVG =
@@ -7900,12 +7921,14 @@ function inicioGpHtmlBotonVerDetalleMovimientos(bolsa, tituloBtn, more) {
 }
 
 function inicioGpOperativaDetalleLeyendaModalTexto() {
+  const sufijoPl =
+    ' El resumen consolidado al pie del modal resume el P&L de la tarjeta (libro + caja por órdenes, sin caja manual); abajo solo totales de caja manual si hay filas.';
   if (inicioGpOperativoPeriodo === 'total') {
-    return 'Período: todo el historial (desde siempre). Zona horaria: Argentina. Mismo criterio que la tarjeta.';
+    return 'Período: todo el historial (desde siempre). Zona horaria: Argentina. Mismo criterio que la tarjeta.' + sufijoPl;
   }
   const rango = inicioGpOperativoRangoFechas(inicioGpOperativoPeriodo);
   if (rango.desde && rango.hasta) {
-    return `Período: ${rango.desde} al ${rango.hasta} (inclusive). Argentina. Listado alineado a las sumas de la matriz.`;
+    return `Período: ${rango.desde} al ${rango.hasta} (inclusive). Argentina. Listado alineado a las sumas de la matriz.` + sufijoPl;
   }
   return '';
 }
@@ -7992,28 +8015,38 @@ function pandiHtmlGpResumenTresCards(rows, detCtx) {
     ? String(c.monedaFiltro).toUpperCase()
     : '';
   const bolsaKey = c.bolsaKey || '';
+  const resumenTotalModo = c.resumenTotalModo || '';
   const esCaja = bolsaKey === 'caja_manual' || bolsaKey === 'caja_ordenes';
-  const esTotalMixto = bolsaKey === 'total';
-  const hintEj = esTotalMixto
-    ? 'Suma de importes positivos en estado cerrado (todas las bolsas del desglose).'
-    : esCaja
-      ? 'Suma de importes positivos en movimientos de caja cerrados (no hay pendientes en esta bolsa).'
-      : 'Suma de importes positivos en estado cerrado (CC o comisión registrada como cerrada).';
-  const hintPen = esTotalMixto
-    ? 'Suma de importes positivos en estado pendiente (líneas de cuenta corriente).'
-    : esCaja
-      ? 'En caja solo entran movimientos cerrados: el pendiente queda en 0.'
-      : 'Suma de importes positivos en estado pendiente en cuenta corriente.';
-  const hintPenEgr = esTotalMixto
-    ? 'Suma de egresos (importes negativos) en estado pendiente (cuenta corriente).'
-    : esCaja
-      ? 'En caja solo entran movimientos cerrados: el pendiente queda en 0.'
-      : 'Suma de importes negativos (egresos) en estado pendiente en cuenta corriente.';
-  const hintEjEgr = esTotalMixto
-    ? 'Suma de egresos en estado cerrado (caja cerrada + CC cerrado + comisiones).'
-    : esCaja
-      ? 'Suma de importes negativos en caja cerrada.'
-      : 'Suma de importes negativos en estado cerrado.';
+  const esTotalPlDevengado = bolsaKey === 'total' && resumenTotalModo === 'pl_devengado';
+  const esTotalMixto = bolsaKey === 'total' && !esTotalPlDevengado;
+  const hintEj = esTotalPlDevengado
+    ? 'Suma de importes positivos en estado cerrado (CC, compensatorio, comisiones y caja por órdenes cerrada; sin caja manual).'
+    : esTotalMixto
+      ? 'Suma de importes positivos en estado cerrado (todas las bolsas del desglose).'
+      : esCaja
+        ? 'Suma de importes positivos en movimientos de caja cerrados (no hay pendientes en esta bolsa).'
+        : 'Suma de importes positivos en estado cerrado (CC o comisión registrada como cerrada).';
+  const hintPen = esTotalPlDevengado
+    ? 'Suma de importes positivos en estado pendiente (solo líneas de cuenta corriente en este resumen).'
+    : esTotalMixto
+      ? 'Suma de importes positivos en estado pendiente (líneas de cuenta corriente).'
+      : esCaja
+        ? 'En caja solo entran movimientos cerrados: el pendiente queda en 0.'
+        : 'Suma de importes positivos en estado pendiente en cuenta corriente.';
+  const hintPenEgr = esTotalPlDevengado
+    ? 'Suma de egresos (importes negativos) en estado pendiente en cuenta corriente.'
+    : esTotalMixto
+      ? 'Suma de egresos (importes negativos) en estado pendiente (cuenta corriente).'
+      : esCaja
+        ? 'En caja solo entran movimientos cerrados: el pendiente queda en 0.'
+        : 'Suma de importes negativos (egresos) en estado pendiente en cuenta corriente.';
+  const hintEjEgr = esTotalPlDevengado
+    ? 'Suma de egresos en estado cerrado (CC cerrado + comisiones + caja por órdenes; sin caja manual).'
+    : esTotalMixto
+      ? 'Suma de egresos en estado cerrado (caja cerrada + CC cerrado + comisiones).'
+      : esCaja
+        ? 'Suma de importes negativos en caja cerrada.'
+        : 'Suma de importes negativos en estado cerrado.';
 
   if (!rows || rows.length === 0) return '';
 
@@ -8107,9 +8140,15 @@ function pandiHtmlGpResumenTresCards(rows, detCtx) {
         '">' +
         fmt(a.total) +
         '</div>' +
-        '<p class="gp-detalle-card-hint">Ingreso + Egreso (signo) en ' +
-        escapeHtml(mon) +
-        ', misma moneda que la tabla debajo.</p>' +
+        '<p class="gp-detalle-card-hint">' +
+        escapeHtml(
+          esTotalPlDevengado
+            ? 'Ingreso + Egreso (signo) en ' +
+                mon +
+                ': coincide con la fila principal P&L de la tarjeta (sin caja manual).'
+            : 'Ingreso + Egreso (signo) en ' + mon + ', misma moneda que la tabla debajo.',
+        ) +
+        '</p>' +
         '</article></div>'
       );
     })
@@ -8190,9 +8229,9 @@ function pandiHtmlGpDetalleTfootDesdeContexto(rows, ctx) {
   );
 }
 
-function pandiHtmlGpDetalleSeccionConsolidado(allRows) {
-  const sums = pandiTotalesGpDetallePorMonedaDesdeFilas(allRows);
-  const blocks = MONEDAS_GP_PANEL.map((m) => {
+function pandiHtmlGpDetalleConsolidadoGridPorFilas(rows) {
+  const sums = pandiTotalesGpDetallePorMonedaDesdeFilas(rows);
+  return MONEDAS_GP_PANEL.map((m) => {
     const v = sums[m];
     const hasNum = Math.abs(v) >= 1e-12;
     const cls = inicioGpClaseSigno(v);
@@ -8221,15 +8260,32 @@ function pandiHtmlGpDetalleSeccionConsolidado(allRows) {
       '</div></div>'
     );
   }).join('');
+}
+
+/** Resumen al pie del modal «total»: P&L (libro + caja órdenes) y, aparte, totales solo caja manual. */
+function pandiHtmlGpDetalleSeccionConsolidado(filasPl, filasCaja) {
+  const blocksPl = pandiHtmlGpDetalleConsolidadoGridPorFilas(filasPl || []);
+  const hayCaja = (filasCaja || []).length > 0;
+  const blocksCaja = hayCaja ? pandiHtmlGpDetalleConsolidadoGridPorFilas(filasCaja) : '';
+  const subCaja = hayCaja
+    ? '<h4 class="gp-detalle-seccion-titulo gp-detalle-seccion-titulo--sub">Liquidez — caja manual</h4>' +
+      '<p class="gp-detalle-consolidado-subhint">No entra en la fila principal P&L de la tarjeta (solo movimientos sin orden y tipo con «incluye en G/P»).</p>' +
+      '<div class="gp-detalle-consolidado-grid">' +
+      blocksCaja +
+      '</div>'
+    : '';
   return (
-    '<section class="gp-detalle-seccion gp-detalle-seccion-consolidado" aria-label="Total consolidado">' +
+    '<section class="gp-detalle-seccion gp-detalle-seccion-consolidado" aria-label="Resumen consolidado G/P Operativa">' +
     '<div class="gp-detalle-consolidado-titulo-fila">' +
-    '<h4 class="gp-detalle-seccion-titulo">Total consolidado (P&L empresa: suma algebraica de las siete bolsas)</h4>' +
+    '<h4 class="gp-detalle-seccion-titulo">P&L (CC + compensatorio + comisiones + caja por órdenes)</h4>' +
     inicioGpHtmlBotonVerDetalleMovimientos('total', 'Actualizar desglose completo') +
     '</div>' +
+    '<p class="gp-detalle-consolidado-subhint">Coincide con la primera fila de importes del panel Inicio (incluye caja por órdenes; sin caja manual).</p>' +
     '<div class="gp-detalle-consolidado-grid">' +
-    blocks +
-    '</div></section>'
+    blocksPl +
+    '</div>' +
+    subCaja +
+    '</section>'
   );
 }
 
@@ -8367,12 +8423,16 @@ function openModalGpOperativaDetalle(bolsa, opt) {
   }
 
   if (bolsa === 'total') {
-    if (titulo) titulo.textContent = 'G/P Operativa — desglose por fila';
+    if (titulo) titulo.textContent = 'G/P Operativa — desglose por bolsa';
     const keys = GP_OPERATIVA_DETALLE_BOLSAS.map((x) => x.key);
     Promise.all(keys.map((k) => pandiLoadGpOperativaDetalleFilas(k).then((rows) => ({ k, rows }))))
       .then((results) => {
         if (loading) loading.style.display = 'none';
-        const todasLasFilas = results.flatMap((r) => r.rows || []);
+        const todasLasFilas = results.flatMap(({ k, rows }) =>
+          (rows || []).map((row) => Object.assign({}, row, { _gpBolsa: k })),
+        );
+        const filasPl = todasLasFilas.filter((r) => r._gpBolsa !== 'caja_manual');
+        const filasCaja = todasLasFilas.filter((r) => r._gpBolsa === 'caja_manual');
         pandiGpDetalleCacheTotalFilas = todasLasFilas;
         content.innerHTML =
           results
@@ -8393,9 +8453,13 @@ function openModalGpOperativaDetalle(bolsa, opt) {
             })
             .join('') +
             '<div class="gp-detalle-antes-consolidado-wrap">' +
-            pandiHtmlGpResumenTresCards(todasLasFilas, { bolsaKey: 'total', monedaFiltro: '' }) +
+            pandiHtmlGpResumenTresCards(filasPl, {
+              bolsaKey: 'total',
+              resumenTotalModo: 'pl_devengado',
+              monedaFiltro: '',
+            }) +
             '</div>' +
-            pandiHtmlGpDetalleSeccionConsolidado(todasLasFilas);
+            pandiHtmlGpDetalleSeccionConsolidado(filasPl, filasCaja);
       })
       .catch((err) => {
         if (loading) loading.style.display = 'none';
@@ -8419,7 +8483,7 @@ function openModalGpOperativaDetalle(bolsa, opt) {
     }
     actionsHtml += inicioGpHtmlBotonVerDetalleMovimientos(
       'total',
-      'Ver desglose de las siete bolsas',
+      'Ver desglose por bolsa (P&L y caja)',
     );
     headerActions.innerHTML = actionsHtml;
   }
@@ -8511,7 +8575,7 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI, ccResultadoE
       : {};
   const ccR =
     ccResultadoEco && typeof ccResultadoEco === 'object' && !Array.isArray(ccResultadoEco) ? ccResultadoEco : {};
-  const tot = inicioGpSumarSieteBolsas(cajaMan, cajaOrd, ccC, ccI, ccR, comP, comI);
+  const totPl = inicioGpSumarPlDevengadoCc(ccC, ccI, ccR, comP, comI, cajaOrd);
   function numBolsa(bolsa, mon) {
     const v = bolsa[mon];
     return v != null && !Number.isNaN(Number(v)) ? Number(v) : 0;
@@ -8588,33 +8652,33 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI, ccResultadoE
     '<div class="inicio-gp-matriz-fila-monedas">' +
     headers +
     '</div></div>';
-  const totalTodoCero = bolsaTodasMonedasCero(tot);
+  const totalTodoCero = bolsaTodasMonedasCero(totPl);
   const totalLabelHtml =
     '<span class="inicio-gp-matriz-label-total-wrap">' +
-    '<span class="inicio-gp-matriz-label-total">Total</span>' +
-    (totalTodoCero ? '' : inicioGpHtmlBotonVerDetalleMovimientos('total', 'Ver desglose P&L (siete bolsas)')) +
+    '<span class="inicio-gp-matriz-label-total">P&amp;L (devengado)</span>' +
+    (totalTodoCero ? '' : inicioGpHtmlBotonVerDetalleMovimientos('total', 'Ver desglose por bolsa (P&L y caja)')) +
     '</span>';
   const rowTotalHelp =
-    '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Total G/P Operativa">' +
+    '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: P&amp;L devengado G/P Operativa">' +
     helpIconSvg +
-    '</button><span class="help-popover"><strong>Total</strong> (ganancia o pérdida operativa de la empresa en el período): <strong>suma algebraica</strong> de las siete filas de abajo, sin contar dos veces lo mismo. <strong>Caja</strong> (manual y por órdenes) sigue solo con movimientos <strong>cerrados</strong>. <strong>CC</strong> clientes e intermediarios usan líneas <strong>pendiente o cerrado</strong> (no anuladas), igual que <strong>Cuenta corriente → Saldos</strong>, <strong>sin</strong> las clasificadas como <strong>resultado económico compensatorio</strong> (van en su fila dedicada). La comisión del intermediario en su fila aparece con <strong>signo negativo</strong> y <strong>resta</strong> del total porque es la parte del acuerdo que no es ganancia de la marca.</span></span>';
+    '</button><span class="help-popover"><strong>P&amp;L (devengado)</strong> — resultado operativo del período alineado al <strong>modelo de orden</strong> en CC más el <strong>cierre en caja por órdenes</strong> (movimientos cerrados al ejecutar transacciones): suma <strong>CC clientes</strong>, <strong>CC intermediarios</strong>, <strong>resultado económico compensatorio</strong>, las dos <strong>comisiones del acuerdo</strong> (intermediario en <strong>negativo</strong>) y la fila <strong>caja por órdenes</strong>. <strong>No suma caja manual</strong> (caja fuerte y movimientos sin orden): esa fila es <strong>liquidez</strong> aparte y depende del tipo «incluye en G/P». Así el total principal refleja orden + libro + efectivo del negocio sin mezclar aportes manuales de caja. Desglose con el <strong>ojo</strong>.</span></span>';
   const rowTotal = gpFila(
     totalLabelHtml,
     rowTotalHelp,
-    monedas.map((m) => celMonedaPareja(tot, m, true, null)).join(''),
+    monedas.map((m) => celMonedaPareja(totPl, m, true, null)).join(''),
   );
   const rowCaja = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-manual">Movimientos de caja manuales</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja manuales en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Movimientos de caja manuales</strong> en esta fila: suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa. En el <strong>detalle</strong>, la columna <strong>Medio de pago</strong> muestra si el movimiento fue en <strong>Efectivo</strong>, <strong>Banco</strong> o <strong>Cheque</strong> (según la caja elegida al cargarlo).</span></span>',
+      '</button><span class="help-popover"><strong>Movimientos de caja manuales</strong> (liquidez): <strong>no</strong> entran en el <strong>P&amp;L devengado</strong> de la primera fila. En esta fila suma solo movimientos de caja <strong>sin orden asociada</strong> cuyo tipo tiene activo <strong>«incluye en G/P»</strong> en <strong>Cajas → Tipos</strong>. Configurá ahí qué tipos entran en G/P Operativa. En el <strong>detalle</strong>, la columna <strong>Medio de pago</strong> muestra si el movimiento fue en <strong>Efectivo</strong>, <strong>Banco</strong> o <strong>Cheque</strong> (según la caja elegida al cargarlo).</span></span>',
     monedas.map((m) => celMonedaPareja(cajaMan, m, false, 'caja_manual')).join(''),
   );
   const rowCajaOrd = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-caja-ordenes">Movimientos de caja por órdenes</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: movimientos de caja por órdenes en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suma movimientos de caja con <strong>orden asociada</strong> y estado cerrado (al <strong>ejecutar</strong> transacciones: efectivo, banco o cheque según el modo de pago). <strong>No incluye</strong> en esta bolsa los movimientos cuya leyenda es comisión del acuerdo (van en la fila de comisión más abajo). En el <strong>detalle</strong>, la columna <strong>Medio de pago</strong> repite el modo elegido en cada transacción (Efectivo, Transferencia banco, Cheque, etc.). Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
+      '</button><span class="help-popover"><strong>Movimientos de caja por órdenes</strong>: suman en la <strong>primera fila P&amp;L</strong> junto con CC y comisiones, porque reflejan el <strong>cierre operativo</strong> de la orden (coherente con las reglas de CC al ejecutar). En esta fila: movimientos de caja con <strong>orden asociada</strong> y estado cerrado (efectivo, banco o cheque según el modo de pago). <strong>No incluye</strong> en esta bolsa los movimientos cuya leyenda es comisión del acuerdo (van en la fila de comisión más abajo). En el <strong>detalle</strong>, la columna <strong>Medio de pago</strong> repite el modo elegido en cada transacción (Efectivo, Transferencia banco, Cheque, etc.). Ahí aparece el resultado neto en valores de <span class="js-marca-sistema-nombre">' +
       escapeHtml(nombreMarcaSistema()) +
       '</span> cuando la orden cierra (p. ej. diferencia tras cliente e intermediario). Va aparte de los movimientos de caja manuales filtrados por tipo.</span></span>',
     monedas.map((m) => celMonedaPareja(cajaOrd, m, false, 'caja_ordenes')).join(''),
@@ -8630,14 +8694,14 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI, ccResultadoE
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-intermediarios">Cuenta Corriente Intermediarios</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: Cuenta Corriente Intermediarios en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): suma de líneas <strong>pendiente o cerrado</strong> (no anuladas) en el período, <strong>excluyendo comisión del acuerdo</strong> en concepto (esa parte va en la bolsa de comisión intermediario más abajo, con signo que <strong>resta</strong> del Total) y las de clasificación <strong>resultado económico compensatorio</strong> (fila dedicada). Alineado a <strong>Cuenta corriente → Intermediario → Saldos</strong>. En el <strong>detalle</strong>, <strong>Medio de pago</strong> cuando hay transacción con modo de pago.</span></span>',
+      '</button><span class="help-popover"><strong>Cuenta Corriente Intermediarios</strong> (esta fila): suma de líneas <strong>pendiente o cerrado</strong> (no anuladas) en el período, <strong>excluyendo comisión del acuerdo</strong> en concepto (esa parte va en la bolsa de comisión intermediario más abajo, con signo que <strong>resta</strong> del P&amp;L) y las de clasificación <strong>resultado económico compensatorio</strong> (fila dedicada). Alineado a <strong>Cuenta corriente → Intermediario → Saldos</strong>. En el <strong>detalle</strong>, <strong>Medio de pago</strong> cuando hay transacción con modo de pago.</span></span>',
     monedas.map((m) => celMonedaPareja(ccI, m, false, 'cc_intermediario')).join(''),
   );
   const rowResultadoEco = gpFila(
     '<div class="inicio-gp-matriz-label-sub inicio-gp-matriz-label-cc-resultado-eco">Resultado económico compensatorio (CC)</div>',
     '<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: resultado económico compensatorio en G/P Operativa">' +
       helpIconSvg +
-      '</button><span class="help-popover"><strong>Resultado económico compensatorio</strong>: movimientos de cuenta corriente (cliente o intermediario) con clasificación <code>CC_RESULTADO_ECONOMICO_COMPENSATORIO</code>. <strong>No</strong> se suman en las filas de CC de flujo de arriba: entran acá para ver el efecto contable explícito <strong>sin duplicar</strong> el Total. Hasta que existan filas con esa clasificación, la fila muestra cero.</span></span>',
+      '</button><span class="help-popover"><strong>Resultado económico compensatorio</strong>: movimientos de cuenta corriente (cliente o intermediario) con clasificación <code>CC_RESULTADO_ECONOMICO_COMPENSATORIO</code>. <strong>No</strong> se suman en las filas de CC de flujo de arriba: entran acá para ver el efecto contable explícito <strong>sin duplicar</strong> el P&amp;L. Hasta que existan filas con esa clasificación, la fila muestra cero.</span></span>',
     monedas.map((m) => celMonedaPareja(ccR, m, false, 'cc_resultado_economico_compensatorio')).join(''),
   );
   const marcaNombre = escapeHtml(nombreMarcaSistema());
@@ -8649,7 +8713,7 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI, ccResultadoE
       helpIconSvg +
       '</button><span class="help-popover"><strong>Comisión del acuerdo (' +
       marcaNombre +
-      ')</strong>: suma desde <strong>comisiones_orden</strong> (beneficiario empresa, <strong>fecha de la orden</strong> en el período, sin anuladas) y, si hiciera falta, líneas de CC cliente con texto de comisión del acuerdo <strong>sin</strong> fila equivalente en esa tabla (legacy; incluye pendiente+cerrado). Con <strong>reparto</strong> empresa+intermediario en la <strong>misma orden y moneda</strong>, la fila empresa refleja el <strong>neto</strong> de la marca en ese acuerdo (no se suma dos veces la parte intermediario). <strong>Suma</strong> al <strong>Total</strong> (ganancia o pérdida de la empresa en esa bolsa). El flujo operativo de CC arriba <strong>no duplica</strong> esas líneas.</span></span>',
+      ')</strong>: suma desde <strong>comisiones_orden</strong> (beneficiario empresa, <strong>fecha de la orden</strong> en el período, sin anuladas) y, si hiciera falta, líneas de CC cliente con texto de comisión del acuerdo <strong>sin</strong> fila equivalente en esa tabla (legacy; incluye pendiente+cerrado). Con <strong>reparto</strong> empresa+intermediario en la <strong>misma orden y moneda</strong>, la fila empresa refleja el <strong>neto</strong> de la marca en ese acuerdo (no se suma dos veces la parte intermediario). <strong>Suma</strong> al <strong>P&amp;L devengado</strong> de la primera fila. El flujo operativo de CC arriba <strong>no duplica</strong> esas líneas.</span></span>',
     monedas.map((m) => celMonedaPareja(comP, m, false, 'comisiones_acuerdo_pandy')).join(''),
   );
   const rowComisionInt = gpFila(
@@ -8658,20 +8722,21 @@ function pintarInicioGpMatriz(elMatriz, cajaMan, cajaOrd, ccC, ccI, ccResultadoE
       helpIconSvg +
       '</button><span class="help-popover"><strong>Comisión del acuerdo (intermediario)</strong>: lo asignado al intermediario en <strong>comisiones_orden</strong> (fecha de orden en el período) y, si aplica, líneas huérfanas en <strong>CC intermediario</strong> (pendiente+cerrado). Si para la <strong>misma orden y moneda</strong> ya hay en <strong>comisiones_orden</strong> una fila para <strong>' +
       marcaNombre +
-      '</strong> y otra para el intermediario (<strong>reparto</strong> del acuerdo), la fila intermediario de ese reparto <strong>no se cuenta otra vez</strong> aquí: el costo ya queda <strong>neteado en la fila empresa</strong>; pueden seguir entrando <strong>otras</strong> filas intermediario (p. ej. en <strong>otra moneda</strong> o <strong>tasa por transferencia</strong>). En el panel y en el Total se muestra con <strong>signo negativo</strong>: <strong>resta</strong> del resultado de la empresa porque es la parte del acuerdo que corresponde al intermediario, no ganancia de la marca. No se duplica con las filas de CC de arriba.</span></span>',
+      '</strong> y otra para el intermediario (<strong>reparto</strong> del acuerdo), la fila intermediario de ese reparto <strong>no se cuenta otra vez</strong> aquí: el costo ya queda <strong>neteado en la fila empresa</strong>; pueden seguir entrando <strong>otras</strong> filas intermediario (p. ej. en <strong>otra moneda</strong> o <strong>tasa por transferencia</strong>). En el panel se muestra con <strong>signo negativo</strong>: <strong>resta</strong> del P&amp;L devengado porque es la parte del acuerdo que corresponde al intermediario, no ganancia de la marca. No se duplica con las filas de CC de arriba.</span></span>',
     monedas.map((m) => celMonedaPareja(comI, m, false, 'comisiones_acuerdo_intermediario')).join(''),
   );
   elMatriz.innerHTML =
     filaCabecera +
     rowTotal +
-    rowCaja +
-    rowCajaOrd +
     rowCli +
     rowInt +
     rowResultadoEco +
     '<div class="inicio-gp-matriz-sep-comision" aria-hidden="true"></div>' +
     rowComisionMarca +
-    rowComisionInt;
+    rowComisionInt +
+    '<div class="inicio-gp-matriz-sep-comision" aria-hidden="true"></div>' +
+    rowCajaOrd +
+    rowCaja;
   elMatriz.style.display = 'flex';
 }
 
@@ -9404,6 +9469,9 @@ let ccCargaSerial = 0;
 let ccDetalleFiltroEntidadId = '';
 /** Filtro opcional por número de orden en Movimientos (texto exacto sobre `orden_numero`; vacío = todas). */
 let ccDetalleFiltroNroOrden = '';
+/** Cliente del informe PDF abierto desde la grilla Saldos (botón junto al ojo). Se limpia al cerrar el modal. */
+let ccPdfInformeContextClienteId = '';
+let ccPdfInformeContextClienteNombre = '';
 /** Texto de búsqueda en solapa Saldos (nombre de cliente o intermediario según Tipo). */
 let ccResumenFiltroNombre = '';
 /** Columnas extra movimientos CC manuales (pagador/cobrador) en SELECT Supabase. */
@@ -14867,6 +14935,210 @@ function filtrarCcMovimientosDetalleLista(list) {
   return filtrados;
 }
 
+/** Informe PDF CC cliente: anulado y anulada no entran al saldo ni al listado del PDF. */
+function ccMovimientoEstadoAnuladoParaInformePdf(m) {
+  const e = (m && m.estado != null ? String(m.estado) : '').toLowerCase().trim();
+  return e === 'anulado' || e === 'anulada';
+}
+
+/** Base de movimientos del libro cliente para una entidad (sin filtro de fechas ni nº orden; alinea exclusión «mismo registro» que Saldos). */
+function ccMovimientosClienteLibroBaseParaPdf(clienteId) {
+  let filtrados = (ccMovimientosDetalleList || []).filter((m) => pandiCcDetallePasaFiltroTipo(m, 'cliente'));
+  filtrados = filtrados.filter(
+    (m) =>
+      !(
+        m.tipo === 'cliente' &&
+        m.cliente_id != null &&
+        String(m.cliente_id).trim() !== '' &&
+        m.cc_intermediario_consolidado_id != null &&
+        String(m.cc_intermediario_consolidado_id).trim() !== ''
+      )
+  );
+  if (clienteId) filtrados = filtrados.filter((m) => String(m.cliente_id) === String(clienteId));
+  return filtrados;
+}
+
+function ccCompararMovimientosFechaAsc(a, b) {
+  const fa = (a.fecha || '').toString().slice(0, 10);
+  const fb = (b.fecha || '').toString().slice(0, 10);
+  if (fa !== fb) return fa.localeCompare(fb);
+  const ca = a.created_at != null ? String(a.created_at) : '';
+  const cb = b.created_at != null ? String(b.created_at) : '';
+  return ca.localeCompare(cb);
+}
+
+function ccPdfSumarMontosPorMonedas(movs, monedas) {
+  const tot = {};
+  (monedas || []).forEach((m) => {
+    tot[m] = 0;
+  });
+  (movs || []).forEach((x) => {
+    const z = getMontosMovimientoCcResumen(x);
+    (monedas || []).forEach((mon) => {
+      tot[mon] += Number(z[mon]) || 0;
+    });
+  });
+  return tot;
+}
+
+function fechaHoraEmitidaInformePdfArgentina() {
+  return new Date().toLocaleString('es-AR', { timeZone: ZONA_ARGENTINA, dateStyle: 'short', timeStyle: 'short' });
+}
+
+/** URL absoluta del favicon / ícono de marca para embeber en el PDF de CC cliente. */
+function ccPdfUrlFaviconEmpresaAbsoluta() {
+  const el =
+    document.querySelector('link#pandi-favicon-32') ||
+    document.querySelector('link[rel="icon"][sizes="32x32"]') ||
+    document.querySelector('link[rel="icon"]');
+  const href = el && el.href ? String(el.href).trim() : '';
+  if (href) return href;
+  try {
+    return new URL('/assets/favicon-192x192.png', window.location.origin).href;
+  } catch (_) {
+    return '/assets/favicon-192x192.png';
+  }
+}
+
+/** Devuelve data URL de la imagen o cadena vacía si falla (PDF sin logo). */
+function ccPdfCargarMarcaLogoDataUrl() {
+  const url = ccPdfUrlFaviconEmpresaAbsoluta();
+  return fetch(url, { cache: 'force-cache' })
+    .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+    .then(
+      (blob) =>
+        new Promise((resolve) => {
+          const fr = new FileReader();
+          fr.onloadend = () => resolve(String(fr.result || ''));
+          fr.onerror = () => resolve('');
+          fr.readAsDataURL(blob);
+        }),
+    )
+    .catch(() => '');
+}
+
+function openModalCcPdfInformeCliente() {
+  const clienteId = String(ccPdfInformeContextClienteId || '').trim();
+  if (!clienteId) {
+    showToast('Abrí el informe con el botón PDF junto al ojo en la grilla Saldos (fila de cliente).', 'info');
+    return;
+  }
+  const backdrop = document.getElementById('modal-cc-pdf-informe-backdrop');
+  const dDesde = document.getElementById('cc-pdf-informe-desde');
+  const dHasta = document.getElementById('cc-pdf-informe-hasta');
+  const chk = document.getElementById('cc-pdf-domar-desde');
+  if (ccMovimientosMostrarTodoHistorial) {
+    const h = fechaHoyYYYYMMDDArgentina();
+    if (dDesde) dDesde.value = h;
+    if (dHasta) dHasta.value = h;
+  } else {
+    if (dDesde) dDesde.value = ccDetalleDesde || fechaHoyYYYYMMDDArgentina();
+    if (dHasta) dHasta.value = ccDetalleHasta || fechaHoyYYYYMMDDArgentina();
+  }
+  if (chk) chk.checked = true;
+  const res = document.getElementById('modal-cc-pdf-informe-resumen');
+  const nom = String(ccPdfInformeContextClienteNombre || '').trim();
+  if (res) res.textContent = 'Se generará el informe para «' + nom + '».';
+  if (backdrop) backdrop.classList.add('activo');
+}
+
+function closeModalCcPdfInformeCliente() {
+  const backdrop = document.getElementById('modal-cc-pdf-informe-backdrop');
+  if (backdrop) backdrop.classList.remove('activo');
+  ccPdfInformeContextClienteId = '';
+  ccPdfInformeContextClienteNombre = '';
+}
+
+function ejecutarGenerarPdfInformeCcCliente() {
+  const desdeEl = document.getElementById('cc-pdf-informe-desde');
+  const hastaEl = document.getElementById('cc-pdf-informe-hasta');
+  const chk = document.getElementById('cc-pdf-domar-desde');
+  const desde = desdeEl && desdeEl.value ? desdeEl.value.trim() : '';
+  const hasta = hastaEl && hastaEl.value ? hastaEl.value.trim() : '';
+  const domarDesde = !!(chk && chk.checked);
+  if (!desde || !hasta) {
+    showToast('Completá las fechas Desde y Hasta.', 'error');
+    return;
+  }
+  if (desde > hasta) {
+    showToast('«Desde» no puede ser posterior a «Hasta».', 'error');
+    return;
+  }
+  const clienteId = String(ccPdfInformeContextClienteId || '').trim();
+  if (!clienteId) {
+    showToast('Volvé a abrir el informe desde Saldos (botón PDF en la fila del cliente).', 'info');
+    return;
+  }
+  const clienteNombre = String(ccPdfInformeContextClienteNombre || '').trim() || 'Cliente';
+  const marcaEl = document.querySelector('.js-marca-sistema-nombre');
+  const marcaNombre = (marcaEl && marcaEl.textContent ? marcaEl.textContent.trim() : '') || 'Pandi';
+  const base = ccMovimientosClienteLibroBaseParaPdf(clienteId).filter((m) => !ccMovimientoEstadoAnuladoParaInformePdf(m));
+  const monedas = MONEDAS_CC_MOVIMIENTOS_COLS.filter((mon) => ccUiMonedasVisibles[mon]);
+  const saldoIni = {};
+  monedas.forEach((m) => {
+    saldoIni[m] = 0;
+  });
+  if (domarDesde) {
+    const prev = base.filter((m) => {
+      const f = (m.fecha || '').toString().slice(0, 10);
+      return f < desde;
+    });
+    Object.assign(saldoIni, ccPdfSumarMontosPorMonedas(prev, monedas));
+  }
+  const enPeriodo = base
+    .filter((m) => {
+      const f = (m.fecha || '').toString().slice(0, 10);
+      return f >= desde && f <= hasta;
+    })
+    .sort(ccCompararMovimientosFechaAsc);
+  const sumPeriodo = ccPdfSumarMontosPorMonedas(enPeriodo, monedas);
+  const saldoFin = {};
+  monedas.forEach((m) => {
+    saldoFin[m] = (Number(saldoIni[m]) || 0) + (Number(sumPeriodo[m]) || 0);
+  });
+  const filasMovimientos = enPeriodo.map((m) => {
+    const z = getMontosMovimientoCcResumen(m);
+    const tipoOp = m.es_movimiento_manual ? 'Manual' : (m.tipo_operacion != null && m.tipo_operacion !== '–' ? String(m.tipo_operacion) : '–');
+    const nroOrden = m.orden_numero != null ? String(m.orden_numero) : '–';
+    const nroTrans = m.transaccion_numero != null ? String(m.transaccion_numero) : '–';
+    const estLower = String(m.estado || '').toLowerCase();
+    const estadoTxt = estLower === 'pendiente' ? 'Pendiente' : estLower === 'cerrado' || estLower === 'cerrada' ? 'Cerrado' : (m.estado || '–');
+    return {
+      fecha: (m.fecha || '').toString().slice(0, 10),
+      tipoOp,
+      orden: nroOrden,
+      trans: nroTrans,
+      concepto: (m.concepto || '–') + (estadoTxt !== '–' ? ' · ' + estadoTxt : ''),
+      montosValor: { USD: z.USD, ARS: z.ARS, EUR: z.EUR },
+    };
+  });
+  const emitidoTexto = 'Emitido: ' + fechaHoraEmitidaInformePdfArgentina() + ' (Argentina).';
+  import('./pdf-cc-informe-cliente.js')
+    .then((mod) =>
+      ccPdfCargarMarcaLogoDataUrl().then((marcaLogoDataUrl) => {
+        mod.generarYCcInformePdfDescargar({
+          marcaNombre,
+          clienteNombre,
+          desde,
+          hasta,
+          domarDesde,
+          monedas,
+          saldoInicialPorMoneda: saldoIni,
+          saldoFinalPorMoneda: saldoFin,
+          filasMovimientos,
+          emitidoTexto,
+          marcaLogoDataUrl,
+        });
+        closeModalCcPdfInformeCliente();
+        showToast('PDF descargado.', 'success');
+      }),
+    )
+    .catch((e) => {
+      console.error(e);
+      showToast('No se pudo generar el PDF.', 'error');
+    });
+}
+
 /** Muestra el panel Saldos o Movimientos y actualiza solapas (clase activo y aria-selected). */
 function syncCcPestañasYPaneles() {
   const panelSaldos = document.getElementById('cc-panel-saldos');
@@ -14966,7 +15238,24 @@ function renderCcResumenTable(rows) {
         const leyenda = ccLeyendaSaldoResumenHtml(mon, pendMon, pendClase[mon], sDisp);
         tr += `<td data-cc-moneda-col="${mon}"><span class="cc-saldo-celda-wrap"><span class="${cls}">${val}</span>${leyenda}</span></td>`;
       });
-      tr += '<td><button type="button" class="btn-ver-detalle" data-tipo="' + escapeHtml(row.tipo) + '" data-id="' + escapeHtml(row.id) + '" data-nombre="' + escapeHtml(row.nombre || '') + '" title="Ver detalle de movimientos" aria-label="Ver detalle de movimientos"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="2.5" fill="none"/></svg></span></button></td></tr>';
+      const btnPdf =
+        row.tipo === 'cliente'
+          ? '<button type="button" class="btn-secondary btn-icon-only btn-cc-pdf-informe-saldo" data-cliente-id="' +
+            escapeHtml(row.id) +
+            '" data-cliente-nombre="' +
+            escapeHtml(row.nombre || '') +
+            '" title="Informe PDF por período (sin movimientos anulados)" aria-label="Informe PDF cuenta corriente cliente"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-50"></use></svg></span></button>'
+          : '';
+      tr +=
+        '<td><div class="cc-resumen-acciones-inline"><button type="button" class="btn-ver-detalle" data-tipo="' +
+        escapeHtml(row.tipo) +
+        '" data-id="' +
+        escapeHtml(row.id) +
+        '" data-nombre="' +
+        escapeHtml(row.nombre || '') +
+        '" title="Ver detalle de movimientos" aria-label="Ver detalle de movimientos"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="2.5" fill="none"/></svg></span></button>' +
+        btnPdf +
+        '</div></td></tr>';
       return tr;
     })
     .join('');
@@ -14988,6 +15277,17 @@ function renderCcResumenTable(rows) {
         const id = btn.getAttribute('data-id');
         const nombre = btn.getAttribute('data-nombre') || '';
         if (tipo && id) openModalCcDetalle(tipo, id, nombre);
+      });
+    });
+    tbody.querySelectorAll('.btn-cc-pdf-informe-saldo').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const id = String(btn.getAttribute('data-cliente-id') || '').trim();
+        const nombre = btn.getAttribute('data-cliente-nombre') || '';
+        if (!id) return;
+        ccPdfInformeContextClienteId = id;
+        ccPdfInformeContextClienteNombre = nombre;
+        openModalCcPdfInformeCliente();
       });
     });
     actualizarCcResumenTotalesThead(rows);
@@ -17454,6 +17754,14 @@ function setupCuentaCorriente() {
   const ccBtnExportarMov = document.getElementById('cc-btn-exportar-movimientos');
   if (ccBtnExportar) ccBtnExportar.addEventListener('click', onCcExportarClick);
   if (ccBtnExportarMov) ccBtnExportarMov.addEventListener('click', onCcExportarClick);
+  const modalCcPdfBackdrop = document.getElementById('modal-cc-pdf-informe-backdrop');
+  const modalCcPdfClose = document.getElementById('modal-cc-pdf-informe-close');
+  const modalCcPdfCancel = document.getElementById('modal-cc-pdf-informe-cancelar');
+  const modalCcPdfGenerar = document.getElementById('modal-cc-pdf-informe-generar');
+  if (modalCcPdfClose) modalCcPdfClose.addEventListener('click', closeModalCcPdfInformeCliente);
+  if (modalCcPdfCancel) modalCcPdfCancel.addEventListener('click', closeModalCcPdfInformeCliente);
+  if (modalCcPdfBackdrop) setupBackdropCloseOnlyOnRealClick(modalCcPdfBackdrop, closeModalCcPdfInformeCliente);
+  if (modalCcPdfGenerar) modalCcPdfGenerar.addEventListener('click', () => ejecutarGenerarPdfInformeCcCliente());
   const ccBtnMovManual = document.getElementById('cc-btn-movimiento-manual');
   const ccBtnMovManualMov = document.getElementById('cc-btn-movimiento-manual-mov');
   if (ccBtnMovManual) ccBtnMovManual.addEventListener('click', () => openModalCcMovimientoManual());

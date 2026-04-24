@@ -204,6 +204,12 @@
         <symbol id="icon-sprite-49" viewBox="0 0 24 24">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
         </symbol>
+        <!-- Informe PDF CC cliente (Saldos): mismo trazo fino que el ojo; texto PDF legible en icono chico -->
+        <symbol id="icon-sprite-50" viewBox="0 0 24 24">
+          <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+          <polyline fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="14 2 14 8 20 8"/>
+          <text x="12" y="17.2" text-anchor="middle" font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="5.4" font-weight="700" fill="currentColor">PDF</text>
+        </symbol>
       </defs>
     </svg>
 
@@ -262,7 +268,7 @@
         <span class="menu-label">Auditoría</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.8.3</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.8.4</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -435,7 +441,7 @@
           <div class="inicio-gp-wrap inicio-gp-cajas-grid-row" id="inicio-card-gp-operativo" style="display:none;">
             <div class="inicio-caja-card">
               <div class="inicio-gp-header-row">
-                <h3 class="inicio-gp-titulo"><span class="inicio-gp-titulo-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-22"></use></svg></span>G/P Operativa<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: G/P Operativa"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><strong>G/P Operativa</strong>: visión de <strong>ganancia o pérdida operativa</strong> de la empresa en el período. El <strong>Total</strong> por moneda es la <strong>suma algebraica</strong> de <strong>siete bolsas</strong> (sin doble conteo): caja manual; caja por órdenes <strong>sin</strong> movimientos de comisión del acuerdo en caja; CC clientes e intermediarios con movimientos <strong>pendiente o cerrado</strong> (no anulados), <strong>sin</strong> líneas cuyo concepto sea comisión del acuerdo en el flujo ni las clasificadas como <strong>resultado económico compensatorio</strong> (esa parte va en su fila dedicada); más dos filas de <strong>comisión del acuerdo</strong> desde <strong>comisiones_orden</strong> por fecha de orden y, si hiciera falta, líneas solo en CC. La fila de comisión del <strong>intermediario</strong> entra <strong>en negativo</strong> y resta del Total; si en <strong>comisiones_orden</strong> hay <strong>reparto</strong> empresa+intermediario en la <strong>misma orden y moneda</strong>, ese tramo del intermediario <strong>no se descuenta otra vez</strong> aquí (queda en la fila empresa) y en la fila intermediario pueden seguir entrando <strong>otras</strong> comisiones (p. ej. otra moneda o tasa) o líneas solo en CC. Criterio de CC alineado a <strong>Cuenta corriente → Saldos</strong>. Junto a cada fila, el <strong>?</strong>. El <strong>ojo</strong> junto a <strong>Total</strong> abre el desglose de las siete bolsas (oculto si los tres totales por moneda son cero). Por moneda, otro <strong>ojo</strong> si el importe de esa fila no es cero abre el detalle.<br><br>El Total mezcla <strong>caja ejecutada</strong> con <strong>libro de CC</strong> y comisiones explícitas; en una moneda pueden compensarse importes sin significar «cero negocio».<br><br>Períodos en calendario <strong>Argentina</strong>; la semana va de <strong>lunes a domingo</strong>.</span></span></h3>
+                <h3 class="inicio-gp-titulo"><span class="inicio-gp-titulo-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-22"></use></svg></span>G/P Operativa<span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: G/P Operativa"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><strong>G/P Operativa</strong>: visión de <strong>ganancia o pérdida</strong> de la empresa en el período. La primera fila <strong>P&amp;L (devengado)</strong> suma <strong>libro + caja por órdenes</strong>: CC clientes e intermediarios (flujo), resultado económico compensatorio, comisiones del acuerdo (intermediario en <strong>negativo</strong>) y movimientos de caja <strong>con orden</strong> cerrados al ejecutar transacciones (coherente con el cierre de la orden en CC y en caja). <strong>No incluye caja manual</strong> (sin orden): va más abajo como <strong>liquidez</strong> según tipos con «incluye en G/P». En CC entran líneas <strong>pendiente o cerrado</strong> (no anuladas), sin comisión del acuerdo en el flujo ni compensatorio en esas dos filas —alineado a <strong>Cuenta corriente → Saldos</strong>. Con <strong>reparto</strong> empresa+intermediario misma orden y moneda, la parte intermediario de ese reparto <strong>no se descuenta otra vez</strong> en su fila. Junto a cada fila, el <strong>?</strong>; el <strong>ojo</strong> junto al P&amp;L abre el desglose por bolsa (oculto si los tres importes de la primera fila son cero). Otro <strong>ojo</strong> por moneda en cada fila con importe distinto de cero.<br><br>El P&amp;L refleja <strong>devengado en CC, comisiones y cierre en caja por órdenes</strong>; en una moneda pueden compensarse líneas sin implicar «cero negocio».<br><br>Períodos en calendario <strong>Argentina</strong>; la semana va de <strong>lunes a domingo</strong>.</span></span></h3>
                 <div class="inicio-gp-toolbar">
                   <div class="inicio-gp-periodos" role="tablist" aria-label="Período G/P Operativa">
                     <button type="button" class="btn-secondary inicio-gp-pill activo" data-inicio-gp-periodo="dia" aria-selected="true">Día</button>
@@ -628,7 +634,7 @@
         <div id="cajas-panel-tipos" class="cc-panel-cc" role="tabpanel" aria-labelledby="cajas-tab-tipos" style="display:none;">
           <div class="vista-toolbar" style="flex-wrap:wrap; gap:0.5rem; align-items:center; margin-bottom:0.75rem;">
             <span style="font-weight:600; font-size:1rem; color:#1a1a1a;">Catálogo de tipos</span>
-            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: tipos de movimiento de caja"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Definí los <strong>tipos</strong> que usás al cargar <strong>movimientos manuales</strong> (no generados por una orden). Cada tipo tiene <strong>dirección</strong>: Ingreso o Egreso respecto de la caja. <strong>G/P</strong>: si está activo, los movimientos con ese tipo suman en la tarjeta <strong>G/P Operativa</strong> del Panel (junto a las sumas de CC en el período); desactivalo para aportes de capital u otros que no quieras incluir.</span></span>
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: tipos de movimiento de caja"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Definí los <strong>tipos</strong> que usás al cargar <strong>movimientos manuales</strong> (no generados por una orden). Cada tipo tiene <strong>dirección</strong>: Ingreso o Egreso respecto de la caja. <strong>G/P</strong>: si está activo, los movimientos con ese tipo suman en la fila de <strong>caja manual</strong> de la tarjeta <strong>G/P Operativa</strong> del Panel (liquidez; la primera fila <strong>P&amp;L</strong> suma libro + <strong>caja por órdenes</strong>, no esta caja manual); desactivalo para aportes de capital u otros que no quieras incluir.</span></span>
             <button type="button" id="btn-nuevo-tipo-movimiento" class="btn-nuevo" style="display:none;"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-28"></use></svg></span>Nuevo tipo</button>
           </div>
           <div id="tipos-mov-loading" class="cajas-loading vista-loading-spinner" style="display:none;">Cargando tipos…</div>
@@ -2308,6 +2314,37 @@
         <p id="modal-gp-operativa-detalle-leyenda" class="inicio-gp-leyenda"></p>
         <div id="modal-gp-operativa-detalle-loading" class="vista-loading-spinner" style="display:none;">Cargando…</div>
         <div id="modal-gp-operativa-detalle-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-cc-pdf-informe-backdrop" class="modal-backdrop">
+    <div class="modal" style="max-width: min(95vw, 520px);">
+      <div class="modal-header">
+        <h2 id="modal-cc-pdf-informe-titulo" style="margin:0;">Informe PDF — cuenta corriente cliente</h2>
+        <button type="button" class="modal-close" id="modal-cc-pdf-informe-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="modal-cc-pdf-informe-resumen" class="text-muted" style="margin:0 0 1rem; font-size:0.9rem;"></p>
+        <div class="form-group">
+          <label for="cc-pdf-informe-desde">Desde (inicio del período)</label>
+          <input type="date" id="cc-pdf-informe-desde" class="cc-input-fecha" style="width:100%;max-width:100%;font-size:16px;" />
+        </div>
+        <div class="form-group">
+          <label for="cc-pdf-informe-hasta">Hasta (fin del período)</label>
+          <input type="date" id="cc-pdf-informe-hasta" class="cc-input-fecha" style="width:100%;max-width:100%;font-size:16px;" />
+        </div>
+        <div class="form-group" style="margin-top:0.35rem;">
+          <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer;font-weight:normal;line-height:1.35;">
+            <input type="checkbox" id="cc-pdf-domar-desde" checked style="margin-top:0.2rem;flex-shrink:0;" />
+            <span><strong>Saldo inicial al «Desde»</strong>: sumar todos los movimientos <strong>no anulados</strong> con fecha <strong>anterior</strong> a ese día. Si desmarcás, el saldo inicial es <strong>cero</strong> y el PDF solo acumula lo del período.</span>
+          </label>
+        </div>
+        <p style="font-size:0.82rem;color:#64748b;margin:0.85rem 0 0;line-height:1.4;">El listado del PDF <strong>excluye anulados</strong> y usa el rango de fechas que elijas acá (independiente del filtro de fechas de la tabla de Movimientos). El cliente es el de la fila desde la que abriste el informe (grilla <strong>Saldos</strong>, botón PDF junto al ojo).</p>
+        <div style="margin-top:1rem;display:flex;gap:0.5rem;justify-content:flex-end;flex-wrap:wrap;">
+          <button type="button" class="btn-secondary" id="modal-cc-pdf-informe-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-42"></use></svg></span>Cancelar</button>
+          <button type="button" class="btn-primary" id="modal-cc-pdf-informe-generar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-50"></use></svg></span>Generar PDF</button>
+        </div>
       </div>
     </div>
   </div>

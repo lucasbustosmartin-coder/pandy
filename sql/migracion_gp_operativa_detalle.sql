@@ -52,7 +52,9 @@ BEGIN
           ),
           'orden_numero', m.orden_numero,
           'transaccion_numero', m.transaccion_numero,
-          'entidad', NULL
+          'entidad', NULL,
+          'cc_estado', m.estado,
+          'es_movimiento_manual', false
         ) AS row_json,
         m.fecha AS fecha_sort,
         m.id::text AS id_sort
@@ -89,7 +91,9 @@ BEGIN
           ),
           'orden_numero', COALESCE(m.orden_numero, o.numero),
           'transaccion_numero', m.transaccion_numero,
-          'entidad', NULL
+          'entidad', NULL,
+          'cc_estado', m.estado,
+          'es_movimiento_manual', false
         ) AS row_json,
         m.fecha AS fecha_sort,
         m.id::text AS id_sort
@@ -129,7 +133,9 @@ BEGIN
           ),
           'orden_numero', o.numero,
           'transaccion_numero', m.transaccion_numero,
-          'entidad', c.nombre
+          'entidad', c.nombre,
+          'cc_estado', m.estado,
+          'es_movimiento_manual', COALESCE(m.es_movimiento_manual, false)
         ) AS row_json,
         m.fecha AS fecha_sort,
         m.id::text AS id_sort
@@ -169,7 +175,9 @@ BEGIN
           ),
           'orden_numero', o.numero,
           'transaccion_numero', m.transaccion_numero,
-          'entidad', i.nombre
+          'entidad', i.nombre,
+          'cc_estado', m.estado,
+          'es_movimiento_manual', COALESCE(m.es_movimiento_manual, false)
         ) AS row_json,
         m.fecha AS fecha_sort,
         m.id::text AS id_sort
@@ -209,7 +217,9 @@ BEGIN
           ),
           'orden_numero', o.numero,
           'transaccion_numero', m.transaccion_numero,
-          'entidad', c.nombre
+          'entidad', c.nombre,
+          'cc_estado', m.estado,
+          'es_movimiento_manual', COALESCE(m.es_movimiento_manual, false)
         ) AS row_json,
         m.fecha AS fecha_sort,
         m.id::text AS id_sort
@@ -238,7 +248,9 @@ BEGIN
           ),
           'orden_numero', o.numero,
           'transaccion_numero', m.transaccion_numero,
-          'entidad', i.nombre
+          'entidad', i.nombre,
+          'cc_estado', m.estado,
+          'es_movimiento_manual', COALESCE(m.es_movimiento_manual, false)
         ) AS row_json,
         m.fecha AS fecha_sort,
         m.id::text AS id_sort
@@ -273,7 +285,9 @@ BEGIN
           'modo_pago', '',
           'orden_numero', o.numero,
           'transaccion_numero', NULL,
-          'entidad', cl.nombre
+          'entidad', cl.nombre,
+          'cc_estado', 'cerrado',
+          'es_movimiento_manual', false
         ) AS row_json,
         o.fecha AS fecha_sort,
         ('co-' || c.id::text) AS id_sort
@@ -300,7 +314,9 @@ BEGIN
           ),
           'orden_numero', o.numero,
           'transaccion_numero', m.transaccion_numero,
-          'entidad', c.nombre
+          'entidad', c.nombre,
+          'cc_estado', m.estado,
+          'es_movimiento_manual', COALESCE(m.es_movimiento_manual, false)
         ) AS row_json,
         m.fecha AS fecha_sort,
         m.id::text AS id_sort
@@ -344,7 +360,9 @@ BEGIN
           'modo_pago', '',
           'orden_numero', o.numero,
           'transaccion_numero', NULL,
-          'entidad', i.nombre
+          'entidad', i.nombre,
+          'cc_estado', 'cerrado',
+          'es_movimiento_manual', false
         ) AS row_json,
         o.fecha AS fecha_sort,
         ('co-' || c.id::text) AS id_sort
@@ -378,7 +396,9 @@ BEGIN
           ),
           'orden_numero', o.numero,
           'transaccion_numero', m.transaccion_numero,
-          'entidad', intm.nombre
+          'entidad', intm.nombre,
+          'cc_estado', m.estado,
+          'es_movimiento_manual', COALESCE(m.es_movimiento_manual, false)
         ) AS row_json,
         m.fecha AS fecha_sort,
         m.id::text AS id_sort
@@ -408,6 +428,6 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON por bolsa (mismo criterio que gp_operativa_resumen): caja manual/órdenes cerrado no anulado; CC cliente/inter pendiente+cerrado excl. comisión por concepto/ENUM y excl. CC_RESULTADO_ECONOMICO_COMPENSATORIO (bolsa dedicada cc_resultado_economico_compensatorio); comisiones empresa; comisión intermediario desde comisiones_orden solo si no hay par Pandy misma orden+moneda; CC huérfanas con montos negados en JSON. modo_pago: caja_tipo o modos_pago vía transacción. SECURITY INVOKER / RLS.';
+COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON por bolsa (mismo criterio que gp_operativa_resumen): caja manual/órdenes cerrado no anulado; CC cliente/inter pendiente+cerrado excl. comisión por concepto/ENUM y excl. CC_RESULTADO_ECONOMICO_COMPENSATORIO (bolsa dedicada cc_resultado_economico_compensatorio); comisiones empresa; comisión intermediario desde comisiones_orden solo si no hay par Pandy misma orden+moneda; CC huérfanas con montos negados en JSON. modo_pago: caja_tipo o modos_pago vía transacción. Cada fila incluye cc_estado (pendiente/cerrado o cerrado en caja/comisiones) y es_movimiento_manual en CC para el detalle G/P en front. SECURITY INVOKER / RLS.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_detalle(date, date, text) TO authenticated;

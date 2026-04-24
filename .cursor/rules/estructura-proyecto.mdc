@@ -17,7 +17,7 @@ Mantener siempre esta organización para que sea **simple y eficiente** encontra
 | **`presentacion/`** | Propuesta comercial y presupuesto: guion para PowerPoint, CSV de presupuesto, versión web. Actualizar al cambiar alcance o tarifa (ver regla bitácora). | `PROPUESTA_COMERCIAL.md`, `presupuesto.csv`, `index.html` |
 | **`Base/`** | Archivo(s) Excel de origen si la app los usa. No modificar estructura sin actualizar script y documentación. | (opcional) |
 | **`assets/`** | Logos e iconos: favicon, logo de app, iconos de monedas (USD, ARS, EUR), iconos de cajas (cash, Banco), SP_logo para presentación. | `favicon-*.png`, `cash.png`, `Banco.webp`, `Icono_*.avif/webp`, `SP_logo.svg` |
-| **Raíz** | Config (`package.json`, `config.example.js`), `.gitignore`, `index.html`, `main.js`, **`pandi-release-blurb.js`** (novedades modal «Nueva versión»; el build emite `dist/pandi-release.json`). | |
+| **Raíz** | Config (`package.json`, `config.example.js`), `.gitignore`, **`.vercelignore`** (rutas que Vercel **no** sube al builder: docs/, sql/, tests/, etc.; ver `docs/GIT_Y_VERCEL.md` §4f), `index.html`, `main.js`, **`pandi-release-blurb.js`** (novedades modal «Nueva versión»; el build emite `dist/pandi-release.json`). | |
 | **`.cursor/rules/`** | Reglas del agente (incluye **`responsive-pwa-skill.mdc`** → skill en `.cursor/skills/responsive-pwa-web-design/`; **`supabase-mcp.mdc`** → uso proactivo del MCP de Supabase cuando aplique). | |
 
 ## Cursor — skill responsive/PWA en el repo
