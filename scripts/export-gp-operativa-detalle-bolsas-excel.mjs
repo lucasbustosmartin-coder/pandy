@@ -1,3 +1,7 @@
+// NO pegar en Supabase SQL Editor: es JavaScript/Node, no SQL (error 42601 cerca de "import").
+// En la raíz del repo: npm run excel:gp-bolsas  (o: node scripts/export-gp-operativa-detalle-bolsas-excel.mjs)
+// Para consulta solo-SQL en el editor, usar: sql/consulta_gp_operativa_detalle_flat_via_rpc.sql
+
 /**
  * Exporta a Excel el detalle G/P Operativa por bolsa (toda la historia: p_desde / p_hasta null).
  * Llama al RPC `gp_operativa_detalle` por cada bolsa (misma lógica que el panel y que las consultas MCP).
@@ -32,6 +36,7 @@ const BOLSAS = [
   'cc_resultado_economico_compensatorio',
   'comisiones_acuerdo_pandy',
   'comisiones_acuerdo_intermediario',
+  'ganancia_devengada_orden',
 ];
 
 function parseArgs() {
@@ -72,6 +77,7 @@ function fuenteFromBolsa(bolsa, id, _concepto) {
   if (bolsa === 'comisiones_acuerdo_intermediario') {
     return id && String(id).startsWith('co-') ? 'comisiones_orden' : 'movimientos_cuenta_corriente_intermediario';
   }
+  if (bolsa === 'ganancia_devengada_orden') return 'comisiones_orden (neto pandy vs intermediario)';
   return '';
 }
 

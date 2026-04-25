@@ -7498,6 +7498,10 @@ const GP_OPERATIVA_DETALLE_BOLSAS = [
   { key: 'cc_resultado_economico_compensatorio', titulo: 'Resultado económico compensatorio (CC)' },
   { key: 'comisiones_acuerdo_pandy', titulo: 'Comisión del acuerdo (empresa)' },
   { key: 'comisiones_acuerdo_intermediario', titulo: 'Comisión del acuerdo (intermediario)' },
+  {
+    key: 'ganancia_devengada_orden',
+    titulo: 'Ganancia devengada por comisiones (por orden, empresa − intermediario)',
+  },
 ];
 
 /** Textos para alertas de parejas CC↔caja en `control_calidad_informe`. */
@@ -7884,7 +7888,7 @@ function loadControlCalidadVista() {
     });
 }
 
-/** Filas planas del último desglose «total» (siete bolsas, cada fila con `_gpBolsa`); para ver solo una moneda en todas las filas. */
+/** Filas planas del último desglose «total» (siete bolsas + ganancia devengada por orden, cada fila con `_gpBolsa`); para ver solo una moneda en todas las filas. */
 let pandiGpDetalleCacheTotalFilas = null;
 
 const GP_DETALLE_EYE_SVG =
@@ -8424,42 +8428,70 @@ function openModalGpOperativaDetalle(bolsa, opt) {
 
   if (bolsa === 'total') {
     if (titulo) titulo.textContent = 'G/P Operativa — desglose por bolsa';
-    const keys = GP_OPERATIVA_DETALLE_BOLSAS.map((x) => x.key);
+    const BOLSA_GAN_ORD = 'ganancia_devengada_orden';
+    const keys = GP_OPERATIVA_DETALLE_BOLSAS.map((x) => x.key).filter((k) => k !== BOLSA_GAN_ORD);
     Promise.all(keys.map((k) => pandiLoadGpOperativaDetalleFilas(k).then((rows) => ({ k, rows }))))
-      .then((results) => {
+      .then((results) =>
+        pandiLoadGpOperativaDetalleFilas(BOLSA_GAN_ORD).then((ganRows) => ({ results, ganRows })),
+      )
+      .then(({ results, ganRows }) => {
         if (loading) loading.style.display = 'none';
-        const todasLasFilas = results.flatMap(({ k, rows }) =>
-          (rows || []).map((row) => Object.assign({}, row, { _gpBolsa: k })),
+        const sec7 = results
+          .map(({ k, rows }) => {
+            const meta = GP_OPERATIVA_DETALLE_BOLSAS.find((x) => x.key === k);
+            const t = meta ? meta.titulo : k;
+            return (
+              '<section class="gp-detalle-seccion"><h4 class="gp-detalle-seccion-titulo">' +
+              escapeHtml(t) +
+              '</h4><div class="tabla-clientes-wrap tabla-gp-detalle-wrap">' +
+              pandiHtmlGpOperativaDetalleTablaYCards(
+                rows,
+                { bolsaKey: k, mostrarOjosMontoPorMoneda: true },
+                { bolsaKey: k, monedaFiltro: '' },
+              ) +
+              '</div></section>'
+            );
+          })
+          .join('');
+        const metaGan = GP_OPERATIVA_DETALLE_BOLSAS.find((x) => x.key === BOLSA_GAN_ORD);
+        const tGan = metaGan ? metaGan.titulo : BOLSA_GAN_ORD;
+        const secGan =
+          '<section class="gp-detalle-seccion gp-detalle-seccion--gan-orden" aria-label="Ganancia devengada por orden">' +
+          '<h4 class="gp-detalle-seccion-titulo">' +
+          escapeHtml(tGan) +
+          '</h4>' +
+          '<p class="gp-detalle-consolidado-subhint">Una fila por orden: suma de comisión a empresa <strong>menos</strong> comisión a intermediario en ' +
+          '<code>comisiones_orden</code>. ' +
+          'Eso <strong>es</strong> el resultado de comisiones de la operación (p. ej. orden 104 ≈ 130 USD) <strong>sin</strong> sumar caja ni ' +
+          'cuenta corriente con el cobro principal — esas bolsas arriba sirven al P&amp;L total, no a «ganancia por orden sola».</p>' +
+          '<div class="tabla-clientes-wrap tabla-gp-detalle-wrap">' +
+          pandiHtmlGpOperativaDetalleTablaYCards(
+            ganRows || [],
+            { bolsaKey: BOLSA_GAN_ORD, mostrarOjosMontoPorMoneda: true },
+            { bolsaKey: BOLSA_GAN_ORD, monedaFiltro: '' },
+          ) +
+          '</div></section>';
+        const todasLasFilas = results
+          .flatMap(({ k, rows }) => (rows || []).map((row) => Object.assign({}, row, { _gpBolsa: k })))
+          .concat(
+            (ganRows || []).map((row) => Object.assign({}, row, { _gpBolsa: BOLSA_GAN_ORD })),
+          );
+        const filasPl = todasLasFilas.filter(
+          (r) => r._gpBolsa !== 'caja_manual' && r._gpBolsa !== BOLSA_GAN_ORD,
         );
-        const filasPl = todasLasFilas.filter((r) => r._gpBolsa !== 'caja_manual');
         const filasCaja = todasLasFilas.filter((r) => r._gpBolsa === 'caja_manual');
         pandiGpDetalleCacheTotalFilas = todasLasFilas;
         content.innerHTML =
-          results
-            .map(({ k, rows }) => {
-              const meta = GP_OPERATIVA_DETALLE_BOLSAS.find((x) => x.key === k);
-              const t = meta ? meta.titulo : k;
-              return (
-                '<section class="gp-detalle-seccion"><h4 class="gp-detalle-seccion-titulo">' +
-                escapeHtml(t) +
-                '</h4><div class="tabla-clientes-wrap tabla-gp-detalle-wrap">' +
-                pandiHtmlGpOperativaDetalleTablaYCards(
-                  rows,
-                  { bolsaKey: k, mostrarOjosMontoPorMoneda: true },
-                  { bolsaKey: k, monedaFiltro: '' },
-                ) +
-                '</div></section>'
-              );
-            })
-            .join('') +
-            '<div class="gp-detalle-antes-consolidado-wrap">' +
-            pandiHtmlGpResumenTresCards(filasPl, {
-              bolsaKey: 'total',
-              resumenTotalModo: 'pl_devengado',
-              monedaFiltro: '',
-            }) +
-            '</div>' +
-            pandiHtmlGpDetalleSeccionConsolidado(filasPl, filasCaja);
+          sec7 +
+          secGan +
+          '<div class="gp-detalle-antes-consolidado-wrap">' +
+          pandiHtmlGpResumenTresCards(filasPl, {
+            bolsaKey: 'total',
+            resumenTotalModo: 'pl_devengado',
+            monedaFiltro: '',
+          }) +
+          '</div>' +
+          pandiHtmlGpDetalleSeccionConsolidado(filasPl, filasCaja);
       })
       .catch((err) => {
         if (loading) loading.style.display = 'none';

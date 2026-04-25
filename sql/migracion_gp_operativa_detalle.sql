@@ -21,7 +21,8 @@ BEGIN
     'cc_intermediario',
     'cc_resultado_economico_compensatorio',
     'comisiones_acuerdo_pandy',
-    'comisiones_acuerdo_intermediario'
+    'comisiones_acuerdo_intermediario',
+    'ganancia_devengada_orden'
   ) THEN
     RETURN '[]'::jsonb;
   END IF;
@@ -672,10 +673,58 @@ BEGIN
     );
   END IF;
 
+  /* Una fila por (orden, moneda): comisión Pandy − comisión intermediario en comisiones_orden.
+     Es la **ganancia devengada** atribuible a comisiones; no suma caja ni CC (nominal). No entra
+     en gp_operativa_resumen (evita doble conteo con las bolsas de comisión; uso: «orden N = 130»). */
+  IF b = 'ganancia_devengada_orden' THEN
+    RETURN (
+      SELECT COALESCE(
+        jsonb_agg(row_json ORDER BY fecha_sort DESC, id_sort DESC),
+        '[]'::jsonb
+      )
+      FROM (
+        SELECT
+          jsonb_build_object(
+            'id', ('gp-gan-ord-' || s.orden_id::text || '-' || upper(trim(COALESCE(s.moneda, '')))),
+            'fecha', o.fecha::text,
+            'moneda', s.moneda,
+            'monto', s.net,
+            'concepto', 'Ganancia devengada por comisiones (empresa − intermediario) según comisiones_orden',
+            'tipo_movimiento', NULL,
+            'modo_pago', '',
+            'orden_numero', o.numero,
+            'transaccion_numero', NULL,
+            'entidad', cl.nombre,
+            'cc_estado', 'cerrado',
+            'es_movimiento_manual', false
+          ) AS row_json,
+          o.fecha AS fecha_sort,
+          ('gp-gan-ord-' || s.orden_id::text || '-' || upper(trim(COALESCE(s.moneda, '')))) AS id_sort
+        FROM (
+          SELECT
+            c.orden_id,
+            c.moneda,
+            (
+              COALESCE(SUM(c.monto) FILTER (WHERE c.beneficiario = 'pandy'), 0::numeric)
+              - COALESCE(SUM(c.monto) FILTER (WHERE c.beneficiario = 'intermediario'), 0::numeric)
+            ) AS net
+          FROM public.comisiones_orden c
+          INNER JOIN public.ordenes o2 ON o2.id = c.orden_id
+          WHERE lower(COALESCE(o2.estado, '')) <> 'anulada'
+            AND (p_desde IS NULL OR o2.fecha >= p_desde)
+            AND (p_hasta IS NULL OR o2.fecha <= p_hasta)
+          GROUP BY c.orden_id, c.moneda
+        ) s
+        INNER JOIN public.ordenes o ON o.id = s.orden_id
+        LEFT JOIN public.clientes cl ON cl.id = o.cliente_id
+      ) sub
+    );
+  END IF;
+
   RETURN '[]'::jsonb;
 END;
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON por bolsa (mismo criterio que gp_operativa_resumen): caja manual/órdenes cerrado no anulado; CC cliente: movimientos flujo + gp-cobro-nominal-* (mr−Cp) en passthrough; CC intermediario: movimientos + gp-reparto-* + gp-bruto-ccint-cierre-* (netea flujo+reparto a 0 cuando S≈mr y no passthrough); comisiones Pandy; intermediario si solo int. o passthrough; CC huérfanas negadas en JSON. modo_pago: caja_tipo o modos_pago vía transacción. SECURITY INVOKER / RLS.';
+COMMENT ON FUNCTION public.gp_operativa_detalle(date, date, text) IS 'Listado JSON por bolsa: caja manual/órdenes; CC cliente+passthrough; CC intermediario+reparto/bruto; comisiones Pandy; intermediario; **ganancia_devengada_orden** (Pandy−int en comisiones_orden, sin caja/CC nominal; no en resumen 7 bolsas). Compensatorio; modo_pago. SECURITY INVOKER / RLS.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_detalle(date, date, text) TO authenticated;
