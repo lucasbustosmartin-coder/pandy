@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.4',
+  versionLabel: 'v3.8.5',
   lines: [
-    'Desde Cuenta corriente → Saldos (clientes) podés generar un informe en PDF por período, con fechas y saldo inicial opcional.',
-    'En el panel, G/P Operativa muestra primero el resultado devengado (libro y caja por órdenes) y aparte la caja manual, con textos de ayuda más claros.',
+    'Cuenta corriente con intermediario: al sincronizar, la comisión del acuerdo en el libro del intermediario queda con el signo acordado (siempre en negativo, como el resto del flujo).',
+    'G/P operativa: el panel y el detalle por bolsa reflejan mejor el reparto entre libro, caja por órdenes y caja manual según lo que venís operando.',
   ],
 };
