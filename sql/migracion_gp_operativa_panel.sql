@@ -120,33 +120,145 @@ AS $$
        ) q),
       '{}'::jsonb
     ),
+    /* CC cliente: movimientos de flujo + ajuste P&G en passthrough (|S_int|+com≈mr): **monto_recibido − comisión Pandy**
+       en moneda_recibida. Con S en CC int y bolsa comisiones (−Ci + Cp) se cumple (mr−Cp)+S+(−Ci)+Cp = Cp (sin doble conteo del spread). */
     'cc_cliente',
     COALESCE(
       (SELECT jsonb_object_agg(q.moneda, q.s)
        FROM (
-         SELECT m.moneda, SUM(m.monto)::numeric AS s
-         FROM public.movimientos_cuenta_corriente m
-         WHERE m.estado IN ('pendiente', 'cerrado')
-           AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
-           AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
-           AND (p_desde IS NULL OR m.fecha >= p_desde)
-           AND (p_hasta IS NULL OR m.fecha <= p_hasta)
-         GROUP BY m.moneda
+         SELECT u.moneda, SUM(u.m)::numeric AS s
+         FROM (
+           SELECT m.moneda, m.monto::numeric AS m
+           FROM public.movimientos_cuenta_corriente m
+           WHERE m.estado IN ('pendiente', 'cerrado')
+             AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+             AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
+             AND (p_desde IS NULL OR m.fecha >= p_desde)
+             AND (p_hasta IS NULL OR m.fecha <= p_hasta)
+           UNION ALL
+           SELECT
+             o.moneda_recibida,
+             (
+               o.monto_recibido::numeric
+               - COALESCE(
+                 (
+                   SELECT SUM(cp.monto)::numeric
+                   FROM public.comisiones_orden cp
+                   WHERE cp.orden_id = o.id
+                     AND cp.beneficiario = 'pandy'
+                     AND upper(trim(cp.moneda)) = upper(trim(o.moneda_recibida))
+                 ),
+                 0::numeric
+               )
+             )::numeric
+           FROM public.ordenes o
+           WHERE lower(COALESCE(o.estado, '')) <> 'anulada'
+             AND o.monto_recibido IS NOT NULL
+             AND o.moneda_recibida IS NOT NULL
+             AND (p_desde IS NULL OR o.fecha >= p_desde)
+             AND (p_hasta IS NULL OR o.fecha <= p_hasta)
+             AND EXISTS (
+               SELECT 1
+               FROM (
+                 SELECT
+                   c.orden_id,
+                   c.moneda,
+                   (
+                     COALESCE(SUM(c.monto) FILTER (WHERE c.beneficiario = 'pandy'), 0::numeric)
+                     + COALESCE(SUM(c.monto) FILTER (WHERE c.beneficiario = 'intermediario'), 0::numeric)
+                   ) AS com_total
+                 FROM public.comisiones_orden c
+                 WHERE c.orden_id = o.id
+                 GROUP BY c.orden_id, c.moneda
+                 HAVING COUNT(*) FILTER (WHERE c.beneficiario = 'pandy') >= 1
+                   AND COUNT(*) FILTER (WHERE c.beneficiario = 'intermediario') >= 1
+               ) r
+               INNER JOIN (
+                 SELECT
+                   m2.orden_id,
+                   m2.moneda,
+                   SUM(m2.monto)::numeric AS s_flujo
+                 FROM public.movimientos_cuenta_corriente_intermediario m2
+                 WHERE m2.estado IN ('pendiente', 'cerrado')
+                   AND m2.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+                   AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m2.concepto, ''), m2.clasificacion_movimiento)
+                   AND (p_desde IS NULL OR m2.fecha >= p_desde)
+                   AND (p_hasta IS NULL OR m2.fecha <= p_hasta)
+                 GROUP BY m2.orden_id, m2.moneda
+               ) f ON f.orden_id = r.orden_id AND f.moneda = r.moneda
+               WHERE r.orden_id = o.id
+                 AND upper(trim(r.moneda)) = upper(trim(o.moneda_recibida))
+                 AND abs(abs(f.s_flujo) + r.com_total - o.monto_recibido::numeric) <= 0.01
+             )
+         ) u
+         GROUP BY u.moneda
        ) q),
       '{}'::jsonb
     ),
+    /* CC intermediario: reparto — restar comisiones del agregado solo si es **bruto**; si |S|+com≈mr (passthrough neto),
+       el flujo real (p. ej. −me) se mantiene; el cobro nominal **mr** entra en bolsa **cc_cliente** (sintético P&G).
+       Si S≈mr pero **no** passthrough (comisiones «encima» del nominal; cobra intermediario), aporte P&G de esta orden+moneda = **0**:
+       la ganancia empresa es solo comisión Pandy (bolsa comisiones); evita arrastrar el principal como «ganancia». */
     'cc_intermediario',
     COALESCE(
       (SELECT jsonb_object_agg(q.moneda, q.s)
        FROM (
-         SELECT m.moneda, SUM(m.monto)::numeric AS s
-         FROM public.movimientos_cuenta_corriente_intermediario m
-         WHERE m.estado IN ('pendiente', 'cerrado')
-           AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
-           AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
-           AND (p_desde IS NULL OR m.fecha >= p_desde)
-           AND (p_hasta IS NULL OR m.fecha <= p_hasta)
-         GROUP BY m.moneda
+         SELECT x.moneda, SUM(x.s_neto_orden)::numeric AS s
+         FROM (
+           SELECT
+             b.moneda,
+             (
+               CASE
+                 WHEN r.com_total_reparto IS NOT NULL
+                   AND o.monto_recibido IS NOT NULL
+                   AND upper(trim(COALESCE(b.moneda, ''))) = upper(trim(COALESCE(o.moneda_recibida, '')))
+                   AND abs(abs(b.s) + r.com_total_reparto - o.monto_recibido::numeric) <= 0.01
+                 THEN b.s
+                 WHEN r.com_total_reparto IS NOT NULL
+                   AND o.monto_recibido IS NOT NULL
+                   AND upper(trim(COALESCE(b.moneda, ''))) = upper(trim(COALESCE(o.moneda_recibida, '')))
+                   AND abs(b.s - o.monto_recibido::numeric) <= 0.01
+                   AND NOT (
+                     abs(abs(b.s) + r.com_total_reparto - o.monto_recibido::numeric) <= 0.01
+                   )
+                 THEN 0::numeric
+                 ELSE b.s - COALESCE(r.com_total_reparto, 0::numeric)
+               END
+             ) AS s_neto_orden
+           FROM (
+             SELECT
+               m.orden_id,
+               m.moneda,
+               SUM(m.monto)::numeric AS s
+             FROM public.movimientos_cuenta_corriente_intermediario m
+             WHERE m.estado IN ('pendiente', 'cerrado')
+               AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+               AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
+               AND (p_desde IS NULL OR m.fecha >= p_desde)
+               AND (p_hasta IS NULL OR m.fecha <= p_hasta)
+             GROUP BY m.orden_id, m.moneda
+           ) b
+           LEFT JOIN (
+             SELECT
+               c.orden_id,
+               c.moneda,
+               (
+                 COALESCE(SUM(c.monto) FILTER (WHERE c.beneficiario = 'pandy'), 0::numeric)
+                 + COALESCE(SUM(c.monto) FILTER (WHERE c.beneficiario = 'intermediario'), 0::numeric)
+               ) AS com_total_reparto
+             FROM public.comisiones_orden c
+             INNER JOIN public.ordenes o2 ON o2.id = c.orden_id
+             WHERE lower(COALESCE(o2.estado, '')) <> 'anulada'
+               AND (p_desde IS NULL OR o2.fecha >= p_desde)
+               AND (p_hasta IS NULL OR o2.fecha <= p_hasta)
+             GROUP BY c.orden_id, c.moneda
+             HAVING COUNT(*) FILTER (WHERE c.beneficiario = 'pandy') >= 1
+               AND COUNT(*) FILTER (WHERE c.beneficiario = 'intermediario') >= 1
+           ) r ON r.orden_id IS NOT DISTINCT FROM b.orden_id
+             AND r.moneda = b.moneda
+           LEFT JOIN public.ordenes o ON o.id = b.orden_id
+         ) x
+         GROUP BY x.moneda
        ) q),
       '{}'::jsonb
     ),
@@ -187,7 +299,8 @@ AS $$
       '{}'::jsonb
     ),
     /* Comisión intermediario: filas huérfanas o solo intermediario en comisiones_orden (NEGADO en Total).
-       Si para la misma orden+moneda ya existe fila Pandy, los montos son reparto (Pandy = ganancia neta marca; intermediario = parte del acuerdo): NO volver a restar intermediario o el Total queda 49 en vez de 74,50 sobre 100 de spread (orden 49). */
+       Con reparto Pandy+intermediario: se excluye la fila intermediario salvo **passthrough** (|S_int|+com≈mr), donde
+       debe figurar en P&G para cerrar con cobro nominal en cc_cliente + flujo int. + comisión Pandy = ganancia neta. */
     'comisiones_acuerdo_intermediario',
     COALESCE(
       (SELECT jsonb_object_agg(q.moneda, q.s)
@@ -201,12 +314,43 @@ AS $$
              AND lower(COALESCE(o.estado, '')) <> 'anulada'
              AND (p_desde IS NULL OR o.fecha >= p_desde)
              AND (p_hasta IS NULL OR o.fecha <= p_hasta)
-             AND NOT EXISTS (
-               SELECT 1
-               FROM public.comisiones_orden c_p
-               WHERE c_p.orden_id = c.orden_id
-                 AND c_p.moneda = c.moneda
-                 AND c_p.beneficiario = 'pandy'
+             AND (
+               NOT EXISTS (
+                 SELECT 1
+                 FROM public.comisiones_orden c_p
+                 WHERE c_p.orden_id = c.orden_id
+                   AND c_p.moneda = c.moneda
+                   AND c_p.beneficiario = 'pandy'
+               )
+               OR EXISTS (
+                 SELECT 1
+                 FROM public.ordenes o_pt
+                 WHERE o_pt.id = c.orden_id
+                   AND lower(COALESCE(o_pt.estado, '')) <> 'anulada'
+                   AND o_pt.monto_recibido IS NOT NULL
+                   AND upper(trim(c.moneda)) = upper(trim(o_pt.moneda_recibida))
+                   AND abs(
+                     abs((
+                       SELECT COALESCE(SUM(m.monto), 0::numeric)
+                       FROM public.movimientos_cuenta_corriente_intermediario m
+                       WHERE m.orden_id = c.orden_id
+                         AND m.moneda = c.moneda
+                         AND m.estado IN ('pendiente', 'cerrado')
+                         AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+                         AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
+                         AND (p_desde IS NULL OR m.fecha >= p_desde)
+                         AND (p_hasta IS NULL OR m.fecha <= p_hasta)
+                     ))
+                     + (
+                       SELECT COALESCE(SUM(co.monto), 0::numeric)
+                       FROM public.comisiones_orden co
+                       WHERE co.orden_id = c.orden_id
+                         AND co.moneda = c.moneda
+                         AND co.beneficiario IN ('pandy', 'intermediario')
+                     )
+                     - o_pt.monto_recibido::numeric
+                   ) <= 0.01
+               )
              )
            UNION ALL
            SELECT m.moneda, m.monto::numeric AS monto
@@ -257,6 +401,6 @@ AS $$
   );
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'P&L operativo de la empresa por moneda (siete bolsas, sin doble conteo): caja manual y caja por órdenes solo cerrado no anulado; CC cliente e intermediario pendiente+cerrado (excl. anulado), excl. comisión del acuerdo en flujo y excl. clasificación CC_RESULTADO_ECONOMICO_COMPENSATORIO (va en su bolsa); bolsa cc_resultado_economico_compensatorio = suma CC cliente+intermediario con ese ENUM; comisiones_acuerdo_pandy desde comisiones_orden+CC huérfanas; comisiones_acuerdo_intermediario: NEGADO solo para filas intermediario sin par Pandy misma orden+moneda. Suma de las siete claves = caja+libro (chequeo); en app Panel Inicio la fila principal P&L devengado suma CC+compensatorio+comisiones+caja_ordenes (sin caja_manual). Fechas inclusive; NULL = sin límite.';
+COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'P&L operativo de la empresa por moneda (siete bolsas, sin doble conteo): caja manual y caja por órdenes solo cerrado no anulado; CC cliente: flujo + sintético passthrough **monto_recibido − comisión Pandy** (moneda_recibida); CC intermediario: S si passthrough (|S|+com≈mr); **0** si S≈monto_recibido y no passthrough (cobro bruto intermediario; ganancia solo comisión Pandy); si no, S−com (reparto bruto clásico); comisiones Pandy; intermediario NEGADO salvo passthrough. Suma siete claves = caja+libro. Fechas inclusive; NULL = sin límite.';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_resumen(date, date) TO authenticated;

@@ -13856,18 +13856,17 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         const rawComInt = Number(reglaComIntUsd.signo) * baseInt;
         const magComInt = Math.abs(rawComInt);
         /**
-         * **ci_pc** (ingreso MonR Cliente→Intermediario, ver `patronInstrumentacionIntDesdeTransacciones`): la comisión
-         * debe respetar el **signo** de la regla (típ. −). **cp_ic** (ingreso C→Pandy en MonR): la convención histórica
-         * del motor era **+|monto|** salvo rollout MonR/MonE o tasa transferencia al int. (−); no forzar `signo` ahí
-         * para no invertir casos correctos en + (p. ej. órdenes prod 8, 41, 58, 67, 68, 81).
+         * Fila **Comisión del acuerdo** (intermediario) en CC int. — **siempre `monto = −|comisión|`**.
+         * Lectura (docs / negocio):
+         * - Empresa cobra MonR, intermediario paga MonE y hay comisión int.: **MonE y comisión en negativo** (la empresa
+         *   le debe al intermediario principal + comisión, según otras filas y saldo).
+         * - Intermediario cobra MonR, empresa paga MonE y hay comisión int.: en **otras** filas el cobro de MonR va en el
+         *   signo acordado; la **comisión** sigue en **negativo** (reconocimiento a Pandy). El “inverso” no invierte el
+         *   signo de **esta** línea: el **+** en cobros salía del bug **+|m|* en cp_ic y chocaba con
+         *   `insertarFilasComisionIntermediarioCcPorTransaccion` (−com) y con inventario en prod.
+         * El `signo` de `reglaComIntUsd` solo ajusta el cálculo de magnitud; el asiento en CC int. para comisión = **-magComInt**.
          */
-        const montoCcInt =
-          patronIntUsdCom === 'ci_pc'
-            ? rawComInt
-            : nuevaReglaCcRolloutActivoParaOrden(orden, transacciones) ||
-                ordenIntermediarioComisionTasaTransferenciaCcNegativaMotor(orden)
-              ? -magComInt
-              : magComInt;
+        const montoCcInt = -magComInt;
         if (Math.abs(montoCcInt) >= 1e-12) {
           const monedaInt = String(filaInt.moneda || reglaComIntUsd.moneda || 'USD').toUpperCase();
           if (feComInt) {

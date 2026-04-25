@@ -7,6 +7,7 @@
     "excel:matriz-cc-reglas": "node scripts/export-matriz-cc-reglas-excel.js",
     "excel:matriz-clasificacion-gp": "node scripts/crear-matriz-clasificacion-gp-xlsx.js",
     "excel:matriz-clasificacion-trx": "node scripts/crear-matriz-clasificacion-transaccion-xlsx.js",
+    "excel:gp-bolsas": "node scripts/export-gp-operativa-detalle-bolsas-excel.mjs",
     "sql:vuelco-inicial": "node scripts/generar-sql-vuelco-inicial.js",
     "dev:supabase:volcar": "node scripts/volcar-pandy-dev-supabase.js",
     "sql:bootstrap:dev": "node scripts/concat-bootstrap-dev-sql.js",
