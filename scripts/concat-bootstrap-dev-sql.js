@@ -88,6 +88,7 @@ const BOOTSTRAP_FILES = [
   'migracion_tipos_operacion_moneda_in_out.sql',
   'migracion_tipos_operacion_orden_visual.sql',
   'migracion_tipos_operacion_icono.sql',
+  'migracion_tipos_operacion_cheque_ars_comision_modalidad.sql',
   'reglas_de_negocio_tabla.sql',
   'migracion_reglas_ci_pc_egreso_pandy_monto_transaccion.sql',
   'migracion_reglas_ci_pc_egreso_pandy_ee_linea1_negativo.sql',

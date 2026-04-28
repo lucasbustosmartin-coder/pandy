@@ -5,6 +5,7 @@
   "scripts": {
     "bitacora": "node scripts/crear-bitacora-excel.js",
     "excel:matriz-cc-reglas": "node scripts/export-matriz-cc-reglas-excel.js",
+    "excel:gp-aporte-ordenes": "node scripts/export-gp-operativa-aporte-por-orden-excel.mjs",
     "excel:matriz-clasificacion-gp": "node scripts/crear-matriz-clasificacion-gp-xlsx.js",
     "excel:matriz-clasificacion-trx": "node scripts/crear-matriz-clasificacion-transaccion-xlsx.js",
     "excel:gp-bolsas": "node scripts/export-gp-operativa-detalle-bolsas-excel.mjs",
@@ -50,6 +51,7 @@
     "test:e2e-cc-ars-eur-int-inversa": "TIPO_CODIGO=ARS-EUR playwright test tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1",
     "test:e2e-cc-02-03": "playwright test tests/e2e/02-cc-tipos-activos-combinaciones.spec.js tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1",
     "test:e2e-cc-cheque-ars": "playwright test tests/e2e/01-cc-combinaciones.spec.js --reporter=line --workers=1",
+    "test:e2e-cc-cheque-comision-invariante": "playwright test tests/e2e/92-cheque-ars-comision-acuerdo-invariante.spec.js --reporter=line --workers=1",
     "test:e2e-cc-activos-completo": "playwright test tests/e2e/01-cc-combinaciones.spec.js tests/e2e/02-cc-tipos-activos-combinaciones.spec.js tests/e2e/03-cc-intermediario-inversa-combinaciones.spec.js --reporter=line --workers=1",
     "playwright:install": "playwright install chromium",
     "lighthouse": "node scripts/lighthouse-pandi.js",

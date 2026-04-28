@@ -85,6 +85,10 @@ El comando **`npx vercel --yes`** (Preview con URL efímera) es **opcional** cua
 
 Ejecutá el **sync de rama** §4c y la **verificación** §4d siempre; **`npx vercel --yes`** solo si aplica lo indicado en §4e.
 
+### 4a. Ventana horaria recomendada (Argentina, operativa)
+
+Para cambios visibles en operación (wizard, instrumentación, CC, etc.), conviene **planificar el `push` a `main`** (y con ello el deploy de **Production** que dispara Git) **fuera del horario pico**, en la práctica **a partir de las 20:00** hora **Argentina** — timezone **`America/Argentina/Buenos_Aires`** (**20:00 ART**). No modifica el flujo técnico de Vercel; es criterio LyP de **menor impacto** sobre usuarios en vivo.
+
 ### Dirección de la paridad (no al revés)
 
 - **Referencia del front** en el producto es **`main`** en el estado en que quedó **tras publicar en producción** (deploy **Production** en **https://pandi.company**, disparado por Git al pushear `main` en Pandi — ver **§4e**).  

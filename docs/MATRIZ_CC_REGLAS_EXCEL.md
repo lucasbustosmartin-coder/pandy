@@ -8,6 +8,11 @@ En **Pandy producción** la tabla `cc_modelo_reglas` puede **no existir** (migra
 
 Para evaluar con el cliente el objetivo de que la **composición** de movimientos en cuenta corriente sea **coherente en todo el ciclo** (equivalente al cierre, persistiendo pendiente/ejecutado como en la nueva regla MonR/MonE), usar el borrador **`docs/BORRADOR_CC_COMPOSICION_FIJA_ESTADO.md`**: indica **qué hojas del mismo Excel** cruzar (**Matriz**, **Reglas_de_negocio**, **Resumen_por_tipo**) y un checklist de fases. El archivo **`docs/MATRIZ_CC_REGLAS_MOVIMIENTOS.xlsx`** es el artefacto común.
 
+## Registro breve (auditoría)
+
+- **2026-04-28:** Regenerado con `npm run excel:matriz-cc-reglas` antes de ventana de deploy; artefacto `docs/MATRIZ_CC_REGLAS_MOVIMIENTOS.xlsx`. **Deploy producción:** conviene push a `main` **≥ 20:00 ART** (ver `docs/GIT_Y_VERCEL.md` § **4a**).
+- **2026-04:** Tras cambios en motor CC / G&P / E2E, regenerar este Excel con el mismo proyecto Supabase que use la app (`npm run excel:matriz-cc-reglas`). La hoja **Matriz** también refleja `scripts/matriz-cc-combinaciones-activas.js` (ramas `[main] …`); si solo tocó G/P SQL (`gp_operativa_*`), la matriz CC puede no variar pero conviene **volver a exportar** para fecha de archivo y coherencia con `reglas_de_negocio` vigentes.
+
 ## Generar el Excel
 
 1. En la raíz del repo, `.env` con al menos:

@@ -66,6 +66,261 @@ COMMENT ON FUNCTION public.gp_movimiento_caja_ordenes_es_comision_gp(text, publi
 GRANT EXECUTE ON FUNCTION public.gp_movimiento_cc_cuenta_es_linea_comision_gp(text, public.movimiento_clasificacion) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.gp_movimiento_caja_ordenes_es_comision_gp(text, public.movimiento_clasificacion) TO authenticated;
 
+/* USD-USD + intermediario: Pandy ingresa al cliente e intermediario paga al cliente (sin ingreso cliente→Pandy).
+   El libro usa CC cliente (cobertura/préstamo/compensación) y CC intermediario del principal; en P&G la
+   realidad económica es solo comisión Pandy (p. ej. orden 81). No confundir con passthrough caja+cliente→Pandy (58/104). */
+CREATE OR REPLACE FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cobertura_pandy_cc(
+  p_orden_id uuid,
+  p_moneda text
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.ordenes o
+    WHERE o.id = p_orden_id
+      AND o.intermediario_id IS NOT NULL
+      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))
+      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        o.moneda_recibida
+      )))
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    WHERE i.orden_id = p_orden_id
+      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
+      )))
+      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
+      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
+      AND lower(COALESCE(t.pagador, '')) = 'pandy'
+      AND lower(COALESCE(t.cobrador, '')) = 'cliente'
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    WHERE i.orden_id = p_orden_id
+      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
+      )))
+      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
+      AND lower(COALESCE(t.tipo, '')) = 'egreso'
+      AND lower(COALESCE(t.pagador, '')) = 'intermediario'
+      AND lower(COALESCE(t.cobrador, '')) = 'cliente'
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    WHERE i.orden_id = p_orden_id
+      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
+      )))
+      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
+      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
+      AND lower(COALESCE(t.pagador, '')) = 'cliente'
+      AND lower(COALESCE(t.cobrador, '')) = 'pandy'
+  );
+$$;
+
+COMMENT ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cobertura_pandy_cc(uuid, text) IS 'G/P Operativa: orden USD-USD con intermediario donde Pandy ingresa al cliente y el intermediario paga al cliente, sin ingreso cliente→Pandy (p. ej. 81). Sirve para no duplicar nominal en CC intermediario / comisión intermediario / sintético passthrough; el desembolso Pandy→cliente en CC cliente **sí** aporta al P&L junto a la comisión Pandy.';
+
+GRANT EXECUTE ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cobertura_pandy_cc(uuid, text) TO authenticated;
+
+/* USD-USD + intermediario: el cliente liquida al intermediario (ingreso en libro) y a Pandy (egreso), sin ingreso cliente→Pandy.
+   CC cliente refleja préstamo/ajustes contables; en P&G solo comisión Pandy (p. ej. orden 85). Distinto de 8 (hay ingreso cliente→Pandy)
+   y de cobertura Pandy→cliente + intermediario→cliente (81). */
+CREATE OR REPLACE FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cliente_inter_y_pandy_cc(
+  p_orden_id uuid,
+  p_moneda text
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.ordenes o
+    WHERE o.id = p_orden_id
+      AND o.intermediario_id IS NOT NULL
+      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))
+      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        o.moneda_recibida
+      )))
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    WHERE i.orden_id = p_orden_id
+      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
+      )))
+      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
+      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
+      AND lower(COALESCE(t.pagador, '')) = 'cliente'
+      AND lower(COALESCE(t.cobrador, '')) = 'intermediario'
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    WHERE i.orden_id = p_orden_id
+      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
+      )))
+      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
+      AND lower(COALESCE(t.tipo, '')) = 'egreso'
+      AND lower(COALESCE(t.pagador, '')) = 'cliente'
+      AND lower(COALESCE(t.cobrador, '')) = 'pandy'
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    WHERE i.orden_id = p_orden_id
+      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
+      )))
+      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
+      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
+      AND lower(COALESCE(t.pagador, '')) = 'cliente'
+      AND lower(COALESCE(t.cobrador, '')) = 'pandy'
+  );
+$$;
+
+COMMENT ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cliente_inter_y_pandy_cc(uuid, text) IS 'G/P Operativa: USD-USD con intermediario, cliente ingresa al intermediario y egresa a Pandy ejecutadas, sin ingreso cliente→Pandy; flujo nominal CC cliente no es ganancia devengada (solo comisión Pandy).';
+
+GRANT EXECUTE ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cliente_inter_y_pandy_cc(uuid, text) TO authenticated;
+
+/* USD-USD + intermediario: el cliente ingresa al intermediario y Pandy egresa al cliente (liberación), sin ingreso cliente→Pandy.
+   El nominal en CC cliente + CC intermediario no es ganancia devengada (solo comisiones del acuerdo; p. ej. orden 89 con spread mínimo).
+   Nombre ≤63 caracteres (límite identificador Postgres). */
+CREATE OR REPLACE FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cli_int_pandy_libera_cli_cc(
+  p_orden_id uuid,
+  p_moneda text
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.ordenes o
+    WHERE o.id = p_orden_id
+      AND o.intermediario_id IS NOT NULL
+      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))
+      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        o.moneda_recibida
+      )))
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    WHERE i.orden_id = p_orden_id
+      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
+      )))
+      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
+      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
+      AND lower(COALESCE(t.pagador, '')) = 'cliente'
+      AND lower(COALESCE(t.cobrador, '')) = 'intermediario'
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    WHERE i.orden_id = p_orden_id
+      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
+      )))
+      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
+      AND lower(COALESCE(t.tipo, '')) = 'egreso'
+      AND lower(COALESCE(t.pagador, '')) = 'pandy'
+      AND lower(COALESCE(t.cobrador, '')) = 'cliente'
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    WHERE i.orden_id = p_orden_id
+      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
+        NULLIF(btrim(p_moneda), ''),
+        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
+      )))
+      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
+      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
+      AND lower(COALESCE(t.pagador, '')) = 'cliente'
+      AND lower(COALESCE(t.cobrador, '')) = 'pandy'
+  );
+$$;
+
+COMMENT ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cli_int_pandy_libera_cli_cc(uuid, text) IS 'G/P Operativa: USD-USD con intermediario, ingreso cliente→intermediario y egreso Pandy→cliente ejecutados, sin ingreso cliente→Pandy; nominal CC no devenga en P&L (solo comisiones; ej. orden 89).';
+
+GRANT EXECUTE ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cli_int_pandy_libera_cli_cc(uuid, text) TO authenticated;
+
+/* Excluir movimientos **reales** de CC cliente del P&L solo en patrones 85 y 89 (nominal libro ≠ devengo).
+   No incluye cobertura 81: ahí el aporte en CC cliente incluye lo que Pandy puso a nombre del cliente + comisión. */
+CREATE OR REPLACE FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cc_cli_excl_nom_85_89_gp(
+  p_orden_id uuid,
+  p_moneda text
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+SET search_path = ''
+AS $$
+  SELECT public.gp_operativa_orden_es_usd_usd_inter_cliente_inter_y_pandy_cc(p_orden_id, p_moneda)
+      OR public.gp_operativa_orden_es_usd_usd_inter_cli_int_pandy_libera_cli_cc(p_orden_id, p_moneda);
+$$;
+
+COMMENT ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cc_cli_excl_nom_85_89_gp(uuid, text) IS 'G/P Operativa: excluir flujo nominal en **movimientos reales CC cliente** solo para patrones 85 y 89 (no 81).';
+
+GRANT EXECUTE ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cc_cli_excl_nom_85_89_gp(uuid, text) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(
+  p_orden_id uuid,
+  p_moneda text
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+SET search_path = ''
+AS $$
+  SELECT public.gp_operativa_orden_es_usd_usd_inter_cobertura_pandy_cc(p_orden_id, p_moneda)
+      OR public.gp_operativa_orden_es_usd_usd_inter_cliente_inter_y_pandy_cc(p_orden_id, p_moneda)
+      OR public.gp_operativa_orden_es_usd_usd_inter_cli_int_pandy_libera_cli_cc(p_orden_id, p_moneda);
+$$;
+
+COMMENT ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(uuid, text) IS 'G/P Operativa: orden+moneda con ajuste nominal en CC intermediario / comisión int. / sintético passthrough (81, 85, 89). En **CC cliente movimientos reales** solo excluye 85 y 89 (`cc_cli_excl_nom_85_89_gp`); en 81 el desembolso Pandy→cliente en CC cliente sí suma junto a comisión Pandy.';
+
+GRANT EXECUTE ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(uuid, text) TO authenticated;
+
 ALTER TABLE public.tipos_movimiento_caja
   ADD COLUMN IF NOT EXISTS incluye_gp_operativo boolean NOT NULL DEFAULT true;
 
@@ -114,6 +369,74 @@ AS $$
          WHERE m.orden_id IS NOT NULL
            AND m.estado = 'cerrado'
            AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
+          AND NOT (
+            EXISTS (
+              SELECT 1
+              FROM public.transacciones te
+              INNER JOIN public.instrumentacion ie ON ie.id = te.instrumentacion_id
+              INNER JOIN public.ordenes oe ON oe.id = ie.orden_id
+              WHERE te.id = m.transaccion_id
+                AND oe.id = m.orden_id
+                AND oe.intermediario_id IS NOT NULL
+                AND upper(trim(COALESCE(oe.moneda_recibida, ''))) = upper(trim(COALESCE(oe.moneda_entregada, '')))
+                AND lower(COALESCE(te.tipo, '')) = 'ingreso'
+                AND lower(COALESCE(te.pagador, '')) = 'cliente'
+                AND lower(COALESCE(te.cobrador, '')) = 'pandy'
+            )
+            AND EXISTS (
+              SELECT 1
+              FROM public.transacciones tx
+              INNER JOIN public.instrumentacion ix ON ix.id = tx.instrumentacion_id
+              WHERE ix.orden_id = m.orden_id
+                AND upper(trim(COALESCE(tx.moneda, ''))) = upper(trim(COALESCE(m.moneda, '')))
+                AND lower(COALESCE(tx.estado, '')) = 'ejecutada'
+                AND lower(COALESCE(tx.tipo, '')) = 'egreso'
+                AND lower(COALESCE(tx.pagador, '')) = 'intermediario'
+                AND lower(COALESCE(tx.cobrador, '')) = 'cliente'
+            )
+          )
+          AND NOT (
+            EXISTS (
+              SELECT 1
+              FROM public.transacciones te
+              INNER JOIN public.instrumentacion ie ON ie.id = te.instrumentacion_id
+              INNER JOIN public.ordenes oe ON oe.id = ie.orden_id
+              WHERE te.id = m.transaccion_id
+                AND oe.id = m.orden_id
+                AND oe.intermediario_id IS NOT NULL
+                AND upper(trim(COALESCE(oe.moneda_recibida, ''))) = upper(trim(COALESCE(oe.moneda_entregada, '')))
+                AND lower(COALESCE(te.tipo, '')) = 'egreso'
+                AND lower(COALESCE(te.pagador, '')) = 'pandy'
+                AND lower(COALESCE(te.cobrador, '')) = 'cliente'
+            )
+            AND EXISTS (
+              SELECT 1
+              FROM public.transacciones ti
+              INNER JOIN public.instrumentacion ii ON ii.id = ti.instrumentacion_id
+              WHERE ii.orden_id = m.orden_id
+                AND upper(trim(COALESCE(ti.moneda, ''))) = upper(trim(COALESCE(m.moneda, '')))
+                AND lower(COALESCE(ti.estado, '')) = 'ejecutada'
+                AND lower(COALESCE(ti.tipo, '')) = 'ingreso'
+                AND lower(COALESCE(ti.pagador, '')) = 'cliente'
+                AND lower(COALESCE(ti.cobrador, '')) = 'intermediario'
+            )
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM public.ordenes od
+            WHERE od.id = m.orden_id
+              AND lower(COALESCE(od.estado, '')) <> 'anulada'
+              AND od.monto_recibido IS NOT NULL
+              AND od.monto_entregado IS NOT NULL
+              AND od.moneda_recibida IS NOT NULL
+              AND od.moneda_entregada IS NOT NULL
+              AND upper(trim(COALESCE(od.moneda_recibida, ''))) <> upper(trim(COALESCE(od.moneda_entregada, '')))
+              AND NOT EXISTS (
+                SELECT 1
+                FROM public.comisiones_orden co
+                WHERE co.orden_id = od.id
+              )
+          )
            AND (p_desde IS NULL OR m.fecha >= p_desde)
            AND (p_hasta IS NULL OR m.fecha <= p_hasta)
          GROUP BY m.moneda
@@ -133,6 +456,52 @@ AS $$
            WHERE m.estado IN ('pendiente', 'cerrado')
              AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
              AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
+             AND NOT (
+               EXISTS (
+                 SELECT 1
+                 FROM public.ordenes ox
+                 WHERE ox.id = m.orden_id
+                   AND ox.intermediario_id IS NOT NULL
+                   AND upper(trim(COALESCE(ox.moneda_recibida, ''))) = upper(trim(COALESCE(ox.moneda_entregada, '')))
+               )
+               AND abs(
+                 (
+                   SELECT COALESCE(SUM(m2.monto), 0::numeric)
+                   FROM public.movimientos_cuenta_corriente m2
+                   WHERE m2.orden_id = m.orden_id
+                     AND upper(trim(COALESCE(m2.moneda, ''))) = upper(trim(COALESCE(m.moneda, '')))
+                     AND m2.estado IN ('pendiente', 'cerrado')
+                     AND m2.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+                     AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m2.concepto, ''), m2.clasificacion_movimiento)
+                     AND (p_desde IS NULL OR m2.fecha >= p_desde)
+                     AND (p_hasta IS NULL OR m2.fecha <= p_hasta)
+                 )
+                 + (
+                   SELECT COALESCE(SUM(co.monto), 0::numeric)
+                   FROM public.comisiones_orden co
+                   WHERE co.orden_id = m.orden_id
+                     AND upper(trim(co.moneda)) = upper(trim(m.moneda))
+                     AND co.beneficiario IN ('pandy', 'intermediario')
+                 )
+               ) <= 0.01
+             )
+             AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cli_excl_nom_85_89_gp(m.orden_id, m.moneda)
+             AND NOT EXISTS (
+               SELECT 1
+               FROM public.ordenes od
+               WHERE od.id = m.orden_id
+                 AND lower(COALESCE(od.estado, '')) <> 'anulada'
+                 AND od.monto_recibido IS NOT NULL
+                 AND od.monto_entregado IS NOT NULL
+                 AND od.moneda_recibida IS NOT NULL
+                 AND od.moneda_entregada IS NOT NULL
+                 AND upper(trim(COALESCE(od.moneda_recibida, ''))) <> upper(trim(COALESCE(od.moneda_entregada, '')))
+                 AND NOT EXISTS (
+                   SELECT 1
+                   FROM public.comisiones_orden co
+                   WHERE co.orden_id = od.id
+                 )
+             )
              AND (p_desde IS NULL OR m.fecha >= p_desde)
              AND (p_hasta IS NULL OR m.fecha <= p_hasta)
            UNION ALL
@@ -157,6 +526,17 @@ AS $$
              AND o.moneda_recibida IS NOT NULL
              AND (p_desde IS NULL OR o.fecha >= p_desde)
              AND (p_hasta IS NULL OR o.fecha <= p_hasta)
+             AND NOT EXISTS (
+               SELECT 1
+               FROM public.movimientos_caja mz
+               WHERE mz.orden_id = o.id
+                 AND upper(trim(COALESCE(mz.moneda, ''))) = upper(trim(COALESCE(o.moneda_recibida, '')))
+                 AND mz.estado = 'cerrado'
+                 AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(mz.concepto, ''), mz.clasificacion_movimiento)
+                 AND (p_desde IS NULL OR mz.fecha >= p_desde)
+                 AND (p_hasta IS NULL OR mz.fecha <= p_hasta)
+             )
+             AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(o.id, o.moneda_recibida)
              AND EXISTS (
                SELECT 1
                FROM (
@@ -190,6 +570,42 @@ AS $$
                  AND upper(trim(r.moneda)) = upper(trim(o.moneda_recibida))
                  AND abs(abs(f.s_flujo) + r.com_total - o.monto_recibido::numeric) <= 0.01
              )
+           UNION ALL
+           SELECT
+             o.moneda_recibida,
+             o.monto_recibido::numeric
+           FROM public.ordenes o
+           WHERE lower(COALESCE(o.estado, '')) <> 'anulada'
+             AND o.monto_recibido IS NOT NULL
+             AND o.monto_entregado IS NOT NULL
+             AND o.moneda_recibida IS NOT NULL
+             AND o.moneda_entregada IS NOT NULL
+             AND upper(trim(COALESCE(o.moneda_recibida, ''))) <> upper(trim(COALESCE(o.moneda_entregada, '')))
+             AND NOT EXISTS (
+               SELECT 1
+               FROM public.comisiones_orden co
+               WHERE co.orden_id = o.id
+             )
+             AND (p_desde IS NULL OR o.fecha >= p_desde)
+             AND (p_hasta IS NULL OR o.fecha <= p_hasta)
+           UNION ALL
+           SELECT
+             o.moneda_entregada,
+             (-o.monto_entregado::numeric)
+           FROM public.ordenes o
+           WHERE lower(COALESCE(o.estado, '')) <> 'anulada'
+             AND o.monto_recibido IS NOT NULL
+             AND o.monto_entregado IS NOT NULL
+             AND o.moneda_recibida IS NOT NULL
+             AND o.moneda_entregada IS NOT NULL
+             AND upper(trim(COALESCE(o.moneda_recibida, ''))) <> upper(trim(COALESCE(o.moneda_entregada, '')))
+             AND NOT EXISTS (
+               SELECT 1
+               FROM public.comisiones_orden co
+               WHERE co.orden_id = o.id
+             )
+             AND (p_desde IS NULL OR o.fecha >= p_desde)
+             AND (p_hasta IS NULL OR o.fecha <= p_hasta)
          ) u
          GROUP BY u.moneda
        ) q),
@@ -209,10 +625,37 @@ AS $$
              b.moneda,
              (
                CASE
+                 WHEN public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(b.orden_id, b.moneda) THEN 0::numeric
                  WHEN r.com_total_reparto IS NOT NULL
                    AND o.monto_recibido IS NOT NULL
                    AND upper(trim(COALESCE(b.moneda, ''))) = upper(trim(COALESCE(o.moneda_recibida, '')))
                    AND abs(abs(b.s) + r.com_total_reparto - o.monto_recibido::numeric) <= 0.01
+                  AND EXISTS (
+                    SELECT 1
+                    FROM public.movimientos_caja mzp
+                    WHERE mzp.orden_id = b.orden_id
+                      AND upper(trim(COALESCE(mzp.moneda, ''))) = upper(trim(COALESCE(b.moneda, '')))
+                      AND mzp.estado = 'cerrado'
+                      AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(mzp.concepto, ''), mzp.clasificacion_movimiento)
+                      AND (p_desde IS NULL OR mzp.fecha >= p_desde)
+                      AND (p_hasta IS NULL OR mzp.fecha <= p_hasta)
+                  )
+                  AND abs((
+                    SELECT COALESCE(SUM(mc.monto), 0::numeric)
+                    FROM public.movimientos_cuenta_corriente mc
+                    WHERE mc.orden_id = b.orden_id
+                      AND upper(trim(COALESCE(mc.moneda, ''))) = upper(trim(COALESCE(b.moneda, '')))
+                      AND mc.estado IN ('pendiente', 'cerrado')
+                      AND mc.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+                      AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(mc.concepto, ''), mc.clasificacion_movimiento)
+                      AND (p_desde IS NULL OR mc.fecha >= p_desde)
+                      AND (p_hasta IS NULL OR mc.fecha <= p_hasta)
+                  )) <= 0.01
+                THEN (-o.monto_recibido::numeric)
+                WHEN r.com_total_reparto IS NOT NULL
+                  AND o.monto_recibido IS NOT NULL
+                  AND upper(trim(COALESCE(b.moneda, ''))) = upper(trim(COALESCE(o.moneda_recibida, '')))
+                  AND abs(abs(b.s) + r.com_total_reparto - o.monto_recibido::numeric) <= 0.01
                  THEN b.s
                  WHEN r.com_total_reparto IS NOT NULL
                    AND o.monto_recibido IS NOT NULL
@@ -221,6 +664,39 @@ AS $$
                    AND NOT (
                      abs(abs(b.s) + r.com_total_reparto - o.monto_recibido::numeric) <= 0.01
                    )
+                 THEN 0::numeric
+                 /* CHEQUE-ARS (misma moneda) con intermediario: solo comisión Pandy en comisiones_orden; el flujo CC int. sin líneas de comisión GP
+                    suma el «hueco» principal (= comisión) pero ya entra en bolsa comisiones_acuerdo_pandy → no duplicar en CC intermediario. */
+                 WHEN r.com_total_reparto IS NULL
+                   AND o.intermediario_id IS NOT NULL
+                   AND o.monto_recibido IS NOT NULL
+                   AND o.moneda_recibida IS NOT NULL
+                   AND o.moneda_entregada IS NOT NULL
+                   AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))
+                   AND upper(trim(COALESCE(b.moneda, ''))) = upper(trim(COALESCE(o.moneda_recibida, '')))
+                   AND NOT EXISTS (
+                     SELECT 1
+                     FROM public.comisiones_orden ci
+                     WHERE ci.orden_id = o.id
+                       AND ci.beneficiario = 'intermediario'
+                       AND upper(trim(ci.moneda)) = upper(trim(b.moneda))
+                   )
+                   AND EXISTS (
+                     SELECT 1
+                     FROM public.comisiones_orden cp
+                     WHERE cp.orden_id = o.id
+                       AND cp.beneficiario = 'pandy'
+                       AND upper(trim(cp.moneda)) = upper(trim(b.moneda))
+                   )
+                   AND abs(
+                     abs(b.s) - (
+                       SELECT COALESCE(SUM(cp2.monto), 0::numeric)
+                       FROM public.comisiones_orden cp2
+                       WHERE cp2.orden_id = o.id
+                         AND cp2.beneficiario = 'pandy'
+                         AND upper(trim(cp2.moneda)) = upper(trim(b.moneda))
+                     )
+                   ) <= 0.01
                  THEN 0::numeric
                  ELSE b.s - COALESCE(r.com_total_reparto, 0::numeric)
                END
@@ -234,6 +710,75 @@ AS $$
              WHERE m.estado IN ('pendiente', 'cerrado')
                AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
                AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
+               AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(m.orden_id, m.moneda)
+              AND NOT (
+                EXISTS (
+                  SELECT 1
+                  FROM public.ordenes o4
+                  WHERE o4.id = m.orden_id
+                    AND o4.intermediario_id IS NOT NULL
+                    AND upper(trim(COALESCE(o4.moneda_recibida, ''))) = upper(trim(COALESCE(o4.moneda_entregada, '')))
+                )
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.transacciones t_in
+                  INNER JOIN public.instrumentacion i_in ON i_in.id = t_in.instrumentacion_id
+                  WHERE i_in.orden_id = m.orden_id
+                    AND upper(trim(COALESCE(t_in.moneda, ''))) = upper(trim(COALESCE(m.moneda, '')))
+                    AND lower(COALESCE(t_in.estado, '')) = 'ejecutada'
+                    AND lower(COALESCE(t_in.tipo, '')) = 'ingreso'
+                    AND lower(COALESCE(t_in.pagador, '')) = 'cliente'
+                    AND lower(COALESCE(t_in.cobrador, '')) = 'pandy'
+                )
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.transacciones t_out
+                  INNER JOIN public.instrumentacion i_out ON i_out.id = t_out.instrumentacion_id
+                  WHERE i_out.orden_id = m.orden_id
+                    AND upper(trim(COALESCE(t_out.moneda, ''))) = upper(trim(COALESCE(m.moneda, '')))
+                    AND lower(COALESCE(t_out.estado, '')) = 'ejecutada'
+                    AND lower(COALESCE(t_out.tipo, '')) = 'egreso'
+                    AND lower(COALESCE(t_out.pagador, '')) = 'intermediario'
+                    AND lower(COALESCE(t_out.cobrador, '')) = 'cliente'
+                )
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.movimientos_caja mz
+                  WHERE mz.orden_id = m.orden_id
+                    AND upper(trim(COALESCE(mz.moneda, ''))) = upper(trim(COALESCE(m.moneda, '')))
+                    AND mz.estado = 'cerrado'
+                    AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(mz.concepto, ''), mz.clasificacion_movimiento)
+                    AND (p_desde IS NULL OR mz.fecha >= p_desde)
+                    AND (p_hasta IS NULL OR mz.fecha <= p_hasta)
+                    AND EXISTS (
+                      SELECT 1
+                      FROM public.transacciones te
+                      INNER JOIN public.instrumentacion ie ON ie.id = te.instrumentacion_id
+                      WHERE te.id = mz.transaccion_id
+                        AND ie.orden_id = m.orden_id
+                        AND upper(trim(COALESCE(te.moneda, ''))) = upper(trim(COALESCE(m.moneda, '')))
+                        AND lower(COALESCE(te.tipo, '')) = 'ingreso'
+                        AND lower(COALESCE(te.pagador, '')) = 'cliente'
+                        AND lower(COALESCE(te.cobrador, '')) = 'pandy'
+                    )
+                )
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM public.ordenes od
+                WHERE od.id = m.orden_id
+                  AND lower(COALESCE(od.estado, '')) <> 'anulada'
+                  AND od.monto_recibido IS NOT NULL
+                  AND od.monto_entregado IS NOT NULL
+                  AND od.moneda_recibida IS NOT NULL
+                  AND od.moneda_entregada IS NOT NULL
+                  AND upper(trim(COALESCE(od.moneda_recibida, ''))) <> upper(trim(COALESCE(od.moneda_entregada, '')))
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM public.comisiones_orden co
+                    WHERE co.orden_id = od.id
+                  )
+              )
                AND (p_desde IS NULL OR m.fecha >= p_desde)
                AND (p_hasta IS NULL OR m.fecha <= p_hasta)
              GROUP BY m.orden_id, m.moneda
@@ -312,6 +857,65 @@ AS $$
            INNER JOIN public.ordenes o ON o.id = c.orden_id
            WHERE c.beneficiario = 'intermediario'
              AND lower(COALESCE(o.estado, '')) <> 'anulada'
+             AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(o.id, c.moneda)
+            AND NOT (
+              o.intermediario_id IS NOT NULL
+              AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))
+              AND EXISTS (
+                SELECT 1
+                FROM public.transacciones t_in
+                INNER JOIN public.instrumentacion i_in ON i_in.id = t_in.instrumentacion_id
+                WHERE i_in.orden_id = o.id
+                  AND upper(trim(COALESCE(t_in.moneda, ''))) = upper(trim(c.moneda))
+                  AND lower(COALESCE(t_in.estado, '')) = 'ejecutada'
+                  AND lower(COALESCE(t_in.tipo, '')) = 'ingreso'
+                  AND lower(COALESCE(t_in.pagador, '')) = 'cliente'
+                  AND lower(COALESCE(t_in.cobrador, '')) = 'pandy'
+              )
+              AND EXISTS (
+                SELECT 1
+                FROM public.transacciones t_out
+                INNER JOIN public.instrumentacion i_out ON i_out.id = t_out.instrumentacion_id
+                WHERE i_out.orden_id = o.id
+                  AND upper(trim(COALESCE(t_out.moneda, ''))) = upper(trim(c.moneda))
+                  AND lower(COALESCE(t_out.estado, '')) = 'ejecutada'
+                  AND lower(COALESCE(t_out.tipo, '')) = 'egreso'
+                  AND lower(COALESCE(t_out.pagador, '')) = 'intermediario'
+                  AND lower(COALESCE(t_out.cobrador, '')) = 'cliente'
+              )
+              AND EXISTS (
+                SELECT 1
+                FROM public.movimientos_caja mz
+                WHERE mz.orden_id = o.id
+                  AND upper(trim(COALESCE(mz.moneda, ''))) = upper(trim(c.moneda))
+                  AND mz.estado = 'cerrado'
+                  AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(mz.concepto, ''), mz.clasificacion_movimiento)
+                  AND (p_desde IS NULL OR mz.fecha >= p_desde)
+                  AND (p_hasta IS NULL OR mz.fecha <= p_hasta)
+                  AND EXISTS (
+                    SELECT 1
+                    FROM public.transacciones te
+                    INNER JOIN public.instrumentacion ie ON ie.id = te.instrumentacion_id
+                    WHERE te.id = mz.transaccion_id
+                      AND ie.orden_id = o.id
+                      AND upper(trim(COALESCE(te.moneda, ''))) = upper(trim(c.moneda))
+                      AND lower(COALESCE(te.tipo, '')) = 'ingreso'
+                      AND lower(COALESCE(te.pagador, '')) = 'cliente'
+                      AND lower(COALESCE(te.cobrador, '')) = 'pandy'
+                  )
+              )
+              AND abs((
+                SELECT COALESCE(SUM(mc.monto), 0::numeric)
+                FROM public.movimientos_cuenta_corriente mc
+                WHERE mc.orden_id = o.id
+                  AND upper(trim(COALESCE(mc.moneda, ''))) = upper(trim(c.moneda))
+                  AND mc.estado IN ('pendiente', 'cerrado')
+                  AND mc.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+                  AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(mc.concepto, ''), mc.clasificacion_movimiento)
+                  AND (p_desde IS NULL OR mc.fecha >= p_desde)
+                  AND (p_hasta IS NULL OR mc.fecha <= p_hasta)
+              )) <= 0.01
+            )
              AND (p_desde IS NULL OR o.fecha >= p_desde)
              AND (p_hasta IS NULL OR o.fecha <= p_hasta)
              AND (
@@ -350,6 +954,29 @@ AS $$
                      )
                      - o_pt.monto_recibido::numeric
                    ) <= 0.01
+                  AND NOT (
+                    EXISTS (
+                      SELECT 1
+                      FROM public.movimientos_caja mzp
+                      WHERE mzp.orden_id = c.orden_id
+                        AND upper(trim(COALESCE(mzp.moneda, ''))) = upper(trim(c.moneda))
+                        AND mzp.estado = 'cerrado'
+                        AND NOT public.gp_movimiento_caja_ordenes_es_comision_gp(COALESCE(mzp.concepto, ''), mzp.clasificacion_movimiento)
+                        AND (p_desde IS NULL OR mzp.fecha >= p_desde)
+                        AND (p_hasta IS NULL OR mzp.fecha <= p_hasta)
+                    )
+                    AND abs((
+                      SELECT COALESCE(SUM(mc.monto), 0::numeric)
+                      FROM public.movimientos_cuenta_corriente mc
+                      WHERE mc.orden_id = c.orden_id
+                        AND upper(trim(COALESCE(mc.moneda, ''))) = upper(trim(c.moneda))
+                        AND mc.estado IN ('pendiente', 'cerrado')
+                        AND mc.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
+                        AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(mc.concepto, ''), mc.clasificacion_movimiento)
+                        AND (p_desde IS NULL OR mc.fecha >= p_desde)
+                        AND (p_hasta IS NULL OR mc.fecha <= p_hasta)
+                    )) <= 0.01
+                  )
                )
              )
            UNION ALL
@@ -367,6 +994,13 @@ AS $$
                  WHERE c2.orden_id = m.orden_id
                    AND c2.beneficiario = 'intermediario'
                )
+             )
+             /* Línea sintética CC int. «Comisión del acuerdo» es simetría contable si la comisión ya está en comisiones_orden (Pandy). */
+             AND NOT EXISTS (
+               SELECT 1
+               FROM public.comisiones_orden cp
+               WHERE cp.orden_id = m.orden_id
+                 AND cp.beneficiario = 'pandy'
              )
          ) u
          GROUP BY u.moneda

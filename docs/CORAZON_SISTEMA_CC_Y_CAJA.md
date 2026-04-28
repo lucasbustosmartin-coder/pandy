@@ -54,6 +54,7 @@ Este documento define los principios que **siempre** deben cumplirse. El sistema
   - Cálculo o escritura de movimientos de **cuenta corriente cliente** → revisar impacto en **cuenta corriente intermediario** (misma convención de signos, pendientes, resumen, colores).
   - Cálculo o escritura de movimientos de **cuenta corriente intermediario** → revisar impacto en **cuenta corriente cliente** y en la coherencia global (órdenes con intermediario: flujos cliente ↔ intermediario se reflejan en Pandy–Intermediario).
 - Validar siempre **ambas** cuentas (cliente e intermediario) al cambiar reglas de movimientos, sync, resumen o detalle.
+- **CHEQUE-ARS + intermediario:** convención documentada de **+spread** en CC cliente, omisión de comisión sintética duplicada en CC intermediario cuando toda la comisión es del intermediario y coincide con el spread en Tx3/Tx4, y visibilidad en detalle Movimientos (`incluir_en_detalle`). Ver **`docs/CHEQUE_ARS_INTERMEDIARIO.md`**.
 
 ---
 

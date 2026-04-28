@@ -1379,7 +1379,10 @@ function pandiOrdenOfflineOpenModal() {
             const modo = im((t.icono_modo || 'auto').toString().trim().toLowerCase());
             const baseNombre = t.nombre != null ? String(t.nombre).trim() : '';
             const etiqueta = nombreTipoOperacionOrdenUi(t);
-            return `<option value="${escapeHtml(String(t.id))}" data-nombre-base="${escAttr(baseNombre)}" data-codigo="${escapeHtml(t.codigo || '')}" data-icono-modo="${escapeHtml(modo)}" data-icono-url="${escUrl(t.icono_url_publica || '')}" data-moneda-in="${escapeHtml((t.moneda_in || 'USD').toString().trim().toUpperCase())}" data-moneda-out="${escapeHtml((t.moneda_out || 'USD').toString().trim().toUpperCase())}" data-usa-intermediario="${t.usa_intermediario === true ? 'true' : 'false'}">${escapeHtml(etiqueta)}</option>`;
+            const chModOff = (t.cheque_ars_comision_modalidad != null && String(t.cheque_ars_comision_modalidad).trim() !== '')
+              ? escapeHtml(String(t.cheque_ars_comision_modalidad).trim().toLowerCase())
+              : '';
+            return `<option value="${escapeHtml(String(t.id))}" data-nombre-base="${escAttr(baseNombre)}" data-codigo="${escapeHtml(t.codigo || '')}" data-icono-modo="${escapeHtml(modo)}" data-icono-url="${escUrl(t.icono_url_publica || '')}" data-moneda-in="${escapeHtml((t.moneda_in || 'USD').toString().trim().toUpperCase())}" data-moneda-out="${escapeHtml((t.moneda_out || 'USD').toString().trim().toUpperCase())}" data-usa-intermediario="${t.usa_intermediario === true ? 'true' : 'false'}" data-cheque-ars-comision-modalidad="${chModOff}">${escapeHtml(etiqueta)}</option>`;
           })
           .join('');
     }
@@ -1453,6 +1456,11 @@ async function pandiOrdenOfflineGuardarEnCola() {
   let tasaDescuentoIntermediarioSave = null;
   const esCh = esTipoOperacionChequeArs(codigo, monedaRecibida, monedaEntregada);
   if (esCh) {
+    const chOff = ordenChequeArsComisionModalidadDesdeSelectOption(selTipo);
+    if (chOff !== 'legacy') {
+      showToast('Cola local: CHEQUE-ARS solo con reparto «Legacy» en este formulario, o guardá con conexión desde el wizard de orden.', 'error');
+      return;
+    }
     if (montoRecibido <= montoEntregado) {
       showToast('En CHEQUE-ARS el monto recibido debe ser mayor al entregado.', 'error');
       return;
@@ -1908,7 +1916,7 @@ function pandiRenderColaV2EditTablaOnline(orden, listaTrx, modosRows) {
         ? `<option value="${escapeHtml(String(t.modo_pago_id))}" selected>${escapeHtml(modo.nombre || modo.codigo || '–')}</option>`
         : pandiHtmlOptionsModosPagoRowsSelected(modosRows, t.modo_pago_id);
       const bloqEj = bloquearEjecutadaEgresoCheque(t);
-      const montoStr = formatImporteParaInput(t.monto);
+      const montoStr = formatMontoTransaccionTablaParaInput(t.monto, t.moneda);
       const pag = escapeHtml(String(t.pagador || '–'));
       const cob = escapeHtml(String(t.cobrador || '–'));
       const nro = t.numero != null ? escapeHtml(String(t.numero)) : '–';
@@ -2417,6 +2425,8 @@ let usdUsdComisionFijaConfig = { intermediario_id: '', opcion_a: 50, opcion_b: 7
 let ordenWizardUsdUsdCpIcIgnorarComisionFija = false;
 /** Decimales permitidos en campos de tasa (%) del wizard (alineado a `PANDI_TASA_PCT_DECIMALES_UI` en utils). */
 const PANDI_TASA_PCT_DECIMALES = PANDI_TASA_PCT_DECIMALES_UI;
+/** Campo USD editable en cruces ARS↔USD (wizard): input + salida desde TC. Aplica a USD-ARS y ARS-USD aunque el `codigo` de catálogo sea p. ej. compra_usd / vende_usd. */
+const PANDI_USD_ARS_CRUCE_DECIMALES = 8;
 const PANDI_LS_USD_COMISION_FIJA_PREF = 'pandi_usd_comision_fija_pref';
 
 function parseUsdUsdComisionFijaConfigJson(raw) {
@@ -3928,7 +3938,8 @@ function conceptoCajaTransaccionEspecial(nombreConcepto, moneda, monto, nroOrden
 /** Objeto monto_usd, monto_ars, monto_eur para inserts en movimientos_cuenta_corriente. Moneda que participa = valor; las demás = 0 (nunca null). */
 function montosCcPorMoneda(moneda, valor) {
   const v = Number(valor) || 0;
-  const mon = (moneda || 'USD').toUpperCase();
+  /** `CHEQUE` no es moneda contable: en Argentina el instrumento es siempre en ARS (`monedaCatalogoParaOrden`). */
+  const mon = String(monedaCatalogoParaOrden(moneda) || moneda || 'USD').toUpperCase();
   return {
     monto_usd: mon === 'USD' ? v : 0,
     monto_ars: mon === 'ARS' ? v : 0,
@@ -9234,7 +9245,7 @@ function openModalOrdenesPendientes(estadoFilter) {
       const intIds = [...new Set(list.map((o) => o.intermediario_id).filter(Boolean))];
       return Promise.all([
         clienteIds.length ? client.from('clientes').select('id, nombre').in('id', clienteIds) : Promise.resolve({ data: [] }),
-        tipoOpIds.length ? client.from('tipos_operacion').select('id, nombre, codigo, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica').in('id', tipoOpIds) : Promise.resolve({ data: [] }),
+        tipoOpIds.length ? client.from('tipos_operacion').select('id, nombre, codigo, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica, cheque_ars_comision_modalidad').in('id', tipoOpIds) : Promise.resolve({ data: [] }),
         intIds.length ? client.from('intermediarios').select('id, nombre').in('id', intIds) : Promise.resolve({ data: [] }),
       ]).then(([cr, tr, ir]) => {
         const clientesMap = {};
@@ -9249,6 +9260,7 @@ function openModalOrdenesPendientes(estadoFilter) {
             usa_intermediario: t.usa_intermediario === true,
             icono_modo: (t.icono_modo || 'auto').toString().trim().toLowerCase(),
             icono_url_publica: (t.icono_url_publica || '').toString().trim(),
+            cheque_ars_comision_modalidad: t.cheque_ars_comision_modalidad != null ? String(t.cheque_ars_comision_modalidad).trim().toLowerCase() : null,
           };
         });
         const intermediariosMap = {};
@@ -10210,15 +10222,15 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
   const lista = transacciones || [];
 
   const cidAcuerdo = orden.cliente_id || null;
-  const monR = (orden.moneda_recibida || 'USD').toUpperCase();
-  const monE = (orden.moneda_entregada || 'USD').toUpperCase();
+  const monR = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || 'USD').toUpperCase();
+  const monE = String(monedaCatalogoParaOrden(orden.moneda_entregada) || orden.moneda_entregada || 'USD').toUpperCase();
 
   lista.forEach((tRaw) => {
     const t = transaccionNormalizarPagCobVacios(tRaw);
     const estado = transaccionEstadoTextoNormalizado(t);
     const finalUId = t.usuario_id || t.p_usuario_id || fallbackUId || null;
     const tipo = (t.tipo || '').toLowerCase();
-    const mon = (t.moneda || 'USD').toUpperCase();
+    const mon = String(monedaCatalogoParaOrden(t.moneda) || t.moneda || 'USD').toUpperCase();
     const monto = Number(t.monto) || 0;
     /** Egresos/ajustes pueden persistir `monto` negativo; con `monto < 1e-9` se omitía toda la trx (sin delegar a ManualTrx ni aplicar C→C monE). */
     if (Math.abs(monto) < 1e-9) return;
@@ -11045,8 +11057,7 @@ function contribucionSaldoIntermediarioModeloCc(orden, transacciones) {
     return out;
   }
   const mr = Number(orden.monto_recibido) || 0;
-  const tasa = Number(orden.tasa_descuento_intermediario) || 0;
-  const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : (tasa >= 1 && tasa <= 100 ? mr * (1 - tasa / 100) : mr);
+  const montoEfectivoInt = montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr);
   if (sumIngresoIntEjecutado >= montoEfectivoInt - 1e-6) return out;
   out.ARS = -(montoEfectivoInt - sumIngresoIntEjecutado);
   return out;
@@ -11093,7 +11104,10 @@ function normalizarCodigoTipoOperacion(codigo) {
   return s.replace(/\s*-\s*/g, '-').replace(/\s*\(\s*/g, '-').replace(/\s*\)\s*/g, '').replace(/\s+/g, '');
 }
 
-/** Catálogo tipos_operacion: CHEQUE en UI; en tabla ordenes solo USD/EUR/ARS (cheque = ARS). */
+/**
+ * Catálogo / UI: «CHEQUE» describe el instrumento, no una moneda de liquidación.
+ * En Argentina no hay cheques en USD u otra divisa para este producto: todo lo contable en CC/caja va en **ARS**.
+ */
 function monedaCatalogoParaOrden(m) {
   const u = (m || '').toString().trim().toUpperCase();
   return u === 'CHEQUE' ? 'ARS' : u;
@@ -11136,10 +11150,49 @@ function esTipoOperacionChequeArs(codigo, monedaIn, monedaOut) {
   return (mi === 'CHEQUE' && mo === 'ARS') || (mi === 'ARS' && mo === 'CHEQUE');
 }
 
+/**
+ * Solo operaciones que comparten la matriz **`reglas_de_negocio` `tipo_operacion_codigo = 'CHEQUE-ARS'`** (sync CC / motor / refuerzo comisión spread):
+ * catálogo con par **CHEQUE+ARS** en `moneda_in`/`moneda_out`, o código normalizado que **comienza por `CHEQUE-ARS`** (p. ej. subtipos `CHEQUE-ARS-INT`).
+ * No basta con que el código contenga la palabra «CHEQUE» (evita futuros `CHEQUE-*` en otro fiat que no usen esa matriz).
+ */
+function esTipoOperacionChequeArsMatrizReglasCc(codigoRaw, monedaIn, monedaOut) {
+  const mi = (monedaIn || '').toString().trim().toUpperCase();
+  const mo = (monedaOut || '').toString().trim().toUpperCase();
+  if ((mi === 'CHEQUE' && mo === 'ARS') || (mi === 'ARS' && mo === 'CHEQUE')) return true;
+  const cNorm = String(normalizarCodigoTipoOperacion(codigoRaw) || codigoRaw || '').toUpperCase().trim();
+  return cNorm.startsWith('CHEQUE-ARS');
+}
+
 function esTipoOperacionChequeArsDesdeJoin(tiposNested, codigoFallback) {
   const t = tiposNested && (Array.isArray(tiposNested) ? tiposNested[0] : tiposNested);
   const codigo = (t && t.codigo) || codigoFallback || '';
   return esTipoOperacionChequeArs(codigo, t && t.moneda_in, t && t.moneda_out);
+}
+
+/**
+ * CHEQUE-ARS en sync: tipo resuelto desde `toJoin` / `ordenes.tipos_operacion` (par CHEQUE+ARS o código `CHEQUE-ARS*`),
+ * no solo `codigoOrdenRaw` suelto (evita perder el tipo cuando el embed viene incompleto en otra capa).
+ */
+function esSyncOrdenTipoChequeArs(orden, codigoOrdenRaw, toJoin) {
+  if (!orden) return false;
+  const tj =
+    (toJoin && typeof toJoin === 'object' && (toJoin.codigo != null || toJoin.moneda_in != null || toJoin.moneda_out != null)
+      ? toJoin
+      : null) ||
+    (orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion)) ||
+    {};
+  const raw =
+    (codigoOrdenRaw != null && String(codigoOrdenRaw).trim() !== '' && String(codigoOrdenRaw).trim()) ||
+    (tj.codigo != null && String(tj.codigo).trim()) ||
+    '';
+  return (
+    esTipoOperacionChequeArsMatrizReglasCc(raw, tj.moneda_in, tj.moneda_out) ||
+    esTipoOperacionChequeArs(raw, tj.moneda_in, tj.moneda_out)
+  );
+}
+
+function esSyncOrdenChequeArsConIntermediario(orden, codigoOrdenRaw, toJoin) {
+  return esSyncOrdenTipoChequeArs(orden, codigoOrdenRaw, toJoin) && !!orden.intermediario_id;
 }
 
 /** Desde <option data-codigo data-moneda-in data-moneda-out> del tipo en el modal de orden. */
@@ -11153,17 +11206,131 @@ function esChequeArsDesdeSelectOption(opt) {
 }
 
 /**
+ * Modalidad de reparto CHEQUE-ARS (`tipos_operacion.cheque_ars_comision_modalidad`).
+ * `legacy` = null en BD: si tasa cliente = 0 e intermediario, tasa int. obligatoria > 0; si tasa cliente > 0, tasa int. en [0, 100).
+ */
+function ordenChequeArsComisionModalidadDesdeSelectOption(opt) {
+  if (!opt || !esChequeArsDesdeSelectOption(opt)) return 'legacy';
+  const v = String(opt.getAttribute('data-cheque-ars-comision-modalidad') || '').trim().toLowerCase();
+  if (v === 'sin_comision' || v === 'solo_intermediario' || v === 'solo_pandy') return v;
+  return 'legacy';
+}
+
+function ordenChequeArsComisionModalidadDesdeTipoRow(tipoRow) {
+  if (!tipoRow) return 'legacy';
+  const v = String(tipoRow.cheque_ars_comision_modalidad || '').trim().toLowerCase();
+  if (v === 'sin_comision' || v === 'solo_intermediario' || v === 'solo_pandy') return v;
+  return 'legacy';
+}
+
+/**
+ * Validación conjunta tasas % CHEQUE-ARS (cliente = descuento acuerdo; intermediario = % sobre monto recibido).
+ * `tasaClientePct` / `tasaIntPct`: null si vacío; número si parseable.
+ * Devuelve mensaje de error o null si OK.
+ */
+function ordenMensajeErrorTasasChequeArsModalidad(modalidad, usaIntermediario, tasaClientePct, tasaIntPct) {
+  const msgBase = 'En operación con cheque (CHEQUE–ARS)';
+  const tc = typeof tasaClientePct === 'number' && !isNaN(tasaClientePct) ? tasaClientePct : null;
+  const ti = typeof tasaIntPct === 'number' && !isNaN(tasaIntPct) ? tasaIntPct : null;
+  const pctAbierto = (p) => typeof p === 'number' && p > 0 && p < 100;
+  const pctEsCero = (p) => p == null || (typeof p === 'number' && Math.abs(p) < 1e-12);
+
+  if (modalidad === 'legacy') {
+    // Tipos sin columna `cheque_ars_comision_modalidad` (legacy en BD):
+    // - Tasa cliente 0 + intermediario: la tasa del intermediario debe ser > 0 (comisión vía intermediario).
+    // - Tasa cliente > 0 + intermediario: la tasa del intermediario puede ser **0** (toda la comisión por tasa
+    //   empresa / Pandy sobre el nominal; mismo efecto que modalidad `solo_pandy` sin tocar el catálogo).
+    if (pctEsCero(tc)) {
+      if (usaIntermediario && !pctAbierto(ti)) {
+        return `${msgBase} con tasa al cliente en 0, la tasa del intermediario es obligatoria (ej. 1 para 1%, entre 0 y 100).`;
+      }
+      return null;
+    }
+    if (!pctAbierto(tc)) {
+      return `${msgBase} la tasa de descuento al cliente es obligatoria (ej. 1 para 1%, entre 0 y 100).`;
+    }
+    if (usaIntermediario) {
+      if (typeof ti !== 'number' || isNaN(ti) || ti < 0 || ti >= 100) {
+        return `${msgBase} indicá la tasa del intermediario entre 0 y 100 (excl. 100); 0 si toda la comisión del acuerdo va a la empresa (Pandy).`;
+      }
+    }
+    return null;
+  }
+  if (modalidad === 'solo_pandy') {
+    if (!pctAbierto(tc)) {
+      return `${msgBase} la tasa de descuento al cliente es obligatoria (ej. 1 para 1%, entre 0 y 100).`;
+    }
+    if (usaIntermediario) {
+      if (typeof ti === 'number' && !isNaN(ti) && ti >= 1e-12) {
+        return `${msgBase} con reparto «solo comisión acuerdo / Pandy» la tasa del intermediario debe ser 0.`;
+      }
+      if (typeof ti === 'number' && !isNaN(ti) && (ti < 0 || ti >= 100)) {
+        return `${msgBase} la tasa del intermediario debe estar entre 0 y 100 (excl.).`;
+      }
+    }
+    return null;
+  }
+  if (modalidad === 'sin_comision') {
+    if (!pctEsCero(tc)) {
+      return `${msgBase} con reparto «sin comisión» la tasa de descuento al cliente debe ser 0.`;
+    }
+    if (usaIntermediario && !pctEsCero(ti)) {
+      return `${msgBase} con reparto «sin comisión» la tasa del intermediario debe ser 0.`;
+    }
+    return null;
+  }
+  if (modalidad === 'solo_intermediario') {
+    if (!pctEsCero(tc)) {
+      return `${msgBase} con reparto «solo intermediario» la tasa de descuento al cliente debe ser 0.`;
+    }
+    if (!usaIntermediario) {
+      return `${msgBase} el reparto «solo intermediario» requiere tipo con intermediario.`;
+    }
+    if (!pctAbierto(ti)) {
+      return `${msgBase} con reparto «solo intermediario» la tasa del intermediario es obligatoria (ej. 1 para 1%, entre 0 y 100).`;
+    }
+    return null;
+  }
+  return null;
+}
+
+/** Fracción 0..1 para `ordenes.tasa_descuento_intermediario` (CHEQUE-ARS + intermediario). Vacío + modalidad solo_pandy/sin_comision → 0. */
+function ordenChequeArsTasaInterFracPersistir(esCheque, intermediarioId, tasaIntPctTrimmed, selTipoOpt) {
+  if (!esCheque || !intermediarioId) return null;
+  const s = (tasaIntPctTrimmed || '').trim();
+  if (s) return parseImporteInput(s) / 100;
+  const ch = ordenChequeArsComisionModalidadDesdeSelectOption(selTipoOpt);
+  if (ch === 'solo_pandy' || ch === 'sin_comision') return 0;
+  return null;
+}
+
+/**
  * Orden de lista puede no traer join tipos_operacion; se completa con ordenesVistaTiposOpMap (loadOrdenes).
  */
 function tiposOperacionEfectivoParaOrden(orden) {
   if (!orden) return null;
   const nested = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
-  if (nested && (nested.codigo != null || nested.moneda_in != null || nested.moneda_out != null)) return nested;
+  if (nested && (nested.codigo != null || nested.moneda_in != null || nested.moneda_out != null)) {
+    const tidN = orden.tipo_operacion_id;
+    let mapN = tidN ? ordenesVistaTiposOpMap[tidN] : null;
+    if (!mapN && tidN) mapN = ordenesPendientesTiposOpMap[tidN];
+    if (nested.cheque_ars_comision_modalidad == null && mapN && mapN.cheque_ars_comision_modalidad != null) {
+      return Object.assign({}, nested, {
+        cheque_ars_comision_modalidad: String(mapN.cheque_ars_comision_modalidad).trim().toLowerCase(),
+      });
+    }
+    return nested;
+  }
   const tid = orden.tipo_operacion_id;
   let m = tid ? ordenesVistaTiposOpMap[tid] : null;
   if (!m && tid) m = ordenesPendientesTiposOpMap[tid];
   if (!m) return null;
-  return { codigo: m.codigo, moneda_in: m.moneda_in, moneda_out: m.moneda_out };
+  return {
+    codigo: m.codigo,
+    moneda_in: m.moneda_in,
+    moneda_out: m.moneda_out,
+    cheque_ars_comision_modalidad: m.cheque_ars_comision_modalidad != null ? String(m.cheque_ars_comision_modalidad).trim().toLowerCase() : null,
+  };
 }
 
 function esOrdenChequeArsDesdeOrden(orden) {
@@ -11825,6 +11992,131 @@ function conceptoCcNuevaReglaMonEPlantilla(esCompromiso, ordenNumero, transNumer
 const SUBSTRING_LEYENDA_CC_COMISION_ACUERDO = 'Comisión del acuerdo';
 
 /**
+ * True si ya hay en `rowsCcCliente` una fila **sintética** «Comisión del acuerdo» (sin `transaccion_id`) para ese acuerdo.
+ * Evita duplicar al refuerzar CHEQUE-ARS cuando el motor corrió pero omitió la línea (+spread).
+ */
+function ccClienteTieneFilaComisionDelAcuerdoSintetica(rowsCcCliente, ordenId, clienteId) {
+  const oid = String(ordenId || '');
+  const cid = String(clienteId || '');
+  for (const r of rowsCcCliente || []) {
+    if (!r || r.es_movimiento_manual === true) continue;
+    if (String(r.orden_id || '') !== oid || String(r.cliente_id || '') !== cid) continue;
+    const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id) : '';
+    if (tid) continue;
+    if (!conceptoEsComisionAcuerdoLineaGp(r.concepto)) continue;
+    if (Math.abs(Number(r.monto) || 0) < 1e-6) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Suma `comisiones_orden` (beneficiario **pandy** o **intermediario**) en la moneda recibida del acuerdo (catálogo).
+ */
+function sumaComisionesOrdenPandyIntermediarioMonedaRecibida(comisiones, orden) {
+  if (!orden || typeof orden !== 'object') return { suma: 0, hayPandy: false, hayInter: false };
+  const monAc = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || 'ARS').toUpperCase();
+  let suma = 0;
+  let hayPandy = false;
+  let hayInter = false;
+  for (const c of comisiones || []) {
+    const ben = String(c.beneficiario || '').toLowerCase();
+    if (ben !== 'pandy' && ben !== 'intermediario') continue;
+    const m = Number(c.monto) || 0;
+    if (m < 1e-6) continue;
+    const monC = String(monedaCatalogoParaOrden(c.moneda) || c.moneda || '').toUpperCase();
+    if (monC !== monAc) continue;
+    suma += m;
+    if (ben === 'pandy') hayPandy = true;
+    if (ben === 'intermediario') hayInter = true;
+  }
+  return { suma, hayPandy, hayInter };
+}
+
+/**
+ * CHEQUE-ARS + intermediario: si **`comisiones_orden`** ya tiene comisiones persistidas (**pandy** y/o **intermediario**)
+ * en moneda recibida del acuerdo (suma positiva) y en CC cliente **no** hay sintética «Comisión del acuerdo» (+), insertarla.
+ * Fuente de monto: máximo entre spread ya calculado en sync, `mr−me` nominal, spread por transacciones y suma en tabla.
+ */
+function inyectarFilaComisionAcuerdoCcClienteDesdeComisionesOrdenSiFaltaChequeArs(opts) {
+  const {
+    rowsCcClienteUnicos,
+    orden,
+    ordenId,
+    clienteId,
+    ordenAnuladaSync,
+    codigoOrdenRaw,
+    toJoin,
+    transacciones,
+    fecha,
+    ahora,
+    spreadAcuerdoChequeInt,
+    comisionPandyMonto,
+    comisionPandyMon,
+    comisiones,
+    modosMap,
+  } = opts || {};
+  if (!Array.isArray(rowsCcClienteUnicos) || !orden || ordenAnuladaSync || !clienteId || !ordenId) return;
+  if (!esSyncOrdenChequeArsConIntermediario(orden, codigoOrdenRaw, toJoin)) return;
+  if (ccClienteTieneFilaComisionDelAcuerdoSintetica(rowsCcClienteUnicos, ordenId, clienteId)) return;
+  const { suma: sumaComTabla } = sumaComisionesOrdenPandyIntermediarioMonedaRecibida(comisiones, orden);
+  /** Reparto persistido en `comisiones_orden` (al menos una fila Pandy o intermediario con monto en moneda recibida). */
+  if (sumaComTabla < 1e-6) return;
+  let mr = Number(orden.monto_recibido) || 0;
+  const me = Number(orden.monto_entregado) || 0;
+  const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones, modosMap, orden);
+  if (mrNom >= 1e-6) mr = mrNom;
+  const spCab = mr > me + 1e-6 ? mr - me : 0;
+  const spTrx = spreadChequeArsClienteNetoDesdeOrdenYParTrx(transacciones, orden, modosMap);
+  const montoLinea = Math.max(
+    Number(spreadAcuerdoChequeInt) || 0,
+    spCab,
+    spTrx,
+    sumaComTabla,
+    Math.abs(Number(comisionPandyMonto) || 0),
+  );
+  if (montoLinea < 1e-6) return;
+  const nroRef = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
+  const feSynth =
+    nroRef != null
+      ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroRef, fecha, ahora)
+      : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
+  const tx1Ej = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'ingreso' &&
+      String(t.pagador || '').toLowerCase() === 'cliente' &&
+      String(t.cobrador || '').toLowerCase() === 'pandy' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const tx2Ej = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'egreso' &&
+      String(t.pagador || '').toLowerCase() === 'pandy' &&
+      String(t.cobrador || '').toLowerCase() === 'cliente' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const parClienteCerrado = tx1Ej && tx2Ej;
+  const moneda = String(
+    monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
+  ).toUpperCase();
+  rowsCcClienteUnicos.push({
+    cliente_id: clienteId,
+    orden_id: ordenId,
+    transaccion_id: null,
+    transaccion_numero: null,
+    concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroRef),
+    fecha: feSynth.fecha,
+    usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
+    moneda,
+    monto: montoLinea,
+    estado: ordenAnuladaSync ? 'anulado' : (parClienteCerrado ? 'cerrado' : 'pendiente'),
+    estado_fecha: feSynth.estado_fecha,
+    incluir_en_detalle: true,
+    ...montosCcPorMoneda(moneda, montoLinea),
+  });
+}
+
+/**
  * Si alguna transacción tiene compensación CC por flip persistida (`compensacion_cc_monto_aplicado`),
  * el armado de CC **sin** multicontraparte manual usa dedupe y reglas dedicadas (p. ej. `filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsdUsdInt`).
  * Por defecto **no** activar `multicontraparte_manual` automático en sync con compensación salvo **desvío** vivo pag/cob (`roleDesvioParaAutoMc`).
@@ -12088,10 +12380,14 @@ function filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsd
   }
 }
 
-/** True si la orden cruza dos monedas distintas (ARS-USD, EUR-USD, etc.); no aplica a USD-USD (monR === monE). */
+/** True si la orden cruza dos monedas distintas (ARS-USD, EUR-USD, etc.); no aplica a USD-USD (monR === monE). CHEQUE se trata como ARS. */
 function ordenEsCruceDosMonedasDistintas(orden) {
-  const mr = String((orden && orden.moneda_recibida) || '').toUpperCase().trim();
-  const me = String((orden && orden.moneda_entregada) || '').toUpperCase().trim();
+  const mr = String(monedaCatalogoParaOrden(orden && orden.moneda_recibida) || (orden && orden.moneda_recibida) || '')
+    .toUpperCase()
+    .trim();
+  const me = String(monedaCatalogoParaOrden(orden && orden.moneda_entregada) || (orden && orden.moneda_entregada) || '')
+    .toUpperCase()
+    .trim();
   return !!(mr && me && mr !== me);
 }
 
@@ -12298,7 +12594,7 @@ function ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, tra
   if (ord === 'anulada') return false;
   const instOk = transaccionesInstrumentacionTodasEjecutadasOAnuladasConAlgunaEjecutada(transacciones);
   const cod = String(tipoOperacionCodigo || '').toUpperCase();
-  if (cod === 'CHEQUE-ARS') return instOk;
+  if (cod === 'CHEQUE-ARS' || cod.startsWith('CHEQUE-ARS')) return instOk;
   if (instOk) return true;
   return ord === 'orden_ejecutada' || ord === 'instrumentacion_cerrada_ejecucion';
 }
@@ -12626,13 +12922,13 @@ function sumaMovimientosPataMonEExentosNeteo(rowsCliente, clienteId, ordenId, mo
 function sumaMovimientosComisionAcuerdoSinteticaExentosNeteo(rowsCliente, clienteId, ordenId, mon) {
   const monU = String(mon || '').toUpperCase();
   let s = 0;
-  const subC = SUBSTRING_LEYENDA_CC_COMISION_ACUERDO;
   for (const r of rowsCliente || []) {
     if (!r || r.es_movimiento_manual === true) continue;
     if (String(r.estado || '').toLowerCase() !== 'cerrado') continue;
     if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
-    if (String(r.moneda || '').toUpperCase() !== monU) continue;
-    if (!String(r.concepto || '').includes(subC)) continue;
+    const rowMonCat = String(monedaCatalogoParaOrden(r.moneda) || r.moneda || '').toUpperCase();
+    if (rowMonCat !== monU) continue;
+    if (!conceptoEsComisionAcuerdoLineaGp(r.concepto)) continue;
     const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id) : '';
     if (tid) continue;
     const m = Number(r.monto);
@@ -12642,12 +12938,861 @@ function sumaMovimientosComisionAcuerdoSinteticaExentosNeteo(rowsCliente, client
 }
 
 /**
+ * CHEQUE-ARS e intermediario: **nunca** omitir la fila «Comisión del acuerdo» (−|comisión|) en CC intermediario.
+ * Aunque toda la comisión sea del intermediario (`comisiones_orden` sin parte Pandy), las líneas Tx3 (+ nominal / pago
+ * realizado) y Tx4 (−efectivo `me`) suman **+mr − me = +spread** en el libro del intermediario; sin la línea explícita
+ * de comisión la CC del intermediario **no** netea en cero por orden. La fila **+spread** en CC cliente sigue siendo
+ * independiente (neteo del acuerdo con el cliente).
+ * @returns {boolean} siempre false (retén de firma: callers siguen usando el helper por claridad).
+ */
+function chequeArsCcIntOmitirComisionAcuerdoSinteticaTodoInter(comisionPandyMonto, filasIntParaComision, spreadClienteAcuerdo) {
+  void comisionPandyMonto;
+  void filasIntParaComision;
+  void spreadClienteAcuerdo;
+  return false;
+}
+
+/**
+ * `modosMap` en `sincronizarCcYCajaDesdeOrden`: `{ [uuid]: codigo }`; en otras pantallas puede ser el objeto `modos_pago`.
+ */
+function modoPagoCodigoDesdeMap(modosMap, modoPagoId) {
+  if (!modosMap || modoPagoId == null || String(modoPagoId).trim() === '') return '';
+  const raw = modosMap[modoPagoId];
+  if (raw == null) return '';
+  if (typeof raw === 'string') return String(raw).toLowerCase().trim();
+  return String((raw && raw.codigo) || '').toLowerCase().trim();
+}
+
+/**
+ * Suma montos de ingresos **Cliente→Pandy** en **ARS** (catálogo) con modo de pago **cheque** — nominal del acuerdo
+ * CHEQUE-ARS aunque `ordenes.monto_recibido` esté desalineado o `moneda_recibida` sea `CHEQUE`.
+ * **Solo** tiene sentido llamarla cuando la orden ya está acotada a tipo CHEQUE-ARS (matriz / `esSyncOrdenTipoChequeArs`); no discrimina tipo por sí misma.
+ * @param {{ soloEjecutadas?: boolean }} [opts]
+ */
+function montoRecibidoAcuerdoIngresoClientePandyChequeArs(transacciones, modosMap, opts) {
+  const soloEj = opts && opts.soloEjecutadas === true;
+  let sum = 0;
+  for (const t of transacciones || []) {
+    const est = transaccionEstadoTextoNormalizado(t);
+    if (soloEj && est !== 'ejecutada') continue;
+    if (!soloEj && est !== 'ejecutada' && est !== 'pendiente') continue;
+    if ((t.tipo || '').toLowerCase() !== 'ingreso') continue;
+    if (String(t.pagador || '').toLowerCase() !== 'cliente') continue;
+    if (String(t.cobrador || '').toLowerCase() !== 'pandy') continue;
+    if (modoPagoCodigoDesdeMap(modosMap, t.modo_pago_id) !== 'cheque') continue;
+    const monTrx = String(monedaCatalogoParaOrden(t.moneda) || t.moneda || '').toUpperCase();
+    if (monTrx !== 'ARS') continue;
+    sum += Number(t.monto) || 0;
+  }
+  return sum;
+}
+
+/**
+ * Nominal del acuerdo **CHEQUE-ARS** para CC/spread (solo si `esSyncOrdenTipoChequeArs`):
+ * 1) Suma ingresos **C→P** en **ARS** con modo **cheque** (ejecutados).
+ * 2) Si esa suma es 0 (mapa de modos incompleto, etc.): **máximo** entre ingresos **C→P** **ARS** ejecutados — caso
+ * **tasa cliente 0** + comisión solo intermediario: `ordenes.monto_recibido`/`monto_entregado` suelen reflejar el neto
+ * **igual** y el spread `mr−me` en cabecera sería 0, pero el nominal del título sigue en la transacción de cobro.
+ */
+function montoNominalIngresoAcuerdoChequeArsParaCc(transacciones, modosMap, orden) {
+  if (!orden || typeof orden !== 'object') return 0;
+  const toJ =
+    orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+  if (!esSyncOrdenTipoChequeArs(orden, (toJ && toJ.codigo) || null, toJ || {})) return 0;
+  const porCheque =
+    modosMap && typeof modosMap === 'object' && Object.keys(modosMap).length
+      ? montoRecibidoAcuerdoIngresoClientePandyChequeArs(transacciones, modosMap, { soloEjecutadas: true })
+      : 0;
+  if (porCheque >= 1e-6) return porCheque;
+  let maxIng = 0;
+  for (const t of transacciones || []) {
+    if (transaccionEstadoTextoNormalizado(t) !== 'ejecutada') continue;
+    if ((t.tipo || '').toLowerCase() !== 'ingreso') continue;
+    if (String(t.pagador || '').toLowerCase() !== 'cliente') continue;
+    if (String(t.cobrador || '').toLowerCase() !== 'pandy') continue;
+    const monTrx = String(monedaCatalogoParaOrden(t.moneda) || t.moneda || '').toUpperCase();
+    if (monTrx !== 'ARS') continue;
+    maxIng = Math.max(maxIng, Number(t.monto) || 0);
+  }
+  return maxIng;
+}
+
+/**
+ * Spread del acuerdo en CC cliente (haber «Comisión del acuerdo»): **`mr − me`** cuando la orden califica;
+ * **`mr`** nominal: `montoNominalIngresoAcuerdoChequeArsParaCc` (cheque ARS o fallback máx. C→P ARS ejecutado); si no aplica, `ordenes.monto_recibido`.
+ * Si **`mr <= me`** en orden pero el nominal usado suma más que los ingresos C→P en monR, devuelve **`mr − suma(ingresos)`**.
+ */
+function spreadChequeArsClienteNetoDesdeOrdenYParTrx(transacciones, orden, modosMap) {
+  if (!orden || typeof orden !== 'object') return 0;
+  const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones, modosMap, orden);
+  const mr = mrNom >= 1e-6 ? mrNom : Number(orden.monto_recibido) || 0;
+  const me = Number(orden.monto_entregado) || 0;
+  if (mr > me + 1e-6) return mr - me;
+  /** Catálogo: recibido «CHEQUE» = ARS en filas CC/transacciones; sin esto `monR` queda CHEQUE y no matchea trx en ARS. */
+  const monR = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || 'ARS').toUpperCase();
+  let sumIngEj = 0;
+  let hayIngEj = false;
+  let hayEgrEj = false;
+  for (const t of transacciones || []) {
+    if (transaccionEstadoTextoNormalizado(t) !== 'ejecutada') continue;
+    const tipo = (t.tipo || '').toLowerCase();
+    const pag = String(t.pagador || '').toLowerCase();
+    const cob = String(t.cobrador || '').toLowerCase();
+    const monTrx = String(monedaCatalogoParaOrden(t.moneda) || t.moneda || '').toUpperCase();
+    if (monTrx !== monR) continue;
+    if (tipo === 'ingreso' && pag === 'cliente' && cob === 'pandy') {
+      sumIngEj += Number(t.monto) || 0;
+      hayIngEj = true;
+    }
+    if (tipo === 'egreso' && pag === 'pandy' && cob === 'cliente') hayEgrEj = true;
+  }
+  if (hayIngEj && hayEgrEj && mr > sumIngEj + 1e-6) return mr - sumIngEj;
+  return 0;
+}
+
+/**
+ * `ordenes.tasa_descuento_intermediario`: canónico **fracción** 0..1 (ej. 0,025 = 2,5 %);
+ * datos viejos o import pueden traer **2,5** (porcentaje). Sync, plantillas e inferencias deben aceptar ambos.
+ * @returns {number|null} fracción, o null si no hay valor usable.
+ */
+function tasaDescuentoIntermediarioFraccionSync(raw) {
+  if (raw == null || raw === '') return null;
+  const x = Number(raw);
+  if (!Number.isFinite(x) || x < 0) return null;
+  if (x <= 1 + 1e-12) return x;
+  if (x <= 100 + 1e-9) return x / 100;
+  return null;
+}
+
+/**
+ * CHEQUE-ARS + intermediario: monto de la transacción **Intermediario→Pandy** (efectivo, Tx4) y base homónima en CC/reglas.
+ * Con **tasa intermediario** en (0,1): `mr × (1 − tasa)` (comisión del intermediario sobre el nominal). Con tasa **0** o
+ * ausente: el efectivo a entregar a Pandy coincide con **`monto_entregado`** del acuerdo (**me**), ya que la comisión
+ * absorbió solo la **tasa al cliente** (spread `mr − me` sin recorte adicional por tasa intermediario).
+ * @param {{ monto_recibido?: number, monto_entregado?: number, tasa_descuento_intermediario?: number|null }} orden
+ * @param {number} [mrNom] si se omite, usa `orden.monto_recibido`
+ */
+function montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mrNom) {
+  const o = orden && typeof orden === 'object' ? orden : {};
+  const mr = Number(mrNom != null ? mrNom : o.monto_recibido) || 0;
+  const me = Number(o.monto_entregado) || 0;
+  const tasaFrac = tasaDescuentoIntermediarioFraccionSync(o.tasa_descuento_intermediario);
+  if (tasaFrac != null && tasaFrac > 1e-12 && tasaFrac < 1) {
+    return mr * (1 - tasaFrac);
+  }
+  if (me > 1e-12 && me <= mr + 1e-6) return me;
+  return mr > 1e-12 ? mr : 0;
+}
+
+/**
+ * Implementación interna: **solo** se invoca desde `aplicarSyncUnicoChequeArs('post_dedupe', …)` (no llamar desde el sync suelto).
+ * Refuerzo **solo CHEQUE-ARS (+ intermediario)** sobre el array que va a invariante/`sync_cc_caja_orden` (tras dedupe
+ * se pasa `rowsCcClienteUnicos`): si el acuerdo tiene spread `mr > me` y aún no hay fila sintética «Comisión del acuerdo»
+ * sin `transaccion_id` en CC del cliente de la orden, inserta la misma lógica que el fallback/motor (spread o
+ * `comisionPandyMonto`). Cubre huecos donde el motor no llegó a emitir la fila (p. ej. MC+`soloComisiones`, códigos de
+ * tipo desalineados vs matriz) sin tocar otros tipos de operación.
+ */
+function asegurarFilaComisionSpreadChequeArsClienteSiFalta(opts) {
+  const {
+    rowsCcCliente,
+    orden,
+    ordenId,
+    clienteId,
+    ordenAnuladaSync,
+    codigoOrdenRaw,
+    toJoin,
+    transacciones,
+    fecha,
+    ahora,
+    spreadAcuerdoChequeInt,
+    comisionPandyMonto,
+    comisionPandyMon,
+    modosMap,
+  } = opts || {};
+  if (!Array.isArray(rowsCcCliente) || !orden || !clienteId || !ordenId || ordenAnuladaSync) return;
+  if (!esSyncOrdenChequeArsConIntermediario(orden, codigoOrdenRaw, toJoin)) return;
+  const spOrdenTrx = spreadChequeArsClienteNetoDesdeOrdenYParTrx(transacciones, orden, modosMap);
+  if (spOrdenTrx < 1e-6 && (!(spreadAcuerdoChequeInt >= 1e-6)) && (Number(comisionPandyMonto) || 0) < 1e-6) return;
+  const cid = String(clienteId);
+  const oid = String(ordenId);
+  /** Reglas con `signo` −1 u corridas viejas: la sintética en CC cliente debe ser **+spread**; si no, el invariante o la lectura del libro fallan. */
+  for (let i = (rowsCcCliente || []).length - 1; i >= 0; i--) {
+    const r = rowsCcCliente[i];
+    if (!r || r.es_movimiento_manual === true) continue;
+    if (String(r.cliente_id || '') !== cid || String(r.orden_id || '') !== oid) continue;
+    const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id) : '';
+    if (tid) continue;
+    if (!conceptoEsComisionAcuerdoLineaGp(r.concepto)) continue;
+    if ((Number(r.monto) || 0) >= 1e-6) continue;
+    rowsCcCliente.splice(i, 1);
+  }
+  const tieneComisionSintetica = rowsCcCliente.some(
+    (r) =>
+      r &&
+      r.es_movimiento_manual !== true &&
+      String(r.cliente_id || '') === cid &&
+      String(r.orden_id || '') === oid &&
+      (r.transaccion_id == null || String(r.transaccion_id).trim() === '') &&
+      conceptoEsComisionAcuerdoLineaGp(r.concepto),
+  );
+  if (tieneComisionSintetica) {
+    rowsCcCliente.forEach((r) => {
+      if (!r || r.es_movimiento_manual === true) return;
+      if (String(r.cliente_id || '') !== cid || String(r.orden_id || '') !== oid) return;
+      const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id) : '';
+      if (tid) return;
+      if (!conceptoEsComisionAcuerdoLineaGp(r.concepto)) return;
+      r.incluir_en_detalle = true;
+    });
+    return;
+  }
+  const montoLinea = Math.abs(
+    spreadAcuerdoChequeInt >= 1e-6
+      ? spreadAcuerdoChequeInt
+      : spOrdenTrx >= 1e-6
+        ? spOrdenTrx
+        : Math.max(0, Number(comisionPandyMonto) || 0),
+  );
+  if (montoLinea < 1e-6) return;
+  const nroRef = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
+  const feSynth =
+    nroRef != null
+      ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroRef, fecha, ahora)
+      : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
+  const tx1Ej = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'ingreso' &&
+      String(t.pagador || '').toLowerCase() === 'cliente' &&
+      String(t.cobrador || '').toLowerCase() === 'pandy' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const tx2Ej = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'egreso' &&
+      String(t.pagador || '').toLowerCase() === 'pandy' &&
+      String(t.cobrador || '').toLowerCase() === 'cliente' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const parClienteCerrado = tx1Ej && tx2Ej;
+  const moneda = String(
+    monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
+  ).toUpperCase();
+  rowsCcCliente.push({
+    cliente_id: clienteId,
+    orden_id: ordenId,
+    transaccion_id: null,
+    transaccion_numero: null,
+    concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroRef),
+    fecha: feSynth.fecha,
+    usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
+    moneda,
+    monto: montoLinea,
+    estado: ordenAnuladaSync ? 'anulado' : (parClienteCerrado ? 'cerrado' : 'pendiente'),
+    estado_fecha: feSynth.estado_fecha,
+    incluir_en_detalle: true,
+    ...montosCcPorMoneda(moneda, montoLinea),
+  });
+}
+
+/**
+ * Monto algebraico de una fila CC hacia el residual CHEQUE: prioriza `monto`; si viene vacío pero hay columna por moneda
+ * (`monto_ars`, etc.), usa esa (el motor a veces solo homologa columnas). Evita suma ~0 y que no dispare la inyección.
+ */
+function ccMontoFilaResidualChequeDesdeRow(r) {
+  if (!r || typeof r !== 'object') return 0;
+  if (r.monto != null && r.monto !== '') {
+    const m = Number(r.monto);
+    if (Number.isFinite(m)) return m;
+  }
+  const mon = String(r.moneda || '').toUpperCase();
+  if (mon === 'ARS' && r.monto_ars != null && r.monto_ars !== '') {
+    const x = Number(r.monto_ars);
+    return Number.isFinite(x) ? x : 0;
+  }
+  if (mon === 'USD' && r.monto_usd != null && r.monto_usd !== '') {
+    const x = Number(r.monto_usd);
+    return Number.isFinite(x) ? x : 0;
+  }
+  if (mon === 'EUR' && r.monto_eur != null && r.monto_eur !== '') {
+    const x = Number(r.monto_eur);
+    return Number.isFinite(x) ? x : 0;
+  }
+  return 0;
+}
+
+/**
+ * Implementación interna: **solo** desde `aplicarSyncUnicoChequeArs('post_dedupe', …)`.
+ * Último refuerzo **CHEQUE-ARS + intermediario** antes del invariante/RPC: si en **moneda recibida** la suma
+ * algebraica de las filas CC **cliente** de la orden (no manuales, no anuladas) queda **claramente a favor de Pandy**
+ * (suma negativa) y **no** hay ninguna sintética «Comisión del acuerdo» sin `transaccion_id` con |monto| relevante,
+ * inserta **una** línea **+ (−suma)** para netear. Cubre huecos donde spread teórico (`mr−me` / par trx) no coincide
+ * con el payload que ya armó motor+MC (p. ej. orden 46: Compromiso al monto trx y Cobro a `−mr`).
+ */
+function inyectarComisionChequeArsClienteSiResidualMonR(opts) {
+  const {
+    rowsCcCliente,
+    orden,
+    ordenId,
+    clienteId,
+    ordenAnuladaSync,
+    codigoOrdenRaw,
+    toJoin,
+    transacciones,
+    fecha,
+    ahora,
+    comisionPandyMonto,
+    comisionPandyMon,
+  } = opts || {};
+  const tolResidual = 1;
+  if (!Array.isArray(rowsCcCliente) || !orden || !clienteId || !ordenId || ordenAnuladaSync) return;
+  const toJoinEf =
+    (toJoin && typeof toJoin === 'object' && (toJoin.codigo != null || toJoin.moneda_in != null || toJoin.moneda_out != null)
+      ? toJoin
+      : null) ||
+    (orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion)) ||
+    {};
+  const codMatrizIny =
+    (codigoOrdenRaw != null && String(codigoOrdenRaw).trim() !== '' && String(codigoOrdenRaw).trim()) ||
+    (toJoinEf.codigo != null && String(toJoinEf.codigo).trim()) ||
+    '';
+  const matrizCheque = esTipoOperacionChequeArsMatrizReglasCc(codMatrizIny, toJoinEf.moneda_in, toJoinEf.moneda_out);
+  const monRec = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || '').toUpperCase();
+  const monEnt = String(monedaCatalogoParaOrden(orden.moneda_entregada) || orden.moneda_entregada || '').toUpperCase();
+  const chequeMismaFiatAcuerdo =
+    esTipoOperacionChequeArs(codMatrizIny || codigoOrdenRaw, toJoinEf.moneda_in, toJoinEf.moneda_out) &&
+    monRec &&
+    monEnt &&
+    monRec === monEnt;
+  if (!matrizCheque && !chequeMismaFiatAcuerdo) return;
+  /** Misma convención que `spreadChequeArsClienteNetoDesdeOrdenYParTrx`: filas CC van en ARS aunque la orden guarde `CHEQUE`. */
+  const monR = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || 'ARS').toUpperCase();
+  const oid = String(ordenId);
+  /** Sintética ya presente para esta orden en monR (cualquier `cliente_id` del payload: MC/vínculo puede repartir patas). */
+  const tieneSinteticaComision = rowsCcCliente.some((r) => {
+    if (!r || r.es_movimiento_manual === true) return false;
+    if (String(r.orden_id || '') !== oid) return false;
+    const rowMon = String(monedaCatalogoParaOrden(r.moneda) || r.moneda || '').toUpperCase();
+    if (rowMon !== monR) return false;
+    const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id) : '';
+    if (tid) return false;
+    if (!conceptoEsComisionAcuerdoLineaGp(r.concepto)) return false;
+    return Math.abs(ccMontoFilaResidualChequeDesdeRow(r)) >= 1e-6;
+  });
+  if (tieneSinteticaComision) return;
+  /** Suma **toda** la CC cliente de la orden en monR (todas las filas `cliente_id`), no solo `orden.cliente_id`. */
+  let sumMonR = 0;
+  for (const r of rowsCcCliente) {
+    if (!r || r.es_movimiento_manual === true) continue;
+    if (String(r.orden_id || '') !== oid) continue;
+    const rowMon = String(monedaCatalogoParaOrden(r.moneda) || r.moneda || '').toUpperCase();
+    if (rowMon !== monR) continue;
+    if (String(r.estado || '').toLowerCase() === 'anulado') continue;
+    sumMonR += ccMontoFilaResidualChequeDesdeRow(r);
+  }
+  if (sumMonR >= -tolResidual) return;
+  const montoCom = -sumMonR;
+  if (montoCom < 1e-6) return;
+  const nroRef = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
+  const feSynth =
+    nroRef != null
+      ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroRef, fecha, ahora)
+      : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
+  const tx1Ej = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'ingreso' &&
+      String(t.pagador || '').toLowerCase() === 'cliente' &&
+      String(t.cobrador || '').toLowerCase() === 'pandy' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const tx2Ej = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'egreso' &&
+      String(t.pagador || '').toLowerCase() === 'pandy' &&
+      String(t.cobrador || '').toLowerCase() === 'cliente' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const parClienteCerrado = tx1Ej && tx2Ej;
+  const moneda = String(
+    monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
+  ).toUpperCase();
+  rowsCcCliente.push({
+    cliente_id: clienteId,
+    orden_id: ordenId,
+    transaccion_id: null,
+    transaccion_numero: null,
+    concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroRef),
+    fecha: feSynth.fecha,
+    usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
+    moneda,
+    monto: montoCom,
+    estado: parClienteCerrado ? 'cerrado' : 'pendiente',
+    estado_fecha: feSynth.estado_fecha,
+    incluir_en_detalle: true,
+    ...montosCcPorMoneda(moneda, montoCom),
+  });
+}
+
+/**
+ * Implementación interna: **solo** desde `aplicarSyncUnicoChequeArs('post_dedupe', …)`.
+ * Tras motor + `asegurar` + `inyectar`: si aún no hay «Comisión del acuerdo» sintética en CC cliente y el tipo es matriz
+ * CHEQUE-ARS con intermediario y **mr > me**, inserta **+spread** (evita quedar solo cobro+compromiso y saldo −(mr−me)
+ * cuando `codigoOrdenRaw` vino vacío u otro hueco impidió los refuerzos anteriores).
+ */
+function empujarComisionSpreadChequeArsClienteSiFaltaUltimoRecurso(
+  rowsCcCliente,
+  orden,
+  ordenId,
+  clienteId,
+  ordenAnuladaSync,
+  codigoOrdenRaw,
+  toJoin,
+  transacciones,
+  fecha,
+  ahora,
+  comisionPandyMonto,
+  comisionPandyMon,
+  modosMap,
+) {
+  if (!Array.isArray(rowsCcCliente) || !orden || !clienteId || !ordenId || ordenAnuladaSync) return;
+  const toJ =
+    (toJoin && typeof toJoin === 'object' && (toJoin.codigo != null || toJoin.moneda_in != null || toJoin.moneda_out != null)
+      ? toJoin
+      : null) ||
+    (orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion)) ||
+    {};
+  const codM =
+    (codigoOrdenRaw != null && String(codigoOrdenRaw).trim() !== '' && String(codigoOrdenRaw).trim()) ||
+    (toJ.codigo != null && String(toJ.codigo).trim()) ||
+    '';
+  const matrizCheque = esTipoOperacionChequeArsMatrizReglasCc(codM, toJ.moneda_in, toJ.moneda_out);
+  const monRec = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || '').toUpperCase();
+  const monEnt = String(monedaCatalogoParaOrden(orden.moneda_entregada) || orden.moneda_entregada || '').toUpperCase();
+  const chequeMismaFiatAcuerdo =
+    esTipoOperacionChequeArs(codM || codigoOrdenRaw, toJ.moneda_in, toJ.moneda_out) &&
+    monRec &&
+    monEnt &&
+    monRec === monEnt;
+  if (!matrizCheque && !chequeMismaFiatAcuerdo) return;
+  if (!orden.intermediario_id) return;
+  const mrChequeF = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones, modosMap, orden);
+  const mrF = mrChequeF >= 1e-6 ? mrChequeF : Number(orden.monto_recibido) || 0;
+  const meF = Number(orden.monto_entregado) || 0;
+  if (mrF <= meF + 1e-6) return;
+  /** Misma detección que refuerzos (`conceptoEsComisionAcuerdoLineaGp` + `cliente_id`); evita `includes('Comisión…')` que falla sin tilde y evita matchear otra fila de la orden sin cliente del acuerdo. */
+  if (ccClienteTieneFilaComisionDelAcuerdoSintetica(rowsCcCliente, ordenId, clienteId)) return;
+  const sprF = spreadChequeArsClienteNetoDesdeOrdenYParTrx(transacciones, orden, modosMap) || mrF - meF;
+  if (sprF < 1e-6) return;
+  const nroRef = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
+  const feSynth =
+    nroRef != null
+      ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroRef, fecha, ahora)
+      : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
+  const tx1Ej = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'ingreso' &&
+      String(t.pagador || '').toLowerCase() === 'cliente' &&
+      String(t.cobrador || '').toLowerCase() === 'pandy' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const tx2Ej = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'egreso' &&
+      String(t.pagador || '').toLowerCase() === 'pandy' &&
+      String(t.cobrador || '').toLowerCase() === 'cliente' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const parClienteCerrado = tx1Ej && tx2Ej;
+  const moneda = String(
+    monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
+  ).toUpperCase();
+  rowsCcCliente.push({
+    cliente_id: clienteId,
+    orden_id: ordenId,
+    transaccion_id: null,
+    transaccion_numero: null,
+    concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroRef),
+    fecha: feSynth.fecha,
+    usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
+    moneda,
+    monto: sprF,
+    estado: ordenAnuladaSync ? 'anulado' : (parClienteCerrado ? 'cerrado' : 'pendiente'),
+    estado_fecha: feSynth.estado_fecha,
+    incluir_en_detalle: true,
+    ...montosCcPorMoneda(moneda, sprF),
+  });
+}
+
+/**
+ * Último recurso absoluto: CHEQUE-ARS + intermediario, **mr nominal > me** y aún sin sintética «Comisión del acuerdo»
+ * en CC del **cliente del acuerdo** → inserta **+(mr−me)**. No depende de matriz/código embebido ni de `comisiones_orden`.
+ */
+function garantizarFilaComisionSpreadChequeArsClienteCabeceraMrMeSiFalta(
+  rowsCcCliente,
+  orden,
+  ordenId,
+  clienteId,
+  ordenAnuladaSync,
+  codigoOrdenRaw,
+  toJoin,
+  transacciones,
+  fecha,
+  ahora,
+  comisionPandyMonto,
+  comisionPandyMon,
+  modosMap,
+) {
+  if (!Array.isArray(rowsCcCliente) || !orden || !clienteId || !ordenId || ordenAnuladaSync) return;
+  if (!esSyncOrdenChequeArsConIntermediario(orden, codigoOrdenRaw, toJoin)) return;
+  if (ccClienteTieneFilaComisionDelAcuerdoSintetica(rowsCcCliente, ordenId, clienteId)) return;
+  let mr = Number(orden.monto_recibido) || 0;
+  const me = Number(orden.monto_entregado) || 0;
+  const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones, modosMap, orden);
+  if (mrNom >= 1e-6) mr = mrNom;
+  const spr = mr - me;
+  if (spr < 1e-6) return;
+  const nroRef = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
+  const feSynth =
+    nroRef != null
+      ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroRef, fecha, ahora)
+      : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
+  const tx1Ej = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'ingreso' &&
+      String(t.pagador || '').toLowerCase() === 'cliente' &&
+      String(t.cobrador || '').toLowerCase() === 'pandy' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const tx2Ej = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'egreso' &&
+      String(t.pagador || '').toLowerCase() === 'pandy' &&
+      String(t.cobrador || '').toLowerCase() === 'cliente' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const parClienteCerrado = tx1Ej && tx2Ej;
+  const moneda = String(
+    monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
+  ).toUpperCase();
+  rowsCcCliente.push({
+    cliente_id: clienteId,
+    orden_id: ordenId,
+    transaccion_id: null,
+    transaccion_numero: null,
+    concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroRef),
+    fecha: feSynth.fecha,
+    usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
+    moneda,
+    monto: spr,
+    estado: ordenAnuladaSync ? 'anulado' : (parClienteCerrado ? 'cerrado' : 'pendiente'),
+    estado_fecha: feSynth.estado_fecha,
+    incluir_en_detalle: true,
+    ...montosCcPorMoneda(moneda, spr),
+  });
+}
+
+/**
+ * Único mutador CC/caja por reglas **CHEQUE-ARS** en el armado del payload de `sincronizarCcYCajaDesdeOrden` (no sumar `if (cheque…)` sueltos ahí).
+ * @param {'pre_dedupe'|'post_dedupe'} fase `pre_dedupe`: sin motor completo (fallback comisión cliente/int.) + caja comisión int. con MC+reglas; `post_dedupe`: refuerzos cliente tras dedupe hacia invariante/RPC.
+ */
+function aplicarSyncUnicoChequeArs(fase, ctx) {
+  const {
+    orden,
+    ordenId,
+    clienteId,
+    intermediarioId,
+    ordenAnuladaSync,
+    codigoOrdenRaw,
+    toJoin,
+    transacciones,
+    fecha,
+    ahora,
+    usarMotorEfectivo,
+    usarMulticontraparteSync,
+    tieneReglasNeg,
+    spreadAcuerdoChequeInt,
+    comisionPandyMonto,
+    comisionPandyMon,
+    filasComisionIntermediarioMotor,
+    rowsCcCliente,
+    rowsCcInt,
+    rowsCaja,
+    rowsCcClienteUnicos,
+    modosMap,
+    comisiones,
+  } = ctx || {};
+  const filasComInt = filasComisionIntermediarioMotor || [];
+
+  if (fase === 'pre_dedupe') {
+    if (!esSyncOrdenChequeArsConIntermediario(orden, codigoOrdenRaw, toJoin)) return;
+
+    const motorSoloComMcReglas = usarMulticontraparteSync && tieneReglasNeg;
+    /** Legacy sin motor completo: todo el fallback (cliente + CC int. + caja). Con motor: solo reinyectar **cliente** si faltó la sintética (el motor suele cubrir int./caja; duplicar int. rompe el libro). */
+    const fallbackChequeArsSinMotorCompleto = !usarMotorEfectivo && !motorSoloComMcReglas;
+    const reforzarSoloComisionClienteMotorChequeArs =
+      usarMotorEfectivo &&
+      clienteId &&
+      !ccClienteTieneFilaComisionDelAcuerdoSintetica(rowsCcCliente, ordenId, clienteId);
+
+    if (fallbackChequeArsSinMotorCompleto || reforzarSoloComisionClienteMotorChequeArs) {
+      const nroTransComisionChequeFb = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
+      const feSynthChequeFb =
+        nroTransComisionChequeFb != null
+          ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionChequeFb, fecha, ahora)
+          : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
+      const tx1EjecutadaFb = transacciones.some(
+        (t) =>
+          (t.tipo || '').toLowerCase() === 'ingreso' &&
+          String(t.pagador || '').toLowerCase() === 'cliente' &&
+          String(t.cobrador || '').toLowerCase() === 'pandy' &&
+          transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+      );
+      const tx2EjecutadaFb = transacciones.some(
+        (t) =>
+          (t.tipo || '').toLowerCase() === 'egreso' &&
+          String(t.pagador || '').toLowerCase() === 'pandy' &&
+          String(t.cobrador || '').toLowerCase() === 'cliente' &&
+          transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+      );
+      const parClienteCerradoFb = tx1EjecutadaFb && tx2EjecutadaFb;
+      const montoComisionCcClienteChequeFb =
+        spreadAcuerdoChequeInt >= 1e-6 ? spreadAcuerdoChequeInt : comisionPandyMonto;
+      const omitCcIntComChequeTodoInterFb = chequeArsCcIntOmitirComisionAcuerdoSinteticaTodoInter(
+        comisionPandyMonto,
+        filasComInt,
+        montoComisionCcClienteChequeFb,
+      );
+      const uidSynthFb = usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden);
+      const monSynthFb = String(
+        monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
+      ).toUpperCase();
+      if (clienteId && montoComisionCcClienteChequeFb >= 1e-6) {
+        rowsCcCliente.push({
+          cliente_id: clienteId,
+          orden_id: ordenId,
+          transaccion_id: null,
+          transaccion_numero: null,
+          concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb),
+          fecha: feSynthChequeFb.fecha,
+          usuario_id: uidSynthFb,
+          moneda: monSynthFb,
+          monto: montoComisionCcClienteChequeFb,
+          estado: ordenAnuladaSync ? 'anulado' : (parClienteCerradoFb ? 'cerrado' : 'pendiente'),
+          estado_fecha: feSynthChequeFb.estado_fecha,
+          incluir_en_detalle: true,
+          ...montosCcPorMoneda(monSynthFb, montoComisionCcClienteChequeFb),
+        });
+      }
+      if (fallbackChequeArsSinMotorCompleto) {
+        const hayTx3Ejecutada = transacciones.some(
+          (t) =>
+            (t.tipo || '').toLowerCase() === 'egreso' &&
+            String(t.pagador || '').toLowerCase() === 'pandy' &&
+            String(t.cobrador || '').toLowerCase() === 'intermediario' &&
+            transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+        );
+        const hayTx4Ejecutada = transacciones.some(
+          (t) =>
+            (t.tipo || '').toLowerCase() === 'ingreso' &&
+            String(t.pagador || '').toLowerCase() === 'intermediario' &&
+            String(t.cobrador || '').toLowerCase() === 'pandy' &&
+            transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+        );
+        const estComIntFb = ordenAnuladaSync
+          ? 'anulado'
+          : hayTx3Ejecutada || hayTx4Ejecutada || parClienteCerradoFb
+            ? 'cerrado'
+            : 'pendiente';
+        if (intermediarioId && filasComInt.length && !omitCcIntComChequeTodoInterFb) {
+          filasComInt.forEach((filaIntFb) => {
+            const mIfb = Number(filaIntFb.monto) || 0;
+            if (mIfb < 1e-6) return;
+            const monIfb = String(filaIntFb.moneda || 'ARS').toUpperCase();
+            rowsCcInt.push({
+              intermediario_id: intermediarioId,
+              orden_id: ordenId,
+              transaccion_id: null,
+              transaccion_numero: null,
+              concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb),
+              fecha: feSynthChequeFb.fecha,
+              usuario_id: uidSynthFb,
+              moneda: monIfb,
+              monto: -mIfb,
+              estado: estComIntFb,
+              estado_fecha: feSynthChequeFb.estado_fecha,
+              incluir_en_detalle: true,
+              ...montosCcPorMoneda(monIfb, -mIfb),
+            });
+          });
+        }
+        if (intermediarioId && filasComInt.length && parClienteCerradoFb && !omitCcIntComChequeTodoInterFb) {
+          const tRefComisionCaja =
+            nroTransComisionChequeFb != null ? transacciones.find((x) => Number(x.numero) === Number(nroTransComisionChequeFb)) : null;
+          const uidComisionCajaCheque = usuarioIdRegistroCajaDesdeOrdenSync(transacciones, tRefComisionCaja);
+          filasComInt.forEach((filaIntFb) => {
+            const mIfb = Number(filaIntFb.monto) || 0;
+            if (mIfb < 1e-6) return;
+            const monComCajaFb = String(filaIntFb.moneda || 'ARS').toUpperCase();
+            rowsCaja.push({
+              orden_id: ordenId,
+              transaccion_id: null,
+              moneda: monComCajaFb,
+              monto: -mIfb,
+              caja_tipo: 'efectivo',
+              orden_numero: orden.numero != null ? orden.numero : null,
+              transaccion_numero: nroTransComisionChequeFb,
+              concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaFb, mIfb, orden.numero, nroTransComisionChequeFb),
+              fecha: feSynthChequeFb.fecha,
+              usuario_id: uidComisionCajaCheque,
+            });
+          });
+        }
+      }
+    }
+
+    if (usarMulticontraparteSync && tieneReglasNeg && intermediarioId && filasComInt.length) {
+      const nroTransComisionChequeMc = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
+      const feSynthChequeMc =
+        nroTransComisionChequeMc != null
+          ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionChequeMc, fecha, ahora)
+          : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
+      const tx1Mc = transacciones.some(
+        (t) =>
+          (t.tipo || '').toLowerCase() === 'ingreso' &&
+          String(t.pagador || '').toLowerCase() === 'cliente' &&
+          String(t.cobrador || '').toLowerCase() === 'pandy' &&
+          transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+      );
+      const tx2Mc = transacciones.some(
+        (t) =>
+          (t.tipo || '').toLowerCase() === 'egreso' &&
+          String(t.pagador || '').toLowerCase() === 'pandy' &&
+          String(t.cobrador || '').toLowerCase() === 'cliente' &&
+          transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+      );
+      const parClienteCerradoMc = tx1Mc && tx2Mc;
+      const montoComisionCcClienteChequeMc =
+        spreadAcuerdoChequeInt >= 1e-6 ? spreadAcuerdoChequeInt : Number(comisionPandyMonto) || 0;
+      const omitCcIntComChequeTodoInterMc = chequeArsCcIntOmitirComisionAcuerdoSinteticaTodoInter(
+        comisionPandyMonto,
+        filasComInt,
+        montoComisionCcClienteChequeMc,
+      );
+      if (parClienteCerradoMc && !omitCcIntComChequeTodoInterMc) {
+        const tRefComisionCajaMc =
+          nroTransComisionChequeMc != null ? transacciones.find((x) => Number(x.numero) === Number(nroTransComisionChequeMc)) : null;
+        const uidComisionCajaChequeMc = usuarioIdRegistroCajaDesdeOrdenSync(transacciones, tRefComisionCajaMc);
+        filasComInt.forEach((filaIntMc) => {
+          const mImc = Number(filaIntMc.monto) || 0;
+          if (mImc < 1e-6) return;
+          const monComCajaMc = String(filaIntMc.moneda || 'ARS').toUpperCase();
+          rowsCaja.push({
+            orden_id: ordenId,
+            transaccion_id: null,
+            moneda: monComCajaMc,
+            monto: -mImc,
+            caja_tipo: 'efectivo',
+            orden_numero: orden.numero != null ? orden.numero : null,
+            transaccion_numero: nroTransComisionChequeMc,
+            concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaMc, mImc, orden.numero, nroTransComisionChequeMc),
+            fecha: feSynthChequeMc.fecha,
+            usuario_id: uidComisionCajaChequeMc,
+          });
+        });
+      }
+    }
+    return;
+  }
+
+  if (fase === 'post_dedupe') {
+    if (!clienteId || !Array.isArray(rowsCcClienteUnicos) || ordenAnuladaSync) return;
+    if (!esSyncOrdenChequeArsConIntermediario(orden, codigoOrdenRaw, toJoin)) return;
+    inyectarFilaComisionAcuerdoCcClienteDesdeComisionesOrdenSiFaltaChequeArs({
+      rowsCcClienteUnicos,
+      orden,
+      ordenId,
+      clienteId,
+      ordenAnuladaSync,
+      codigoOrdenRaw,
+      toJoin,
+      transacciones,
+      fecha,
+      ahora,
+      spreadAcuerdoChequeInt,
+      comisionPandyMonto,
+      comisionPandyMon,
+      comisiones,
+      modosMap,
+    });
+    asegurarFilaComisionSpreadChequeArsClienteSiFalta({
+      rowsCcCliente: rowsCcClienteUnicos,
+      orden,
+      ordenId,
+      clienteId,
+      ordenAnuladaSync,
+      codigoOrdenRaw,
+      toJoin,
+      transacciones,
+      fecha,
+      ahora,
+      spreadAcuerdoChequeInt,
+      comisionPandyMonto,
+      comisionPandyMon,
+      modosMap,
+    });
+    inyectarComisionChequeArsClienteSiResidualMonR({
+      rowsCcCliente: rowsCcClienteUnicos,
+      orden,
+      ordenId,
+      clienteId,
+      ordenAnuladaSync,
+      codigoOrdenRaw,
+      toJoin,
+      transacciones,
+      fecha,
+      ahora,
+      comisionPandyMonto,
+      comisionPandyMon,
+    });
+    empujarComisionSpreadChequeArsClienteSiFaltaUltimoRecurso(
+      rowsCcClienteUnicos,
+      orden,
+      ordenId,
+      clienteId,
+      ordenAnuladaSync,
+      codigoOrdenRaw,
+      toJoin,
+      transacciones,
+      fecha,
+      ahora,
+      comisionPandyMonto,
+      comisionPandyMon,
+      modosMap,
+    );
+    garantizarFilaComisionSpreadChequeArsClienteCabeceraMrMeSiFalta(
+      rowsCcClienteUnicos,
+      orden,
+      ordenId,
+      clienteId,
+      ordenAnuladaSync,
+      codigoOrdenRaw,
+      toJoin,
+      transacciones,
+      fecha,
+      ahora,
+      comisionPandyMonto,
+      comisionPandyMon,
+      modosMap,
+    );
+  }
+}
+
+/**
  * Cruce USD-ARS / ARS-USD sin int.: ingreso Pandy→cliente del acuerdo en **monR** y egreso Pandy→cliente del acuerdo en **monE**, cada uno en **pendiente o ejecutada** (misma óptica CC que E,E cuando ambas siguen pendientes). No netear la pata en monE (MC + motor).
  */
 function transaccionesCruceReglaBpandyDoblePataSinNeteoCliente(transacciones, orden) {
   if (!orden || String(orden.estado || '').toLowerCase() === 'anulada') return false;
-  const monR = String(orden.moneda_recibida || 'USD').toUpperCase();
-  const monE = String(orden.moneda_entregada || 'USD').toUpperCase();
+  const monR = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || 'USD').toUpperCase();
+  const monE = String(monedaCatalogoParaOrden(orden.moneda_entregada) || orden.moneda_entregada || 'USD').toUpperCase();
   if (!monR || !monE || monR === monE) return false;
   const cidAc = orden.cliente_id != null && String(orden.cliente_id).trim() !== '' ? String(orden.cliente_id).trim() : '';
   if (!cidAc) return false;
@@ -12659,7 +13804,7 @@ function transaccionesCruceReglaBpandyDoblePataSinNeteoCliente(transacciones, or
     const st = transaccionEstadoTextoNormalizado(t);
     if (st !== 'ejecutada' && st !== 'pendiente') continue;
     const tipo = (t.tipo || '').toLowerCase();
-    const mon = String(t.moneda || '').toUpperCase();
+    const mon = String(monedaCatalogoParaOrden(t.moneda) || t.moneda || '').toUpperCase();
     const { pag, cob } = pagCobEfectivosTransaccionSync(t);
     if (!multicontraparteEsCobradorClienteDelAcuerdoExplicito(t, orden)) continue;
     if (tipo === 'ingreso' && pag === 'pandy' && cob === 'cliente' && mon === monR) hayBMonR = true;
@@ -12674,7 +13819,7 @@ function transaccionesCruceReglaBpandyDoblePataSinNeteoCliente(transacciones, or
  */
 function transaccionesHayIngresoPandyClienteMonRAcuerdoActivo(transacciones, orden) {
   if (!orden || String(orden.estado || '').toLowerCase() === 'anulada') return false;
-  const monR = String(orden.moneda_recibida || 'USD').toUpperCase();
+  const monR = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || 'USD').toUpperCase();
   const cidAc = orden.cliente_id != null && String(orden.cliente_id).trim() !== '' ? String(orden.cliente_id).trim() : '';
   if (!cidAc) return false;
   for (const tRaw of transacciones || []) {
@@ -12683,7 +13828,7 @@ function transaccionesHayIngresoPandyClienteMonRAcuerdoActivo(transacciones, ord
     const st = transaccionEstadoTextoNormalizado(t);
     if (st !== 'ejecutada' && st !== 'pendiente') continue;
     const tipo = (t.tipo || '').toLowerCase();
-    const mon = String(t.moneda || '').toUpperCase();
+    const mon = String(monedaCatalogoParaOrden(t.moneda) || t.moneda || '').toUpperCase();
     const { pag, cob } = pagCobEfectivosTransaccionSync(t);
     if (!multicontraparteEsCobradorClienteDelAcuerdoExplicito(t, orden)) continue;
     if (tipo === 'ingreso' && pag === 'pandy' && cob === 'cliente' && mon === monR) return true;
@@ -12766,6 +13911,32 @@ function pandiDevOmitirInvarianteNeteoCcClientePermitido() {
 }
 
 /**
+ * Con `omitirInvarianteNeteoCcClienteAcuerdoCerrado` (MC o desvío plantilla) el invariante suele retornar `{ ok: true }`
+ * sin mirar el libro. Para **CHEQUE-ARS + intermediario**, misma fiat (catálogo), **mr > me** y toda la instrumentación
+ * **estrictamente** ejecutada con par cliente cerrado, **sí** hay que correr el bucle de neteo: si no, `sync_cc_caja_orden`
+ * persistía solo Cobro+Compromiso sin la sintética «Comisión del acuerdo».
+ * @returns {boolean}
+ */
+function exigirBucleNeteoCcClienteChequeArsIntAunqueOmitirInvariante(orden, transacciones, modosMap) {
+  if (!orden || !orden.intermediario_id) return false;
+  const tj = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+  const codRaw = tj && tj.codigo != null ? String(tj.codigo).trim() : '';
+  if (!esSyncOrdenTipoChequeArs(orden, codRaw || null, tj || {})) return false;
+  const monRCat = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || '').toUpperCase();
+  const monECat = String(monedaCatalogoParaOrden(orden.moneda_entregada) || orden.moneda_entregada || '').toUpperCase();
+  if (!monRCat || monRCat !== monECat) return false;
+  if (!transaccionesInstrumentacionTodasEjecutadasStrict(transacciones)) return false;
+  if (!ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) || !egresoEntregaAClienteEjecutado(transacciones)) {
+    return false;
+  }
+  const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones, modosMap, orden);
+  let mr = Number(orden.monto_recibido) || 0;
+  if (mrNom >= 1e-6) mr = mrNom;
+  const me = Number(orden.monto_entregado) || 0;
+  return mr > me + 1e-9;
+}
+
+/**
  * Invariante dura: solo cuando **no queda ninguna transacción pendiente** (todas ejecutada o anulada, al menos una ejecutada) **y** además: derivación sin motor completo (**solo** `multicontraparte manual`, flag `usarDerivacionCcSinMotorReglas` en sync) con todas las trx ejecutadas/anuladas, **o** (sin esa derivación) par clásico ingreso C→P/I + egreso entrega ambos ejecutados, **o** la orden está en `orden_ejecutada` / `instrumentacion_cerrada_ejecucion`.
  * Entonces la CC del cliente del acuerdo (filas **cerradas** de esta orden) debe netear a cero por moneda,
  * salvo en moneda recibida la parte explicada por movimientos con leyenda «Pandy cumple pata» o «Tercero cumple pata» o «Préstamo al cliente (cobertura Pandy — moneda recibida)» (par pata/préstamo regla B Pandy monR; la suma **|m|** del préstamo cerrado se **resta** del total bruto antes del residual porque el par ± ya está en `sumaMovimientosPataMonRExentosNeteo` y si no se resta bloquea el sync), y en moneda entregada el cluster «Pandy cumple pata en moneda entregada» + «Ajuste libro acuerdo» pareado (misma transacción; doble pata empresa→cliente en monR+monE),
@@ -12773,9 +13944,10 @@ function pandiDevOmitirInvarianteNeteoCcClientePermitido() {
  * y filas **«Compensación parcial/total en cuenta corriente- Orden … y Trans …»** (ingreso USD-USD+int invertido C→P a P→C con `compensacion_cc_monto_aplicado` en la transacción; legacy «parcial o total»);
  * y en **USD-USD + int.** con `monR===monE` y compensación persistida en transacciones, el **Compromiso de Pago** del egreso **Intermediario→Cliente** (+me) en esa moneda (`sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUsdConCompensacionTrx`);
  * y **USD-USD + int. `ci_pc`** (misma divisa, **mr > me**): el spread del acuerdo es comisión explícita; si la instrumentación está **toda ejecutada** y el par cobro+entrega cerró, **no** se exige neteo cero en CC cliente (misma idea que el bypass **cp_ic** en cruces; ver rama previa a la suma por moneda).
+ * **CHEQUE-ARS + int., misma fiat:** ya **no** hay retorno anticipado `{ ok: true }`: el bucle por moneda aplica y la fila sintética «Comisión del acuerdo» sin `transaccion_id` cuenta en el residual vía `sumaMovimientosComisionAcuerdoSinteticaExentosNeteo` usando **moneda catálogo** de la fila (evita quedar persistido solo cobro+compromiso si faltó el refuerzo post-dedupe).
  * @param {boolean} [opts.omitirInvarianteNeteoCcClienteAcuerdoCerrado] Si true (multicontraparte manual elegible, o
  *   desvío **solo** de pagador/cobrador + UUIDs participantes vs plantilla, vía `pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo`),
- *   **no** se exige neteo a cero. No aplica por solo monto/modo/TC distintos del estándar.
+ *   **no** se exige neteo a cero **salvo** CHEQUE-ARS + int., misma fiat, spread en cabecera y toda la instrumentación ejecutada (`exigirBucleNeteoCcClienteChequeArsIntAunqueOmitirInvariante`).
  * @returns {{ ok: true } | { ok: false, msg: string, sums: Record<string, number>, mon?: string }}
  */
 function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
@@ -12787,6 +13959,7 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
     usarDerivacionCcSinMotorReglas,
     omitirInvarianteNeteoCcClienteAcuerdoCerrado,
     transacciones,
+    modosMap,
   } = opts || {};
   if (!clienteId || !ordenId) return { ok: true };
   if (String(orden && orden.estado || '').toLowerCase() === 'anulada') return { ok: true };
@@ -12817,7 +13990,9 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
   }
 
   if (omitirInvarianteNeteoCcClienteAcuerdoCerrado === true) {
-    return { ok: true };
+    if (!exigirBucleNeteoCcClienteChequeArsIntAunqueOmitirInvariante(orden, transacciones, modosMap)) {
+      return { ok: true };
+    }
   }
 
   const toJoinInv = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
@@ -12997,6 +14172,8 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     filasComisionIntermediario = null,
     /** Si es un array, se agregan mensajes cuando una transacción relevante no matchea ninguna fila (ni `es_comision` false ni true). */
     motorCcWarnings = null,
+    /** Mapa modo_pago_id → `codigo` (sync) u objeto fila; para spread CHEQUE-ARS desde ingreso cheque ARS. */
+    modosMap: modosMapMotorCc = null,
     /**
      * Multicontraparte manual: la CC por transacción la arma `aplicarCcMulticontraparteManualConciliacionCompleta`.
      * Con `true`, el motor **solo** añade comisiones/tasas (bloques sintéticos USD-USD, cruces TC, CHEQUE-ARS); no recorre transacciones (evita duplicar patas). La caja CHEQUE int. sigue en `sincronizarCcYCajaDesdeOrden` cuando aplica.
@@ -13924,19 +15101,48 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
   }
   // Comisión CHEQUE-ARS (comisiones_orden Pandy e intermediario; filas es_comision + condicion_estado_comision).
   const codOpCh = String(tipoOperacionCodigo || '').toUpperCase();
+  const toJoinMotorCc = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+  const codTipoCatMotorCc = (toJoinMotorCc && toJoinMotorCc.codigo) != null ? toJoinMotorCc.codigo : tipoOperacionCodigo;
+  /** Misma matriz que sync (`esTipoOperacionChequeArsMatrizReglasCc`): no depender solo de `tipoOperacionCodigo === 'CHEQUE-ARS'` (MC+`soloComisiones` sin fallback legacy). */
+  const esChequeArsMatrizCcMotor =
+    codOpCh === 'CHEQUE-ARS' ||
+    codOpCh.startsWith('CHEQUE-ARS') ||
+    esTipoOperacionChequeArsMatrizReglasCc(codTipoCatMotorCc, toJoinMotorCc && toJoinMotorCc.moneda_in, toJoinMotorCc && toJoinMotorCc.moneda_out);
+  const tipoOpReglasChequeCc = esChequeArsMatrizCcMotor ? 'CHEQUE-ARS' : tipoOperacionCodigo;
+  // CC cliente: la línea «Comisión del acuerdo» debe cuadrar **MonR − MonE** (da igual si el descuento viene de tasa
+  // cliente, intermediario o mixto). No usar solo `comisionPandyMonto`: con comisión 100 % intermediario comM=0 y
+  // antes quedaba spreadClienteCheque=0 si el parámetro no venía o exigía intermediario_id.
+  const spreadChequeDesdeOrden = esChequeArsMatrizCcMotor
+    ? spreadChequeArsClienteNetoDesdeOrdenYParTrx(transacciones, orden, modosMapMotorCc)
+    : 0;
+  const mrNomMotorCc = esChequeArsMatrizCcMotor
+    ? montoNominalIngresoAcuerdoChequeArsParaCc(transacciones, modosMapMotorCc, orden)
+    : 0;
+  const mrChequeCabMotor = esChequeArsMatrizCcMotor
+    ? (mrNomMotorCc >= 1e-6 ? mrNomMotorCc : mr)
+    : mr;
+  const meChequeCabMotor = Number(orden.monto_entregado) || 0;
+  const spreadChequeDesdeCabecera =
+    esChequeArsMatrizCcMotor && mrChequeCabMotor > meChequeCabMotor + 1e-6
+      ? mrChequeCabMotor - meChequeCabMotor
+      : 0;
+  const spreadChequeClienteOrden = esChequeArsMatrizCcMotor
+    ? Math.max(spreadChequeDesdeOrden, spreadChequeDesdeCabecera)
+    : 0;
+  const spreadPasadoCheque = esChequeArsMatrizCcMotor ? Number(comisionSpreadAcuerdoClienteCheque) : NaN;
   const spreadClienteCheque =
-    codOpCh === 'CHEQUE-ARS' && intermediarioId && Number(comisionSpreadAcuerdoClienteCheque) >= 1e-6
-      ? Number(comisionSpreadAcuerdoClienteCheque)
+    esChequeArsMatrizCcMotor
+      ? (Number.isFinite(spreadPasadoCheque) && spreadPasadoCheque >= 1e-6 ? spreadPasadoCheque : spreadChequeClienteOrden)
       : 0;
   const montoComisionLineaCcClienteCheque = spreadClienteCheque >= 1e-6 ? spreadClienteCheque : comM;
   const nroTransComisionConceptoChequeArs =
-    codOpCh === 'CHEQUE-ARS' ? nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comM) : null;
-  const feComChequeArs = codOpCh === 'CHEQUE-ARS'
+    esChequeArsMatrizCcMotor ? nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comM) : null;
+  const feComChequeArs = esChequeArsMatrizCcMotor
     ? (nroTransComisionConceptoChequeArs != null
       ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionConceptoChequeArs, fecha, ahora)
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora))
     : { fecha, estado_fecha: ahora };
-  if (codOpCh === 'CHEQUE-ARS' && clienteId && montoComisionLineaCcClienteCheque >= 1e-6) {
+  if (esChequeArsMatrizCcMotor && clienteId && montoComisionLineaCcClienteCheque >= 1e-6) {
     const parClienteCerrado =
       (transacciones || []).some((t) =>
         (t.tipo || '').toLowerCase() === 'ingreso' &&
@@ -13950,26 +15156,33 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         String(t.cobrador || '').toLowerCase() === 'cliente' &&
         transaccionEstadoTextoNormalizado(t) === 'ejecutada'
       );
-    const condicionPandy = getCondicionComisionReglasNegocio(reglasDeNegocio, tipoOperacionCodigo, 'cliente', 'pandy', 'ingreso');
+    const condicionPandy = getCondicionComisionReglasNegocio(reglasDeNegocio, tipoOpReglasChequeCc, 'cliente', 'pandy', 'ingreso');
     const estadoComPandy = condicionPandy
       ? estadoEfectivoComision(transacciones, condicionPandy)
       : (parClienteCerrado ? 'ejecutada' : 'pendiente');
     const reglaComPandy = reglaComisionMotorPlantillaDetalle(
       reglasDeNegocio,
-      tipoOperacionCodigo,
+      tipoOpReglasChequeCc,
       'cliente',
       'pandy',
       'ingreso',
       estadoComPandy,
       parClienteCerrado,
     );
+    /** CC acuerdo: el spread `mr−me` debe figurar como **Haber (+)** del cliente frente al cobro/compromiso; el `signo` de la fila `es_comision` en `reglas_de_negocio` puede ser contable −1 y no debe invertir este asiento. */
+    const montoComisionCcClienteChequePositivo = Math.abs(montoComisionLineaCcClienteCheque);
     // Comisión Pandy: fila CC **pendiente** en cuanto hay acuerdo con comisión, aunque Tx1/Tx2 sigan pendientes; pasa a cerrado cuando `estadoComPandy` es ejecutada (par_cliente o condición) u orden ya ejecutada con instrumentación resuelta.
     if (reglaComPandy) {
-      const signo = Number(reglaComPandy.signo) != null ? Number(reglaComPandy.signo) : 1;
       const cerrado =
         estadoComPandy === 'ejecutada' ||
-        ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, transacciones, tipoOperacionCodigo);
-      const moneda = String(comisionPandyMon || reglaComPandy.moneda || 'ARS').toUpperCase();
+        ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, transacciones, tipoOpReglasChequeCc);
+      const moneda = String(
+        monedaCatalogoParaOrden(comisionPandyMon || reglaComPandy.moneda || orden.moneda_recibida) ||
+          comisionPandyMon ||
+          reglaComPandy.moneda ||
+          orden.moneda_recibida ||
+          'ARS',
+      ).toUpperCase();
       rowsCcCliente.push({
         cliente_id: clienteId,
         orden_id: ordenId,
@@ -13979,34 +15192,71 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         fecha: feComChequeArs.fecha,
         usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
         moneda,
-        monto: signo * montoComisionLineaCcClienteCheque,
+        monto: montoComisionCcClienteChequePositivo,
         estado: ordenAnuladaMotor ? 'anulado' : (cerrado ? 'cerrado' : 'pendiente'),
         estado_fecha: feComChequeArs.estado_fecha,
-        incluir_en_detalle: incluirEnDetalleCcDesdeCampoRegla(reglaComPandy.incluir_en_detalle),
-        ...montosCcPorMoneda(moneda, signo * montoComisionLineaCcClienteCheque)
+        /** Siempre **true**: el detalle CC (`continuarFetchMovimientosCcCore`) omite `incluir_en_detalle === false`; varias filas `es_comision` en BD traen `false` y ocultaban el +spread del acuerdo en la pestaña Movimientos. */
+        incluir_en_detalle: true,
+        ...montosCcPorMoneda(moneda, montoComisionCcClienteChequePositivo)
+      });
+    } else {
+      // Sin fila `es_comision` en `reglas_de_negocio` para este estado: el spread mr−me igual debe figurar (+) para netear CC cliente con cobro/compromiso.
+      const cerradoSinRegla =
+        estadoComPandy === 'ejecutada' ||
+        ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, transacciones, tipoOpReglasChequeCc);
+      const monedaSinRegla = String(
+        monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
+      ).toUpperCase();
+      rowsCcCliente.push({
+        cliente_id: clienteId,
+        orden_id: ordenId,
+        transaccion_id: null,
+        transaccion_numero: null,
+        concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConceptoChequeArs),
+        fecha: feComChequeArs.fecha,
+        usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
+        moneda: monedaSinRegla,
+        monto: montoComisionCcClienteChequePositivo,
+        estado: ordenAnuladaMotor ? 'anulado' : (cerradoSinRegla ? 'cerrado' : 'pendiente'),
+        estado_fecha: feComChequeArs.estado_fecha,
+        incluir_en_detalle: true,
+        ...montosCcPorMoneda(monedaSinRegla, montoComisionCcClienteChequePositivo),
       });
     }
   }
-  if (codOpCh === 'CHEQUE-ARS' && intermediarioId && filasIntParaComision.length) {
-    const condicion = getCondicionComisionReglasNegocio(reglasDeNegocio, tipoOperacionCodigo, 'pandy', 'intermediario', 'egreso');
+  const omitCcIntComisionChequeSpreadYaEnPar = chequeArsCcIntOmitirComisionAcuerdoSinteticaTodoInter(
+    comM,
+    filasIntParaComision,
+    montoComisionLineaCcClienteCheque,
+  );
+  if (esChequeArsMatrizCcMotor && intermediarioId && !omitCcIntComisionChequeSpreadYaEnPar) {
+    const condicion = getCondicionComisionReglasNegocio(reglasDeNegocio, tipoOpReglasChequeCc, 'pandy', 'intermediario', 'egreso');
     const estadoEf = condicion
       ? estadoEfectivoComision(transacciones, condicion)
       : estadoEfectivoComision(transacciones, 'par_pandy_int');
     const parIntCerrado = estadoEf === 'ejecutada';
     const reglaComInt = reglaComisionMotorPlantillaDetalle(
       reglasDeNegocio,
-      tipoOperacionCodigo,
+      tipoOpReglasChequeCc,
       'pandy',
       'intermediario',
       'egreso',
       estadoEf,
       parIntCerrado,
     );
-    // Comisión intermediario: misma idea que Pandy — fila **pendiente** al persistir la orden si Tx3/Tx4 aún no cierran el par Pandy↔intermediario.
-    if (reglaComInt) {
+    const cerradoIntCheque =
+      parIntCerrado || ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, transacciones, tipoOpReglasChequeCc);
+    const tieneSynthComIntYa = (rowsCcInt || []).some((r) => {
+      if (!r || String(r.orden_id || '') !== String(ordenId) || String(r.intermediario_id || '') !== String(intermediarioId)) {
+        return false;
+      }
+      const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id) : '';
+      if (tid) return false;
+      return conceptoEsComisionAcuerdoLineaGp(r.concepto);
+    });
+    // Comisión intermediario desde `comisiones_orden`: fila **pendiente** si Tx3/Tx4 aún no cierran el par Pandy↔intermediario.
+    if (filasIntParaComision.length && reglaComInt) {
       const signo = Number(reglaComInt.signo) != null ? Number(reglaComInt.signo) : 1;
-      const cerradoIntCheque =
-        parIntCerrado || ccComisionesSinteticasCerradasPorEstadoOrdenYInstrumentacion(orden, transacciones, tipoOperacionCodigo);
       for (const filaInt of filasIntParaComision) {
         const comInt = Number(filaInt.monto) || 0;
         if (comInt < 1e-6) continue;
@@ -14024,9 +15274,41 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
           estado: ordenAnuladaMotor ? 'anulado' : (cerradoIntCheque ? 'cerrado' : 'pendiente'),
           estado_fecha: feComChequeArs.estado_fecha,
           incluir_en_detalle: incluirEnDetalleCcDesdeCampoRegla(reglaComInt.incluir_en_detalle),
-          ...montosCcPorMoneda(monCom, signo * comInt)
+          ...montosCcPorMoneda(monCom, signo * comInt),
         });
       }
+    } else if (
+      !filasIntParaComision.length &&
+      montoComisionLineaCcClienteCheque >= 1e-6 &&
+      !tieneSynthComIntYa
+    ) {
+      /** Comisión 100 % Pandy (sin filas `comisiones_orden` al intermediario): Tx3 (+mr) y Tx4 (−me) dejan +spread en CC int.;
+       * hace falta la sintética «Comisión del acuerdo» con el **signo de la regla** (típic. −spread) para netear el libro.
+       * Simétrico al caso 100 % intermediario en `docs/CHEQUE_ARS_INTERMEDIARIO.md`. */
+      const signoSynth =
+        reglaComInt && Number(reglaComInt.signo) != null && Number.isFinite(Number(reglaComInt.signo))
+          ? Number(reglaComInt.signo)
+          : -1;
+      const montoAbs = Math.abs(montoComisionLineaCcClienteCheque);
+      const montoCcInt = signoSynth * montoAbs;
+      const monCom = String(
+        monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
+      ).toUpperCase();
+      rowsCcInt.push({
+        intermediario_id: intermediarioId,
+        orden_id: ordenId,
+        transaccion_id: null,
+        transaccion_numero: null,
+        concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionConceptoChequeArs),
+        fecha: feComChequeArs.fecha,
+        usuario_id: usuarioIdMovimientoCcSinteticoDesdeOrden(transacciones, orden),
+        moneda: monCom,
+        monto: montoCcInt,
+        estado: ordenAnuladaMotor ? 'anulado' : (cerradoIntCheque ? 'cerrado' : 'pendiente'),
+        estado_fecha: feComChequeArs.estado_fecha,
+        incluir_en_detalle: reglaComInt ? incluirEnDetalleCcDesdeCampoRegla(reglaComInt.incluir_en_detalle) : true,
+        ...montosCcPorMoneda(monCom, montoCcInt),
+      });
     }
   }
 }
@@ -14410,7 +15692,7 @@ function loadCuentaCorriente(opts) {
         const metaPre = tiposOperacionNestedMeta(orden.tipos_operacion);
         const codigo = metaPre.codigo !== '–' ? metaPre.codigo : null;
         const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
-        const esModelo = esTipoOperacionChequeArs(codigo, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id;
+        const esModelo = esTipoOperacionChequeArsMatrizReglasCc(codigo, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id;
         const transacciones = transaccionesByOrdenId[ordenId] || [];
         let contribCliente = { USD: 0, EUR: 0, ARS: 0 };
         let contribInt = { USD: 0, EUR: 0, ARS: 0 };
@@ -19119,7 +20401,13 @@ function formatImporteInputOnType(inputEl, maxDecimales, soloComaDecimal) {
 
 function setupInputImporte(inputEl, maxDecimales, soloComaDecimal) {
   if (!inputEl) return;
-  const maxDec = (typeof maxDecimales === 'number' && maxDecimales >= 0) ? maxDecimales : 2;
+  const maxDecDefault = (typeof maxDecimales === 'number' && maxDecimales >= 0) ? maxDecimales : 2;
+  function maxDecEfectivo() {
+    const dm = inputEl.dataset.importeMaxDec;
+    if (dm == null || dm === '') return maxDecDefault;
+    const p = parseInt(String(dm), 10);
+    return Number.isFinite(p) && p >= 0 ? p : maxDecDefault;
+  }
   // Evita acumular listeners si el mismo input se configura en cada apertura de modal (p. ej. transaccion-monto).
   if (inputEl.dataset.importeInputBound === '1') {
     inputEl._importeValorPrevio = inputEl.value;
@@ -19131,10 +20419,11 @@ function setupInputImporte(inputEl, maxDecimales, soloComaDecimal) {
   });
   // Capture: corre antes que otros listeners en bubble (p. ej. actualizarMontoCalculado en transaccion-monto)
   // para que miles/decimales queden aplicados antes de parsear el valor.
-  inputEl.addEventListener('input', () => formatImporteInputOnType(inputEl, maxDec, soloComaDecimal), true);
+  inputEl.addEventListener('input', () => formatImporteInputOnType(inputEl, maxDecEfectivo(), soloComaDecimal), true);
   inputEl.addEventListener('blur', () => {
     const val = inputEl.value.trim();
     const n = parseImporteInput(val);
+    const maxDec = maxDecEfectivo();
     if (isNaN(n) || val === '') return;
     if (n === 0) {
       inputEl.value = '0';
@@ -19149,6 +20438,8 @@ function setupInputImporte(inputEl, maxDecimales, soloComaDecimal) {
     } else if (!usuarioEscribioComa && Number.isInteger(n)) {
       const entera = String(Math.floor(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
       inputEl.value = entera;
+    } else if (maxDec > 2) {
+      inputEl.value = formatNumeroComaHastaDecimales(n, maxDec);
     } else {
       inputEl.value = formatImporteDisplay(n);
     }
@@ -20178,8 +21469,10 @@ function pandiPintarOrdenPanelTransaccionesDesdeSnapshot(panel, orden, snap, ctx
     const me = Number(ordenRef.monto_entregado) || 0;
     const monR = ordenRef.moneda_recibida || 'USD';
     const monE = ordenRef.moneda_entregada || 'USD';
-    const okRec = totalRecibido <= mr + 1e-6;
-    const okEnt = totalEntregado <= me + 1e-6;
+    const tolRStrip = toleranciaConciliacionInstrumentacionMonto(ordenRef, 'recibido');
+    const tolEStrip = toleranciaConciliacionInstrumentacionMonto(ordenRef, 'entregado');
+    const okRec = totalRecibido <= mr + tolRStrip;
+    const okEnt = totalEntregado <= me + tolEStrip;
     const ejecutada = ordenRef.estado === 'orden_ejecutada';
     const textoInst = ejecutada
       ? `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`
@@ -20218,8 +21511,8 @@ function pandiPintarOrdenPanelTransaccionesDesdeSnapshot(panel, orden, snap, ctx
   };
   const montoCell = (t) => {
     if (!canEditarTr) return `<td>${formatImporteDisplay(t.monto)}</td>`;
-    const val = formatImporteParaInput(t.monto);
-    return `<td><input type="text" class="input-monto-transaccion-tabla" data-id="${esc(t.id)}" value="${esc(val)}" inputmode="decimal" aria-label="Monto ${esc(t.moneda)}"></td>`;
+    const val = formatMontoTransaccionTablaParaInput(t.monto, t.moneda);
+    return `<td><input type="text" class="input-monto-transaccion-tabla" data-id="${esc(t.id)}" data-moneda="${esc((t.moneda || '').toString())}" value="${esc(val)}" inputmode="decimal" aria-label="Monto ${esc(t.moneda)}"></td>`;
   };
   const modoPagoCell = (t) => {
     const modo = modosMap[t.modo_pago_id];
@@ -20281,10 +21574,11 @@ function pandiPintarOrdenPanelTransaccionesDesdeSnapshot(panel, orden, snap, ctx
           const id = this.getAttribute('data-id');
           const prev = lista.find((r) => String(r.id) === String(id));
           const nv = parseImporteInput(this.value);
-          if (!prev || Number.isNaN(nv) || nv <= 0 || Math.abs(nv - Number(prev.monto)) < 1e-9) return;
+          if (!prev || Number.isNaN(nv) || nv <= 0 || montosTrxCasiIguales(prev.monto, nv, prev.moneda)) return;
           void pandiOfflineInstrumentacionPatchMonto(ordenIdCtx, instrumentacionIdCtx, id, nv, orden);
         });
       });
+      configurarInputsMontoTransaccionTablaEn(tbody);
     } else {
       delete panel.dataset.pandiTransaccionesOfflineEdit;
     }
@@ -21034,7 +22328,7 @@ function loadOrdenes() {
         const intIds = [...new Set(list.map((o) => o.intermediario_id).filter(Boolean))];
         return Promise.all([
           client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
-          tipoOpIds.length ? client.from('tipos_operacion').select('id, nombre, codigo, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica').in('id', tipoOpIds) : Promise.resolve({ data: [] }),
+          tipoOpIds.length ? client.from('tipos_operacion').select('id, nombre, codigo, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica, cheque_ars_comision_modalidad').in('id', tipoOpIds) : Promise.resolve({ data: [] }),
           client.from('intermediarios').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
         ]).then(([crClientes, tr, crInt]) => {
           const clientesMap = {};
@@ -21049,6 +22343,7 @@ function loadOrdenes() {
               usa_intermediario: t.usa_intermediario === true,
               icono_modo: (t.icono_modo || 'auto').toString().trim().toLowerCase(),
               icono_url_publica: (t.icono_url_publica || '').toString().trim(),
+              cheque_ars_comision_modalidad: t.cheque_ars_comision_modalidad != null ? String(t.cheque_ars_comision_modalidad).trim().toLowerCase() : null,
             };
           });
           const intermediariosMap = {};
@@ -21509,7 +22804,7 @@ function openModalOrden(registro) {
     });
   }
 
-  const tiposOrdenCols = 'id, codigo, nombre, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica';
+  const tiposOrdenCols = 'id, codigo, nombre, moneda_in, moneda_out, usa_intermediario, icono_modo, icono_url_publica, cheque_ars_comision_modalidad';
   const promDatos = Promise.all([
     pandiSupabaseQuerySafe(
       client.from('clientes').select('id, nombre').eq('activo', true).order('nombre', { ascending: true }),
@@ -21595,7 +22890,10 @@ function openModalOrden(registro) {
         const modo = im((t.icono_modo || 'auto').toString().trim().toLowerCase());
         const baseNombre = t.nombre != null ? String(t.nombre).trim() : '';
         const etiqueta = nombreTipoOperacionOrdenUi(t);
-        return `<option value="${t.id}" data-nombre-base="${escAttr(baseNombre)}" data-codigo="${escapeHtml(t.codigo || '')}" data-icono-modo="${escapeHtml(modo)}" data-icono-url="${escUrl(t.icono_url_publica || '')}" data-moneda-in="${escapeHtml((t.moneda_in || '').toUpperCase())}" data-moneda-out="${escapeHtml((t.moneda_out || '').toUpperCase())}" data-usa-intermediario="${t.usa_intermediario === true ? 'true' : 'false'}">${escapeHtml(etiqueta)}</option>`;
+        const chModOpt = (t.cheque_ars_comision_modalidad != null && String(t.cheque_ars_comision_modalidad).trim() !== '')
+          ? escapeHtml(String(t.cheque_ars_comision_modalidad).trim().toLowerCase())
+          : '';
+        return `<option value="${t.id}" data-nombre-base="${escAttr(baseNombre)}" data-codigo="${escapeHtml(t.codigo || '')}" data-icono-modo="${escapeHtml(modo)}" data-icono-url="${escUrl(t.icono_url_publica || '')}" data-moneda-in="${escapeHtml((t.moneda_in || '').toUpperCase())}" data-moneda-out="${escapeHtml((t.moneda_out || '').toUpperCase())}" data-usa-intermediario="${t.usa_intermediario === true ? 'true' : 'false'}" data-cheque-ars-comision-modalidad="${chModOpt}">${escapeHtml(etiqueta)}</option>`;
       }).join('');
     }
     syncOrdenTipoOperacionIconosPreview();
@@ -21764,13 +23062,27 @@ function openModalOrden(registro) {
       document.getElementById('orden-moneda-entregada').value = registroActual.moneda_entregada || 'USD';
       document.getElementById('orden-monto-entregado').value = formatImporteParaInput(registroActual.monto_entregado);
       document.getElementById('orden-cotizacion').value = formatImporteParaInput(registroActual.cotizacion);
-      const tasaIntEl = document.getElementById('orden-tasa-descuento-intermediario');
-      if (tasaIntEl) tasaIntEl.value = (registroActual.tasa_descuento_intermediario != null && Number(registroActual.tasa_descuento_intermediario) > 0) ? formatTasaPorcentajeDisplay(Number(registroActual.tasa_descuento_intermediario) * 100) : '';
       const mr = registroActual.monto_recibido != null ? Number(registroActual.monto_recibido) : null;
       const me = registroActual.monto_entregado != null ? Number(registroActual.monto_entregado) : null;
       const tipoRowReg = tipos.find((t) => t.id === registroActual.tipo_operacion_id);
       const tipoCodigoReg = tipoRowReg?.codigo || '';
       const esChequeArsReg = esTipoOperacionChequeArs(tipoCodigoReg, tipoRowReg?.moneda_in, tipoRowReg?.moneda_out);
+      const tasaIntEl = document.getElementById('orden-tasa-descuento-intermediario');
+      if (tasaIntEl) {
+        if (registroActual.tasa_descuento_intermediario != null && Number(registroActual.tasa_descuento_intermediario) > 0) {
+          tasaIntEl.value = formatTasaPorcentajeDisplay(Number(registroActual.tasa_descuento_intermediario) * 100);
+        } else {
+          tasaIntEl.value = '';
+        }
+        if (
+          esChequeArsReg &&
+          registroActual.intermediario_id &&
+          registroActual.tasa_descuento_intermediario != null &&
+          Number(registroActual.tasa_descuento_intermediario) === 0
+        ) {
+          tasaIntEl.value = formatTasaPorcentajeDisplay(0);
+        }
+      }
       if ((esChequeArsReg || tipoCodigoReg === 'USD-USD') && me != null && me > 0 && mr != null && mr > 0) {
         const importeChequeEl = document.getElementById('orden-importe-cheque');
         const tasaClienteEl = document.getElementById('orden-tasa-descuento-cliente');
@@ -22209,6 +23521,13 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     inputCotizacion.removeEventListener('input', actualizarComisionUsdArs); inputCotizacion.removeEventListener('change', actualizarComisionUsdArs);
   }
   let _actualizandoMontosTc = false;
+  const cruceArsUsdPrecisionUsd = (recNorm === 'USD' && entNorm === 'ARS') || (recNorm === 'ARS' && entNorm === 'USD');
+  function formatearMontoUsdDesdeTc(val) {
+    if (!cruceArsUsdPrecisionUsd) return formatImporteParaInput(val);
+    if (typeof val !== 'number' || !Number.isFinite(val)) return '';
+    if (val === 0) return '0';
+    return formatNumeroComaHastaDecimales(val, PANDI_USD_ARS_CRUCE_DECIMALES);
+  }
   function actualizarMontosDesdeTc(origen) {
     if (_actualizandoMontosTc || !inputCotizacion || !montoRecibidoEl || !montoEntregadoEl) return;
     const tc = parseImporteInput(inputCotizacion.value);
@@ -22228,7 +23547,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
         }
       } else if (origen === 'recibir' && tieneRecibir) {
         _actualizandoMontosTc = true;
-        montoEntregadoEl.value = formatImporteDisplay(r / tc);
+        montoEntregadoEl.value = formatearMontoUsdDesdeTc(r / tc);
         _actualizandoMontosTc = false;
       }
     } else if (isTcVendeUsd) {
@@ -22240,7 +23559,7 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
       } else if (origen === 'entregar') {
         if (tieneEntregar) {
           _actualizandoMontosTc = true;
-          montoRecibidoEl.value = (e / tc === 0 || !Number.isFinite(e / tc)) ? '' : formatImporteParaInput(e / tc);
+          montoRecibidoEl.value = (e / tc === 0 || !Number.isFinite(e / tc)) ? '' : formatearMontoUsdDesdeTc(e / tc);
           _actualizandoMontosTc = false;
         }
       } else if (origen === 'recibir' && tieneRecibir) {
@@ -22340,7 +23659,13 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
       if (monedaRecibida) monedaRecibida.disabled = true;
       if (monedaEntregada) monedaEntregada.disabled = true;
       const tasaInt = el('orden-tasa-descuento-intermediario');
-      if (tasaInt) tasaInt.disabled = !(editable && tieneIntermediario);
+      const wrapTasaIntCh = document.getElementById('orden-wrap-tasa-descuento-intermediario');
+      const tasaIntChOn =
+        wrapTasaIntCh &&
+        (wrapTasaIntCh.style.display === 'block' ||
+          (typeof window !== 'undefined' && window.getComputedStyle && window.getComputedStyle(wrapTasaIntCh).display !== 'none'));
+      // No atar a `editable` (misma idea que USD-USD+int): si no, con tasa cliente 0 el paso intermedio exige tasa int. pero el input queda grisado hasta tener valor (imposible).
+      if (tasaInt) tasaInt.disabled = !(tieneIntermediario && tasaIntChOn);
     } else if (isTipoDosMonedas) {
       // compra_usd: editable monto entregado (USD); vende_usd: editable monto recibido (USD); la otra moneda calculada con tc
       if (fechaEl) fechaEl.disabled = true;
@@ -22396,9 +23721,22 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
       return;
     }
     const importe = parseImporteInput(importeChequeEl.value);
-    const tasaPct = parseImporteInput(tasaDescuentoClienteEl.value);
+    const tasaCliRaw = (tasaDescuentoClienteEl.value || '').trim();
+    const tasaPct = tasaCliRaw ? parseImporteInput(tasaDescuentoClienteEl.value) : null;
     const importeOk = typeof importe === 'number' && !isNaN(importe) && importe > 0;
-    const tasaOk = typeof tasaPct === 'number' && !isNaN(tasaPct) && tasaPct > 0 && tasaPct < 100;
+    const selOptChPd = document.getElementById('orden-tipo-operacion')?.selectedOptions?.[0];
+    const chModPd = isArsArs ? ordenChequeArsComisionModalidadDesdeSelectOption(selOptChPd) : 'legacy';
+    let tasaOk;
+    if (isUsdUsd) {
+      tasaOk = typeof tasaPct === 'number' && !isNaN(tasaPct) && tasaPct > 0 && tasaPct < 100;
+    } else if (chModPd === 'sin_comision' || chModPd === 'solo_intermediario') {
+      const z = tasaPct == null || (typeof tasaPct === 'number' && isNaN(tasaPct)) ? 0 : tasaPct;
+      tasaOk = typeof z === 'number' && !isNaN(z) && z >= 0 && z < 100 && z === 0;
+    } else {
+      // legacy (null en BD): tasa cliente en [0, 100) — 0 permitido si luego hay tasa int. con intermediario
+      const z = tasaPct == null || (typeof tasaPct === 'number' && isNaN(tasaPct)) ? null : tasaPct;
+      tasaOk = typeof z === 'number' && !isNaN(z) && z >= 0 && z < 100;
+    }
     const modoUsdCli = isUsdUsd ? ordenUsdUsdTasaClienteModoDesdeDom() : USD_USD_TASA_CLIENTE_MODO_DESCUENTO;
     if (!importeOk || !tasaOk) {
       setRestoOrdenEditable(false);
@@ -22414,15 +23752,75 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
       montoRecibir = ordenUsdUsdMontoRecibirDesdeImporteYTasaClientePct(importe, tasaPct, modoUsdCli);
       montoEntregar = ordenUsdUsdMontoEntregarDesdeImporteYTasaClientePct(importe, tasaPct, modoUsdCli);
     } else {
+      // CHEQUE-ARS: el cliente absorbe la comisión vía monto a entregar. Con tasa cliente > 0 solo se descuenta esa tasa
+      // al nominal; la comisión del intermediario se reparte en CC. Con tasa cliente 0 e intermediario > 0, el descuento
+      // al cliente es la tasa del intermediario sobre el nominal. Solo si ambas tasas son 0: recibido = entregado = nominal.
+      const tasaIntElMe = document.getElementById('orden-tasa-descuento-intermediario');
+      const wrapTasaIntMe = document.getElementById('orden-wrap-tasa-descuento-intermediario');
+      const tasaIntVisibleMe =
+        wrapTasaIntMe &&
+        (wrapTasaIntMe.style.display === 'block' ||
+          (typeof window !== 'undefined' && window.getComputedStyle && window.getComputedStyle(wrapTasaIntMe).display !== 'none'));
+      const tieneIntDomMe = !!(document.getElementById('orden-intermediario')?.value?.trim());
       montoRecibir = importe;
-      montoEntregar = importe * (1 - tasaPct / 100);
+      const tcNum = typeof tasaPct === 'number' && !isNaN(tasaPct) ? tasaPct : 0;
+      let pctDescuentoAlCliente = 0;
+      if (tcNum > 1e-12) {
+        pctDescuentoAlCliente = tcNum;
+      } else if (usaIntermediario && tasaIntVisibleMe && tieneIntDomMe) {
+        const rawTiMe = (tasaIntElMe?.value || '').trim();
+        const tiNum = rawTiMe ? parseImporteInput(tasaIntElMe.value) : NaN;
+        if (typeof tiNum === 'number' && !isNaN(tiNum) && tiNum > 1e-12 && tiNum < 100) {
+          pctDescuentoAlCliente = tiNum;
+        }
+      }
+      montoEntregar = importe * (1 - pctDescuentoAlCliente / 100);
     }
     const spreadTotal = (montoRecibir != null && montoEntregar != null) ? (montoRecibir - montoEntregar) : null;
+
+    if (montoEntregar == null || (typeof montoEntregar === 'number' && (isNaN(montoEntregar) || montoEntregar <= 0))) {
+      setRestoOrdenEditable(false);
+      if (wrapMontosCalculados) wrapMontosCalculados.style.display = 'none';
+      if (montoRecibidoEl) montoRecibidoEl.value = '';
+      if (montoEntregadoEl) montoEntregadoEl.value = '';
+      if (comisionDisplay) comisionDisplay.value = '';
+      return;
+    }
+    // CHEQUE-ARS: persistir mr/me en los inputs en cuanto importe+tasa cliente son válidos, **antes** de exigir tasa int.
+    // Así Guardar / instrumentación no ven montos vacíos mientras el usuario completa la tasa del intermediario (p. ej. solo_intermediario).
+    if (isArsArs) {
+      if (montoRecibidoEl) {
+        montoRecibidoEl.value = formatImporteDisplay(montoRecibir);
+        montoRecibidoEl.readOnly = true;
+      }
+      if (montoEntregadoEl) {
+        montoEntregadoEl.value = formatImporteDisplay(montoEntregar);
+        montoEntregadoEl.readOnly = true;
+      }
+      if (montoRecibidoDisplay) montoRecibidoDisplay.value = formatImporteDisplay(montoRecibir);
+      if (montoEntregadoDisplay) montoEntregadoDisplay.value = formatImporteDisplay(montoEntregar);
+      actualizarComisionArsArs();
+    }
 
     const tasaIntEl = document.getElementById('orden-tasa-descuento-intermediario');
     const wrapTasaInt = document.getElementById('orden-wrap-tasa-descuento-intermediario');
     const tasaIntVisible = wrapTasaInt && (wrapTasaInt.style.display === 'block' || (typeof window !== 'undefined' && window.getComputedStyle && window.getComputedStyle(wrapTasaInt).display !== 'none'));
-    
+    const tieneIntDomPd = !!(document.getElementById('orden-intermediario')?.value?.trim());
+    if (isArsArs && usaIntermediario && tasaIntVisible && tieneIntDomPd) {
+      const rawTiCh = (tasaIntEl?.value || '').trim();
+      const tIntCh = rawTiCh ? parseImporteInput(tasaIntEl.value) : null;
+      const tcValCh =
+        chModPd === 'sin_comision' || chModPd === 'solo_intermediario'
+          ? 0
+          : (typeof tasaPct === 'number' && !isNaN(tasaPct) ? tasaPct : null);
+      const errChT = ordenMensajeErrorTasasChequeArsModalidad(chModPd, true, tcValCh, tIntCh);
+      if (errChT) {
+        setRestoOrdenEditable(false);
+        if (wrapMontosCalculados) wrapMontosCalculados.style.display = 'none';
+        if (comisionDisplay) comisionDisplay.value = spreadTotal != null ? formatImporteDisplay(spreadTotal) : '';
+        return;
+      }
+    }
     if (isUsdUsd && esWizardUsdUsdConIntermediario() && tasaIntVisible) {
       const tasaIntPct = parseImporteInput(tasaIntEl?.value);
       if (!(typeof tasaIntPct === 'number' && !isNaN(tasaIntPct) && tasaIntPct > 0 && tasaIntPct < 100)) {
@@ -22453,18 +23851,18 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
         return;
       }
     }
-    if (montoEntregar == null || (typeof montoEntregar === 'number' && (isNaN(montoEntregar) || montoEntregar <= 0))) {
-      setRestoOrdenEditable(false);
-      if (wrapMontosCalculados) wrapMontosCalculados.style.display = 'none';
-      if (montoRecibidoEl) montoRecibidoEl.value = '';
-      if (montoEntregadoEl) montoEntregadoEl.value = '';
-      if (comisionDisplay) comisionDisplay.value = '';
-      return;
+    if (!isArsArs) {
+      if (montoRecibidoEl) {
+        montoRecibidoEl.value = formatImporteDisplay(montoRecibir);
+        montoRecibidoEl.readOnly = true;
+      }
+      if (montoEntregadoEl) {
+        montoEntregadoEl.value = formatImporteDisplay(montoEntregar);
+        montoEntregadoEl.readOnly = true;
+      }
+      if (montoRecibidoDisplay) montoRecibidoDisplay.value = formatImporteDisplay(montoRecibir);
+      if (montoEntregadoDisplay) montoEntregadoDisplay.value = formatImporteDisplay(montoEntregar);
     }
-    if (montoRecibidoEl) { montoRecibidoEl.value = formatImporteDisplay(montoRecibir); montoRecibidoEl.readOnly = true; }
-    if (montoEntregadoEl) { montoEntregadoEl.value = formatImporteDisplay(montoEntregar); montoEntregadoEl.readOnly = true; }
-    if (montoRecibidoDisplay) montoRecibidoDisplay.value = formatImporteDisplay(montoRecibir);
-    if (montoEntregadoDisplay) montoEntregadoDisplay.value = formatImporteDisplay(montoEntregar);
     if (wrapMontosCalculados) wrapMontosCalculados.style.display = 'flex';
     setRestoOrdenEditable(true);
     if (isUsdUsd) actualizarComisionUsdUsd();
@@ -22503,6 +23901,12 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     }
     const tasaIntPrimerosUsd = document.getElementById('orden-tasa-descuento-intermediario');
     if (tasaIntPrimerosUsd && isUsdUsd) {
+      tasaIntPrimerosUsd.removeEventListener('input', actualizarPrimerosDatos);
+      tasaIntPrimerosUsd.removeEventListener('change', actualizarPrimerosDatos);
+      tasaIntPrimerosUsd.addEventListener('input', actualizarPrimerosDatos);
+      tasaIntPrimerosUsd.addEventListener('change', actualizarPrimerosDatos);
+    }
+    if (tasaIntPrimerosUsd && isArsArs) {
       tasaIntPrimerosUsd.removeEventListener('input', actualizarPrimerosDatos);
       tasaIntPrimerosUsd.removeEventListener('change', actualizarPrimerosDatos);
       tasaIntPrimerosUsd.addEventListener('input', actualizarPrimerosDatos);
@@ -22591,6 +23995,31 @@ function adaptarFormularioOrden(codigo, tipos, tipoIdSeleccionado) {
     if (inputCotizacion) {
       inputCotizacion.readOnly = false;
       inputCotizacion.disabled = false;
+    }
+  }
+  const hintUsdCruceArsDec = `Hasta ${PANDI_USD_ARS_CRUCE_DECIMALES} decimales (USD).`;
+  /** USD en «recibido»: típico USD-ARS (catálogo puede decir compra_usd, etc.). */
+  const wizardUsdEnMontoRecibido = recNorm === 'USD' && entNorm === 'ARS';
+  /** USD en «entregado»: típico ARS-USD. */
+  const wizardUsdEnMontoEntregado = recNorm === 'ARS' && entNorm === 'USD';
+  const mrDec = document.getElementById('orden-monto-recibido');
+  const meDec = document.getElementById('orden-monto-entregado');
+  if (mrDec) {
+    if (wizardUsdEnMontoRecibido) {
+      mrDec.dataset.importeMaxDec = String(PANDI_USD_ARS_CRUCE_DECIMALES);
+      mrDec.title = mrDec.readOnly ? '' : hintUsdCruceArsDec;
+    } else {
+      delete mrDec.dataset.importeMaxDec;
+      mrDec.removeAttribute('title');
+    }
+  }
+  if (meDec) {
+    if (wizardUsdEnMontoEntregado) {
+      meDec.dataset.importeMaxDec = String(PANDI_USD_ARS_CRUCE_DECIMALES);
+      meDec.title = meDec.readOnly ? '' : hintUsdCruceArsDec;
+    } else {
+      delete meDec.dataset.importeMaxDec;
+      meDec.removeAttribute('title');
     }
   }
   // Bloque azul «Datos del acuerdo»: nunca dejar importe/tasa cliente bloqueados por el navegador o restos de sesión.
@@ -22843,6 +24272,22 @@ function ordenWizardActualizarComisionesRepartoInformativo() {
   wrap.style.display = lines.length ? 'block' : 'none';
 }
 
+/**
+ * Reparte el total de comisión del acuerdo entre Pandy e intermediario: parte intermediario = `montoRecibido * (tasaPct/100)` acotada al total (misma base que USD-USD+int en wizard; `tasaPct` en %, ej. 2,5).
+ */
+function pandiSplitComisionPandyIntermediarioPorTasaMontoRecibido(totalCom, montoRecibido, tasaPct) {
+  const total = Number(totalCom) || 0;
+  const mr = Number(montoRecibido) || 0;
+  const tI = Number(tasaPct);
+  if (total < 1e-12 || mr < 1e-12 || typeof tI !== 'number' || !isFinite(tI) || tI < 1e-12) {
+    return { montoPandy: Math.max(0, total), montoInter: 0 };
+  }
+  const brutoInter = mr * (tI / 100);
+  const montoInter = Math.min(Math.max(0, brutoInter), Math.max(0, total));
+  const montoPandy = Math.max(0, total - montoInter);
+  return { montoPandy, montoInter };
+}
+
 /** Filas `comisiones_orden` para outbox v2 (alineado a `guardarComision` del wizard). Sin `orden_id`. */
 function pandiBuildComisionesOrdenOutboxRows(ctx) {
   if (!ctx) return null;
@@ -22894,6 +24339,17 @@ function pandiBuildComisionesOrdenOutboxRows(ctx) {
       montoInter = Math.min(Math.max(0, brutoInter), Math.max(0, totalCom));
       montoPandy = Math.max(0, totalCom - montoInter);
       }
+    } else {
+      montoPandy = comisionUsdN;
+      montoInter = 0;
+    }
+  } else if (esChequeArsOrden && intermediarioId) {
+    const mrSnap = Number((ctx.ordenSnap || {}).monto_recibido) || 0;
+    const tI = ctx.tasaIntermediarioPct;
+    if (tI != null && typeof tI === 'number' && !isNaN(tI) && tI > 0 && mrSnap > 0) {
+      const sp = pandiSplitComisionPandyIntermediarioPorTasaMontoRecibido(comisionUsdN, mrSnap, tI);
+      montoPandy = sp.montoPandy;
+      montoInter = sp.montoInter;
     } else {
       montoPandy = comisionUsdN;
       montoInter = 0;
@@ -22954,6 +24410,9 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
   const usaIntermediarioTipo = selTipoOptGuardar ? (selTipoOptGuardar.getAttribute('data-usa-intermediario') === 'true') : false;
   let intermediarioId = document.getElementById('orden-intermediario')?.value?.trim() || null;
   if (!usaIntermediarioTipo) intermediarioId = null;
+  if (typeof ordenWizardActualizarPrimerosDatosRef === 'function' && esChequeArsDesdeSelectOption(selTipoOptGuardar)) {
+    ordenWizardActualizarPrimerosDatosRef();
+  }
   const operacionDirecta = !intermediarioId;
   const monedaRecibida = document.getElementById('orden-moneda-recibida').value;
   const monedaEntregada = document.getElementById('orden-moneda-entregada').value;
@@ -23000,14 +24459,23 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
     return { error: 'En USD-USD el monto a recibir debe ser mayor al monto a entregar (la diferencia es la comisión).' };
   }
   if (esChequeArsOrden) {
-    if (montoRecibido <= montoEntregado) {
+    const chModCola = ordenChequeArsComisionModalidadDesdeSelectOption(selTipoOpt);
+    const rawTcCola = document.getElementById('orden-tasa-descuento-cliente')?.value?.trim() || '';
+    const tCliCola = rawTcCola ? parseImporteInput(document.getElementById('orden-tasa-descuento-cliente').value) : null;
+    const allowIgualCola =
+      chModCola === 'sin_comision' ||
+      chModCola === 'solo_intermediario' ||
+      (chModCola === 'legacy' && typeof tCliCola === 'number' && !isNaN(tCliCola) && Math.abs(tCliCola) < 1e-12);
+    if (!allowIgualCola && montoRecibido <= montoEntregado) {
       return { error: 'En operación con cheque (CHEQUE–ARS) el monto a recibir debe ser mayor al monto a entregar (descuento acuerdo).' };
     }
-    const tasaPctRaw = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
-    const tasaPct = tasaPctRaw ? parseImporteInput(tasaPctRaw) : null;
-    if (typeof tasaPct !== 'number' || isNaN(tasaPct) || tasaPct <= 0 || tasaPct >= 100) {
-      return { error: 'En operación con cheque (CHEQUE–ARS) la tasa de descuento del intermediario es obligatoria (ej. 1 para 1%, entre 0 y 100).' };
+    if (allowIgualCola && montoRecibido < montoEntregado - 1e-9) {
+      return { error: 'En operación con cheque (CHEQUE–ARS) el monto a recibir no puede ser menor al monto a entregar.' };
     }
+    const rawTiCola = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
+    const tIntCola = rawTiCola ? parseImporteInput(document.getElementById('orden-tasa-descuento-intermediario').value) : null;
+    const msgCola = ordenMensajeErrorTasasChequeArsModalidad(chModCola, !!intermediarioId, tCliCola, tIntCola);
+    if (msgCola) return { error: msgCola };
   }
   if (tipoCodigoU === 'USD-USD' && intermediarioId && ordenComisionFijaNachoUsdParaPersistir(tipoCodigo, intermediarioId)) {
     const nr = document.querySelector('input[name="orden-usd-nacho-comision-usd"]:checked');
@@ -23037,8 +24505,8 @@ function pandiValidarWizardOrdenPayloadParaColaLocal() {
   }
   const tasaDescuentoIntPct = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim();
   let tasaDescuentoIntermediario = null;
-  if (esChequeArsOrden && tasaDescuentoIntPct) {
-    tasaDescuentoIntermediario = parseImporteInput(tasaDescuentoIntPct) / 100;
+  if (esChequeArsOrden && intermediarioId) {
+    tasaDescuentoIntermediario = ordenChequeArsTasaInterFracPersistir(true, intermediarioId, tasaDescuentoIntPct, selTipoOpt);
   } else if (tipoCodigoU === 'USD-USD' && intermediarioId && ordenUsdIntMostrarTasaIntermediarioEnWizard() && tasaDescuentoIntPct) {
     tasaDescuentoIntermediario = parseImporteInput(tasaDescuentoIntPct) / 100;
   }
@@ -23213,6 +24681,9 @@ function guardarOrdenDesdeWizard() {
   const usaIntermediarioTipo = selTipoOptGuardar ? (selTipoOptGuardar.getAttribute('data-usa-intermediario') === 'true') : false;
   let intermediarioId = document.getElementById('orden-intermediario')?.value?.trim() || null;
   if (!usaIntermediarioTipo) intermediarioId = null;
+  if (typeof ordenWizardActualizarPrimerosDatosRef === 'function' && esChequeArsDesdeSelectOption(selTipoOptGuardar)) {
+    ordenWizardActualizarPrimerosDatosRef();
+  }
   const operacionDirecta = !intermediarioId;
   const monedaRecibida = document.getElementById('orden-moneda-recibida').value;
   const monedaEntregada = document.getElementById('orden-moneda-entregada').value;
@@ -23264,14 +24735,26 @@ function guardarOrdenDesdeWizard() {
     return Promise.resolve(null);
   }
   if (esChequeArsOrden) {
-    if (montoRecibido <= montoEntregado) {
+    const chModW = ordenChequeArsComisionModalidadDesdeSelectOption(selTipoOpt);
+    const rawTcW = document.getElementById('orden-tasa-descuento-cliente')?.value?.trim() || '';
+    const tCliW = rawTcW ? parseImporteInput(document.getElementById('orden-tasa-descuento-cliente').value) : null;
+    const allowIgualW =
+      chModW === 'sin_comision' ||
+      chModW === 'solo_intermediario' ||
+      (chModW === 'legacy' && typeof tCliW === 'number' && !isNaN(tCliW) && Math.abs(tCliW) < 1e-12);
+    if (!allowIgualW && montoRecibido <= montoEntregado) {
       showToast('En operación con cheque (CHEQUE–ARS) el monto a recibir debe ser mayor al monto a entregar (descuento acuerdo).', 'error');
       return Promise.resolve(null);
     }
-    const tasaPctRaw = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
-    const tasaPct = tasaPctRaw ? parseImporteInput(tasaPctRaw) : null;
-    if (typeof tasaPct !== 'number' || isNaN(tasaPct) || tasaPct <= 0 || tasaPct >= 100) {
-      showToast('En operación con cheque (CHEQUE–ARS) la tasa de descuento del intermediario es obligatoria (ej. 1 para 1%, entre 0 y 100).', 'error');
+    if (allowIgualW && montoRecibido < montoEntregado - 1e-9) {
+      showToast('En operación con cheque (CHEQUE–ARS) el monto a recibir no puede ser menor al monto a entregar.', 'error');
+      return Promise.resolve(null);
+    }
+    const rawTiW = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
+    const tIntW = rawTiW ? parseImporteInput(document.getElementById('orden-tasa-descuento-intermediario').value) : null;
+    const msgW = ordenMensajeErrorTasasChequeArsModalidad(chModW, !!intermediarioId, tCliW, tIntW);
+    if (msgW) {
+      showToast(msgW, 'error');
       return Promise.resolve(null);
     }
   }
@@ -23309,8 +24792,8 @@ function guardarOrdenDesdeWizard() {
   }
   const tasaDescuentoIntPct = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim();
   let tasaDescuentoIntermediario = null;
-  if (esChequeArsOrden && tasaDescuentoIntPct) {
-    tasaDescuentoIntermediario = parseImporteInput(tasaDescuentoIntPct) / 100;
+  if (esChequeArsOrden && intermediarioId) {
+    tasaDescuentoIntermediario = ordenChequeArsTasaInterFracPersistir(true, intermediarioId, tasaDescuentoIntPct, selTipoOpt);
   } else if (tipoCodigoU === 'USD-USD' && intermediarioId && ordenUsdIntMostrarTasaIntermediarioEnWizard() && tasaDescuentoIntPct) {
     tasaDescuentoIntermediario = parseImporteInput(tasaDescuentoIntPct) / 100;
   }
@@ -23420,12 +24903,21 @@ function guardarOrdenDesdeWizard() {
             montoPandy = comisionUsdNum;
             montoInter = 0;
           }
+        } else if (esChequeArsOrden && intermediarioId) {
+          const tI = parseImporteInput(document.getElementById('orden-tasa-descuento-intermediario')?.value);
+          if (typeof tI === 'number' && !isNaN(tI) && tI > 0 && typeof montoRecibido === 'number' && !isNaN(montoRecibido) && montoRecibido > 0) {
+            const sp = pandiSplitComisionPandyIntermediarioPorTasaMontoRecibido(comisionUsdNum, montoRecibido, tI);
+            montoPandy = sp.montoPandy;
+            montoInter = sp.montoInter;
+          } else {
+            montoPandy = comisionUsdNum;
+            montoInter = 0;
+          }
         } else {
           montoPandy = comisionUsdNum;
           montoInter = 0;
         }
         const repTr = aplicarExtraComisionTasaTransferenciaIntermediario({
-          intermediarioPagoTransferencia: ordenIntermediarioPagoTransferenciaDesdeDom(),
           cobraTasaTransferencia: ordenIntermediarioTransferenciaCobraTasaDesdeDom(),
           tasaFracTransferencia: ordenIntermediarioTransferenciaTasaFracDesdeDom(),
           patronInt: getOrdenPatronInstrumentacionInt(),
@@ -23468,10 +24960,11 @@ function guardarOrdenDesdeWizard() {
         return client.from('comisiones_orden').insert(rowsComisionOk).then(() => {});
       });
     }
-    if (esChequeArsOrden && intermediarioId && tasaDescuentoIntermediario != null) {
+    if (esChequeArsOrden && intermediarioId) {
       return guardarComision().then(() =>
         actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, {
           monto_recibido: montoRecibido,
+          monto_entregado: montoEntregado,
           tasa_descuento_intermediario: tasaDescuentoIntermediario,
           intermediario_id: intermediarioId,
         })
@@ -23763,6 +25256,7 @@ function renderOrdenWizardInstrumentacion(instId) {
         (rModos.data || []).forEach((m) => { modosMap[m.id] = m; });
         const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'));
         const canEditarTr = userPermissions.includes('editar_transacciones') && !ordenAnuladaWiz;
+        const esOrdenChequeWizInst = esOrdenChequeArsDesdeOrden(orden);
         const estadoTrxCombo = (t) => {
           if (String(t.estado || '').toLowerCase() === 'anulada') return '<span class="badge badge-estado-anulada">Anulada</span>';
           const est = t.estado === 'ejecutada' ? 'ejecutada' : 'pendiente';
@@ -23786,12 +25280,13 @@ function renderOrdenWizardInstrumentacion(instId) {
           }
           const montoCell = (t) => {
             if (!canEditarTr) return `<td>${formatImporteDisplay(t.monto)}</td>`;
-            const val = formatImporteParaInput(t.monto);
-            return `<td><input type="text" class="input-monto-transaccion-tabla" data-id="${esc(t.id)}" value="${esc(val)}" inputmode="decimal" aria-label="Monto ${esc(t.moneda)}"></td>`;
+            const val = formatMontoTransaccionTablaParaInput(t.monto, t.moneda);
+            return `<td><input type="text" class="input-monto-transaccion-tabla" data-id="${esc(t.id)}" data-moneda="${esc((t.moneda || '').toString())}" value="${esc(val)}" inputmode="decimal" aria-label="Monto ${esc(t.moneda)}"></td>`;
           };
           const modoPagoCell = (t) => {
-            if (!canEditarTr) {
-              const modo = modosMap[t.modo_pago_id];
+            const modo = modosMap[t.modo_pago_id];
+            const modoChequeBloqueado = esOrdenChequeWizInst && modo?.codigo === 'cheque';
+            if (!canEditarTr || modoChequeBloqueado) {
               return `<td>${esc(modo ? modo.nombre : '–')}</td>`;
             }
             const opciones = (rModos.data || []).map((m) => `<option value="${m.id}"${t.modo_pago_id === m.id ? ' selected' : ''}>${esc(m.nombre)}</option>`).join('');
@@ -23833,7 +25328,8 @@ function renderOrdenWizardInstrumentacion(instId) {
               input.addEventListener('blur', function() {
                 const id = this.getAttribute('data-id');
                 const prev = lista.find((r) => r.id === id);
-                if (!prev || parseImporteInput(this.value) === Number(prev.monto)) return;
+                const nv = parseImporteInput(this.value);
+                if (!prev || montosTrxCasiIguales(prev.monto, nv, prev.moneda)) return;
                 guardarSoloMontoTransaccion(id, this.value, () => {
                   client.from('transacciones').select(selTrxWizardCols).eq('instrumentacion_id', instId).order('created_at', { ascending: true }).then((r2) => {
                     list = r2.data || [];
@@ -23842,6 +25338,7 @@ function renderOrdenWizardInstrumentacion(instId) {
                 });
               });
             });
+            configurarInputsMontoTransaccionTablaEn(tbody);
             tbody.querySelectorAll('.btn-editar-transaccion-ordenwizard').forEach((btn) => {
               btn.addEventListener('click', () => {
                 const row = lista.find((r) => r.id === btn.getAttribute('data-id'));
@@ -23965,6 +25462,9 @@ function saveOrden() {
   const usaIntermediarioSave = selTipoOptSave ? (selTipoOptSave.getAttribute('data-usa-intermediario') === 'true') : false;
   let intermediarioId = document.getElementById('orden-intermediario')?.value?.trim() || null;
   if (!usaIntermediarioSave) intermediarioId = null;
+  if (typeof ordenWizardActualizarPrimerosDatosRef === 'function' && esChequeArsDesdeSelectOption(selTipoOptSave)) {
+    ordenWizardActualizarPrimerosDatosRef();
+  }
   const operacionDirecta = !intermediarioId;
   const monedaRecibida = document.getElementById('orden-moneda-recibida').value;
   const monedaEntregada = document.getElementById('orden-moneda-entregada').value;
@@ -24014,14 +25514,26 @@ function saveOrden() {
     return;
   }
   if (esChequeArsSave) {
-    if (montoRecibido <= montoEntregado) {
+    const chModS = ordenChequeArsComisionModalidadDesdeSelectOption(selTipoOpt);
+    const rawTcS = document.getElementById('orden-tasa-descuento-cliente')?.value?.trim() || '';
+    const tCliS = rawTcS ? parseImporteInput(document.getElementById('orden-tasa-descuento-cliente').value) : null;
+    const allowIgualS =
+      chModS === 'sin_comision' ||
+      chModS === 'solo_intermediario' ||
+      (chModS === 'legacy' && typeof tCliS === 'number' && !isNaN(tCliS) && Math.abs(tCliS) < 1e-12);
+    if (!allowIgualS && montoRecibido <= montoEntregado) {
       showToast('En operación con cheque (CHEQUE–ARS) el monto a recibir debe ser mayor al monto a entregar (descuento acuerdo).', 'error');
       return;
     }
-    const tasaPctRaw = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
-    const tasaPct = tasaPctRaw ? parseImporteInput(tasaPctRaw) : null;
-    if (typeof tasaPct !== 'number' || isNaN(tasaPct) || tasaPct <= 0 || tasaPct >= 100) {
-      showToast('En operación con cheque (CHEQUE–ARS) la tasa de descuento del intermediario es obligatoria (ej. 1 para 1%, entre 0 y 100).', 'error');
+    if (allowIgualS && montoRecibido < montoEntregado - 1e-9) {
+      showToast('En operación con cheque (CHEQUE–ARS) el monto a recibir no puede ser menor al monto a entregar.', 'error');
+      return;
+    }
+    const rawTiS = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim() || '';
+    const tIntS = rawTiS ? parseImporteInput(document.getElementById('orden-tasa-descuento-intermediario').value) : null;
+    const msgS = ordenMensajeErrorTasasChequeArsModalidad(chModS, !!intermediarioId, tCliS, tIntS);
+    if (msgS) {
+      showToast(msgS, 'error');
       return;
     }
   }
@@ -24057,8 +25569,8 @@ function saveOrden() {
 
   const tasaDescuentoIntPctSave = document.getElementById('orden-tasa-descuento-intermediario')?.value?.trim();
   let tasaDescuentoIntermediarioSave = null;
-  if (esChequeArsSave && tasaDescuentoIntPctSave) {
-    tasaDescuentoIntermediarioSave = parseImporteInput(tasaDescuentoIntPctSave) / 100;
+  if (esChequeArsSave && intermediarioId) {
+    tasaDescuentoIntermediarioSave = ordenChequeArsTasaInterFracPersistir(true, intermediarioId, tasaDescuentoIntPctSave, selTipoOpt);
   } else if (tipoCodigoU === 'USD-USD' && intermediarioId && ordenUsdIntMostrarTasaIntermediarioEnWizard() && tasaDescuentoIntPctSave) {
     tasaDescuentoIntermediarioSave = parseImporteInput(tasaDescuentoIntPctSave) / 100;
   }
@@ -24191,6 +25703,16 @@ function saveOrden() {
               montoPandy = comisionUsdNumSave;
               montoInter = 0;
             }
+          } else if (esChequeArsSave && intermediarioId) {
+            const tI = parseImporteInput(document.getElementById('orden-tasa-descuento-intermediario')?.value);
+            if (typeof tI === 'number' && !isNaN(tI) && tI > 0 && typeof montoRecibido === 'number' && !isNaN(montoRecibido) && montoRecibido > 0) {
+              const sp = pandiSplitComisionPandyIntermediarioPorTasaMontoRecibido(comisionUsdNumSave, montoRecibido, tI);
+              montoPandy = sp.montoPandy;
+              montoInter = sp.montoInter;
+            } else {
+              montoPandy = comisionUsdNumSave;
+              montoInter = 0;
+            }
           } else {
             montoPandy = comisionUsdNumSave;
             montoInter = 0;
@@ -24261,9 +25783,15 @@ function saveOrden() {
     }
     // Al editar, también guardar comisión; si es CHEQUE con intermediario, actualizar monto 4.ª transacción por tasa; cierre y refresco (reversión CC/caja solo vía Anular orden).
     guardarComisionYContinuar(() => {
-      const promTasa = (esChequeArsSave && intermediarioId && tasaDescuentoIntermediarioSave != null)
-        ? actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, { monto_recibido: montoRecibido, tasa_descuento_intermediario: tasaDescuentoIntermediarioSave, intermediario_id: intermediarioId })
-        : Promise.resolve();
+      const promTasa =
+        esChequeArsSave && intermediarioId
+          ? actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, {
+              monto_recibido: montoRecibido,
+              monto_entregado: montoEntregado,
+              tasa_descuento_intermediario: tasaDescuentoIntermediarioSave,
+              intermediario_id: intermediarioId,
+            })
+          : Promise.resolve();
       promTasa.then(() => {
         ejecutarCierreModalOrden();
         loadOrdenes();
@@ -24826,6 +26354,69 @@ function totalesInstrumentacion(transacciones, orden, options) {
   return { totalRecibido, totalEntregado };
 }
 
+/** Tolerancia absoluta al comparar totales de instrumentación vs monto del acuerdo en esa pata (evita «superan 0,00» por IEEE754). */
+function toleranciaConciliacionInstrumentacionMonto(orden, campo) {
+  if (!orden) return 1e-6;
+  const mon = campo === 'recibido'
+    ? String(orden.moneda_recibida || '').toUpperCase().trim()
+    : String(orden.moneda_entregada || '').toUpperCase().trim();
+  if (mon === 'USD' || mon === 'EUR') return 5e-4;
+  return 0.01;
+}
+
+/** Valor inicial en inputs de monto de transacción (tabla wizard/panel, cola): USD/EUR hasta `PANDI_USD_ARS_CRUCE_DECIMALES`. */
+function formatMontoTransaccionTablaParaInput(num, moneda) {
+  const m = String(moneda || '').toUpperCase().trim();
+  if (m === 'USD' || m === 'EUR') {
+    const n = Number(num);
+    if (num == null || num === '' || !Number.isFinite(n)) return '';
+    if (n === 0) return '0';
+    return formatNumeroComaHastaDecimales(n, PANDI_USD_ARS_CRUCE_DECIMALES);
+  }
+  return formatImporteParaInput(num);
+}
+
+function configurarInputMontoTransaccionTabla(inputEl) {
+  if (!inputEl) return;
+  const mon = String(inputEl.getAttribute('data-moneda') || '').toUpperCase().trim();
+  if (mon === 'USD' || mon === 'EUR') {
+    inputEl.dataset.importeMaxDec = String(PANDI_USD_ARS_CRUCE_DECIMALES);
+    inputEl.title = `Hasta ${PANDI_USD_ARS_CRUCE_DECIMALES} decimales (${mon}).`;
+  } else {
+    delete inputEl.dataset.importeMaxDec;
+    inputEl.removeAttribute('title');
+  }
+  setupInputImporte(inputEl, 2, true);
+}
+
+function configurarInputsMontoTransaccionTablaEn(rootEl) {
+  if (!rootEl || !rootEl.querySelectorAll) return;
+  rootEl.querySelectorAll('.input-monto-transaccion-tabla').forEach((input) => configurarInputMontoTransaccionTabla(input));
+}
+
+function montosTrxCasiIguales(antes, valorParseado, moneda) {
+  const a = Number(antes);
+  const b = typeof valorParseado === 'number' ? valorParseado : NaN;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  const m = String(moneda || '').toUpperCase().trim();
+  const tol = (m === 'USD' || m === 'EUR') ? 1e-9 : 1e-6;
+  return Math.abs(a - b) <= tol;
+}
+
+/** Modal transacción: alinear `data-importe-max-dec` del monto con la moneda elegida (USD/EUR → 8 dec). */
+function sincronizarDecimalesInputTransaccionModal() {
+  const montoEl = document.getElementById('transaccion-monto');
+  if (!montoEl) return;
+  const monSel = (document.getElementById('transaccion-moneda')?.value || '').toUpperCase().trim();
+  if (monSel === 'USD' || monSel === 'EUR') {
+    montoEl.dataset.importeMaxDec = String(PANDI_USD_ARS_CRUCE_DECIMALES);
+    montoEl.title = `Hasta ${PANDI_USD_ARS_CRUCE_DECIMALES} decimales (${monSel}).`;
+  } else {
+    delete montoEl.dataset.importeMaxDec;
+    montoEl.removeAttribute('title');
+  }
+}
+
 /** Valida que los totales no superen el acuerdo. Devuelve { ok, mensaje }. Si ya se completó el acuerdo, mensaje específico; si no, indica en cuánto se excede. */
 function validarTotalesVsAcuerdo(transacciones, orden, transaccionExcluirId, transaccionAgregar, totalesOpts) {
   const list = (transacciones || []).filter((t) => t.id !== transaccionExcluirId);
@@ -24836,17 +26427,18 @@ function validarTotalesVsAcuerdo(transacciones, orden, transaccionExcluirId, tra
   const montoEntregado = Number(orden.monto_entregado) || 0;
   const monedaRecibida = (orden.moneda_recibida || 'USD').trim().toUpperCase();
   const monedaEntregada = (orden.moneda_entregada || 'USD').trim().toUpperCase();
-  const tol = 1e-6;
+  const tolR = toleranciaConciliacionInstrumentacionMonto(orden, 'recibido');
+  const tolE = toleranciaConciliacionInstrumentacionMonto(orden, 'entregado');
 
-  if (totalRecCon > montoRecibido + tol) {
-    const yaCompleto = totalRecSin >= montoRecibido - tol;
+  if (totalRecCon > montoRecibido + tolR) {
+    const yaCompleto = totalRecSin >= montoRecibido - tolR;
     const mensaje = yaCompleto
       ? 'No se puede cargar una transacción de ingreso dado que ya se completó el acuerdo.'
       : `La transacción excede el acuerdo en ingresos en ${formatImporteDisplay(totalRecCon - montoRecibido)} ${monedaRecibida}. El máximo permitido es ${formatImporteDisplay(montoRecibido)} ${monedaRecibida}.`;
     return { ok: false, mensaje };
   }
-  if (totalEntCon > montoEntregado + tol) {
-    const yaCompleto = totalEntSin >= montoEntregado - tol;
+  if (totalEntCon > montoEntregado + tolE) {
+    const yaCompleto = totalEntSin >= montoEntregado - tolE;
     const mensaje = yaCompleto
       ? 'No se puede cargar una transacción de egreso dado que ya se completó el acuerdo.'
       : `La transacción excede el acuerdo en egresos en ${formatImporteDisplay(totalEntCon - montoEntregado)} ${monedaEntregada}. El máximo permitido es ${formatImporteDisplay(montoEntregado)} ${monedaEntregada}.`;
@@ -24861,8 +26453,9 @@ function estaConciliada(transacciones, orden, totalesOpts) {
   const { totalRecibido, totalEntregado } = totalesInstrumentacion(transacciones || [], orden, totalesOpts);
   const montoRecibido = Number(orden.monto_recibido) || 0;
   const montoEntregado = Number(orden.monto_entregado) || 0;
-  const tol = 1e-6;
-  return Math.abs(totalRecibido - montoRecibido) <= tol && Math.abs(totalEntregado - montoEntregado) <= tol;
+  const tolR = toleranciaConciliacionInstrumentacionMonto(orden, 'recibido');
+  const tolE = toleranciaConciliacionInstrumentacionMonto(orden, 'entregado');
+  return Math.abs(totalRecibido - montoRecibido) <= tolR && Math.abs(totalEntregado - montoEntregado) <= tolE;
 }
 
 /** Texto corto para UI: faltan ingresos/egresos por N o exceso respecto del acuerdo. */
@@ -24873,13 +26466,14 @@ function textoAvisoFaltaOExcesoInstrumentacion(orden, transacciones, totalesOpts
   const me = Number(orden.monto_entregado) || 0;
   const monR = (orden.moneda_recibida || 'USD').trim();
   const monE = (orden.moneda_entregada || 'USD').trim();
-  const tol = 1e-6;
+  const tolR = toleranciaConciliacionInstrumentacionMonto(orden, 'recibido');
+  const tolE = toleranciaConciliacionInstrumentacionMonto(orden, 'entregado');
   if (estaConciliada(transacciones, orden, totalesOpts)) return '';
   const partes = [];
-  if (totalRecibido < mr - tol) partes.push(`Faltan ingresos por ${formatImporteDisplay(mr - totalRecibido)} ${monR}`);
-  else if (totalRecibido > mr + tol) partes.push(`Los ingresos superan el acuerdo en ${formatImporteDisplay(totalRecibido - mr)} ${monR}`);
-  if (totalEntregado < me - tol) partes.push(`Faltan egresos por ${formatImporteDisplay(me - totalEntregado)} ${monE}`);
-  else if (totalEntregado > me + tol) partes.push(`Los egresos superan el acuerdo en ${formatImporteDisplay(totalEntregado - me)} ${monE}`);
+  if (totalRecibido < mr - tolR) partes.push(`Faltan ingresos por ${formatImporteDisplay(mr - totalRecibido)} ${monR}`);
+  else if (totalRecibido > mr + tolR) partes.push(`Los ingresos superan el acuerdo en ${formatImporteDisplay(totalRecibido - mr)} ${monR}`);
+  if (totalEntregado < me - tolE) partes.push(`Faltan egresos por ${formatImporteDisplay(me - totalEntregado)} ${monE}`);
+  else if (totalEntregado > me + tolE) partes.push(`Los egresos superan el acuerdo en ${formatImporteDisplay(totalEntregado - me)} ${monE}`);
   return partes.join(' · ');
 }
 
@@ -25004,28 +26598,49 @@ function calcularEstadoOrden(transacciones, orden, options) {
 }
 
 /**
- * Si existiera ingreso instrumentado Intermediario→Pandy (legacy), actualizaría su monto por la tasa.
- * Con el modelo actual (solo Cliente↔Pandy en `transacciones`) no hay fila que actualizar.
+ * Alinea el monto de la 4.ª transacción (ingreso efectivo Intermediario→Pandy) a `montoEfectivoIntermediarioChequeArsDesdeOrden`
+ * (tasa int. en (0,1) → mr×(1−tasa); tasa 0 / nula con **me** en cabecera → **me**; sin me → mr).
+ * Antes: con `tasa_descuento_intermediario` null (legacy vacío) no corría; el `.find` fallaba si pag/cob no eran los literales `intermediario`/`pandy` → Tx4 quedaba en **mr** y la CC intermediario no cerraba con la comisión del acuerdo.
  */
+function transaccionEsIngresoEfectivoIntermediarioAPandyChequeArs(t, modoCodigoPorId) {
+  if (!t || String(t.tipo || '').toLowerCase() !== 'ingreso') return false;
+  const mpid = t.modo_pago_id != null ? String(t.modo_pago_id) : '';
+  const cod = mpid && modoCodigoPorId[mpid] ? String(modoCodigoPorId[mpid]).toLowerCase() : '';
+  if (cod !== 'efectivo') return false;
+  const pag = String(t.pagador != null ? t.pagador : '').toLowerCase().trim();
+  const cob = String(t.cobrador != null ? t.cobrador : '').toLowerCase().trim();
+  const marcaL = String(typeof nombreMarcaSistema === 'function' ? nombreMarcaSistema() : '').toLowerCase().trim();
+  const cobOk = cob === 'pandy' || (marcaL && cob === marcaL);
+  const pagOk = pag === 'intermediario' || (t.pagador_intermediario_id != null && String(t.pagador_intermediario_id).trim() !== '');
+  return cobOk && pagOk;
+}
+
 function actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, orden) {
-  if (!ordenId || !orden || !orden.intermediario_id || orden.tasa_descuento_intermediario == null) return Promise.resolve();
+  if (!ordenId || !orden || !orden.intermediario_id) return Promise.resolve();
   const mr = Number(orden.monto_recibido) || 0;
-  const tasa = Number(orden.tasa_descuento_intermediario);
-  const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr;
+  const montoEfectivoInt = montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr);
+  if (montoEfectivoInt < 1e-12) return Promise.resolve();
   return client.from('instrumentacion').select('id').eq('orden_id', ordenId).maybeSingle().then((rInst) => {
     const instId = rInst.data && rInst.data.id;
     if (!instId) return Promise.resolve();
-    return client.from('transacciones').select('id, tipo, modo_pago_id, cobrador, pagador').eq('instrumentacion_id', instId).then((rTr) => {
-      const list = rTr.data || [];
-      if (list.length === 0) return Promise.resolve();
-      return client.from('modos_pago').select('id, codigo').then((rModos) => {
-        const byId = {};
-        (rModos.data || []).forEach((m) => { byId[m.id] = m.codigo; });
-        const trx = list.find((t) => t.tipo === 'ingreso' && t.cobrador === 'pandy' && t.pagador === 'intermediario' && byId[t.modo_pago_id] === 'efectivo');
-        if (!trx) return Promise.resolve();
-        return client.from('transacciones').update({ monto: montoEfectivoInt, updated_at: new Date().toISOString() }).eq('id', trx.id);
+    return client
+      .from('transacciones')
+      .select('id, tipo, modo_pago_id, cobrador, pagador, pagador_intermediario_id, cobrador_intermediario_id, monto')
+      .eq('instrumentacion_id', instId)
+      .then((rTr) => {
+        const list = rTr.data || [];
+        if (list.length === 0) return Promise.resolve();
+        return client.from('modos_pago').select('id, codigo').then((rModos) => {
+          const modoCodigoPorId = {};
+          (rModos.data || []).forEach((m) => {
+            if (m && m.id != null) modoCodigoPorId[String(m.id)] = m.codigo || '';
+          });
+          const trx = list.find((t) => transaccionEsIngresoEfectivoIntermediarioAPandyChequeArs(t, modoCodigoPorId));
+          if (!trx) return Promise.resolve();
+          if (Math.abs(Number(trx.monto) - montoEfectivoInt) <= 0.02) return Promise.resolve();
+          return client.from('transacciones').update({ monto: montoEfectivoInt, updated_at: new Date().toISOString() }).eq('id', trx.id);
+        });
       });
-    });
   });
 }
 
@@ -25088,8 +26703,7 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
   }
   if (esPandyInt && cob === 'intermediario' && intermediarioId) {
     const instrumentacionId = t.instrumentacion_id || null;
-    const tasa = Number(orden.tasa_descuento_intermediario) || 0;
-    const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr;
+    const montoEfectivoInt = montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr);
     const monInt = orden.moneda_recibida || mon || 'ARS';
     inserts.push(
       client.from('movimientos_cuenta_corriente_intermediario').select('id').eq('orden_id', ordenId).eq('intermediario_id', intermediarioId).eq('transaccion_id', transaccionId).maybeSingle()
@@ -25152,7 +26766,8 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
   optsSyncCc = optsSyncCc || {};
   const silenciarAvisosInvarianteCc = optsSyncCc.silenciarAvisosInvarianteCc === true;
   const silenciarErrorSync = optsSyncCc.silenciarErrorSync === true;
-  if (!ordenId || !currentUserId) return Promise.resolve();
+  /** No exigir `currentUserId`: en F5/resync la sesión puede no estar lista y el sync no persistiría CC (p. ej. comisión CHEQUE-ARS). `sync_cc_caja_orden` usa `p_usuario_id` con trx ejecutada u `ordenes.usuario_id`. */
+  if (!ordenId) return Promise.resolve();
   const fechaHoySync = fechaHoyYYYYMMDDArgentina();
   const ahora = new Date().toISOString();
 
@@ -25170,10 +26785,13 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
       const usaIntermediario =
         (toJoin && toJoin.usa_intermediario === true) || !!orden.intermediario_id;
       const codNorm = String(codigoOrden || '').toUpperCase();
+      /** Solo matriz `CHEQUE-ARS` en `reglas_de_negocio` / motor CC (`esTipoOperacionChequeArsMatrizReglasCc`: par CHEQUE+ARS o código `CHEQUE-ARS*`). */
+      const esChequeArsOrden = esSyncOrdenTipoChequeArs(orden, codigoOrdenRaw, toJoin);
+      const codReglasNegocioFetch = esChequeArsOrden ? 'CHEQUE-ARS' : codigoOrden;
       const miOrd = (toJoin && toJoin.moneda_in || '').toString().toUpperCase().trim();
       const moOrd = (toJoin && toJoin.moneda_out || '').toString().toUpperCase().trim();
       const patronCajaCruceUsd = patronTipoCambioOrden(miOrd, moOrd);
-      return getReglasDeNegocio(codigoOrden, usaIntermediario).then((reglasBase) => {
+      return getReglasDeNegocio(codReglasNegocioFetch, usaIntermediario).then((reglasBase) => {
         const parTcAux = parMonedasComisionInterCruceTcDesdeOrden(orden, toJoin);
         const yaTieneReglasCanonComInt =
           (parTcAux === 'ars_usd' && (codNorm === 'ARS-USD' || codNorm === 'USD-ARS')) ||
@@ -25184,7 +26802,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           codNorm !== 'USD-USD' &&
           !!parTcAux &&
           !yaTieneReglasCanonComInt &&
-          !esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out);
+          !esSyncOrdenTipoChequeArs(orden, codigoOrdenRaw, toJoin);
         const pAux = !necesitaReglasAuxComInt
           ? Promise.resolve([])
           : parTcAux === 'eur_usd'
@@ -25332,9 +26950,9 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             nombreInterSync = String(rIntNom.data.nombre).trim();
           }
           const patronIntUsdSync = patronInstrumentacionIntDesdeTransacciones(transacciones);
-          const tasa = Number(orden.tasa_descuento_intermediario);
+          const tasaFracSync = tasaDescuentoIntermediarioFraccionSync(orden.tasa_descuento_intermediario);
           const ordenUsdUsdCpIcUsaTasaVariablePersistida =
-            typeof tasa === 'number' && !isNaN(tasa) && tasa >= 1e-12 && tasa < 1;
+            tasaFracSync != null && tasaFracSync >= 1e-12 && tasaFracSync < 1;
           // Comisión fija 50/75 (Seguridad / «nacho») solo aplica a **cp_ic**; en **ci_pc** siempre tasas % sobre el acuerdo (ver ordenComisionFijaNachoUsdParaPersistir). Si acá fuera true en ci_pc, se bloqueaba mr×tasa y quedaba comisionInt=0 sin fila en CC int. Si la orden guardó `tasa_descuento_intermediario`, fue comisión variable aunque el intermediario admita fija.
           const esUsdUsdInterComisionFijaSync =
             codNorm === 'USD-USD' &&
@@ -25342,30 +26960,38 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             patronIntUsdSync === 'cp_ic' &&
             intermediarioTieneComisionFijaUsdAcordada(intermediarioId, nombreInterSync) &&
             !ordenUsdUsdCpIcUsaTasaVariablePersistida;
-          const monR = (orden.moneda_recibida || 'USD').toUpperCase();
-          const monE = (orden.moneda_entregada || 'USD').toUpperCase();
-          const mr = Number(orden.monto_recibido) || 0;
+          const monR = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || 'USD').toUpperCase();
+          const monE = String(monedaCatalogoParaOrden(orden.moneda_entregada) || orden.moneda_entregada || 'USD').toUpperCase();
+          let mr = Number(orden.monto_recibido) || 0;
           const me = Number(orden.monto_entregado) || 0;
+          if (esChequeArsOrden) {
+            const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones, modosMap, orden);
+            if (mrNom >= 1e-6) mr = mrNom;
+          }
           const comisionInt = comisiones.find((c) => String(c.beneficiario || '').toLowerCase() === 'intermediario');
           let comisionIntMonto = comisionInt ? Number(comisionInt.monto) || 0 : 0;
-          let comisionIntMon = (comisionInt && comisionInt.moneda) ? comisionInt.moneda.toUpperCase() : 'ARS';
+          let comisionIntMon = (comisionInt && comisionInt.moneda)
+            ? String(monedaCatalogoParaOrden(comisionInt.moneda) || comisionInt.moneda).toUpperCase()
+            : 'ARS';
           // Sin fila en comisiones_orden pero hay tasa_descuento_intermediario: derivar comisión int. — USD-USD = % sobre mr (importe / monto recibido del acuerdo, misma base que la tasa al cliente), tope spread mr−me; resto de tipos (p. ej. CHEQUE) = mr * tasa.
           // Con comisión fija parametrizada **solo en cp_ic** (esUsdUsdInterComisionFijaSync) no usar tasa ni duplicar con inferencia 50/75; en **ci_pc** siempre se permite inferencia por tasa aunque el intermediario esté en Seguridad para fija en cp_ic.
-          if (intermediarioId && comisionIntMonto < 1e-6 && !esUsdUsdInterComisionFijaSync && typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1 && tasa > 1e-12 && mr >= 1e-6) {
+          if (intermediarioId && comisionIntMonto < 1e-6 && !esUsdUsdInterComisionFijaSync && tasaFracSync != null && tasaFracSync > 1e-12 && mr >= 1e-6) {
             if (codNorm === 'USD-USD' && mr >= 1e-6) {
               const spInf = mr - me;
-              const brutoInf = mr * tasa;
+              const brutoInf = mr * tasaFracSync;
               comisionIntMonto = Math.min(Math.max(0, brutoInf), Math.max(0, spInf));
             } else {
-              comisionIntMonto = mr * tasa;
+              comisionIntMonto = mr * tasaFracSync;
             }
             comisionIntMon = monR;
           }
           const comisionPandy = comisiones.find((c) => (c.beneficiario || '').toString().toLowerCase() === 'pandy');
           let comisionPandyMonto = comisionPandy ? Number(comisionPandy.monto) || 0 : 0;
-          const comisionPandyMon = (comisionPandy && comisionPandy.moneda) ? String(comisionPandy.moneda).toUpperCase() : (orden.moneda_recibida || 'ARS').toUpperCase();
+          const comisionPandyMon = (comisionPandy && comisionPandy.moneda)
+            ? String(monedaCatalogoParaOrden(comisionPandy.moneda) || comisionPandy.moneda).toUpperCase()
+            : String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || 'ARS').toUpperCase();
           // CHEQUE-ARS + intermediario: sin fila Pandy en comisiones_orden el motor no inserta la línea es_comision y el saldo cliente queda en −(mr−me). Misma idea que la derivación de comisión int. por tasa (arriba): completar con el resto del spread del acuerdo.
-          if (codNorm === 'CHEQUE-ARS' && intermediarioId && comisionPandyMonto < 1e-6 && mr > me + 1e-6) {
+          if (esChequeArsOrden && intermediarioId && comisionPandyMonto < 1e-6 && mr > me + 1e-6) {
             const spreadAcuerdo = mr - me;
             comisionPandyMonto = Math.max(0, spreadAcuerdo - (comisionIntMonto > 1e-6 ? comisionIntMonto : 0));
           }
@@ -25403,18 +27029,22 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             const extraTfSync = montoExtraInferidoTasaTransferenciaInterDesdeOrdenRegistro(orden, patronIntUsdSync, codigoOrdenRaw, toJoin);
             if (extraTfSync >= 1e-6) {
               comisionIntMonto = extraTfSync;
-              comisionIntMon = String(
-                montoLegIntermediarioPatronInstrumentacion2tx(orden, patronIntUsdSync || 'cp_ic').moneda || 'USD',
-              ).toUpperCase();
+              const monLegTf = montoLegIntermediarioPatronInstrumentacion2tx(orden, patronIntUsdSync || 'cp_ic').moneda;
+              comisionIntMon = String(monedaCatalogoParaOrden(monLegTf) || monLegTf || 'USD').toUpperCase();
             }
           }
           const filasComisionIntermediarioMotorRaw = comisiones
             .filter((c) => String(c.beneficiario || '').toLowerCase() === 'intermediario')
-            .map((c) => ({ moneda: String(c.moneda || 'USD').toUpperCase().trim(), monto: Number(c.monto) || 0 }))
+            .map((c) => ({
+              moneda: String(monedaCatalogoParaOrden(c.moneda) || c.moneda || 'USD').toUpperCase().trim(),
+              monto: Number(c.monto) || 0,
+            }))
             .filter((f) => f.monto >= 1e-6);
           const filasComisionIntermediarioMotor = filasComisionIntermediarioMotorRaw.length > 0
             ? filasComisionIntermediarioMotorRaw.slice()
-            : (comisionIntMonto >= 1e-6 ? [{ moneda: String(comisionIntMon || 'USD').toUpperCase(), monto: Number(comisionIntMonto) || 0 }] : []);
+            : (comisionIntMonto >= 1e-6
+                ? [{ moneda: String(monedaCatalogoParaOrden(comisionIntMon) || comisionIntMon || 'USD').toUpperCase(), monto: Number(comisionIntMonto) || 0 }]
+                : []);
           // Tras inferir: si la suma de comisiones int. en USD supera el spread mr−me, ajustar parte Pandy (varias filas int. posibles).
           if (codNorm === 'USD-USD' && intermediarioId && mr > me + 1e-6) {
             const spUsd = mr - me;
@@ -25425,9 +27055,16 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               comisionPandyMonto = Math.max(0, spUsd - sumIntUsd);
             }
           }
-          const spreadAcuerdoChequeInt =
-            codNorm === 'CHEQUE-ARS' && intermediarioId && mr > me + 1e-6 ? mr - me : 0;
-          const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr;
+          const spreadDesdeTrxCheque = esChequeArsOrden
+            ? spreadChequeArsClienteNetoDesdeOrdenYParTrx(transacciones, orden, modosMap)
+            : 0;
+          const spreadDesdeCabCheque =
+            esChequeArsOrden && mr > me + 1e-6 ? mr - me : 0;
+          const spreadAcuerdoChequeInt = esChequeArsOrden
+            ? Math.max(spreadDesdeTrxCheque, spreadDesdeCabCheque)
+            : 0;
+          const tipoOpMotorCc = esChequeArsOrden ? 'CHEQUE-ARS' : codNorm;
+          const montoEfectivoInt = esChequeArsOrden ? montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr) : (tasaFracSync != null ? mr * (1 - tasaFracSync) : mr);
           const derivMcAutoUsdUsdIntCpIcAjManual =
             eligibleMcInst &&
             !multicontraparteManualDb &&
@@ -25523,7 +27160,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             if (clienteId && !esGananciaTrx && !esComisionPandyTrx && incluirEnMovimientosCcClienteModelo(orden, t)) {
               if (pag === 'cliente' && cob !== 'intermediario') {
                 const codigo = (toJoin && toJoin.codigo) || null;
-                const esModeloCliente = esTipoOperacionChequeArs(codigo, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id;
+                const esModeloCliente = esTipoOperacionChequeArsMatrizReglasCc(codigo, toJoin?.moneda_in, toJoin?.moneda_out) && orden.intermediario_id;
                 const esIngresoMismaMoneda = (t.tipo || '').toLowerCase() === 'ingreso' && monR === monE;
                 const montoIngresoCc = esModeloCliente ? mr : (esIngresoMismaMoneda ? me : monto);
                 rowsCcCliente.push({
@@ -25646,7 +27283,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           // Con MC manual + reglas: las patas van en `aplicarCcMulticontraparteManualConciliacionCompleta`; comisiones = motor sin recorrer trx.
           if (usarMulticontraparteSync && tieneReglasNeg) {
             aplicarMotorCcDesdeReglasDeNegocio({
-              tipoOperacionCodigo: codNorm,
+              tipoOperacionCodigo: tipoOpMotorCc,
               transacciones,
               reglasDeNegocio,
               orden,
@@ -25666,13 +27303,14 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               filasComisionIntermediario: filasComisionIntermediarioMotor,
               motorCcWarnings,
               soloComisiones: true,
+              modosMap,
             });
           }
 
           // Motor único: filas en `reglas_de_negocio` para (codigo, usa_intermediario). Sin MC, el motor recorre transacciones + comisiones.
           if (usarMotorEfectivo) {
             aplicarMotorCcDesdeReglasDeNegocio({
-              tipoOperacionCodigo: codNorm,
+              tipoOperacionCodigo: tipoOpMotorCc,
               transacciones,
               reglasDeNegocio,
               orden,
@@ -25691,132 +27329,34 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               comisionSpreadAcuerdoClienteCheque: spreadAcuerdoChequeInt,
               filasComisionIntermediario: filasComisionIntermediarioMotor,
               motorCcWarnings,
+              modosMap,
             });
-          } else if (
-            !usarMotorEfectivo &&
-            !(usarMulticontraparteSync && tieneReglasNeg) &&
-            esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) &&
-            orden.intermediario_id
-          ) {
-            const nroTransComisionChequeFb = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
-            const feSynthChequeFb = nroTransComisionChequeFb != null
-              ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionChequeFb, fecha, ahora)
-              : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
-            const tx1EjecutadaFb = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && transaccionEstadoTextoNormalizado(t) === 'ejecutada');
-            const tx2EjecutadaFb = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'cliente' && transaccionEstadoTextoNormalizado(t) === 'ejecutada');
-            const parClienteCerradoFb = tx1EjecutadaFb && tx2EjecutadaFb;
-            const montoComisionCcClienteChequeFb =
-              spreadAcuerdoChequeInt >= 1e-6 ? spreadAcuerdoChequeInt : comisionPandyMonto;
-            if (clienteId && montoComisionCcClienteChequeFb >= 1e-6 && !parClienteCerradoFb) {
-              rowsCcCliente.push({
-                cliente_id: clienteId,
-                orden_id: ordenId,
-                transaccion_id: null,
-                transaccion_numero: null,
-                concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb),
-                fecha: feSynthChequeFb.fecha,
-                usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
-                moneda: comisionPandyMon,
-                monto: montoComisionCcClienteChequeFb,
-                estado: ordenAnuladaSync ? 'anulado' : 'pendiente',
-                estado_fecha: feSynthChequeFb.estado_fecha,
-                incluir_en_detalle: true,
-                ...montosCcPorMoneda(comisionPandyMon, montoComisionCcClienteChequeFb),
-              });
-            }
-            const hayTx3Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'intermediario' && transaccionEstadoTextoNormalizado(t) === 'ejecutada');
-            const hayTx4Ejecutada = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'intermediario' && String(t.cobrador || '').toLowerCase() === 'pandy' && transaccionEstadoTextoNormalizado(t) === 'ejecutada');
-            const estComIntFb = ordenAnuladaSync
-              ? 'anulado'
-              : ((hayTx3Ejecutada || hayTx4Ejecutada || parClienteCerradoFb) ? 'cerrado' : 'pendiente');
-            if (intermediarioId && filasComisionIntermediarioMotor.length) {
-              filasComisionIntermediarioMotor.forEach((filaIntFb) => {
-                const mIfb = Number(filaIntFb.monto) || 0;
-                if (mIfb < 1e-6) return;
-                const monIfb = String(filaIntFb.moneda || 'ARS').toUpperCase();
-                rowsCcInt.push({
-                  intermediario_id: intermediarioId,
-                  orden_id: ordenId,
-                  transaccion_id: null,
-                  transaccion_numero: null,
-                  concepto: conceptoCcLeyenda('comision_acuerdo', orden.numero, nroTransComisionChequeFb),
-                  fecha: feSynthChequeFb.fecha,
-                  usuario_id: (typeof t !== 'undefined' ? (t.usuario_id || t.p_usuario_id) : null) || orden.usuario_id || null,
-                  moneda: monIfb,
-                  monto: -mIfb,
-                  estado: estComIntFb,
-                  estado_fecha: feSynthChequeFb.estado_fecha,
-                  incluir_en_detalle: true,
-                  ...montosCcPorMoneda(monIfb, -mIfb),
-                });
-              });
-            }
-            if (intermediarioId && filasComisionIntermediarioMotor.length && parClienteCerradoFb) {
-              const tRefComisionCaja =
-                nroTransComisionChequeFb != null
-                  ? transacciones.find((x) => Number(x.numero) === Number(nroTransComisionChequeFb))
-                  : null;
-              const uidComisionCajaCheque = usuarioIdRegistroCajaDesdeOrdenSync(transacciones, tRefComisionCaja);
-              filasComisionIntermediarioMotor.forEach((filaIntFb) => {
-                const mIfb = Number(filaIntFb.monto) || 0;
-                if (mIfb < 1e-6) return;
-                const monComCajaFb = String(filaIntFb.moneda || 'ARS').toUpperCase();
-                rowsCaja.push({
-                  orden_id: ordenId,
-                  transaccion_id: null,
-                  moneda: monComCajaFb,
-                  monto: -mIfb,
-                  caja_tipo: 'efectivo',
-                  orden_numero: orden.numero != null ? orden.numero : null,
-                  transaccion_numero: nroTransComisionChequeFb,
-                  concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaFb, mIfb, orden.numero, nroTransComisionChequeFb),
-                  fecha: feSynthChequeFb.fecha,
-                  usuario_id: uidComisionCajaCheque,
-                });
-              });
-            }
           }
 
-          // CHEQUE-ARS + MC + reglas: el motor `soloComisiones` no escribe caja; reutilizar solo el egreso caja por comisión int. (mismo criterio que el fallback legacy cuando el par cliente está cerrado).
-          if (
-            usarMulticontraparteSync &&
-            tieneReglasNeg &&
-            esTipoOperacionChequeArs(codigoOrdenRaw, toJoin?.moneda_in, toJoin?.moneda_out) &&
-            intermediarioId &&
-            filasComisionIntermediarioMotor.length
-          ) {
-            const nroTransComisionChequeMc = nroTransReferenciaLeyendaComisionAcuerdo(transacciones, comisionPandyMonto);
-            const feSynthChequeMc = nroTransComisionChequeMc != null
-              ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionChequeMc, fecha, ahora)
-              : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
-            const tx1Mc = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'ingreso' && String(t.pagador || '').toLowerCase() === 'cliente' && String(t.cobrador || '').toLowerCase() === 'pandy' && transaccionEstadoTextoNormalizado(t) === 'ejecutada');
-            const tx2Mc = transacciones.some((t) => (t.tipo || '').toLowerCase() === 'egreso' && String(t.pagador || '').toLowerCase() === 'pandy' && String(t.cobrador || '').toLowerCase() === 'cliente' && transaccionEstadoTextoNormalizado(t) === 'ejecutada');
-            const parClienteCerradoMc = tx1Mc && tx2Mc;
-            if (parClienteCerradoMc) {
-              const tRefComisionCajaMc =
-                nroTransComisionChequeMc != null
-                  ? transacciones.find((x) => Number(x.numero) === Number(nroTransComisionChequeMc))
-                  : null;
-              const uidComisionCajaChequeMc = usuarioIdRegistroCajaDesdeOrdenSync(transacciones, tRefComisionCajaMc);
-              filasComisionIntermediarioMotor.forEach((filaIntMc) => {
-                const mImc = Number(filaIntMc.monto) || 0;
-                if (mImc < 1e-6) return;
-                const monComCajaMc = String(filaIntMc.moneda || 'ARS').toUpperCase();
-                rowsCaja.push({
-                  orden_id: ordenId,
-                  transaccion_id: null,
-                  moneda: monComCajaMc,
-                  monto: -mImc,
-                  caja_tipo: 'efectivo',
-                  orden_numero: orden.numero != null ? orden.numero : null,
-                  transaccion_numero: nroTransComisionChequeMc,
-                  concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaMc, mImc, orden.numero, nroTransComisionChequeMc),
-                  fecha: feSynthChequeMc.fecha,
-                  usuario_id: uidComisionCajaChequeMc,
-                });
-              });
-            }
-          }
+          aplicarSyncUnicoChequeArs('pre_dedupe', {
+            orden,
+            ordenId,
+            clienteId,
+            intermediarioId,
+            ordenAnuladaSync,
+            codigoOrdenRaw,
+            toJoin,
+            transacciones,
+            fecha,
+            ahora,
+            usarMotorEfectivo,
+            usarMulticontraparteSync,
+            tieneReglasNeg,
+            spreadAcuerdoChequeInt,
+            comisionPandyMonto,
+            comisionPandyMon,
+            filasComisionIntermediarioMotor,
+            rowsCcCliente,
+            rowsCcInt,
+            rowsCaja,
+            modosMap,
+            comisiones,
+          });
 
           // Cierre sintético dos monedas (CC cliente): +montoRecibido en monR y −montoEntregado en monE cuando el “par cliente” está ejecutado.
           // Ingreso: Cliente→Pandy o Cliente→Intermediario (misma semántica que ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado).
@@ -25959,6 +27499,31 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             transacciones,
             codNorm,
           });
+          aplicarSyncUnicoChequeArs('post_dedupe', {
+            orden,
+            ordenId,
+            clienteId,
+            intermediarioId,
+            ordenAnuladaSync,
+            codigoOrdenRaw,
+            toJoin,
+            transacciones,
+            fecha,
+            ahora,
+            usarMotorEfectivo,
+            usarMulticontraparteSync,
+            tieneReglasNeg,
+            spreadAcuerdoChequeInt,
+            comisionPandyMonto,
+            comisionPandyMon,
+            filasComisionIntermediarioMotor,
+            rowsCcCliente,
+            rowsCcInt,
+            rowsCaja,
+            rowsCcClienteUnicos,
+            modosMap,
+            comisiones,
+          });
           const seenInt = new Set();
           const rowsCcIntUnicos = (rowsCcInt || []).filter((r) => {
             const key = [
@@ -26014,6 +27579,23 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             ahora,
           );
 
+          /** Último refuerzo antes del invariante: MC / omitir invariante no deben dejar pasar el payload sin +spread. */
+          garantizarFilaComisionSpreadChequeArsClienteCabeceraMrMeSiFalta(
+            rowsCcClienteUnicos,
+            orden,
+            ordenId,
+            clienteId,
+            ordenAnuladaSync,
+            codigoOrdenRaw,
+            toJoin,
+            transacciones,
+            fecha,
+            ahora,
+            comisionPandyMonto,
+            comisionPandyMon,
+            modosMap,
+          );
+
           const ordLabelInv = orden.numero != null ? String(orden.numero) : String(ordenId || '').slice(0, 8);
           if (motorCcWarnings.length && !silenciarAvisosInvarianteCc) {
             console.warn('[Pandi CC] Orden ' + ordLabelInv + ' — transacciones sin regla_de_negocio:', motorCcWarnings);
@@ -26032,6 +27614,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             usarDerivacionCcSinMotorReglas,
             omitirInvarianteNeteoCcClienteAcuerdoCerrado,
             transacciones,
+            modosMap,
           });
           if (!invNet.ok) {
             /** Con `silenciarAvisosInvarianteCc` (p. ej. sync global al cargar) no usar `console.error`: duplica ruido y asusta en cada F5; el `.catch` de `sincronizarCcYCajaDesdeOrden` ya hace `console.warn` con el mensaje. */
@@ -26298,19 +27881,51 @@ function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
   const uidCc = usuarioIdRegistro || currentUserId;
   if (!ordenId || !intermediarioId) return Promise.resolve();
   return client.from('ordenes')
-    .select('monto_recibido, monto_entregado, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, tipo_operacion_id, tipos_operacion(codigo)')
+    .select('monto_recibido, monto_entregado, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out)')
     .eq('id', ordenId)
     .maybeSingle()
     .then((rOrd) => {
       const ordenSnap = rOrd.data || {};
       const toJoin = ordenSnap.tipos_operacion;
-      const codRaw = toJoin && (Array.isArray(toJoin) ? (toJoin[0] && toJoin[0].codigo) : toJoin.codigo);
+      const tipoOperRow = toJoin && (Array.isArray(toJoin) ? toJoin[0] : toJoin);
+      const codRaw = tipoOperRow && tipoOperRow.codigo;
       const codTipo = String(codRaw || '').trim().toUpperCase();
       const omitirCajaEfectivo = Boolean(codTipo) && ordenOmitirMovimientoCajaComisionIntPorTasaTransferenciaFueraAcuerdo(ordenSnap, codTipo);
-      return client.from('comisiones_orden').select('moneda, monto').eq('orden_id', ordenId).eq('beneficiario', 'intermediario')
+      return client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId)
         .then((rCom) => {
-          const filas = (rCom.data || []).filter((row) => (Number(row.monto) || 0) >= 1e-6);
+          const rowsAll = rCom.data || [];
+          const comP = rowsAll
+            .filter((r) => String(r.beneficiario || '').toLowerCase() === 'pandy')
+            .reduce((s, r) => s + (Number(r.monto) || 0), 0);
+          const filas = rowsAll.filter(
+            (row) => String(row.beneficiario || '').toLowerCase() === 'intermediario' && (Number(row.monto) || 0) >= 1e-6,
+          );
           if (!filas.length) return Promise.resolve();
+          const esChequeArsMatrizIns =
+            codTipo === 'CHEQUE-ARS' ||
+            codTipo.startsWith('CHEQUE-ARS') ||
+            esTipoOperacionChequeArsMatrizReglasCc(codRaw, tipoOperRow && tipoOperRow.moneda_in, tipoOperRow && tipoOperRow.moneda_out);
+          const mrIns = Number(ordenSnap.monto_recibido) || 0;
+          const meIns = Number(ordenSnap.monto_entregado) || 0;
+          const spreadIns = mrIns > meIns + 1e-6 ? mrIns - meIns : 0;
+          const filasIntFmt = filas.map((row) => ({ moneda: row.moneda, monto: row.monto }));
+          const omitIns = esChequeArsMatrizIns && chequeArsCcIntOmitirComisionAcuerdoSinteticaTodoInter(comP, filasIntFmt, spreadIns);
+          if (omitIns) {
+            if (!instrumentacionId) return Promise.resolve();
+            const sumIntIns = filasIntFmt.reduce((s, f) => s + (Number(f.monto) || 0), 0);
+            const mon0 = String(filas[0].moneda || 'ARS').toUpperCase();
+            return asegurarComisionIntermediario(
+              ordenId,
+              instrumentacionId,
+              intermediarioId,
+              sumIntIns,
+              mon0,
+              ordenNumero,
+              transaccionNumero,
+              uidCc,
+              true,
+            );
+          }
           return filas.reduce(
             (p, row, idx) => p.then(() => {
               const comMonto = Number(row.monto) || 0;
@@ -26488,7 +28103,16 @@ function autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumenta
       const id1 = ids[0];
       const id2 = ids[1];
       if (!id1 || !id2 || ids.length < 4) return actualizarEstadoOrden(ordenId);
-      return insertarMovimientosCcMomentoCero(ordenId, orden, id1, id2)
+      return client
+        .from('ordenes')
+        .select('id, monto_recibido, monto_entregado, tasa_descuento_intermediario, intermediario_id')
+        .eq('id', ordenId)
+        .single()
+        .then((rOrd) => {
+          const oSnap = rOrd.data ? Object.assign({}, orden, rOrd.data) : orden;
+          return actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, oSnap);
+        })
+        .then(() => insertarMovimientosCcMomentoCero(ordenId, orden, id1, id2))
         .then(() => insertarMovimientosCcMomentoCeroIntermediario(ordenId, orden, id1, id2))
         .then(() => actualizarEstadoOrden(ordenId));
     });
@@ -26585,9 +28209,7 @@ function transaccionCoincidePlantillaMulticontraparte(t, orden, tipoRow) {
   const codigo = row.codigo || '';
   const esCheque = esTipoOperacionChequeArs(codigo, row.moneda_in, row.moneda_out);
   if (esCheque) {
-    const tasa = Number(orden.tasa_descuento_intermediario);
-    const montoEfectivoInt =
-      typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1 ? mr * (1 - tasa) : mr;
+    const montoEfectivoInt = montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr);
     if (tipo === 'ingreso' && pag === 'cliente' && cob === 'pandy' && mon === 'ARS' && near(m, mr)) return true;
     if (tipo === 'egreso' && pag === 'pandy' && cob === 'cliente' && mon === 'ARS' && near(m, me)) return true;
     if (tipo === 'egreso' && pag === 'pandy' && cob === 'intermediario' && mon === 'ARS' && near(m, mr)) return true;
@@ -26716,8 +28338,7 @@ function buildPlantillaRowsTransaccionesChequeConIntermediario(orden, instrument
   if (!orden || !orden.intermediario_id || !modoEfectivoId || !modoChequeId) return [];
   const mr = Number(orden.monto_recibido) || 0;
   const me = Number(orden.monto_entregado) || 0;
-  const tasa = Number(orden.tasa_descuento_intermediario);
-  const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr;
+  const montoEfectivoInt = montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr);
   const ahora = new Date().toISOString();
   function fila(extra) {
     const o = { ...plantillaTransaccionEnriquecerIdsParticipantesDesdeOrden(extra, orden), updated_at: ahora };
@@ -26840,6 +28461,23 @@ function modosPlantilla2txDesdeTransaccionesOrdenadas(rowsSorted, patronInt) {
 }
 
 /**
+ * Orden semántico de las 4 patas CHEQUE-ARS + intermediario (alineado a `buildPlantillaRowsTransaccionesChequeConIntermediario`).
+ * Evita falsos desvíos pag/cob vs plantilla cuando `numero` en BD no sigue el mismo orden que la plantilla.
+ */
+function ordenChequeArsInst4TxSortKey(t) {
+  const n = transaccionNormalizarPagCobVacios(t);
+  const tipo = String(n.tipo || '').toLowerCase();
+  const { pag, cob } = pagCobEfectivosTransaccionSync(n);
+  const p = String(pag || '').toLowerCase();
+  const c = String(cob || '').toLowerCase();
+  if (tipo === 'ingreso' && p === 'cliente' && c === 'pandy') return 0;
+  if (tipo === 'egreso' && p === 'pandy' && c === 'cliente') return 1;
+  if (tipo === 'egreso' && p === 'pandy' && c === 'intermediario') return 2;
+  if (tipo === 'ingreso' && p === 'intermediario' && c === 'pandy') return 3;
+  return 100;
+}
+
+/**
  * Construye plantilla estándar y lista de transacciones no anuladas ordenadas por número (misma lógica que el flag Aj).
  * @returns {{ plantilla: unknown[], actSorted: unknown[] } | null}
  */
@@ -26878,7 +28516,17 @@ function pandiConstruirPlantillaYTrxActualesOrdenadasInst(orden, tipoRow, transa
     return transaccionEstadoTextoNormalizado(t) !== 'anulada';
   });
   if (listaFiltrada.length === 0) return null;
-  const actSorted = listaFiltrada.slice().sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0));
+  let actSorted;
+  if (esCheque && orden.intermediario_id && plantilla.length === 4 && listaFiltrada.length === 4) {
+    actSorted = listaFiltrada.slice().sort((a, b) => {
+      const ka = ordenChequeArsInst4TxSortKey(a);
+      const kb = ordenChequeArsInst4TxSortKey(b);
+      if (ka !== kb) return ka - kb;
+      return (Number(a.numero) || 0) - (Number(b.numero) || 0);
+    });
+  } else {
+    actSorted = listaFiltrada.slice().sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0));
+  }
   return { plantilla, actSorted };
 }
 
@@ -26894,6 +28542,93 @@ function firmasPlantillaInstParticipantesIguales(esp, act) {
 }
 
 /**
+ * Firma de plantilla/BD: `pagador`/`cobrador` a veces no son los literales `pandy`/`cliente`/`intermediario`
+ * (p. ej. nombre de marca o de cliente en texto). Alinea a roles canónicos para comparar con la plantilla sistema.
+ */
+function firmaInstNormalizarPagCobRolesChequeArs(f, orden) {
+  const out = f && typeof f === 'object' ? { ...f } : {};
+  if (!orden || typeof orden !== 'object') return out;
+  const cid = orden.cliente_id != null ? String(orden.cliente_id).trim() : '';
+  const iid = orden.intermediario_id != null ? String(orden.intermediario_id).trim() : '';
+  let pag = String(out.pag || '').toLowerCase().trim();
+  let cob = String(out.cob || '').toLowerCase().trim();
+  const esCanon = (s) => s === 'cliente' || s === 'pandy' || s === 'intermediario';
+  const marcaL = String(typeof nombreMarcaSistema === 'function' ? nombreMarcaSistema() : '').toLowerCase().trim();
+  if (!esCanon(pag) && marcaL && pag === marcaL) pag = 'pandy';
+  if (!esCanon(cob) && marcaL && cob === marcaL) cob = 'pandy';
+  if (!esCanon(pag)) {
+    if (out.pci && cid && String(out.pci) === cid) pag = 'cliente';
+    else if (out.pii && iid && String(out.pii) === iid) pag = 'intermediario';
+  }
+  if (!esCanon(cob)) {
+    if (out.cci && cid && String(out.cci) === cid) cob = 'cliente';
+    else if (out.cii && iid && String(out.cii) === iid) cob = 'intermediario';
+  }
+  out.pag = pag;
+  out.cob = cob;
+  return out;
+}
+
+/**
+ * CHEQUE-ARS + intermediario (4 patas): transacciones **pendientes** pueden tener roles `cliente`/`intermediario`
+ * correctos pero `pagador_*_id` / `cobrador_*_id` aún vacíos en BD; la plantilla en memoria lleva los UUID del acuerdo.
+ * Sin este relajamiento, `pandiEvaluarDesvioPagadorCobradorVsPlantillaSistema` devolvía desvío falso → auto MC y «Listo» bloqueado.
+ */
+function firmasPlantillaInstParticipantesIgualesChequeArsRelajUuidPendiente(esp, act, orden) {
+  if (!orden) return firmasPlantillaInstParticipantesIguales(esp, act);
+  const e = firmaInstNormalizarPagCobRolesChequeArs(esp, orden);
+  const a = firmaInstNormalizarPagCobRolesChequeArs(act, orden);
+  if (firmasPlantillaInstParticipantesIguales(e, a)) return true;
+  const cid = orden.cliente_id != null ? String(orden.cliente_id).trim() : '';
+  const iid = orden.intermediario_id != null ? String(orden.intermediario_id).trim() : '';
+  const relPar = (eVal, aVal, canonId) => {
+    const ev = eVal != null ? String(eVal) : '';
+    const av = aVal != null ? String(aVal) : '';
+    if (ev === av) return true;
+    if (!canonId) return false;
+    return (av === '' && ev === canonId) || (ev === '' && av === canonId);
+  };
+  return (
+    e.pag === a.pag &&
+    e.cob === a.cob &&
+    relPar(e.pci, a.pci, cid) &&
+    relPar(e.cci, a.cci, cid) &&
+    relPar(e.pii, a.pii, iid) &&
+    relPar(e.cii, a.cii, iid)
+  );
+}
+
+/**
+ * Igual que `firmasPlantillaInstCoincidenTol` con normalización CHEQUE-ARS + UUID pendiente; ingreso Int→Pandy vs **me** canónico.
+ */
+function firmasPlantillaInstCoincidenTolChequeArsInt4(esp, act, orden) {
+  const tolM = 0.02;
+  const tolTc = 1e-6;
+  if (!orden) return firmasPlantillaInstCoincidenTol(esp, act);
+  const e = firmaInstNormalizarPagCobRolesChequeArs(esp, orden);
+  const a = firmaInstNormalizarPagCobRolesChequeArs(act, orden);
+  if (e.tipo !== a.tipo || e.moneda !== a.moneda) return false;
+  if (!firmasPlantillaInstParticipantesIgualesChequeArsRelajUuidPendiente(esp, act, orden)) return false;
+  if (e.modo !== a.modo) return false;
+  let montoOk = Math.abs(e.monto - a.monto) <= tolM;
+  if (
+    !montoOk &&
+    String(e.tipo || '').toLowerCase() === 'ingreso' &&
+    e.pag === 'intermediario' &&
+    e.cob === 'pandy'
+  ) {
+    const mr = Number(orden.monto_recibido) || 0;
+    const mePl = montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr);
+    /** Solo **me** (o equivalente plantilla); aceptar **mr** en Tx4 era un atajo incorrecto y rompía CC intermediario + comisión. */
+    montoOk = Math.abs(a.monto - mePl) <= tolM;
+  }
+  if (!montoOk) return false;
+  if (e.tc == null && a.tc == null) return true;
+  if (e.tc == null || a.tc == null) return false;
+  return Math.abs(e.tc - a.tc) <= tolTc;
+}
+
+/**
  * Solo desvío de **pagador/cobrador** (strings pag/cob + UUIDs cliente/intermediario) frente a la plantilla.
  * No considera monto, modo de pago ni TC. Si cantidad de trx ≠ plantilla o tipo/moneda de una fila ≠ plantilla, no califica (false).
  * @returns {boolean|null} null = no aplica plantilla estándar para esta orden.
@@ -26903,11 +28638,19 @@ function pandiEvaluarDesvioPagadorCobradorVsPlantillaSistema(orden, tipoRow, tra
   if (!pair) return null;
   const { plantilla, actSorted } = pair;
   if (actSorted.length !== plantilla.length) return false;
+  const esChqInt4 =
+    !!orden &&
+    !!orden.intermediario_id &&
+    esTipoOperacionChequeArs(tipoRow.codigo, tipoRow.moneda_in, tipoRow.moneda_out) &&
+    plantilla.length === 4;
   for (let i = 0; i < plantilla.length; i++) {
     const esp = firmaTransaccionParaCompararPlantillaInst(plantilla[i]);
     const act = firmaTransaccionParaCompararPlantillaInst(actSorted[i]);
     if (esp.tipo !== act.tipo || esp.moneda !== act.moneda) return false;
-    if (!firmasPlantillaInstParticipantesIguales(esp, act)) return true;
+    const okPart = esChqInt4
+      ? firmasPlantillaInstParticipantesIgualesChequeArsRelajUuidPendiente(esp, act, orden)
+      : firmasPlantillaInstParticipantesIguales(esp, act);
+    if (!okPart) return true;
   }
   return false;
 }
@@ -26920,10 +28663,16 @@ function pandiEvaluarDesvioInstrumentacionVsPlantillaSistema(orden, tipoRow, tra
   if (!pair) return null;
   const { plantilla, actSorted } = pair;
   if (actSorted.length !== plantilla.length) return true;
+  const esChqInt4 =
+    !!orden &&
+    !!orden.intermediario_id &&
+    esTipoOperacionChequeArs(tipoRow.codigo, tipoRow.moneda_in, tipoRow.moneda_out) &&
+    plantilla.length === 4;
   for (let i = 0; i < plantilla.length; i++) {
     const esp = firmaTransaccionParaCompararPlantillaInst(plantilla[i]);
     const act = firmaTransaccionParaCompararPlantillaInst(actSorted[i]);
-    if (!firmasPlantillaInstCoincidenTol(esp, act)) return true;
+    const ok = esChqInt4 ? firmasPlantillaInstCoincidenTolChequeArsInt4(esp, act, orden) : firmasPlantillaInstCoincidenTol(esp, act);
+    if (!ok) return true;
   }
   return false;
 }
@@ -27522,8 +29271,10 @@ function expandOrdenTransacciones(ordenId, orden) {
               const me = Number(orden.monto_entregado) || 0;
               const monR = orden.moneda_recibida || 'USD';
               const monE = orden.moneda_entregada || 'USD';
-              const okRec = totalRecibido <= mr + 1e-6;
-              const okEnt = totalEntregado <= me + 1e-6;
+              const tolRPanel = toleranciaConciliacionInstrumentacionMonto(orden, 'recibido');
+              const tolEPanel = toleranciaConciliacionInstrumentacionMonto(orden, 'entregado');
+              const okRec = totalRecibido <= mr + tolRPanel;
+              const okEnt = totalEntregado <= me + tolEPanel;
               const ejecutada = orden.estado === 'orden_ejecutada';
               const textoInst = ejecutada
                 ? `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`
@@ -27564,8 +29315,8 @@ function expandOrdenTransacciones(ordenId, orden) {
               const estadoTexto = (t) => (String(t.estado || '').toLowerCase() === 'anulada' ? 'Anulada' : (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente'));
               const montoCell = (t) => {
                 if (!canEditarTr) return `<td>${formatImporteDisplay(t.monto)}</td>`;
-                const val = formatImporteParaInput(t.monto);
-                return `<td><input type="text" class="input-monto-transaccion-tabla" data-id="${esc(t.id)}" value="${esc(val)}" inputmode="decimal" aria-label="Monto ${esc(t.moneda)}"></td>`;
+                const val = formatMontoTransaccionTablaParaInput(t.monto, t.moneda);
+                return `<td><input type="text" class="input-monto-transaccion-tabla" data-id="${esc(t.id)}" data-moneda="${esc((t.moneda || '').toString())}" value="${esc(val)}" inputmode="decimal" aria-label="Monto ${esc(t.moneda)}"></td>`;
               };
               const modoPagoCell = (t) => {
                 const modo = modosMap[t.modo_pago_id];
@@ -27611,10 +29362,12 @@ function expandOrdenTransacciones(ordenId, orden) {
                   input.addEventListener('blur', function() {
                     const id = this.getAttribute('data-id');
                     const prev = lista.find((r) => r.id === id);
-                    if (!prev || parseImporteInput(this.value) === Number(prev.monto)) return;
+                    const nv = parseImporteInput(this.value);
+                    if (!prev || montosTrxCasiIguales(prev.monto, nv, prev.moneda)) return;
                     guardarSoloMontoTransaccion(id, this.value, () => refreshTransaccionesPanel(ordenId));
                   });
                 });
+                configurarInputsMontoTransaccionTablaEn(tbody);
                 tbody.querySelectorAll('.btn-editar-transaccion-panel').forEach((btn) => {
                   btn.addEventListener('click', () => {
                     const row = lista.find((r) => r.id === btn.getAttribute('data-id'));
@@ -27747,8 +29500,10 @@ function refreshTransaccionesPanel(ordenId) {
       const me = Number(orden.monto_entregado) || 0;
       const monR = orden.moneda_recibida || 'USD';
       const monE = orden.moneda_entregada || 'USD';
-      const okRec = totalRecibido <= mr + 1e-6;
-      const okEnt = totalEntregado <= me + 1e-6;
+      const tolRRf = toleranciaConciliacionInstrumentacionMonto(orden, 'recibido');
+      const tolERf = toleranciaConciliacionInstrumentacionMonto(orden, 'entregado');
+      const okRec = totalRecibido <= mr + tolRRf;
+      const okEnt = totalEntregado <= me + tolERf;
       const ejecutada = orden.estado === 'orden_ejecutada';
       const textoInst = ejecutada
         ? `Recibido ${formatImporteDisplay(totalRecibido)} ${monR} · Entregado ${formatImporteDisplay(totalEntregado)} ${monE}.`
@@ -27788,8 +29543,8 @@ function refreshTransaccionesPanel(ordenId) {
       const estadoTexto = (t) => (String(t.estado || '').toLowerCase() === 'anulada' ? 'Anulada' : (t.estado === 'ejecutada' ? 'Ejecutada' : 'Pendiente'));
       const montoCell = (t) => {
         if (!canEditarTr) return `<td>${formatImporteDisplay(t.monto)}</td>`;
-        const val = formatImporteParaInput(t.monto);
-        return `<td><input type="text" class="input-monto-transaccion-tabla" data-id="${esc(t.id)}" value="${esc(val)}" inputmode="decimal" aria-label="Monto ${esc(t.moneda)}"></td>`;
+        const val = formatMontoTransaccionTablaParaInput(t.monto, t.moneda);
+        return `<td><input type="text" class="input-monto-transaccion-tabla" data-id="${esc(t.id)}" data-moneda="${esc((t.moneda || '').toString())}" value="${esc(val)}" inputmode="decimal" aria-label="Monto ${esc(t.moneda)}"></td>`;
       };
       const modoPagoCell = (t) => {
         const modo = modosMap[t.modo_pago_id];
@@ -27836,10 +29591,12 @@ function refreshTransaccionesPanel(ordenId) {
           input.addEventListener('blur', function() {
             const id = this.getAttribute('data-id');
             const prev = list.find((r) => r.id === id);
-            if (!prev || parseImporteInput(this.value) === Number(prev.monto)) return;
+            const nv = parseImporteInput(this.value);
+            if (!prev || montosTrxCasiIguales(prev.monto, nv, prev.moneda)) return;
             guardarSoloMontoTransaccion(id, this.value, () => refreshTransaccionesPanel(ordenId));
           });
         });
+        configurarInputsMontoTransaccionTablaEn(tbody);
         tbody.querySelectorAll('.btn-editar-transaccion-panel').forEach((btn) => {
           btn.addEventListener('click', () => {
             const row = list.find((r) => r.id === btn.getAttribute('data-id'));
@@ -27904,6 +29661,7 @@ function toggleTransaccionMonedaArs() {
     if (selMoneda) { selMoneda.value = 'ARS'; selMoneda.disabled = true; }
     if (wrapConversion) wrapConversion.style.display = 'none';
     if (lblMonto) lblMonto.textContent = 'ARS';
+    sincronizarDecimalesInputTransaccionModal();
     return;
   }
   if (selMoneda) selMoneda.disabled = false;
@@ -27924,6 +29682,7 @@ function toggleTransaccionMonedaArs() {
     const d = document.getElementById('transaccion-monto-calculado-display');
     if (d) d.value = '';
   }
+  sincronizarDecimalesInputTransaccionModal();
 }
 
 /** Según tipo de operación: Ingreso solo permite moneda recibida; Egreso solo moneda entregada. Grisa opciones no permitidas. */
@@ -27940,6 +29699,7 @@ function adaptarTransaccionTipoYMoneda() {
   const restringir = monedasValidas.includes(monedaRecibida) && monedasValidas.includes(monedaEntregada);
   if (!restringir) {
     opciones.forEach((opt) => { opt.disabled = false; });
+    sincronizarDecimalesInputTransaccionModal();
     return;
   }
   const monedaPermitida = tipo === 'ingreso' ? monedaRecibida : monedaEntregada;
@@ -27950,6 +29710,8 @@ function adaptarTransaccionTipoYMoneda() {
   if (valorActual !== monedaPermitida) {
     selMoneda.value = monedaPermitida;
     toggleTransaccionMonedaArs();
+  } else {
+    sincronizarDecimalesInputTransaccionModal();
   }
 }
 
@@ -28278,7 +30040,7 @@ function openModalTransaccion(registro, instrumentacionId) {
       const modoRegistro = (r.data || []).find((m) => m.id === registro.modo_pago_id);
       if (esCheque && modoRegistro?.codigo === 'cheque' && sel) sel.disabled = true;
       document.getElementById('transaccion-moneda').value = esCheque ? 'ARS' : (registro.moneda || 'USD');
-      document.getElementById('transaccion-monto').value = formatImporteParaInput(registro.monto);
+      document.getElementById('transaccion-monto').value = formatMontoTransaccionTablaParaInput(registro.monto, registro.moneda);
       document.getElementById('transaccion-cobrador').value = registro.cobrador || 'pandy';
       document.getElementById('transaccion-pagador').value = registro.pagador || 'pandy';
       const selEstTr = document.getElementById('transaccion-estado');
@@ -28313,7 +30075,10 @@ function openModalTransaccion(registro, instrumentacionId) {
         const { totalRecibido: totR, totalEntregado: totE } = totalesInstrumentacion(participantes.transaccionesInst, ordenMiniModal, { totalesMulticontraparte: true });
         const mrN = Number(participantes.montoRecibido) || 0;
         const meN = Number(participantes.montoEntregado) || 0;
-        const tolMcModal = 1e-6;
+        const tolMcModal = Math.max(
+          toleranciaConciliacionInstrumentacionMonto(ordenMiniModal, 'recibido'),
+          toleranciaConciliacionInstrumentacionMonto(ordenMiniModal, 'entregado'),
+        );
         const faltanR = Math.max(0, mrN - totR);
         const faltanE = Math.max(0, meN - totE);
         if (faltanR > tolMcModal) {
@@ -28321,7 +30086,7 @@ function openModalTransaccion(registro, instrumentacionId) {
           document.getElementById('transaccion-moneda').value = esCheque ? 'ARS' : monRUi;
           document.getElementById('transaccion-pagador').value = 'cliente';
           document.getElementById('transaccion-cobrador').value = 'pandy';
-          document.getElementById('transaccion-monto').value = formatImporteParaInput(faltanR);
+          document.getElementById('transaccion-monto').value = formatMontoTransaccionTablaParaInput(faltanR, esCheque ? 'ARS' : monRUi);
           mcSmartApplied = true;
         } else if (faltanE > tolMcModal) {
           document.getElementById('transaccion-tipo').value = 'egreso';
@@ -28335,7 +30100,7 @@ function openModalTransaccion(registro, instrumentacionId) {
             document.getElementById('transaccion-pagador').value = 'pandy';
             document.getElementById('transaccion-cobrador').value = 'cliente';
           }
-          document.getElementById('transaccion-monto').value = formatImporteParaInput(faltanE);
+          document.getElementById('transaccion-monto').value = formatMontoTransaccionTablaParaInput(faltanE, esCheque ? 'ARS' : monEUi);
           mcSmartApplied = true;
         }
       }
@@ -28389,7 +30154,7 @@ function openModalTransaccion(registro, instrumentacionId) {
         sugg = Number(mEnt);
       }
       if (montoEl && sugg != null) {
-        montoEl.value = formatImporteParaInput(sugg);
+        montoEl.value = formatMontoTransaccionTablaParaInput(sugg, monSel);
       }
     }
     const montoFinal = document.getElementById('transaccion-monto');
@@ -28397,7 +30162,8 @@ function openModalTransaccion(registro, instrumentacionId) {
       const raw = (montoFinal.value || '').trim();
       if (raw !== '') {
         const n = parseImporteInput(raw);
-        if (!isNaN(n)) montoFinal.value = formatImporteParaInput(n);
+        const monFmt = (document.getElementById('transaccion-moneda')?.value || '').toUpperCase().trim();
+        if (!isNaN(n)) montoFinal.value = formatMontoTransaccionTablaParaInput(n, monFmt);
       }
       montoFinal._importeValorPrevio = montoFinal.value;
     }
@@ -28443,6 +30209,7 @@ function openModalTransaccion(registro, instrumentacionId) {
       }
     }
     backdrop.classList.add('activo');
+    sincronizarDecimalesInputTransaccionModal();
     setupInputImporte(montoFinal);
     actualizarMontoCalculado();
     requestAnimationFrame(() => {
@@ -29194,7 +30961,10 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                         }
                         if (esPandyInt && cob === 'intermediario' && intermediarioId) {
                           const tasa = Number(orden.tasa_descuento_intermediario) || 0;
-                          const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr;
+                          const esChequeArsOrd = esTipoOperacionChequeArs(tipoCodigo);
+                          const montoEfectivoInt = esChequeArsOrd
+                            ? montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr)
+                            : ((typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr);
                           const monInt = orden.moneda_recibida || item.moneda || 'ARS';
                           // Momento cero: ya existe fila Compensación (+mr); solo actualizar a cerrado. Si no, insertar Cobro Realizado +montoEfectivoInt.
                           insertsCc.push(
@@ -30115,7 +31885,9 @@ function saveTransaccion() {
           }
           if (!multicontraparteManualInst && esPandyIntermediario && cobrador === 'intermediario' && intermediarioId) {
             const tasa = Number(orden.tasa_descuento_intermediario) || 0;
-            const montoEfectivoInt = (typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr;
+            const montoEfectivoInt = esOrdenCheque
+              ? montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr)
+              : ((typeof tasa === 'number' && !isNaN(tasa) && tasa >= 0 && tasa < 1) ? mr * (1 - tasa) : mr);
             const monInt = orden.moneda_recibida || moneda || 'ARS';
             insertsCc.push(
               client.from('movimientos_cuenta_corriente_intermediario').select('id').eq('orden_id', ordenId).eq('intermediario_id', intermediarioId).eq('transaccion_id', transaccionId).maybeSingle()
@@ -31408,7 +33180,7 @@ function loadTiposOperacion() {
     tbody.innerHTML = '';
   }
 
-  const colsBase = 'id, codigo, nombre, moneda_in, moneda_out, usa_intermediario, activo, icono_modo, icono_url_publica';
+  const colsBase = 'id, codigo, nombre, moneda_in, moneda_out, usa_intermediario, activo, icono_modo, icono_url_publica, cheque_ars_comision_modalidad';
   return tiposOperacionFetchConFallbackOrdenVisual(
     () => client.from('tipos_operacion').select(colsBase + ', orden_visual').order('orden_visual', { ascending: true }).order('codigo').order('usa_intermediario').order('id'),
     () => client.from('tipos_operacion').select(colsBase).order('codigo').order('usa_intermediario').order('id'),
@@ -31528,6 +33300,13 @@ function openModalTipoOperacion(registro) {
     document.getElementById('tipo-operacion-moneda-out').value = (registro.moneda_out || 'USD').toUpperCase();
     document.getElementById('tipo-operacion-usa-intermediario').checked = registro.usa_intermediario === true;
     document.getElementById('tipo-operacion-activo').checked = registro.activo !== false;
+    const modSel = document.getElementById('tipo-operacion-cheque-ars-comision-modalidad');
+    if (modSel) {
+      const mv = (registro.cheque_ars_comision_modalidad != null && String(registro.cheque_ars_comision_modalidad).trim() !== '')
+        ? String(registro.cheque_ars_comision_modalidad).trim().toLowerCase()
+        : '';
+      modSel.value = mv;
+    }
     const im = (registro.icono_modo || 'auto').toString().trim().toLowerCase();
     const modoVal = im === 'cheque' || im === 'custom' ? im : 'auto';
     document.querySelectorAll('input[name="tipo-operacion-icono-modo"]').forEach((inp) => { inp.checked = inp.value === modoVal; });
@@ -31549,12 +33328,32 @@ function openModalTipoOperacion(registro) {
     updateTipoOperacionModalIconoCustomWrap();
     syncTipoOperacionModalIconoPreview();
   }
+  syncTipoOperacionModalChequeArsModalidadWrap();
   backdrop.classList.add('activo');
 }
 
 function closeModalTipoOperacion() {
   const backdrop = document.getElementById('modal-tipo-operacion-backdrop');
   if (backdrop) backdrop.classList.remove('activo');
+}
+
+function syncTipoOperacionModalChequeArsModalidadWrap() {
+  const wrap = document.getElementById('tipo-operacion-wrap-cheque-ars-modalidad');
+  const selMod = document.getElementById('tipo-operacion-cheque-ars-comision-modalidad');
+  const cod = (document.getElementById('tipo-operacion-codigo')?.value || '').trim();
+  const min = (document.getElementById('tipo-operacion-moneda-in')?.value || '').trim().toUpperCase();
+  const mout = (document.getElementById('tipo-operacion-moneda-out')?.value || '').trim().toUpperCase();
+  const usaInt = !!(document.getElementById('tipo-operacion-usa-intermediario')?.checked);
+  const esCh = esTipoOperacionChequeArs(cod, min, mout);
+  if (!wrap || !selMod) return;
+  wrap.style.display = esCh ? 'block' : 'none';
+  if (!esCh) {
+    selMod.value = '';
+    return;
+  }
+  const optSoloInt = selMod.querySelector('option[value="solo_intermediario"]');
+  if (optSoloInt) optSoloInt.disabled = !usaInt;
+  if (!usaInt && selMod.value === 'solo_intermediario') selMod.value = '';
 }
 
 function saveTipoOperacion() {
@@ -31578,6 +33377,13 @@ function saveTipoOperacion() {
     showToast('Cheque solo puede combinarse con ARS (el otro lado debe ser ARS).', 'error');
     return;
   }
+  const esChAbm = esTipoOperacionChequeArs(codigo, monedaIn, monedaOut);
+  const modEl = document.getElementById('tipo-operacion-cheque-ars-comision-modalidad');
+  const modRaw = modEl ? String(modEl.value || '').trim().toLowerCase() : '';
+  if (esChAbm && modRaw === 'solo_intermediario' && !document.getElementById('tipo-operacion-usa-intermediario').checked) {
+    showToast('El reparto «solo intermediario» requiere «Usa intermediario».', 'error');
+    return;
+  }
   const radIcono = document.querySelector('input[name="tipo-operacion-icono-modo"]:checked');
   const modoRaw = radIcono ? radIcono.value : 'auto';
   const iconoModo = modoRaw === 'cheque' || modoRaw === 'custom' ? modoRaw : 'auto';
@@ -31595,6 +33401,7 @@ function saveTipoOperacion() {
     activo: document.getElementById('tipo-operacion-activo').checked,
     icono_modo: iconoModo,
     icono_url_publica: iconoModo === 'custom' ? urlIcono : null,
+    cheque_ars_comision_modalidad: esChAbm ? (modRaw || null) : null,
   };
   let dupQ = client.from('tipos_operacion').select('id').eq('codigo', codigo).eq('usa_intermediario', payload.usa_intermediario).limit(1);
   if (id) dupQ = dupQ.neq('id', id);
@@ -31654,6 +33461,13 @@ function setupModalTipoOperacion() {
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); saveTipoOperacion(); });
   if (btnNuevo) btnNuevo.addEventListener('click', () => openModalTipoOperacion(null));
 
+  ['tipo-operacion-codigo', 'tipo-operacion-moneda-in', 'tipo-operacion-moneda-out'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', syncTipoOperacionModalChequeArsModalidadWrap);
+  });
+  const selChMod = document.getElementById('tipo-operacion-cheque-ars-comision-modalidad');
+  if (selChMod) selChMod.addEventListener('change', syncTipoOperacionModalChequeArsModalidadWrap);
+
   document.querySelectorAll('input[name="tipo-operacion-icono-modo"]').forEach((r) => {
     r.addEventListener('change', () => {
       updateTipoOperacionModalIconoCustomWrap();
@@ -31664,10 +33478,23 @@ function setupModalTipoOperacion() {
   if (urlIconoEl) urlIconoEl.addEventListener('input', syncTipoOperacionModalIconoPreview);
   ['tipo-operacion-codigo', 'tipo-operacion-nombre'].forEach((id) => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('input', syncTipoOperacionModalIconoPreview);
+    if (!el) return;
+    if (id === 'tipo-operacion-codigo') {
+      el.addEventListener('input', () => {
+        syncTipoOperacionModalIconoPreview();
+        syncTipoOperacionModalChequeArsModalidadWrap();
+      });
+    } else {
+      el.addEventListener('input', syncTipoOperacionModalIconoPreview);
+    }
   });
   const chkUsaInt = document.getElementById('tipo-operacion-usa-intermediario');
-  if (chkUsaInt) chkUsaInt.addEventListener('change', syncTipoOperacionModalIconoPreview);
+  if (chkUsaInt) {
+    chkUsaInt.addEventListener('change', () => {
+      syncTipoOperacionModalIconoPreview();
+      syncTipoOperacionModalChequeArsModalidadWrap();
+    });
+  }
   const fileIconoEl = document.getElementById('tipo-operacion-icono-file');
   const btnSubirIcono = document.getElementById('tipo-operacion-icono-subir');
   if (btnSubirIcono && fileIconoEl) {

@@ -161,11 +161,12 @@ async function obtenerFilaIntermediarioPorNombre(tbodyCc, page, nombreIntermedia
  * Tras Refrescar CC, el sync + load puede tardar más que un `waitForTimeout` fijo; la UI puede mostrar un saldo intermedio.
  * Relee hasta coincidir con lo esperado (±1) o timeout.
  */
-async function esperarSaldosResumenCliente(page, tbodyCc, nombreCliente, expU, expE, expA, timeoutMs = 60000) {
+async function esperarSaldosResumenCliente(page, tbodyCc, nombreCliente, expU, expE, expA, timeoutMs = 60000, opts = {}) {
+  const ignorarEur = !!opts.ignorarEur;
   const start = Date.now();
   /** Evita PASS falso: primera lectura sin fila + saldos esperados 0 no implica CC ya pintada. */
   const msMinAntesDeAceptarSinFilaConSaldosCero =
-    Math.abs(expU) <= 1 && Math.abs(expE) <= 1 && Math.abs(expA) <= 1 ? 3000 : 0;
+    Math.abs(expU) <= 1 && (ignorarEur || Math.abs(expE) <= 1) && Math.abs(expA) <= 1 ? 3000 : 0;
   let lastUsd = 0;
   let lastEur = 0;
   let lastArs = 0;
@@ -181,7 +182,7 @@ async function esperarSaldosResumenCliente(page, tbodyCc, nombreCliente, expU, e
       const elapsed = Date.now() - start;
       if (
         Math.abs(expU) <= 1 &&
-        Math.abs(expE) <= 1 &&
+        (ignorarEur || Math.abs(expE) <= 1) &&
         Math.abs(expA) <= 1 &&
         elapsed >= msMinAntesDeAceptarSinFilaConSaldosCero
       ) {
@@ -197,7 +198,7 @@ async function esperarSaldosResumenCliente(page, tbodyCc, nombreCliente, expU, e
       lastArs = saldoLeidoANumero(tArs);
       if (
         ccResumenDisplayMatchAlgebraico(lastUsd, expU) &&
-        ccResumenDisplayMatchAlgebraico(lastEur, expE) &&
+        (ignorarEur || ccResumenDisplayMatchAlgebraico(lastEur, expE)) &&
         ccResumenDisplayMatchAlgebraico(lastArs, expA)
       ) {
         return { saldoUSD: lastUsd, saldoEUR: lastEur, saldoARS: lastArs, countCli };
@@ -206,27 +207,13 @@ async function esperarSaldosResumenCliente(page, tbodyCc, nombreCliente, expU, e
     await page.waitForTimeout(400);
   }
   throw new Error(
-    `Timeout saldo CC cliente "${nombreCliente}": esperado USD=${expU} EUR=${expE} ARS=${expA}; último count=${lastCount} USD=${lastUsd} EUR=${lastEur} ARS=${lastArs}`
+    `Timeout saldo CC cliente "${nombreCliente}": esperado USD=${expU} EUR=${ignorarEur ? '(omitido)' : expE} ARS=${expA}; último count=${lastCount} USD=${lastUsd} EUR=${lastEur} ARS=${lastArs}`
   );
 }
 
-/** Lee efectivo USD (#cajas-saldo-efectivo-usd) con signo desde clase .negativo */
-async function leerSaldoCajaEfectivoUSD(page) {
-  await navegarVistaCajasYEsperarCarga(page);
-  const el = page.locator('#cajas-saldo-efectivo-usd');
-  let texto = (await el.textContent())?.trim() || '–';
-  if (texto === '–' || !/\d/.test(texto)) {
-    await page.waitForTimeout(2000);
-    texto = (await el.textContent())?.trim() || '–';
-  }
-  if (texto === '–' || !/\d/.test(texto)) return 0;
-  const esNegativo = await el.evaluate((node) => node.classList.contains('negativo'));
-  const abs = normalizarMontoSaldo(texto);
-  return esNegativo ? -abs : abs;
-}
-
-async function leerSaldoCajaEfectivoARS(page) {
-  const el = page.locator('#cajas-saldo-efectivo-ars');
+/** Lee un span de saldo caja ya en vista Cajas (sin navegar). */
+async function leerSaldoCajaSpanNegativo(page, selector) {
+  const el = page.locator(selector);
   const visible = await el.isVisible().catch(() => false);
   if (!visible) return 0;
   let texto = (await el.textContent())?.trim() || '–';
@@ -240,25 +227,16 @@ async function leerSaldoCajaEfectivoARS(page) {
   return esNegativo ? -abs : abs;
 }
 
-async function leerSaldoCajaEfectivoEUR(page) {
-  const el = page.locator('#cajas-saldo-efectivo-eur');
-  const visible = await el.isVisible().catch(() => false);
-  if (!visible) return 0;
-  let texto = (await el.textContent())?.trim() || '–';
-  if (texto === '–' || !/\d/.test(texto)) {
-    await page.waitForTimeout(2000);
-    texto = (await el.textContent())?.trim() || '–';
-  }
-  if (texto === '–' || !/\d/.test(texto)) return 0;
-  const esNegativo = await el.evaluate((node) => node.classList.contains('negativo'));
-  const abs = normalizarMontoSaldo(texto);
-  return esNegativo ? -abs : abs;
-}
-
+/**
+ * Saldos caja alineados al motor: plantilla **2 tx sin CHEQUE-ARS** usa modo **transferencia** por defecto
+ * (`pandiModoPagoPlantillaSinIntermediarioIdDesdeModosRows` en main.js) → USD/ARS impactan **Banco**, no Efectivo.
+ * La semilla E2E en RPC carga el mismo nominal en efectivo y banco; las expectativas en `withSeedCajaTipo2tx` suman ese seed al delta de la orden (válido leyendo banco para USD/ARS). EUR solo existe en tarjeta Efectivo en la UI.
+ */
 async function leerCajasUsdEurArs(page) {
-  const usd = await leerSaldoCajaEfectivoUSD(page);
-  const eur = await leerSaldoCajaEfectivoEUR(page);
-  const ars = await leerSaldoCajaEfectivoARS(page);
+  await navegarVistaCajasYEsperarCarga(page);
+  const usd = await leerSaldoCajaSpanNegativo(page, '#cajas-saldo-banco-usd');
+  const ars = await leerSaldoCajaSpanNegativo(page, '#cajas-saldo-banco-ars');
+  const eur = await leerSaldoCajaSpanNegativo(page, '#cajas-saldo-efectivo-eur');
   return { usd, eur, ars };
 }
 
@@ -362,6 +340,15 @@ async function leerMontosDesdeVistaDetalle(page, nombreCliente) {
     } catch (_) {}
     return [];
   }
+}
+
+/**
+ * Solo para estos tipos el contrato E2E incluye **EUR** (resumen CC + saldo EUR en tarjeta Efectivo de Cajas).
+ * USD-ARS, ARS-USD y USD-USD no mueven EUR en la operación: no se exige match en columna EUR ni en caja EUR
+ * (evita depender de semilla global / ruido; la orden solo usa USD±ARS o solo USD).
+ */
+function ccE2eTipoIncluyeEur(codigo) {
+  return codigo === 'EUR-USD' || codigo === 'USD-EUR' || codigo === 'EUR-ARS' || codigo === 'ARS-EUR';
 }
 
 const TIPOS_SUITE = [
@@ -486,7 +473,9 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
     const filtroUsaInt = (process.env.TIPO_USA_INTERMEDIARIO || '').trim().toLowerCase();
 
     console.log('\n======== [E2E 2/5] Tipos 2 transacciones (ARS/USD/EUR + USD-USD ±int) — 02-cc-tipos-activos ========');
-    console.log('[E2E] Por cada tipo: 4 combinaciones P/E (requiere tipos EUR activos en Supabase). Orden del suite: ver TIPOS_SUITE.\n');
+    console.log(
+      '[E2E] Por cada tipo: 4 combinaciones P/E. EUR en CC/caja solo se aserta en EUR-USD, USD-EUR, EUR-ARS, ARS-EUR. Orden: TIPOS_SUITE.\n',
+    );
 
     await loginAndSeeApp(page);
 
@@ -607,6 +596,7 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
                 const expU = Number(esperado.saldoUSD) || 0;
                 const expE = Number(esperado.saldoEUR) || 0;
                 const expA = Number(esperado.saldoARS) || 0;
+                const strictEur = ccE2eTipoIncluyeEur(cfg.codigo);
 
                 await page.locator('#menu-cuenta-corriente').click();
                 await expect(page.locator('#vista-cuenta-corriente')).toBeVisible({ timeout: 10000 });
@@ -625,15 +615,19 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
                   expU,
                   expE,
                   expA,
-                  60000
+                  60000,
+                  { ignorarEur: !strictEur },
                 );
                 const filaCliente = await obtenerFilaClientePorNombre(tbodyCc, page, nombreCliente);
                 const diffU = ccResumenDisplayDiffAlgebraico(saldoUSD, expU);
-                const diffE = ccResumenDisplayDiffAlgebraico(saldoEUR, expE);
+                const diffE = strictEur ? ccResumenDisplayDiffAlgebraico(saldoEUR, expE) : 0;
                 const diffA = ccResumenDisplayDiffAlgebraico(saldoARS, expA);
-                if (countCli === 0 && (Math.abs(expU) > 1 || Math.abs(expE) > 1 || Math.abs(expA) > 1)) {
+                if (
+                  countCli === 0 &&
+                  (Math.abs(expU) > 1 || (strictEur && Math.abs(expE) > 1) || Math.abs(expA) > 1)
+                ) {
                   throw new Error(
-                    `${cfg.codigo} ${esperado.id}: sin fila cliente pero se esperaba saldo USD=${expU} EUR=${expE} ARS=${expA}`
+                    `${cfg.codigo} ${esperado.id}: sin fila cliente pero se esperaba saldo USD=${expU} EUR=${strictEur ? expE : '(omitido)'} ARS=${expA}`
                   );
                 }
 
@@ -709,14 +703,14 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
                   realCajaArs = again.ars;
                 }
                 const diffCajaU = Math.abs(realCajaUsd - expCajaU);
-                const diffCajaE = Math.abs(realCajaEur - expCajaE);
+                const diffCajaE = strictEur ? Math.abs(realCajaEur - expCajaE) : 0;
                 const diffCajaA = Math.abs(realCajaArs - expCajaA);
 
                 const rdoU = diffU <= 1 ? 'PASS' : 'ERR';
-                const rdoE = diffE <= 1 ? 'PASS' : 'ERR';
+                const rdoE = strictEur ? (diffE <= 1 ? 'PASS' : 'ERR') : 'N/A';
                 const rdoA = diffA <= 1 ? 'PASS' : 'ERR';
                 const rdoCajaU = diffCajaU <= 1 ? 'PASS' : 'ERR';
-                const rdoCajaE = diffCajaE <= 1 ? 'PASS' : 'ERR';
+                const rdoCajaE = strictEur ? (diffCajaE <= 1 ? 'PASS' : 'ERR') : 'N/A';
                 const rdoCajaA = diffCajaA <= 1 ? 'PASS' : 'ERR';
 
                 logRows.push([
@@ -749,7 +743,9 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
                 ]);
 
                 expect(diffU, `${cfg.codigo} ${esperado.id}: saldo USD esp ${expU} app ${saldoUSD}`).toBeLessThanOrEqual(1);
-                expect(diffE, `${cfg.codigo} ${esperado.id}: saldo EUR esp ${expE} app ${saldoEUR}`).toBeLessThanOrEqual(1);
+                if (strictEur) {
+                  expect(diffE, `${cfg.codigo} ${esperado.id}: saldo EUR esp ${expE} app ${saldoEUR}`).toBeLessThanOrEqual(1);
+                }
                 expect(diffA, `${cfg.codigo} ${esperado.id}: saldo ARS esp ${expA} app ${saldoARS}`).toBeLessThanOrEqual(1);
                 if (esperadoSorted.length > 0) {
                   expect(appSorted.length, `${cfg.codigo} ${esperado.id}: detalle cantidad esp ${esperadoSorted.length} app ${appSorted.length}`).toBe(
@@ -760,7 +756,9 @@ test.describe('CC tipos 2 transacciones: combinaciones P/E Tx1 Tx2', () => {
                   }
                 }
                 expect(diffCajaU, `${cfg.codigo} ${esperado.id}: caja USD esp ${expCajaU} app ${realCajaUsd}`).toBeLessThanOrEqual(1);
-                expect(diffCajaE, `${cfg.codigo} ${esperado.id}: caja EUR esp ${expCajaE} app ${realCajaEur}`).toBeLessThanOrEqual(1);
+                if (strictEur) {
+                  expect(diffCajaE, `${cfg.codigo} ${esperado.id}: caja EUR esp ${expCajaE} app ${realCajaEur}`).toBeLessThanOrEqual(1);
+                }
                 expect(diffCajaA, `${cfg.codigo} ${esperado.id}: caja ARS esp ${expCajaA} app ${realCajaArs}`).toBeLessThanOrEqual(1);
                 console.log(`    ✓ [${cfg.codigo}] ${esperado.id} OK\n`);
           });

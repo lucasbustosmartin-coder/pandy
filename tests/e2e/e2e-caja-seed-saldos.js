@@ -15,9 +15,9 @@ const E2E_CAJA_SEED = Object.freeze({
 });
 
 /**
- * Fila tipo 02/03: saldos de efectivo que lee el spec (tres monedas).
- * La vista Cajas muestra siempre USD / EUR / ARS; la semilla RPC ingresa las tres aunque el tipo de operación
- * solo use dos columnas en el fixture → hay que sumar seed a cada moneda (ausente = 0).
+ * Fila tipo 02/03: totales de caja que compara el spec con `leerCajasUsdEurArs` (Banco USD/ARS + Efectivo EUR).
+ * Plantilla 2 tx (no CHEQUE-ARS): modo por defecto **transferencia** → el sync mueve USD/ARS en **banco**; la RPC
+ * semilla el mismo nominal en efectivo y banco, así que `cajaUSD`/`cajaARS` aquí = delta orden + semilla (coincide con la lectura banco del E2E).
  */
 function withSeedCajaTipo2tx(row) {
   const o = { ...row };

@@ -268,7 +268,7 @@
         <span class="menu-label">Auditoría</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.8.6</div>
+    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.8.7</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -1311,6 +1311,16 @@
           </div>
           <div class="form-group">
             <label><input type="checkbox" id="tipo-operacion-activo" checked /> Activo</label>
+          </div>
+          <div id="tipo-operacion-wrap-cheque-ars-modalidad" class="form-group" style="display:none;">
+            <label for="tipo-operacion-cheque-ars-comision-modalidad">CHEQUE-ARS: reparto de comisiones</label>
+            <select id="tipo-operacion-cheque-ars-comision-modalidad">
+              <option value="">Legacy (tasa intermediario obligatoria &gt; 0)</option>
+              <option value="sin_comision">Sin comisión (tasa cliente 0, tasa intermediario 0)</option>
+              <option value="solo_intermediario">Solo intermediario (tasa cliente 0, tasa intermediario &gt; 0)</option>
+              <option value="solo_pandy">Solo comisión acuerdo / Pandy (tasa cliente &gt; 0, tasa intermediario 0)</option>
+            </select>
+            <p id="tipo-operacion-cheque-ars-modalidad-hint" class="config-empresa-migracion-hint" style="margin-top:0.35rem;">Solo aplica a tipos cheque en pesos. Con intermediario, «solo intermediario» reparte sobre el monto recibido del acuerdo aunque no haya descuento al cliente.</p>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn-primary"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar</button>
