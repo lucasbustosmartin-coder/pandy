@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.7',
+  versionLabel: 'v3.8.8',
   lines: [
-    'En órdenes dólar–pesos y pesos–dólar, los montos en dólares del acuerdo admiten más decimales y el tipo de cambio los respeta al calcular el otro lado.',
-    'En la instrumentación, los montos en dólares y en euros de las transacciones se muestran y pueden editarse con la misma precisión para que cierre con el acuerdo.',
-    'Se corrigió el mensaje que a veces impedía marcar la orden como lista cuando los importes ya coincidían con el acuerdo.',
+    'En órdenes cheque en pesos con intermediario, diferencias de centavos frente a la plantilla ya no se toman como si hubieras cambiado todo a mano: se comparan los importes en pesos enteros.',
+    'Multicontraparte solo puede quedar activo de forma automática si en la práctica cambian pagador o cobrador respecto de lo esperado; marcar las transacciones como ejecutadas no debería activarlo solo.',
+    'Al cerrar la instrumentación de ese tipo de cheque, el respeto del acuerdo vuelve a alinearse con lo que ves en pantalla, sin mensajes de exceso por sumar de más las patas con el intermediario.',
   ],
 };

@@ -10060,6 +10060,18 @@ function instrumentacionMulticontraparteManualPermitida(orden, toJoin) {
   return !!(orden && orden.tipo_operacion_id && toJoin);
 }
 
+/**
+ * Opciones para `totalesInstrumentacion` en modo «volumen MC» (sumar todos los ingresos/egresos).
+ * **No aplica a CHEQUE-ARS (+int.):** mr/me del acuerdo son solo las patas cliente; las 4 transacciones típicas incluyen Pandy↔Intermediario y duplicarían totales vs acuerdo si se sumara todo (falso «supera acuerdo» con MC manual activo).
+ */
+function instrumentacionTotalesOptsMulticontraparteSiCorresponde(orden, toJoin) {
+  if (!orden || !toJoin || !instrumentacionMulticontraparteManualPermitida(orden, toJoin)) return undefined;
+  const tj = toJoin && (Array.isArray(toJoin) ? toJoin[0] : toJoin);
+  if (!tj) return undefined;
+  if (esTipoOperacionChequeArsMatrizReglasCc(tj.codigo, tj.moneda_in, tj.moneda_out)) return undefined;
+  return { totalesMulticontraparte: true };
+}
+
 function idClientePagadorEfectivoMulticontraparte(t, orden) {
   const { pag } = pagCobEfectivosTransaccionSync(t);
   if (pag !== 'cliente') return null;
@@ -21461,7 +21473,7 @@ function pandiPintarOrdenPanelTransaccionesDesdeSnapshot(panel, orden, snap, ctx
       : null;
   const mcInstP = !!(mcRow && mcRow.multicontraparte_manual);
   const totalesOptsPanel =
-    ordenTotales && mcInstP && instrumentacionMulticontraparteManualPermitida(ordenTotales, toJP) ? { totalesMulticontraparte: true } : undefined;
+    ordenTotales && mcInstP ? instrumentacionTotalesOptsMulticontraparteSiCorresponde(ordenTotales, toJP) : undefined;
   const { totalRecibido, totalEntregado } = totalesInstrumentacion(lista, ordenTotales || {}, totalesOptsPanel);
   const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
   if (totalesEl && ordenRef) {
@@ -24847,7 +24859,7 @@ function guardarOrdenDesdeWizard() {
                 monto_entregado: montoEntregado,
                 cotizacion,
               };
-              const totMc = mcFlag && instrumentacionMulticontraparteManualPermitida(ordenParaCalc, toJ);
+              const totMc = !!instrumentacionTotalesOptsMulticontraparteSiCorresponde(ordenParaCalc, toJ) && mcFlag;
               const { estado: estadoCalculado } = calcularEstadoOrden(list, ordenParaCalc, { totalesMulticontraparte: totMc });
               return hacerUpdate(estadoCalculado);
             });
@@ -25109,7 +25121,7 @@ function renderOrdenWizardInstrumentacion(instId) {
       let list = resTr.data || [];
 
       const toJoinWizard = orden && orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
-      const totalesOptsWizard = multicontraparteManualInst && orden && instrumentacionMulticontraparteManualPermitida(orden, toJoinWizard) ? { totalesMulticontraparte: true } : undefined;
+      const totalesOptsWizard = multicontraparteManualInst && orden && toJoinWizard ? instrumentacionTotalesOptsMulticontraparteSiCorresponde(orden, toJoinWizard) : undefined;
 
       const wrapMcInst = document.getElementById('orden-inst-multicontraparte-wrap');
       const chkMcInst = document.getElementById('orden-inst-multicontraparte-manual');
@@ -25638,7 +25650,7 @@ function saveOrden() {
                   monto_entregado: montoEntregado,
                   cotizacion,
                 };
-                const totMc = mcFlag && instrumentacionMulticontraparteManualPermitida(ordenParaCalc, toJ);
+                const totMc = !!instrumentacionTotalesOptsMulticontraparteSiCorresponde(ordenParaCalc, toJ) && mcFlag;
                 const { estado: estadoCalculado } = calcularEstadoOrden(list, ordenParaCalc, { totalesMulticontraparte: totMc });
                 return hacerUpdateOrden(estadoCalculado);
               });
@@ -26322,7 +26334,7 @@ function convertirAMonedaOrden(monto, monedaOrigen, monedaDestino, tipoCambio) {
 
 /**
  * Totales de transacciones en moneda del acuerdo. orden: { moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion?, cliente_id }.
- * options.totalesMulticontraparte: suman **todos** los ingresos (convertidos a moneda recibida) y **todos** los egresos (convertidos a moneda entregada), salvo anuladas — permite Pandy como pagador en un ingreso u otros actores sin exigir que el cliente del acuerdo sea quien paga el ingreso (docs/INSTRUMENTACION_MANUAL_MULTICONTRAPARTE.md).
+ * options.totalesMulticontraparte: suman **todos** los ingresos (convertidos a moneda recibida) y **todos** los egresos (convertidos a moneda entregada), salvo anuladas — permite Pandy como pagador en un ingreso u otros actores sin exigir que el cliente del acuerdo sea quien paga el ingreso (docs/INSTRUMENTACION_MANUAL_MULTICONTRAPARTE.md). **No** se activa en CHEQUE-ARS (+int.): ver `instrumentacionTotalesOptsMulticontraparteSiCorresponde`.
  */
 function totalesInstrumentacion(transacciones, orden, options) {
   if (!orden) return { totalRecibido: 0, totalEntregado: 0 };
@@ -26488,7 +26500,7 @@ function fetchOrdenYTransaccionesParaValidarCierreWizard(ordenId, instId) {
     ]).then(([rTr, rInst]) => {
       const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
       const mc = !!(rInst.data && rInst.data.multicontraparte_manual);
-      const totalesOpts = mc && instrumentacionMulticontraparteManualPermitida(orden, toJoin) ? { totalesMulticontraparte: true } : undefined;
+      const totalesOpts = mc ? instrumentacionTotalesOptsMulticontraparteSiCorresponde(orden, toJoin) : undefined;
       return {
         orden,
         transacciones: rTr.data || [],
@@ -26637,7 +26649,7 @@ function actualizarTasaTransaccionIngresoIntermediarioCheque(ordenId, orden) {
           });
           const trx = list.find((t) => transaccionEsIngresoEfectivoIntermediarioAPandyChequeArs(t, modoCodigoPorId));
           if (!trx) return Promise.resolve();
-          if (Math.abs(Number(trx.monto) - montoEfectivoInt) <= 0.02) return Promise.resolve();
+          if (montosChequeArsIgualesHastaPesoEntero(trx.monto, montoEfectivoInt)) return Promise.resolve();
           return client.from('transacciones').update({ monto: montoEfectivoInt, updated_at: new Date().toISOString() }).eq('id', trx.id);
         });
       });
@@ -26903,12 +26915,19 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
            */
           const bloquearAutoMcPorCompensacionCcFlip =
             hayCompensacionCcFlipPersistida && !roleDesvioParaAutoMc;
+          /**
+           * Persistir `multicontraparte_manual` solo por **desvío vivo de pagador/cobrador** (+ UUIDs) vs plantilla
+           * (`pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo`). No alcanza `instrumentacion_ajustada_manual`
+           * (montos/modos/TC): evita activar MC al marcar ejecutadas, por diferencias mínimas de monto frente a la
+           * plantilla o por flags de ajuste sin cambio real de contrapartes. USD-USD cp_ic + Aj manual sigue en
+           * memoria vía `derivMcAutoUsdUsdIntCpIcAjManual` sin depender de este UPDATE.
+           */
           const activarMcAutoSync =
             !multicontraparteManualDb &&
             !multicontraparteSyncNoAuto &&
             eligibleMcInst &&
             !bloquearAutoMcPorCompensacionCcFlip &&
-            (roleDesvioParaAutoMc || (instrumentacionAjustadaManualDb && !derivUsdUsdIntCpIcAjGeo));
+            roleDesvioParaAutoMc;
           const promActivarMcAuto =
             activarMcAutoSync
               ? client
@@ -27075,7 +27094,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             (multicontraparteManual || derivMcAutoUsdUsdIntCpIcAjManual);
           /**
            * Motor completo por trx apagado si MC persistido **o** derivación automática USD-USD cp_ic + Aj manual (`derivMcAutoUsdUsdIntCpIcAjManual`, sin flag en BD).
-           * Otros tipos con `instrumentacion_ajustada_manual` siguen activando MC vía UPDATE cuando aplica `activarMcAutoSync`.
+           * `activarMcAutoSync` ya no persiste MC por solo `instrumentacion_ajustada_manual` (ver bloque UPDATE arriba).
            */
           const usarDerivacionCcSinMotorReglas = usarMulticontraparteSync;
           const usarMotorEfectivo = usarMotorReglasNegocio && !usarDerivacionCcSinMotorReglas;
@@ -28599,10 +28618,19 @@ function firmasPlantillaInstParticipantesIgualesChequeArsRelajUuidPendiente(esp,
 }
 
 /**
+ * CHEQUE-ARS (ARS): plantilla vs BD/UI en **pesos enteros** (`Math.round`).
+ * Centavos de diferencia no marcan desvío de plantilla; si cambia el peso entero, puede ser ajuste manual real.
+ */
+function montosChequeArsIgualesHastaPesoEntero(montoA, montoB) {
+  const a = Math.round(Number(montoA));
+  const b = Math.round(Number(montoB));
+  return Number.isFinite(a) && Number.isFinite(b) && a === b;
+}
+
+/**
  * Igual que `firmasPlantillaInstCoincidenTol` con normalización CHEQUE-ARS + UUID pendiente; ingreso Int→Pandy vs **me** canónico.
  */
 function firmasPlantillaInstCoincidenTolChequeArsInt4(esp, act, orden) {
-  const tolM = 0.02;
   const tolTc = 1e-6;
   if (!orden) return firmasPlantillaInstCoincidenTol(esp, act);
   const e = firmaInstNormalizarPagCobRolesChequeArs(esp, orden);
@@ -28610,7 +28638,7 @@ function firmasPlantillaInstCoincidenTolChequeArsInt4(esp, act, orden) {
   if (e.tipo !== a.tipo || e.moneda !== a.moneda) return false;
   if (!firmasPlantillaInstParticipantesIgualesChequeArsRelajUuidPendiente(esp, act, orden)) return false;
   if (e.modo !== a.modo) return false;
-  let montoOk = Math.abs(e.monto - a.monto) <= tolM;
+  let montoOk = montosChequeArsIgualesHastaPesoEntero(e.monto, a.monto);
   if (
     !montoOk &&
     String(e.tipo || '').toLowerCase() === 'ingreso' &&
@@ -28620,7 +28648,7 @@ function firmasPlantillaInstCoincidenTolChequeArsInt4(esp, act, orden) {
     const mr = Number(orden.monto_recibido) || 0;
     const mePl = montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr);
     /** Solo **me** (o equivalente plantilla); aceptar **mr** en Tx4 era un atajo incorrecto y rompía CC intermediario + comisión. */
-    montoOk = Math.abs(a.monto - mePl) <= tolM;
+    montoOk = montosChequeArsIgualesHastaPesoEntero(mePl, a.monto);
   }
   if (!montoOk) return false;
   if (e.tc == null && a.tc == null) return true;
@@ -29253,7 +29281,7 @@ function expandOrdenTransacciones(ordenId, orden) {
           }
           const toJP = ordenTotales.tipos_operacion && (Array.isArray(ordenTotales.tipos_operacion) ? ordenTotales.tipos_operacion[0] : ordenTotales.tipos_operacion);
           const mcInstP = !!(mcRow && mcRow.multicontraparte_manual);
-          const totalesOptsPanel = mcInstP && instrumentacionMulticontraparteManualPermitida(ordenTotales, toJP) ? { totalesMulticontraparte: true } : undefined;
+          const totalesOptsPanel = mcInstP ? instrumentacionTotalesOptsMulticontraparteSiCorresponde(ordenTotales, toJP) : undefined;
           if (res.error) {
             const mostro = await pandiExpandOrdenIntentarMostrarInstrumentacionSnapshot(panel, ordenId, orden, uiSnap);
             if (!mostro) {
@@ -29486,8 +29514,7 @@ function refreshTransaccionesPanel(ordenId) {
     const orden = resOrd?.data || null;
     const ordenAnuladaRf = orden && String(orden.estado || '') === 'anulada';
     const toJR = orden?.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
-    const totMcRf = !!(rInstMc.data && rInstMc.data.multicontraparte_manual) && instrumentacionMulticontraparteManualPermitida(orden, toJR);
-    const totalesOptsRf = totMcRf ? { totalesMulticontraparte: true } : undefined;
+    const totalesOptsRf = (rInstMc.data && rInstMc.data.multicontraparte_manual) ? instrumentacionTotalesOptsMulticontraparteSiCorresponde(orden, toJR) : undefined;
     if (resTr.error) {
       tbody.innerHTML = '<tr><td colspan="10">Error: ' + (resTr.error.message || '') + '</td></tr>';
       return;
@@ -30072,7 +30099,8 @@ function openModalTransaccion(registro, instrumentacionId) {
           monto_entregado: participantes.montoEntregado,
           cotizacion: participantes.cotizacion,
         };
-        const { totalRecibido: totR, totalEntregado: totE } = totalesInstrumentacion(participantes.transaccionesInst, ordenMiniModal, { totalesMulticontraparte: true });
+        const totOptsMcModal = permiteMcUi && !esCheque ? { totalesMulticontraparte: true } : undefined;
+        const { totalRecibido: totR, totalEntregado: totE } = totalesInstrumentacion(participantes.transaccionesInst, ordenMiniModal, totOptsMcModal);
         const mrN = Number(participantes.montoRecibido) || 0;
         const meN = Number(participantes.montoEntregado) || 0;
         const tolMcModal = Math.max(
@@ -31221,7 +31249,7 @@ function saveTransaccion() {
       ordenParaCompletarIdsTransaccion = orden;
       const toJoinSv = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
       const totMcSv = !!(rInst.data && rInst.data.multicontraparte_manual) && instrumentacionMulticontraparteManualPermitida(orden, toJoinSv);
-      const totalesOptsSv = totMcSv ? { totalesMulticontraparte: true } : undefined;
+      const totalesOptsSv = (rInst.data && rInst.data.multicontraparte_manual) ? instrumentacionTotalesOptsMulticontraparteSiCorresponde(orden, toJoinSv) : undefined;
       transaccionProyectada = { ...transaccionProyectada, ...leerIdsContraparteMulticontraparteForm(orden.cliente_id) };
       const wrapPagCliVal = document.getElementById('transaccion-wrap-pagador-cliente-id');
       if (totMcSv) {
@@ -32414,13 +32442,13 @@ function actualizarEstadoOrden(ordenId) {
     const instId = r.data && r.data.id;
     if (!instId) return;
     const mcInst = !!(r.data && r.data.multicontraparte_manual);
-    return client.from('ordenes').select('id, usuario_id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
+    return client.from('ordenes').select('id, usuario_id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)').eq('id', ordenId).single().then((rOrd) => {
       const orden = rOrd.data;
       if (!orden) return;
       return client.from('transacciones').select('id, tipo, moneda, monto, estado, tipo_cambio, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, usuario_id').eq('instrumentacion_id', instId).then((res) => {
         const list = res.data || [];
         const toJ = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
-        const totMc = mcInst && instrumentacionMulticontraparteManualPermitida(orden, toJ);
+        const totMc = !!instrumentacionTotalesOptsMulticontraparteSiCorresponde(orden, toJ) && mcInst;
         const { estado, conciliada, todasEjecutadas } = calcularEstadoOrden(list, orden, { totalesMulticontraparte: totMc });
         return client.from('ordenes').update({ estado, updated_at: new Date().toISOString() }).eq('id', ordenId).then(() => {
           const ordenIdAbierto = transaccionesOrdenIdActual;
