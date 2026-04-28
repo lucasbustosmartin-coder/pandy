@@ -13649,7 +13649,7 @@ function aplicarSyncUnicoChequeArs(fase, ctx) {
               transaccion_id: null,
               moneda: monComCajaFb,
               monto: -mIfb,
-              caja_tipo: 'efectivo',
+              caja_tipo: 'cheque',
               orden_numero: orden.numero != null ? orden.numero : null,
               transaccion_numero: nroTransComisionChequeFb,
               concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaFb, mIfb, orden.numero, nroTransComisionChequeFb),
@@ -13702,7 +13702,7 @@ function aplicarSyncUnicoChequeArs(fase, ctx) {
             transaccion_id: null,
             moneda: monComCajaMc,
             monto: -mImc,
-            caja_tipo: 'efectivo',
+            caja_tipo: 'cheque',
             orden_numero: orden.numero != null ? orden.numero : null,
             transaccion_numero: nroTransComisionChequeMc,
             concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaMc, mImc, orden.numero, nroTransComisionChequeMc),
@@ -27717,35 +27717,70 @@ function asegurarGananciaPandy(ordenId, instrumentacionId, orden, clienteId, com
       const ahora = new Date().toISOString();
       const fecha = fechaHoyYYYYMMDDArgentina();
       const monedaCom = orden.moneda_recibida || 'ARS';
-      return client.from('modos_pago').select('id').eq('codigo', 'efectivo').maybeSingle()
-        .then((rModo) => {
-          const modoId = (rModo.data && rModo.data.id) || null;
-          const rowGan = {
-            instrumentacion_id: instrumentacionId, tipo: 'ingreso', modo_pago_id: modoId, moneda: monedaCom, monto: comisionPandyMonto,
-            cobrador: 'pandy', pagador: 'cliente', owner: 'pandy', estado: 'ejecutada', concepto: 'Ganancia del acuerdo',
-            pagador_cliente_id: clienteId,
-            tipo_cambio: null, fecha_ejecucion: fecha, usuario_id: currentUserId, updated_at: ahora,
-          };
-          asegurarClasificacionTransaccionEnPayload(rowGan);
-          return client.from('transacciones').insert(rowGan).select('id, usuario_id, numero').single();
-        })
+      const candidatos = (listTrx || []).filter(
+        (tr) =>
+          String(tr.tipo || '').toLowerCase() === 'ingreso' &&
+          String(tr.pagador || '').toLowerCase() === 'cliente' &&
+          String(tr.cobrador || '').toLowerCase() === 'pandy' &&
+          String(tr.estado || '').toLowerCase() === 'ejecutada' &&
+          !(String(tr.concepto || '').includes('Ganancia')),
+      );
+      const trToReduce = candidatos.reduce((best, tr) => {
+        const m = Number(tr.monto) || 0;
+        if (m <= comisionPandyMonto + 1e-6) return best;
+        if (!best || m > Number(best.monto || 0)) return tr;
+        return best;
+      }, null);
+      const trModoRef =
+        trToReduce ||
+        [...candidatos].sort((a, b) => (Number(b.monto) || 0) - (Number(a.monto) || 0))[0] ||
+        null;
+      const promModo =
+        trModoRef && trModoRef.modo_pago_id != null && String(trModoRef.modo_pago_id).trim() !== ''
+          ? client.from('modos_pago').select('id, codigo').eq('id', trModoRef.modo_pago_id).maybeSingle()
+          : client.from('modos_pago').select('id, codigo').eq('codigo', 'efectivo').maybeSingle();
+      let cajaTipoGanancia = 'efectivo';
+      return promModo.then((rModo) => {
+        const modoRow = rModo.data || {};
+        const modoId = modoRow.id != null ? modoRow.id : null;
+        const codigoModo = String(modoRow.codigo || 'efectivo').toLowerCase().trim() || 'efectivo';
+        cajaTipoGanancia = codigoCajaTipoDesdeCodigo(codigoModo);
+        const rowGan = {
+          instrumentacion_id: instrumentacionId,
+          tipo: 'ingreso',
+          modo_pago_id: modoId,
+          moneda: monedaCom,
+          monto: comisionPandyMonto,
+          cobrador: 'pandy',
+          pagador: 'cliente',
+          owner: 'pandy',
+          estado: 'ejecutada',
+          concepto: 'Ganancia del acuerdo',
+          pagador_cliente_id: clienteId,
+          tipo_cambio: null,
+          fecha_ejecucion: fecha,
+          usuario_id: currentUserId,
+          updated_at: ahora,
+        };
+        asegurarClasificacionTransaccionEnPayload(rowGan);
+        return client.from('transacciones').insert(rowGan).select('id, usuario_id, numero').single();
+      })
         .then((rNew) => {
           const trId = rNew.data && rNew.data.id;
           const trNumero = rNew.data && rNew.data.numero;
           if (!trId) return Promise.resolve();
-          const candidatos = (listTrx || []).filter((tr) => tr.tipo === 'ingreso' && tr.pagador === 'cliente' && tr.cobrador === 'pandy' && tr.estado === 'ejecutada' && !(tr.concepto || '').includes('Ganancia'));
-          const trToReduce = candidatos.reduce((best, tr) => {
-            const m = Number(tr.monto) || 0;
-            if (m <= comisionPandyMonto + 1e-6) return best;
-            if (!best || m > Number(best.monto || 0)) return tr;
-            return best;
-          }, null);
           const transaccionIdReducida = trToReduce && trToReduce.id ? trToReduce.id : null;
           const conceptoGanancia = conceptoCajaTransaccionEspecial('Ganancia del acuerdo', monedaCom, comisionPandyMonto, orden.numero, trNumero);
           return client.from('movimientos_caja').insert({
-            moneda: monedaCom, monto: comisionPandyMonto, caja_tipo: 'efectivo', transaccion_id: trId,
-            orden_numero: orden.numero != null ? orden.numero : null, transaccion_numero: trNumero != null ? trNumero : null,
-            concepto: conceptoGanancia, fecha, usuario_id: currentUserId,
+            moneda: monedaCom,
+            monto: comisionPandyMonto,
+            caja_tipo: cajaTipoGanancia,
+            transaccion_id: trId,
+            orden_numero: orden.numero != null ? orden.numero : null,
+            transaccion_numero: trNumero != null ? trNumero : null,
+            concepto: conceptoGanancia,
+            fecha,
+            usuario_id: currentUserId,
           }).then(() => {
             const monR = (orden.moneda_recibida || 'USD').toUpperCase();
             const monE = (orden.moneda_entregada || 'USD').toUpperCase();
@@ -27963,7 +27998,18 @@ function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
                 estado_fecha: ahora,
                 ...montosCcPorMoneda(monCom, -comMonto),
               }).then(() => (idx === 0 && instrumentacionId
-                ? asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, comMonto, monCom, ordenNumero, transaccionNumero, uidCc, omitirCajaEfectivo)
+                ? asegurarComisionIntermediario(
+                    ordenId,
+                    instrumentacionId,
+                    intermediarioId,
+                    comMonto,
+                    monCom,
+                    ordenNumero,
+                    transaccionNumero,
+                    uidCc,
+                    omitirCajaEfectivo,
+                    esChequeArsMatrizIns ? 'cheque' : undefined,
+                  )
                 : Promise.resolve()));
             }),
             Promise.resolve(),
@@ -27973,12 +28019,25 @@ function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
 }
 
 /**
- * Comisión intermediario: por defecto un egreso en `movimientos_caja` efectivo (legacy). Si `omitirMovimientoCajaEfectivo`, solo `orden_comisiones_generadas` sin `movimientos_caja` (tasa transferencia fuera del acuerdo con el cliente: libro CC, no billetes). La línea CC «Comisión del acuerdo» ya inserta el caller. Requiere migración `sql/migracion_orden_comisiones_movimiento_caja.sql` para `movimiento_caja_id` y `transaccion_id` nullable.
+ * Comisión intermediario: por defecto un egreso en `movimientos_caja` efectivo (legacy). **CHEQUE-ARS** (matriz): `cajaTipoComisionAcuerdo === 'cheque'` para alinear la comisión al modo cheque del acuerdo. Si `omitirMovimientoCajaEfectivo`, solo `orden_comisiones_generadas` sin `movimientos_caja` (tasa transferencia fuera del acuerdo con el cliente: libro CC, no billetes). La línea CC «Comisión del acuerdo» ya inserta el caller. Requiere migración `sql/migracion_orden_comisiones_movimiento_caja.sql` para `movimiento_caja_id` y `transaccion_id` nullable.
  */
-function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediarioId, montoCom, monCom, ordenNumero, transaccionNumeroRef, usuarioIdMovimiento, omitirMovimientoCajaEfectivo) {
+function asegurarComisionIntermediario(
+  ordenId,
+  instrumentacionId,
+  intermediarioId,
+  montoCom,
+  monCom,
+  ordenNumero,
+  transaccionNumeroRef,
+  usuarioIdMovimiento,
+  omitirMovimientoCajaEfectivo,
+  cajaTipoComisionAcuerdo,
+) {
   void instrumentacionId;
   const uidCaja = usuarioIdMovimiento || currentUserId;
   const omitirCaja = omitirMovimientoCajaEfectivo === true;
+  const cajaTipoIns =
+    String(cajaTipoComisionAcuerdo || '').toLowerCase().trim() === 'cheque' ? 'cheque' : 'efectivo';
   if (!ordenId || !intermediarioId || !montoCom || montoCom < 1e-6) return Promise.resolve();
   const ordNum = ordenNumero != null ? ordenNumero : null;
   const nroRef = transaccionNumeroRef != null ? transaccionNumeroRef : null;
@@ -27995,7 +28054,7 @@ function asegurarComisionIntermediario(ordenId, instrumentacionId, intermediario
         orden_id: ordenId,
         moneda: monCom,
         monto: -montoCom,
-        caja_tipo: 'efectivo',
+        caja_tipo: cajaTipoIns,
         transaccion_id: null,
         orden_numero: ordNum,
         transaccion_numero: nroRef,
@@ -30336,8 +30395,9 @@ function codigoCajaTipo(modoPagoId) {
 }
 
 function codigoCajaTipoDesdeCodigo(codigo) {
-  if (codigo === 'transferencia') return 'banco';
-  if (codigo === 'cheque') return 'cheque';
+  const c = String(codigo || 'efectivo').toLowerCase().trim();
+  if (c === 'transferencia') return 'banco';
+  if (c === 'cheque') return 'cheque';
   return 'efectivo';
 }
 
