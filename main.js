@@ -2531,6 +2531,49 @@ const SESSION_ACTIVITY_THROTTLE_MS = 30000; // actualizar lastActivityTime como 
 let lastActivityUpdate = 0;
 /** Evita carrera: si el usuario envía el login antes de que termine getSession() al cargar, el .then tardío no debe volver a mostrar login ni registrar de nuevo los listeners. */
 let authBootstrapFromGetSessionDone = false;
+/** Evita duplicar listeners de login / registro / recuperación al llamar `setupLoginAndRegister` más de una vez. */
+let pandiAuthLoginRegisterBound = false;
+
+function pandiAuthRedirectToParaRecuperacionPassword() {
+  const { origin, pathname, search } = window.location;
+  const path = pathname && pathname !== '' ? pathname : '/';
+  return `${origin}${path}${search || ''}`;
+}
+
+function pandiAuthUrlIndicaPasswordRecovery() {
+  try {
+    const raw = `${window.location.hash || ''} ${window.location.search || ''}`;
+    const dec = decodeURIComponent(raw);
+    return /\btype=recovery\b/i.test(dec) || /\btype=recovery\b/i.test(raw);
+  } catch (_) {
+    return /type=recovery|type%3Drecovery/i.test((window.location.hash || '') + (window.location.search || ''));
+  }
+}
+
+function pandiOcultarPantallasAuthAuxiliares() {
+  const forgot = document.getElementById('forgot-password-screen');
+  const recovery = document.getElementById('recovery-password-screen');
+  if (forgot) forgot.style.display = 'none';
+  if (recovery) recovery.style.display = 'none';
+}
+
+function pandiMostrarPantallaRecuperarPasswordDom() {
+  document.body.classList.remove('pandi-shell-logged-in');
+  document.getElementById('sidebar').style.display = 'none';
+  document.getElementById('app-content').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('register-screen').style.display = 'none';
+  pandiOcultarPantallasAuthAuxiliares();
+  const recovery = document.getElementById('recovery-password-screen');
+  if (recovery) recovery.style.display = 'block';
+  const err = document.getElementById('recovery-password-error');
+  if (err) err.textContent = '';
+  const n1 = document.getElementById('recovery-password-new');
+  const n2 = document.getElementById('recovery-password-repeat');
+  if (n1) n1.value = '';
+  if (n2) n2.value = '';
+  pandiSyncSidebarBackdrop();
+}
 
 function showLoginScreenDom() {
   pandiSessionUiBootstrapped = false;
@@ -2538,6 +2581,7 @@ function showLoginScreenDom() {
   ccDetalleMovimientosRangoInicializado = false;
   document.body.classList.remove('pandi-shell-logged-in');
   document.getElementById('sidebar').style.display = 'none';
+  pandiOcultarPantallasAuthAuxiliares();
   document.getElementById('login-screen').style.display = 'block';
   document.getElementById('register-screen').style.display = 'none';
   document.getElementById('app-content').style.display = 'none';
@@ -2557,6 +2601,7 @@ function showLogin() {
 function showAppContent() {
   document.body.classList.add('pandi-shell-logged-in');
   document.getElementById('sidebar').style.display = 'flex';
+  pandiOcultarPantallasAuthAuxiliares();
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('register-screen').style.display = 'none';
   document.getElementById('app-content').style.display = 'block';
@@ -2577,10 +2622,17 @@ function ensureProfile(session) {
 }
 
 function setupLoginAndRegister() {
+  if (pandiAuthLoginRegisterBound) return;
+  pandiAuthLoginRegisterBound = true;
   const loginForm = document.getElementById('login-form');
   const registerForm = document.getElementById('register-form');
   const loginError = document.getElementById('login-error');
   const registerError = document.getElementById('register-error');
+  const forgotForm = document.getElementById('forgot-password-form');
+  const forgotErr = document.getElementById('forgot-password-error');
+  const forgotOk = document.getElementById('forgot-password-ok');
+  const recoveryForm = document.getElementById('recovery-password-form');
+  const recoveryErr = document.getElementById('recovery-password-error');
 
   document.getElementById('link-registro').addEventListener('click', (e) => {
     e.preventDefault();
@@ -2593,10 +2645,117 @@ function setupLoginAndRegister() {
   document.getElementById('link-login').addEventListener('click', (e) => {
     e.preventDefault();
     document.getElementById('register-screen').style.display = 'none';
-    document.getElementById('login-screen').style.display = 'block';
+    showLoginScreenDom();
     loginError.textContent = '';
     registerError.textContent = '';
   });
+
+  const linkOlvido = document.getElementById('link-olvido-password');
+  if (linkOlvido) {
+    linkOlvido.addEventListener('click', (e) => {
+      e.preventDefault();
+      loginError.textContent = '';
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('register-screen').style.display = 'none';
+      pandiOcultarPantallasAuthAuxiliares();
+      const forgot = document.getElementById('forgot-password-screen');
+      if (forgot) {
+        forgot.style.display = 'block';
+        const em = (document.getElementById('login-email')?.value || '').trim();
+        const fe = document.getElementById('forgot-password-email');
+        if (fe && em) fe.value = em;
+        if (forgotErr) forgotErr.textContent = '';
+        if (forgotOk) {
+          forgotOk.textContent = '';
+          forgotOk.style.display = 'none';
+        }
+      }
+    });
+  }
+
+  const linkForgotVolver = document.getElementById('link-forgot-volver-login');
+  if (linkForgotVolver) {
+    linkForgotVolver.addEventListener('click', (e) => {
+      e.preventDefault();
+      showLoginScreenDom();
+      if (forgotErr) forgotErr.textContent = '';
+      if (forgotOk) {
+        forgotOk.textContent = '';
+        forgotOk.style.display = 'none';
+      }
+    });
+  }
+
+  if (forgotForm) {
+    forgotForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (forgotErr) forgotErr.textContent = '';
+      if (forgotOk) {
+        forgotOk.textContent = '';
+        forgotOk.style.display = 'none';
+      }
+      const email = (document.getElementById('forgot-password-email')?.value || '').trim();
+      if (!email) {
+        if (forgotErr) forgotErr.textContent = 'Ingresá tu email.';
+        return;
+      }
+      client.auth
+        .resetPasswordForEmail(email, { redirectTo: pandiAuthRedirectToParaRecuperacionPassword() })
+        .then((res) => {
+          if (res.error) {
+            if (forgotErr) forgotErr.textContent = res.error.message || 'No se pudo enviar el email.';
+            return;
+          }
+          if (forgotOk) {
+            forgotOk.textContent =
+              'Si existe una cuenta con ese email, recibirás un enlace para elegir una contraseña nueva. Revisá también spam.';
+            forgotOk.style.display = 'block';
+          }
+        });
+    });
+  }
+
+  if (recoveryForm) {
+    recoveryForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (recoveryErr) recoveryErr.textContent = '';
+      const p1 = document.getElementById('recovery-password-new')?.value || '';
+      const p2 = document.getElementById('recovery-password-repeat')?.value || '';
+      if (p1.length < 6) {
+        if (recoveryErr) recoveryErr.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+        return;
+      }
+      if (p1 !== p2) {
+        if (recoveryErr) recoveryErr.textContent = 'Las contraseñas no coinciden.';
+        return;
+      }
+      client.auth
+        .updateUser({ password: p1 })
+        .then((res) => {
+          if (res.error) {
+            if (recoveryErr) recoveryErr.textContent = res.error.message || 'No se pudo actualizar la contraseña.';
+            return null;
+          }
+          try {
+            history.replaceState(null, '', window.location.pathname + (window.location.search || ''));
+          } catch (_) {
+            /* ignore */
+          }
+          return client.auth.getSession();
+        })
+        .then((sessRes) => {
+          if (!sessRes) return;
+          const sess = sessRes.data && sessRes.data.session;
+          if (!sess) {
+            if (recoveryErr) recoveryErr.textContent = 'Contraseña actualizada. Iniciá sesión de nuevo.';
+            showLoginScreenDom();
+            return;
+          }
+          authBootstrapFromGetSessionDone = true;
+          onSessionReady(sess);
+        });
+    });
+  }
 
   loginForm.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -2640,7 +2799,113 @@ function setupLoginAndRegister() {
   });
 }
 
-/** Devuelve Promise para poder mostrar estado de carga en `#btn-refresh` hasta terminar. */
+function pandiCerrarModalCambiarPassword() {
+  const bd = document.getElementById('modal-cambiar-password-backdrop');
+  if (bd) {
+    bd.classList.remove('activo');
+    bd.setAttribute('aria-hidden', 'true');
+  }
+  const err = document.getElementById('modal-cambiar-password-error');
+  if (err) err.textContent = '';
+  const n1 = document.getElementById('modal-cambiar-password-nueva');
+  const n2 = document.getElementById('modal-cambiar-password-repetir');
+  if (n1) n1.value = '';
+  if (n2) n2.value = '';
+}
+
+function pandiAbrirModalCambiarPassword() {
+  const bd = document.getElementById('modal-cambiar-password-backdrop');
+  if (!bd) return;
+  pandiCerrarModalCambiarPassword();
+  bd.classList.add('activo');
+  bd.setAttribute('aria-hidden', 'false');
+}
+
+function pandiSetupModalCambiarPassword() {
+  const bd = document.getElementById('modal-cambiar-password-backdrop');
+  if (!bd || bd.dataset.pandiBound === '1') return;
+  bd.dataset.pandiBound = '1';
+  const cerrar = () => pandiCerrarModalCambiarPassword();
+  document.getElementById('modal-cambiar-password-cerrar')?.addEventListener('click', cerrar);
+  document.getElementById('modal-cambiar-password-cancelar')?.addEventListener('click', cerrar);
+  bd.addEventListener('click', (ev) => {
+    if (ev.target === bd) cerrar();
+  });
+  document.getElementById('modal-cambiar-password-guardar')?.addEventListener('click', () => {
+    const errEl = document.getElementById('modal-cambiar-password-error');
+    if (errEl) errEl.textContent = '';
+    const p1 = document.getElementById('modal-cambiar-password-nueva')?.value || '';
+    const p2 = document.getElementById('modal-cambiar-password-repetir')?.value || '';
+    if (p1.length < 6) {
+      if (errEl) errEl.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+      return;
+    }
+    if (p1 !== p2) {
+      if (errEl) errEl.textContent = 'Las contraseñas no coinciden.';
+      return;
+    }
+    client.auth.updateUser({ password: p1 }).then((res) => {
+      if (res.error) {
+        if (errEl) errEl.textContent = res.error.message || 'No se pudo cambiar la contraseña.';
+        return;
+      }
+      cerrar();
+      showToast('Contraseña actualizada.', 'success');
+    });
+  });
+}
+
+function pandiCloseHeaderSettingsMenu() {
+  const panel = document.getElementById('header-settings-panel');
+  const btn = document.getElementById('btn-header-settings');
+  if (panel) {
+    panel.hidden = true;
+    panel.setAttribute('aria-hidden', 'true');
+  }
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function pandiToggleHeaderSettingsMenu() {
+  const panel = document.getElementById('header-settings-panel');
+  const btn = document.getElementById('btn-header-settings');
+  if (!panel || !btn) return;
+  if (panel.hidden) {
+    panel.hidden = false;
+    panel.setAttribute('aria-hidden', 'false');
+    btn.setAttribute('aria-expanded', 'true');
+  } else {
+    pandiCloseHeaderSettingsMenu();
+  }
+}
+
+function pandiSetupHeaderSettingsMenu() {
+  const btn = document.getElementById('btn-header-settings');
+  if (!btn || btn.dataset.pandiHeaderSettingsBound === '1') return;
+  btn.dataset.pandiHeaderSettingsBound = '1';
+  const panel = document.getElementById('header-settings-panel');
+  const wrap = btn.closest('.header-settings-dropdown');
+  if (!panel || !wrap) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    pandiToggleHeaderSettingsMenu();
+  });
+  document.addEventListener(
+    'click',
+    (e) => {
+      if (panel.hidden) return;
+      if (wrap.contains(e.target)) return;
+      pandiCloseHeaderSettingsMenu();
+    },
+    true,
+  );
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (panel.hidden) return;
+    pandiCloseHeaderSettingsMenu();
+  });
+}
+
+/** Devuelve Promise para poder mostrar estado de carga en el botón «Actualizar» (`#btn-refresh`) hasta terminar. */
 function refreshPermisosYVista() {
   if (pandiSinConexionServidorViva()) {
     showToast(
@@ -35327,7 +35592,19 @@ async function finalizeSessionUiSetup() {
     });
   }
 
+  pandiSetupModalCambiarPassword();
+  pandiSetupHeaderSettingsMenu();
+  const btnCambiarPw = document.getElementById('btn-user-cambiar-password');
+  if (btnCambiarPw && btnCambiarPw.dataset.pandiBoundCambiarPw !== '1') {
+    btnCambiarPw.dataset.pandiBoundCambiarPw = '1';
+    btnCambiarPw.addEventListener('click', () => {
+      pandiCloseHeaderSettingsMenu();
+      pandiAbrirModalCambiarPassword();
+    });
+  }
+
   document.getElementById('btn-cerrar-sesion').addEventListener('click', () => {
+    pandiCloseHeaderSettingsMenu();
     if (sessionCheckIntervalId) clearInterval(sessionCheckIntervalId);
     sessionCheckIntervalId = null;
     if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
@@ -35340,6 +35617,7 @@ async function finalizeSessionUiSetup() {
   if (btnRefresh && btnRefresh.dataset.pandiRefreshBound !== '1') {
     btnRefresh.dataset.pandiRefreshBound = '1';
     btnRefresh.addEventListener('click', () => {
+      pandiCloseHeaderSettingsMenu();
       if (btnRefresh.classList.contains('pandi-btn-refresh-busy')) return;
       btnRefresh.classList.add('pandi-btn-refresh-busy');
       btnRefresh.disabled = true;
@@ -35366,6 +35644,7 @@ async function finalizeSessionUiSetup() {
   const sidebarBackdrop = document.getElementById('sidebar-backdrop');
   if (sidebarBackdrop) {
     sidebarBackdrop.addEventListener('click', () => {
+      pandiCloseHeaderSettingsMenu();
       if (!pandiIsMobileNavLayout() || !sidebar.classList.contains('expanded')) return;
       sidebar.classList.remove('expanded');
       localStorage.setItem(SIDEBAR_KEY, '0');
@@ -35375,6 +35654,7 @@ async function finalizeSessionUiSetup() {
   }
   if (toggle) {
     toggle.addEventListener('click', () => {
+      pandiCloseHeaderSettingsMenu();
       sidebar.classList.toggle('expanded');
       localStorage.setItem(SIDEBAR_KEY, sidebar.classList.contains('expanded') ? '1' : '0');
       updateSidebarToggleLabel();
@@ -35564,16 +35844,58 @@ function setupHelpPopovers() {
 
 setupSupabaseConnectivityMonitoring();
 
+// Recuperación de contraseña: Supabase emite PASSWORD_RECOVERY (y a veces INITIAL_SESSION con type=recovery en la URL).
+// Registrar antes de getSession evita llamar onSessionReady y cargar el panel hasta que el usuario guarde la nueva clave.
+client.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT' && !session) {
+    showLogin();
+    return;
+  }
+  const recoveryEvent =
+    session &&
+    (event === 'PASSWORD_RECOVERY' ||
+      (event === 'INITIAL_SESSION' && pandiAuthUrlIndicaPasswordRecovery()));
+  if (recoveryEvent) {
+    if (authBootstrapFromGetSessionDone) return;
+    authBootstrapFromGetSessionDone = true;
+    pandiMostrarPantallaRecuperarPasswordDom();
+    setupLoginAndRegister();
+  }
+});
+
 // Inicio: getSession puede resolver *después* de un login rápido (autocompletar + Enter); sin guarda, el callback tardío llamaba showLogin() otra vez y duplicaba listeners.
+// Tras enlace de recuperación, GoTrue limpia el hash y emite PASSWORD_RECOVERY en un setTimeout(0); diferimos un tick para no cargar el panel antes que ese evento.
 client.auth.getSession().then(({ data: { session } }) => {
   if (authBootstrapFromGetSessionDone) return;
-  authBootstrapFromGetSessionDone = true;
   if (!session) {
+    authBootstrapFromGetSessionDone = true;
     showLogin();
     setupLoginAndRegister();
     return;
   }
-  onSessionReady(session);
+  if (pandiAuthUrlIndicaPasswordRecovery()) {
+    authBootstrapFromGetSessionDone = true;
+    pandiMostrarPantallaRecuperarPasswordDom();
+    setupLoginAndRegister();
+    return;
+  }
+  setTimeout(() => {
+    if (authBootstrapFromGetSessionDone) return;
+    authBootstrapFromGetSessionDone = true;
+    client.auth.getSession().then(({ data: { session: s2 } }) => {
+      if (!s2) {
+        showLogin();
+        setupLoginAndRegister();
+        return;
+      }
+      if (pandiAuthUrlIndicaPasswordRecovery()) {
+        pandiMostrarPantallaRecuperarPasswordDom();
+        setupLoginAndRegister();
+        return;
+      }
+      onSessionReady(s2);
+    });
+  }, 0);
 }).catch((e) => {
   console.warn('[Pandi] getSession:', e && e.message ? e.message : e);
   if (authBootstrapFromGetSessionDone) return;
@@ -35583,10 +35905,6 @@ client.auth.getSession().then(({ data: { session } }) => {
   updateSupabaseConnectivityBanner();
   showLogin();
   setupLoginAndRegister();
-});
-
-client.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_OUT' && !session) showLogin();
 });
 
 /** PWA (Fase 1): vite-plugin-pwa expone `virtual:pwa-register` solo en `vite dev` / `vite build`. Fuera de Vite, el import falla y se ignora. */

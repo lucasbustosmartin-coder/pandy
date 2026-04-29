@@ -50,7 +50,6 @@
     .sidebar-nav .menu-item .menu-icon svg { width: 100%; height: 100%; stroke: currentColor; }
     .sidebar-nav .menu-item .menu-label { white-space: nowrap; opacity: 0; width: 0; overflow: hidden; transition: opacity 0.2s, width 0.2s; }
     .sidebar.expanded .sidebar-nav .menu-item .menu-label { opacity: 1; width: auto; }
-    .sidebar-version { margin-top: auto; padding: 0.75rem 1rem; font-size: 0.75rem; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
     /* Backdrop del menú: solo se usa en layout móvil (≤768px), controlado por JS */
     .sidebar-backdrop {
       display: none;
@@ -124,9 +123,44 @@
       pointer-events: auto;
     }
     .app { max-width: 1600px; width: 100%; }
-    .page-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; position: relative; z-index: 2; }
-    .page-header .page-logo-wrap { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.08); }
-.page-header .page-logo-wrap .page-logo { width: 100%; height: 100%; object-fit: contain; object-position: center; }
+    .page-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      position: relative;
+      z-index: 2;
+    }
+    .page-header > h1,
+    .page-header > #page-title {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .page-header-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.15rem;
+      flex-shrink: 0;
+    }
+    .page-header-brand .page-logo-wrap {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+    }
+    .page-header-brand .page-logo-wrap .page-logo {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+    }
     .page-header h1, .page-header #page-title { margin: 0; color: #1a1a1a; font-size: 1.5rem; font-weight: 700; }
     .pandi-datos-no-vivos-strip {
       margin: 0 0 1rem 0;
@@ -153,37 +187,226 @@
     .login-screen .login-footer a { color: #0d7d3d; cursor: pointer; }
     .login-screen .login-logo-wrap { width: 56px; height: 56px; margin: 0 auto 1.25rem auto; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(0,0,0,0.1); }
 .login-screen .login-logo-wrap .login-logo { width: 100%; height: 100%; object-fit: contain; object-position: center; }
-    .user-bar { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; font-size: 0.9rem; color: #555; flex-wrap: wrap; }
-    .user-bar-ident {
+    /* Versión bajo el logo (id #sidebar-version se mantiene para despliegues / blurb) */
+    .page-header-toolbar {
       display: flex;
-      flex-direction: column;
-      gap: 0.3rem;
+      align-items: center;
+      gap: 0.45rem;
+      margin-left: auto;
+      flex-shrink: 0;
       min-width: 0;
-      max-width: min(28rem, 100%);
     }
-    .user-bar-email { font-size: 0.9rem; word-break: break-word; overflow-wrap: anywhere; line-height: 1.35; color: #444; }
-    .user-bar-nombre-fila { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; min-width: 0; }
-    .user-bar-nombre-input {
-      min-width: 0;
-      flex: 1 1 10rem;
-      max-width: 16rem;
-      padding: 0.35rem 0.5rem;
-      border-radius: 6px;
+    .header-app-version {
+      display: block;
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #64748b;
+      line-height: 1.2;
+      text-align: center;
+      max-width: 4.5rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      user-select: none;
+    }
+    .btn-header-refresh {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      min-height: 2.25rem;
+      padding: 0 0.55rem 0 0.45rem;
       border: 1px solid #cbd5e1;
-      font-size: 0.9rem;
+      border-radius: 8px;
+      background: #fff;
+      color: #334155;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      font-family: inherit;
       box-sizing: border-box;
     }
-    .user-bar-acciones { display: inline-flex; align-items: center; gap: 0.5rem; flex-shrink: 0; flex-wrap: wrap; }
-    #btn-user-display-name-guardar { min-height: 2.25rem; padding: 0.35rem 0.55rem; font-size: 0.85rem; }
-    .user-bar .btn-cerrar { padding: 0.4rem 0.75rem; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; font-size: 0.85rem; }
-    .user-bar .btn-cerrar:hover { background: #f0f0f0; }
-    .user-bar .btn-refresh { display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; min-width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; color: #555; box-sizing: border-box; }
-    .user-bar .btn-refresh:hover { background: #f0f0f0; color: #1a1a1a; }
-    .user-bar .btn-refresh svg { width: 18px; height: 18px; }
-    .user-bar .btn-refresh:disabled { cursor: wait; opacity: 0.88; }
-    .user-bar .btn-refresh.pandi-btn-refresh-busy svg { animation: vista-spin 0.7s linear infinite; transform-origin: center; }
+    .btn-header-refresh:hover {
+      background: #f8fafc;
+      border-color: #94a3b8;
+      color: #0f172a;
+    }
+    .btn-header-refresh:focus {
+      outline: 2px solid #0d7d3d;
+      outline-offset: 2px;
+    }
+    .btn-header-refresh .btn-icon {
+      display: inline-flex;
+      flex-shrink: 0;
+    }
+    .btn-header-refresh .btn-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+    .btn-header-refresh-label {
+      max-width: 5.5rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .header-settings-dropdown {
+      position: relative;
+    }
+    .btn-header-settings {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      min-height: 2.25rem;
+      padding: 0 0.55rem 0 0.45rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #fff;
+      color: #334155;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .btn-header-settings:hover {
+      background: #f8fafc;
+      border-color: #94a3b8;
+      color: #0f172a;
+    }
+    .btn-header-settings:focus {
+      outline: 2px solid #0d7d3d;
+      outline-offset: 2px;
+    }
+    .btn-header-settings-label {
+      max-width: 5.5rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    @media (max-width: 520px) {
+      .btn-header-settings-label,
+      .btn-header-refresh-label {
+        display: none;
+      }
+      .btn-header-settings,
+      .btn-header-refresh {
+        padding: 0 0.45rem;
+        min-width: 2.5rem;
+      }
+    }
+    .header-settings-panel {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 80;
+      min-width: min(18.5rem, calc(100vw - 2rem));
+      max-width: min(22rem, calc(100vw - 1.25rem));
+      padding: 0;
+      margin: 0;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      box-shadow: 0 10px 40px rgba(15, 23, 42, 0.12), 0 2px 10px rgba(15, 23, 42, 0.08);
+      box-sizing: border-box;
+    }
+    .header-settings-panel[hidden] {
+      display: none !important;
+    }
+    .header-settings-panel:not([hidden]) {
+      display: block;
+    }
+    .header-settings-panel-inner {
+      padding: 0.85rem 1rem 1rem;
+      max-height: min(28rem, calc(100dvh - 5.5rem));
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .header-settings-titulo {
+      margin: 0 0 0.65rem 0;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .header-settings-email {
+      margin: 0 0 0.75rem 0;
+      font-size: 0.78rem;
+      line-height: 1.35;
+      color: #64748b;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .header-settings-field {
+      margin-bottom: 0.85rem;
+    }
+    .header-settings-field > label {
+      display: block;
+      margin-bottom: 0.35rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #475569;
+    }
+    .header-settings-nombre-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .header-settings-nombre-input {
+      flex: 1 1 8rem;
+      min-width: 0;
+      min-height: 2.25rem;
+      padding: 0 0.5rem;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      font-size: 0.875rem;
+      box-sizing: border-box;
+    }
+    .header-settings-btn-guardar-nombre {
+      flex-shrink: 0;
+      min-height: 2.25rem;
+    }
+    .header-settings-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      padding-top: 0.35rem;
+      border-top: 1px solid #f1f5f9;
+    }
+    .header-settings-action-btn {
+      width: 100%;
+      justify-content: flex-start;
+      text-align: left;
+      min-height: 2.35rem;
+      font-size: 0.85rem;
+    }
+    .header-settings-action-cerrar {
+      margin-top: 0.15rem;
+    }
+    .header-settings-panel .btn-cerrar {
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #334155;
+    }
+    .header-settings-panel .btn-cerrar:hover {
+      background: #f8fafc;
+    }
+    #btn-refresh.pandi-btn-refresh-busy .btn-icon svg {
+      animation: vista-spin 0.7s linear infinite;
+      transform-origin: center;
+    }
     @media (prefers-reduced-motion: reduce) {
-      .user-bar .btn-refresh.pandi-btn-refresh-busy svg { animation: none; opacity: 0.65; }
+      #btn-refresh.pandi-btn-refresh-busy .btn-icon svg {
+        animation: none;
+        opacity: 0.65;
+      }
+    }
+    #btn-refresh:disabled {
+      cursor: wait;
+      opacity: 0.88;
     }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee; }
@@ -2637,13 +2860,24 @@
         row-gap: 0.55rem;
         align-items: center;
       }
-      .page-header .page-logo-wrap { height: 36px; width: 36px; grid-column: 1; grid-row: 1; }
+      .page-header-brand {
+        grid-column: 1;
+        grid-row: 1;
+        align-self: start;
+        gap: 0.12rem;
+      }
+      .page-header-brand .page-logo-wrap {
+        height: 36px;
+        width: 36px;
+      }
       .page-header h1, .page-header #page-title {
         font-size: 1.25rem;
         grid-column: 2;
         grid-row: 1;
         margin: 0;
         min-width: 0;
+        flex: none;
+        align-self: start;
         justify-self: start;
         text-align: left;
       }
@@ -2673,34 +2907,37 @@
         text-align: center;
       }
       .vista-loading-spinner::before { width: 30px; height: 30px; }
-      .user-bar {
+      .page-header-toolbar {
         grid-column: 1 / -1;
         grid-row: 2;
         margin-left: 0;
         width: 100%;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.65rem;
-      }
-      .user-bar-ident { max-width: 100%; }
-      .user-bar-nombre-fila { width: 100%; }
-      .user-bar-nombre-input {
         max-width: 100%;
-        flex: 1 1 auto;
+        justify-content: flex-end;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.4rem 0.5rem;
+      }
+      .header-app-version {
+        font-size: 0.62rem;
+        max-width: 3.75rem;
+      }
+      .btn-header-settings,
+      .btn-header-refresh {
+        min-height: 44px;
+        min-width: 44px;
+      }
+      .header-settings-panel {
+        max-width: min(22rem, calc(100vw - 1.5rem));
+      }
+      .header-settings-nombre-input {
         min-height: 44px;
         font-size: 16px;
       }
-      #btn-user-display-name-guardar { min-height: 44px; }
-      .user-bar-acciones {
-        display: flex;
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 0.5rem;
-        justify-content: flex-start;
+      .header-settings-btn-guardar-nombre,
+      .header-settings-action-btn {
+        min-height: 44px;
       }
-      .user-bar .btn-cerrar { min-height: 44px; padding: 0.5rem 0.85rem; }
-      .user-bar .btn-refresh { min-width: 44px; min-height: 44px; }
       .login-screen { margin: 1rem; padding: 1.25rem; max-width: calc(100vw - 2rem); }
       .card { padding: 1rem; }
       .btn-nuevo, .btn-editar { min-height: 44px; padding: 0.5rem 0.75rem; }
@@ -2930,7 +3167,10 @@
       .sidebar-toggle { width: 52px; height: 48px; min-height: 44px; }
       .sidebar:not(.expanded) .sidebar-toggle { margin: 4px; width: 44px; height: 44px; }
       .sidebar.expanded .sidebar-toggle { width: 52px; height: 48px; }
-      .page-header .page-logo-wrap { height: 32px; width: 32px; grid-column: 1; grid-row: 1; }
+      .page-header-brand .page-logo-wrap {
+        height: 32px;
+        width: 32px;
+      }
       /* Alinear cabecera sticky con el padding más chico de main en móvil */
       .page-header {
         margin-left: calc(-1 * max(0.75rem, env(safe-area-inset-left)));

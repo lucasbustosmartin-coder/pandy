@@ -105,10 +105,10 @@ Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK de
 
 1. **Versión en la app y novedades para el modal PWA**  
    En `index.html`, actualizar `#sidebar-version` al **siguiente número de versión** (ej. v3.5.1 → v3.6.0).  
-   En **`pandi-release-blurb.js`**, actualizar **`PANDI_RELEASE_BLURB`** cumpliendo la subsección **«Novedades al recargar»** arriba: **solo el agente** redacta `lines` y alinea **`versionLabel`** al sidebar; **quien pide el despliegue no tiene que tocar este archivo** salvo excepción acordada. Tras `vite build`, **`pandi-release.json`** en `dist/` refleja ese objeto (el modal lo pide por red para no depender del bundle viejo del service worker).
+   En **`pandi-release-blurb.js`**, actualizar **`PANDI_RELEASE_BLURB`** cumpliendo la subsección **«Novedades al recargar»** arriba: **solo el agente** redacta `lines` y alinea **`versionLabel`** al texto de **`#sidebar-version`** (cabecera); **quien pide el despliegue no tiene que tocar este archivo** salvo excepción acordada. Tras `vite build`, **`pandi-release.json`** en `dist/` refleja ese objeto (el modal lo pide por red para no depender del bundle viejo del service worker).
 
 2. **Actualizar todas las solapas de la bitácora que correspondan** en `scripts/crear-bitacora-excel.js` (revisar cada una y no omitir las que apliquen):
-   - **Versiones:** siempre en despliegue. Agregar una fila en el array `versiones` con (Versión, Fecha, Descripción del despliegue). Usar la misma versión que la del sidebar (ej. 1.1 sin la "v"). **Fecha:** usar `__HOY__` (el script la reemplaza por la fecha en Argentina al generar el Excel). Incluir los cambios principales.
+   - **Versiones:** siempre en despliegue. Agregar una fila en el array `versiones` con (Versión, Fecha, Descripción del despliegue). Usar la misma versión que `#sidebar-version` en cabecera (ej. 1.1 sin la "v"). **Fecha:** usar `__HOY__` (el script la reemplaza por la fecha en Argentina al generar el Excel). Incluir los cambios principales.
    - **Log:** si hubo tareas en la sesión, agregar las entradas en `datosLog` (Fecha, Hora, titulo_tarea, desc_tarea, etapa).
    - **Resumen:** si los cambios agregan o modifican funcionalidad de la app, agregar o actualizar las filas en `funcionalidades`.
 

@@ -242,7 +242,7 @@ Se volvió a ejecutar en **producción** (MCP `execute_sql`, proyecto **Pandy** 
 1. `git fetch origin main` y anotar `SHA=$(git rev-parse origin/main)`.
 2. `curl -sS https://pandi.company/pandi-release.json` — el build publica ahí el blurb (ver `vite.config.js` / `pandi-release-blurb.js`).
 3. Comparar `versionLabel` y el arreglo `lines` del JSON con `git show "$SHA":pandi-release-blurb.js` (`PANDI_RELEASE_BLURB`). Coincidencia ⇒ el **artefacto de release** corresponde a ese commit (misma versión de producto y mismas notas de despliegue).
-4. Opcional: en el HTML de `https://pandi.company/`, el `#sidebar-version` debe igualar `versionLabel`; cruzar con `git show "$SHA":index.html`.
+4. Opcional: en el HTML de `https://pandi.company/`, el texto de `#sidebar-version` (versión en la cabecera) debe igualar `versionLabel`; cruzar con `git show "$SHA":index.html`.
 
 **Con Vercel CLI** (sesión iniciada, p. ej. `vercel login` en la terminal del proyecto):
 

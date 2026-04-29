@@ -160,7 +160,7 @@ Esa tabla alimenta la **Fase B** (filtros / inline) y siguientes.
 ### Ajustes ya aplicados en código (retroalimentación Fase A)
 
 - **G/P Operativa (≤768):** grilla de importes con `minmax` + `max-content` y `white-space: nowrap` en números para que el **scroll horizontal** del wrap muestre importes largos sin amontonar.  
-- **Cabecera usuario (≤768):** `page-header` en **CSS grid** (logo + título / fila siguiente: identidad + acciones); email y nombre a **ancho completo**; **Guardar** + **Actualizar** + **Cerrar sesión** agrupados en `.user-bar-acciones`.  
+- **Cabecera cuenta (≤768):** `page-header` en **CSS grid** (columna marca: logo + versión `#sidebar-version` debajo; título; fila siguiente: **Actualizar** + **Cuenta**). Email, nombre y sesión viven en el panel `#header-settings-panel`.  
 - **CC Saldos (≤768):** tabla con `table-layout: auto` y `width: max-content` solo en `#cc-panel-saldos`, columnas de montos con `min-width` + scroll en `#cc-contenido`.
 
 ### Fase B (filtros Órdenes — implementado en código)

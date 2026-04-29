@@ -34,6 +34,17 @@ No subas este archivo a Git (está en `.gitignore`). Opcional **`.env.local`** p
 - **Manual (legacy):** copiar `config.example.js` a `config.js` y pegar URL + anon.
 - **Vercel:** `config.js` se genera en el build desde variables de entorno (ver `docs/GIT_Y_VERCEL.md`).
 
+#### Auth: Site URL, redirect allowlist y recuperación de contraseña
+
+La app usa **«¿Olvidaste tu contraseña?»** (`resetPasswordForEmail`) con `redirectTo` igual al **origen actual + pathname + query** de la página (misma URL desde la que el usuario pidió el mail). El enlace del correo debe poder volver a esa URL sin que Auth lo rechace.
+
+En el dashboard Supabase: **Authentication** → **URL configuration**:
+
+1. **Site URL:** la URL principal donde usan Pandi en ese entorno (ej. producción: `https://pandi.company` o el dominio real del deploy).
+2. **Redirect URLs:** incluí **todas** las URLs desde las que alguien puede pedir recuperación o abrir el enlace del mail (allowlist que expone la consola: a veces una entrada por origen, a veces comodines según versión del proyecto). Típicamente: **localhost** (puerto del `npm run dev`, ej. 5173), **producción** y **previews** de deploy (Vercel u otro).
+
+Si falta una URL en **Redirect URLs**, el flujo de recuperación puede fallar o redirigir mal. El **cambio de contraseña con sesión** (modal en la barra de usuario) usa `updateUser` y no depende de esa allowlist.
+
 ### 5. Scripts SQL
 
 **Fechas de negocio (Argentina):** ejecutá primero `sql/helpers_fecha_argentina.sql` si armás la base a mano (antes de tablas con `DEFAULT` en `fecha`). En bases ya existentes, `sql/migracion_fecha_default_columnas_argentina.sql` alinea los DEFAULT de columnas `fecha`. Convención: `docs/FECHAS_ARGENTINA.md`.

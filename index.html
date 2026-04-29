@@ -210,6 +210,10 @@
           <polyline fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="14 2 14 8 20 8"/>
           <text x="12" y="17.2" text-anchor="middle" font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="5.4" font-weight="700" fill="currentColor">PDF</text>
         </symbol>
+        <symbol id="icon-sprite-51" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </symbol>
       </defs>
     </svg>
 
@@ -268,7 +272,6 @@
         <span class="menu-label">Auditoría</span>
       </a>
     </nav>
-    <div class="sidebar-version" id="sidebar-version" aria-label="Versión">v3.8.10</div>
   </aside>
   <!-- Móvil/tablet: oscurece el contenido al expandir el menú; clic cierra el drawer -->
   <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
@@ -309,7 +312,40 @@
         <div id="login-error" class="login-error"></div>
         <button type="submit" class="btn-login" id="btn-login"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-17"></use></svg></span>Entrar</button>
       </form>
+      <p class="login-footer"><a href="#" id="link-olvido-password">¿Olvidaste tu contraseña?</a></p>
       <p class="login-footer">¿No tenés cuenta? <a href="#" id="link-registro">Registrarse</a></p>
+    </div>
+    <div id="forgot-password-screen" class="login-screen card" style="display:none;">
+      <span class="login-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="login-logo" /></span>
+      <h2>Recuperar contraseña</h2>
+      <p class="login-footer" style="margin-top:0;">Te enviamos un enlace por email para elegir una contraseña nueva.</p>
+      <form id="forgot-password-form">
+        <div class="form-group">
+          <label for="forgot-password-email">Email de tu cuenta</label>
+          <input type="email" id="forgot-password-email" required placeholder="tu@email.com" autocomplete="email" />
+        </div>
+        <div id="forgot-password-error" class="login-error"></div>
+        <div id="forgot-password-ok" class="login-footer" style="color:#0d7d3d;display:none;" role="status"></div>
+        <button type="submit" class="btn-login" id="btn-forgot-password-enviar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-17"></use></svg></span>Enviar enlace</button>
+      </form>
+      <p class="login-footer"><a href="#" id="link-forgot-volver-login">Volver a iniciar sesión</a></p>
+    </div>
+    <div id="recovery-password-screen" class="login-screen card" style="display:none;">
+      <span class="login-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="login-logo" /></span>
+      <h2>Nueva contraseña</h2>
+      <p class="login-footer" style="margin-top:0;">Elegí una contraseña nueva para tu cuenta.</p>
+      <form id="recovery-password-form">
+        <div class="form-group">
+          <label for="recovery-password-new">Nueva contraseña</label>
+          <input type="password" id="recovery-password-new" required minlength="6" autocomplete="new-password" placeholder="Mín. 6 caracteres" />
+        </div>
+        <div class="form-group">
+          <label for="recovery-password-repeat">Repetir contraseña</label>
+          <input type="password" id="recovery-password-repeat" required minlength="6" autocomplete="new-password" />
+        </div>
+        <div id="recovery-password-error" class="login-error"></div>
+        <button type="submit" class="btn-login" id="btn-recovery-password-guardar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar e ingresar</button>
+      </form>
     </div>
     <div id="register-screen" class="login-screen card" style="display:none;">
       <span class="login-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="login-logo" /></span>
@@ -335,22 +371,52 @@
 
     <div class="app" id="app-content" style="display:none;">
       <header class="page-header">
-        <span class="page-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="page-logo" id="page-logo" /></span>
+        <div class="page-header-brand">
+          <span class="page-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="page-logo" id="page-logo" /></span>
+          <span id="sidebar-version" class="header-app-version" aria-label="Versión de la app" title="Versión desplegada">v3.8.11</span>
+        </div>
         <h1 id="page-title">Panel de Control</h1>
-        <div class="user-bar" id="user-bar">
-          <div class="user-bar-ident">
-            <span id="user-email" class="user-bar-email"></span>
-            <div class="user-bar-nombre-fila">
-              <label for="user-display-name-input" class="sr-only">Nombre en listados</label>
-              <input type="text" id="user-display-name-input" class="user-bar-nombre-input" placeholder="Nombre en listados" autocomplete="nickname" maxlength="120" />
-              <button type="button" class="btn-secondary" id="btn-user-display-name-guardar" title="Guardar cómo te mostrarán en la app" aria-label="Guardar nombre en listados"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar</button>
-            </div>
-          </div>
-          <div class="user-bar-acciones" role="group" aria-label="Actualizar y cerrar sesión">
-            <button type="button" class="btn-refresh" id="btn-refresh" title="Actualizar permisos" aria-label="Actualizar permisos">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg>
+        <div class="page-header-toolbar">
+          <button
+            type="button"
+            class="btn-header-refresh btn-refresh"
+            id="btn-refresh"
+            title="Actualizar"
+            aria-label="Actualizar"
+          >
+            <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span>
+            <span class="btn-header-refresh-label">Actualizar</span>
+          </button>
+          <div class="header-settings-dropdown">
+            <button
+              type="button"
+              class="btn-header-settings"
+              id="btn-header-settings"
+              aria-expanded="false"
+              aria-haspopup="true"
+              aria-controls="header-settings-panel"
+              title="Cuenta y sesión"
+            >
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-sprite-51"></use></svg>
+              <span class="btn-header-settings-label">Cuenta</span>
             </button>
-            <button type="button" class="btn-cerrar" id="btn-cerrar-sesion"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-20"></use></svg></span>Cerrar sesión</button>
+            <div id="header-settings-panel" class="header-settings-panel" role="dialog" aria-modal="false" aria-labelledby="header-settings-titulo" hidden>
+              <div class="header-settings-panel-inner">
+                <h2 class="header-settings-titulo" id="header-settings-titulo">Cuenta y sesión</h2>
+                <p id="user-email" class="header-settings-email"></p>
+                <div class="header-settings-field">
+                  <label for="user-display-name-input">Nombre en listados</label>
+                  <div class="header-settings-nombre-row">
+                    <input type="text" id="user-display-name-input" class="header-settings-nombre-input" placeholder="Cómo te mostrarán" autocomplete="nickname" maxlength="120" />
+                    <button type="button" class="btn-secondary header-settings-btn-guardar-nombre" id="btn-user-display-name-guardar" title="Guardar cómo te mostrarán en la app" aria-label="Guardar nombre en listados"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar</button>
+                  </div>
+                </div>
+                <div class="header-settings-actions" role="group" aria-label="Sesión">
+                  <button type="button" class="btn-secondary header-settings-action-btn" id="btn-user-cambiar-password" title="Cambiar contraseña de acceso" aria-label="Cambiar contraseña"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-17"></use></svg></span>Cambiar contraseña</button>
+                  <button type="button" class="btn-cerrar header-settings-action-btn header-settings-action-cerrar" id="btn-cerrar-sesion"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-20"></use></svg></span>Cerrar sesión</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -1242,6 +1308,31 @@
             <button type="button" class="btn-secondary" id="modal-cliente-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-42"></use></svg></span>Cancelar</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-cambiar-password-backdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-cambiar-password-titulo">Cambiar contraseña</h2>
+        <button type="button" class="modal-close" id="modal-cambiar-password-cerrar" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.9rem;color:#555;margin:0 0 1rem;">Contraseña nueva (mínimo 6 caracteres). Cerrá sesión en otros dispositivos si querés forzar que vuelvan a ingresar.</p>
+        <div class="form-group">
+          <label for="modal-cambiar-password-nueva">Nueva contraseña</label>
+          <input type="password" id="modal-cambiar-password-nueva" autocomplete="new-password" minlength="6" />
+        </div>
+        <div class="form-group">
+          <label for="modal-cambiar-password-repetir">Repetir contraseña</label>
+          <input type="password" id="modal-cambiar-password-repetir" autocomplete="new-password" minlength="6" />
+        </div>
+        <div id="modal-cambiar-password-error" class="login-error" role="alert"></div>
+        <div class="form-actions" style="margin-top:1rem;">
+          <button type="button" class="btn-primary" id="modal-cambiar-password-guardar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar</button>
+          <button type="button" class="btn-secondary" id="modal-cambiar-password-cancelar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-42"></use></svg></span>Cancelar</button>
+        </div>
       </div>
     </div>
   </div>
