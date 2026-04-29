@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.9',
+  versionLabel: 'v3.8.10',
   lines: [
-    'En operaciones cheque en pesos con intermediario, el movimiento de caja de la comisión del acuerdo va en la bolsa Cheque, coherente con el cobro por cheque.',
-    'Donde aplique la ganancia de la empresa sobre el acuerdo como movimiento aparte, el modo de pago y la bolsa de caja siguen al ingreso principal del cliente (por ejemplo transferencia bancaria en lugar de efectivo).',
+    'En cheque en pesos con intermediario, la comisión del acuerdo en caja queda siempre en transferencia bancaria (bolsa Banco), no en efectivo ni en bolsa Cheque.',
+    'Cuando la ganancia de la empresa se registra como movimiento aparte, el modo de pago y la bolsa de caja siguen al ingreso principal del cliente (por ejemplo también en Banco si cobraste por transferencia).',
   ],
 };

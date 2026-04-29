@@ -61,7 +61,7 @@ En el **resumen** CC, el test E2E sigue interpretando el saldo del intermediario
 
 - **Cuatro transacciones:** Tx1 Cliente→Pandy, Tx2 Pandy→Cliente, Tx3 Pandy→Intermediario, Tx4 Intermediario→Pandy (orden pagador al instrumentar: ver tests y `main.js`). Son la **coreografía acordada** al crear la instrumentación (momento cero), no “compensatorias” que el sistema invente al bajar un importe o al guardar.
 - **Qué no es este modelo:** transacciones **automáticas** extra entre Pandy e intermediario generadas por la app al editar montos o al cerrar diferencias; eso es distinto de tener Tx3/Tx4 **definidas en la orden** como pasos reales del circuito.
-- **Caja:** efectivo vs cheque (movimientos reales); coherencia con `docs/CONVENCION_MOVIMIENTOS_CAJA.md`. La fila de **caja por orden** asociada a **«Comisión del acuerdo»** (parte intermediario) se registra con **`caja_tipo: cheque`** en matriz CHEQUE-ARS (sync y `asegurarComisionIntermediario`), no en efectivo.
+- **Caja:** efectivo vs cheque (movimientos reales); coherencia con `docs/CONVENCION_MOVIMIENTOS_CAJA.md`. La fila de **caja por orden** asociada a **«Comisión del acuerdo»** (parte intermediario) en matriz **CHEQUE-ARS** se registra siempre como **transferencia bancaria** (`caja_tipo` **banco**; sync y `asegurarComisionIntermediario`), no en efectivo ni en bolsa cheque.
 
 ## Scripts SQL recomendados (Supabase)
 

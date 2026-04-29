@@ -13649,7 +13649,7 @@ function aplicarSyncUnicoChequeArs(fase, ctx) {
               transaccion_id: null,
               moneda: monComCajaFb,
               monto: -mIfb,
-              caja_tipo: 'cheque',
+              caja_tipo: 'banco',
               orden_numero: orden.numero != null ? orden.numero : null,
               transaccion_numero: nroTransComisionChequeFb,
               concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaFb, mIfb, orden.numero, nroTransComisionChequeFb),
@@ -13702,7 +13702,7 @@ function aplicarSyncUnicoChequeArs(fase, ctx) {
             transaccion_id: null,
             moneda: monComCajaMc,
             monto: -mImc,
-            caja_tipo: 'cheque',
+            caja_tipo: 'banco',
             orden_numero: orden.numero != null ? orden.numero : null,
             transaccion_numero: nroTransComisionChequeMc,
             concepto: conceptoCajaTransaccionEspecial('Comisión del acuerdo', monComCajaMc, mImc, orden.numero, nroTransComisionChequeMc),
@@ -28008,7 +28008,7 @@ function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
                     transaccionNumero,
                     uidCc,
                     omitirCajaEfectivo,
-                    esChequeArsMatrizIns ? 'cheque' : undefined,
+                    esChequeArsMatrizIns ? 'banco' : undefined,
                   )
                 : Promise.resolve()));
             }),
@@ -28019,7 +28019,7 @@ function insertarFilasComisionIntermediarioCcPorTransaccion(opts) {
 }
 
 /**
- * Comisión intermediario: por defecto un egreso en `movimientos_caja` efectivo (legacy). **CHEQUE-ARS** (matriz): `cajaTipoComisionAcuerdo === 'cheque'` para alinear la comisión al modo cheque del acuerdo. Si `omitirMovimientoCajaEfectivo`, solo `orden_comisiones_generadas` sin `movimientos_caja` (tasa transferencia fuera del acuerdo con el cliente: libro CC, no billetes). La línea CC «Comisión del acuerdo» ya inserta el caller. Requiere migración `sql/migracion_orden_comisiones_movimiento_caja.sql` para `movimiento_caja_id` y `transaccion_id` nullable.
+ * Comisión intermediario: por defecto un egreso en `movimientos_caja` efectivo (legacy). **CHEQUE-ARS** (matriz): `cajaTipoComisionAcuerdo` **`banco`** o **`transferencia`** → caja **transferencia bancaria** (`caja_tipo: 'banco'`); **`cheque`** → `caja_tipo: 'cheque'`. Si `omitirMovimientoCajaEfectivo`, solo `orden_comisiones_generadas` sin `movimientos_caja` (tasa transferencia fuera del acuerdo con el cliente: libro CC, no billetes). La línea CC «Comisión del acuerdo» ya inserta el caller. Requiere migración `sql/migracion_orden_comisiones_movimiento_caja.sql` para `movimiento_caja_id` y `transaccion_id` nullable.
  */
 function asegurarComisionIntermediario(
   ordenId,
@@ -28036,8 +28036,9 @@ function asegurarComisionIntermediario(
   void instrumentacionId;
   const uidCaja = usuarioIdMovimiento || currentUserId;
   const omitirCaja = omitirMovimientoCajaEfectivo === true;
+  const cHint = String(cajaTipoComisionAcuerdo || '').toLowerCase().trim();
   const cajaTipoIns =
-    String(cajaTipoComisionAcuerdo || '').toLowerCase().trim() === 'cheque' ? 'cheque' : 'efectivo';
+    cHint === 'cheque' ? 'cheque' : cHint === 'banco' || cHint === 'transferencia' ? 'banco' : 'efectivo';
   if (!ordenId || !intermediarioId || !montoCom || montoCom < 1e-6) return Promise.resolve();
   const ordNum = ordenNumero != null ? ordenNumero : null;
   const nroRef = transaccionNumeroRef != null ? transaccionNumeroRef : null;
