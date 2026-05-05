@@ -191,6 +191,10 @@ if (typeof window !== 'undefined') {
 
 /** Evita doble envío a la cola v2 si el usuario pulsa «Ir a instrumentación» varias veces antes de cerrar el modal. */
 let pandiWizardColaV2Escribiendo = false;
+/** Evita doble envío del modal cliente y desalinea el fin del async si se cerró el modal. */
+let pandiClienteModalSaveUiToken = 0;
+/** Igual que cliente, para modal intermediario. */
+let pandiIntermediarioModalSaveUiToken = 0;
 
 /**
  * PWA instalada (display-mode standalone / fullscreen / minimal-ui, o iOS navigator.standalone).
@@ -32960,6 +32964,9 @@ async function openModalCliente(registro) {
   const form = document.getElementById('form-cliente');
   if (!backdrop || !titulo || !idEl || !form) return;
 
+  pandiClienteModalSaveUiToken += 1;
+  pandiClienteModalUiSetGuardando(false);
+
   if (registro) {
     titulo.textContent = 'Editar cliente';
     idEl.value = registro.id;
@@ -33018,11 +33025,60 @@ async function openModalCliente(registro) {
 }
 
 function closeModalCliente() {
+  pandiClienteModalSaveUiToken += 1;
+  pandiClienteModalUiSetGuardando(false);
   const backdrop = document.getElementById('modal-cliente-backdrop');
   if (backdrop) backdrop.classList.remove('activo');
 }
 
-function saveCliente() {
+/** Escapa `%`, `_` y `\` para usar el nombre como literal en `.ilike()` (PostgREST). */
+function pandiEscapeSqlIlikeLiteral(s) {
+  return String(s || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_');
+}
+
+function pandiClienteModalUiSetGuardando(on) {
+  const btn = document.getElementById('modal-cliente-guardar');
+  const lbl = document.getElementById('modal-cliente-guardar-label');
+  const sp = document.getElementById('modal-cliente-guardar-spinner');
+  const cancel = document.getElementById('modal-cliente-cancelar');
+  const close = document.getElementById('modal-cliente-close');
+  const form = document.getElementById('form-cliente');
+  if (on) {
+    if (form) form.setAttribute('aria-busy', 'true');
+    if (btn) {
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+    }
+    if (cancel) cancel.disabled = true;
+    if (close) close.disabled = true;
+    if (lbl) lbl.textContent = 'Guardando…';
+    if (sp) sp.removeAttribute('hidden');
+  } else {
+    if (form) form.setAttribute('aria-busy', 'false');
+    if (btn) {
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+    }
+    if (cancel) cancel.disabled = false;
+    if (close) close.disabled = false;
+    if (lbl) lbl.textContent = 'Guardar';
+    if (sp) sp.setAttribute('hidden', '');
+  }
+}
+
+function pandiClienteModalBeginAsyncSaveUi() {
+  const t = ++pandiClienteModalSaveUiToken;
+  pandiClienteModalUiSetGuardando(true);
+  return function pandiClienteModalEndAsyncSaveUi() {
+    if (pandiClienteModalSaveUiToken !== t) return;
+    pandiClienteModalUiSetGuardando(false);
+  };
+}
+
+async function saveCliente() {
   if (pandiAvisoSiSinServidorParaEscritura('Guardar clientes en el servidor')) return;
   const idEl = document.getElementById('cliente-id');
   const id = idEl && idEl.value ? idEl.value.trim() : '';
@@ -33041,10 +33097,34 @@ function saveCliente() {
   };
   const selInt = document.getElementById('cliente-vinculo-intermediario-id');
   const intVin = selInt && selInt.value ? selInt.value.trim() : '';
-  const prom = id
-    ? client.from('clientes').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id)
-    : client.from('clientes').insert(payload).select('id').single();
-  prom.then(async (res) => {
+
+  const nombreNorm = nombre.toLowerCase();
+  const endUi = pandiClienteModalBeginAsyncSaveUi();
+  try {
+    const dupQ = await client.from('clientes').select('id,nombre').ilike('nombre', pandiEscapeSqlIlikeLiteral(nombre));
+    if (dupQ.error) {
+      showToast('Error al validar el nombre: ' + (dupQ.error.message || ''), 'error');
+      return;
+    }
+    const duplicado = (dupQ.data || []).find(
+      (r) => String(r.id) !== String(id || '') && String((r.nombre || '').trim()).toLowerCase() === nombreNorm
+    );
+    if (duplicado) {
+      showToast(
+        'Ya existe un cliente con el mismo nombre («' +
+          (duplicado.nombre || '') +
+          '»). Editá ese registro o usá otro nombre.',
+        'error'
+      );
+      return;
+    }
+
+    let res;
+    if (id) {
+      res = await client.from('clientes').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id);
+    } else {
+      res = await client.from('clientes').insert(payload).select('id').single();
+    }
     if (res.error) {
       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
       return;
@@ -33064,7 +33144,9 @@ function saveCliente() {
     }
     closeModalCliente();
     loadClientes();
-  });
+  } finally {
+    endUi();
+  }
 }
 
 function setupModalCliente() {
@@ -33181,12 +33263,54 @@ function loadIntermediarios() {
     });
 }
 
+function pandiIntermediarioModalUiSetGuardando(on) {
+  const btn = document.getElementById('modal-intermediario-guardar');
+  const lbl = document.getElementById('modal-intermediario-guardar-label');
+  const sp = document.getElementById('modal-intermediario-guardar-spinner');
+  const cancel = document.getElementById('modal-intermediario-cancelar');
+  const close = document.getElementById('modal-intermediario-close');
+  const form = document.getElementById('form-intermediario');
+  if (on) {
+    if (form) form.setAttribute('aria-busy', 'true');
+    if (btn) {
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+    }
+    if (cancel) cancel.disabled = true;
+    if (close) close.disabled = true;
+    if (lbl) lbl.textContent = 'Guardando…';
+    if (sp) sp.removeAttribute('hidden');
+  } else {
+    if (form) form.setAttribute('aria-busy', 'false');
+    if (btn) {
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+    }
+    if (cancel) cancel.disabled = false;
+    if (close) close.disabled = false;
+    if (lbl) lbl.textContent = 'Guardar';
+    if (sp) sp.setAttribute('hidden', '');
+  }
+}
+
+function pandiIntermediarioModalBeginAsyncSaveUi() {
+  const t = ++pandiIntermediarioModalSaveUiToken;
+  pandiIntermediarioModalUiSetGuardando(true);
+  return function pandiIntermediarioModalEndAsyncSaveUi() {
+    if (pandiIntermediarioModalSaveUiToken !== t) return;
+    pandiIntermediarioModalUiSetGuardando(false);
+  };
+}
+
 async function openModalIntermediario(registro) {
   const backdrop = document.getElementById('modal-intermediario-backdrop');
   const titulo = document.getElementById('modal-intermediario-titulo');
   const idEl = document.getElementById('intermediario-id');
   const form = document.getElementById('form-intermediario');
   if (!backdrop || !titulo || !idEl || !form) return;
+
+  pandiIntermediarioModalSaveUiToken += 1;
+  pandiIntermediarioModalUiSetGuardando(false);
 
   if (registro) {
     titulo.textContent = 'Editar intermediario';
@@ -33246,11 +33370,13 @@ async function openModalIntermediario(registro) {
 }
 
 function closeModalIntermediario() {
+  pandiIntermediarioModalSaveUiToken += 1;
+  pandiIntermediarioModalUiSetGuardando(false);
   const backdrop = document.getElementById('modal-intermediario-backdrop');
   if (backdrop) backdrop.classList.remove('activo');
 }
 
-function saveIntermediario() {
+async function saveIntermediario() {
   if (pandiAvisoSiSinServidorParaEscritura('Guardar intermediarios en el servidor')) return;
   const idEl = document.getElementById('intermediario-id');
   const id = idEl && idEl.value ? idEl.value.trim() : '';
@@ -33270,10 +33396,34 @@ function saveIntermediario() {
   };
   const selCli = document.getElementById('intermediario-vinculo-cliente-id');
   const cliVin = selCli && selCli.value ? selCli.value.trim() : '';
-  const prom = id
-    ? client.from('intermediarios').update(payload).eq('id', id)
-    : client.from('intermediarios').insert(payload).select('id').single();
-  prom.then(async (res) => {
+
+  const nombreNorm = nombre.toLowerCase();
+  const endUi = pandiIntermediarioModalBeginAsyncSaveUi();
+  try {
+    const dupQ = await client.from('intermediarios').select('id,nombre').ilike('nombre', pandiEscapeSqlIlikeLiteral(nombre));
+    if (dupQ.error) {
+      showToast('Error al validar el nombre: ' + (dupQ.error.message || ''), 'error');
+      return;
+    }
+    const duplicado = (dupQ.data || []).find(
+      (r) => String(r.id) !== String(id || '') && String((r.nombre || '').trim()).toLowerCase() === nombreNorm
+    );
+    if (duplicado) {
+      showToast(
+        'Ya existe un intermediario con el mismo nombre («' +
+          (duplicado.nombre || '') +
+          '»). Editá ese registro o usá otro nombre.',
+        'error'
+      );
+      return;
+    }
+
+    let res;
+    if (id) {
+      res = await client.from('intermediarios').update(payload).eq('id', id);
+    } else {
+      res = await client.from('intermediarios').insert(payload).select('id').single();
+    }
     if (res.error) {
       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
       return;
@@ -33293,7 +33443,9 @@ function saveIntermediario() {
     }
     closeModalIntermediario();
     loadIntermediarios();
-  });
+  } finally {
+    endUi();
+  }
 }
 
 function setupModalIntermediario() {

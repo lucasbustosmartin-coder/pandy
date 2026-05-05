@@ -5,10 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.11',
+  versionLabel: 'v3.8.12',
   lines: [
-    'Si olvidaste la contraseña, desde el inicio de sesión podés pedir un enlace por email y elegir una clave nueva; una vez adentro, también podés cambiarla desde el menú Cuenta.',
-    'La cabecera quedó más clara: la versión de la app se ve debajo del logo, el botón Actualizar está al lado del menú Cuenta, y ahí concentrás email, nombre en listados, contraseña y cerrar sesión.',
-    'Revisá en Supabase (Auth → URL configuration) que tu sitio esté en Redirect URLs si usás recuperación por mail, como indica la guía de requisitos.',
+    'Al dar de alta o editar un cliente o un intermediario, si el nombre ya existe te lo decimos antes de guardar, para no crear fichas repetidas que después hay que dar de baja.',
+    'Mientras se guarda, el botón pasa a «Guardando…» y no se puede mandar otro envío ni cerrar el cuadro por accidente; evita los duplicados por varios clics seguidos.',
   ],
 };
