@@ -98,5 +98,8 @@ $$;
 
 COMMENT ON FUNCTION public.limpiar_base_e2e() IS 'Limpieza para E2E: trunca órdenes/transacciones/CC/caja, borra clientes/intermediarios E2E, inserta semilla de caja (ingresos manuales por moneda/tipo). Solo desarrollo.';
 
--- Permitir llamada desde service_role (script con SUPABASE_SERVICE_ROLE_KEY)
+-- Solo service_role (scripts E2E). Sin PUBLIC/anon/authenticated → Security Advisor 0028.
+REVOKE ALL ON FUNCTION public.limpiar_base_e2e() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.limpiar_base_e2e() FROM anon;
+REVOKE ALL ON FUNCTION public.limpiar_base_e2e() FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.limpiar_base_e2e() TO service_role;

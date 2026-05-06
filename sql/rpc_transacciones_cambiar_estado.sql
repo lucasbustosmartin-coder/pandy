@@ -40,6 +40,6 @@ $$;
 
 COMMENT ON FUNCTION public.transacciones_cambiar_estado IS 'Actualiza estado (pendiente | ejecutada | anulada), fecha_ejecucion (Argentina si no se pasa), usuario_id y opcionalmente revertida_una_vez.';
 
-GRANT EXECUTE ON FUNCTION public.transacciones_cambiar_estado(uuid, text, date, uuid, boolean) TO anon;
+-- Sin anon: sesión obligatoria (authenticated). Ver `migracion_security_advisor_revoke_public_anon_security_definer_rpc.sql`.
 GRANT EXECUTE ON FUNCTION public.transacciones_cambiar_estado(uuid, text, date, uuid, boolean) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.transacciones_cambiar_estado(uuid, text, date, uuid, boolean) TO service_role;

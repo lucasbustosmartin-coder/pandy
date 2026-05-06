@@ -389,6 +389,5 @@ $$;
 COMMENT ON FUNCTION public.sync_cc_caja_orden IS
   'Sync CC cliente, CC intermediario y caja para una orden (JSONB desde el front). Versión diff: UPDATE/INSERT/DELETE por clave lógica (incluye clasificacion_movimiento + left(concepto,72)); huérfanos con DELETE … NOT EXISTS sobre jsonb_array_elements (anti-join). Respeta CC manual (es_movimiento_manual). Caja: solo filas sin tipo_movimiento_id. JSON opcional clasificacion_movimiento → parse_movimiento_clasificacion_desde_jsonb.';
 
-GRANT EXECUTE ON FUNCTION public.sync_cc_caja_orden(uuid, uuid, jsonb, jsonb, jsonb) TO anon;
 GRANT EXECUTE ON FUNCTION public.sync_cc_caja_orden(uuid, uuid, jsonb, jsonb, jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sync_cc_caja_orden(uuid, uuid, jsonb, jsonb, jsonb) TO service_role;
