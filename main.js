@@ -105,18 +105,35 @@ function pandiNormalizarLineaReleaseUsuario(line) {
     .trim();
 }
 
+/** Cabecera: el HTML puede quedar viejo en caché del SW; alinear con `pandi-release.json` / blurb embebido. */
+function pandiActualizarVersionEnPantalla(versionLabel) {
+  const v = String(versionLabel || '').trim();
+  if (!v) return;
+  const el = document.getElementById('sidebar-version');
+  if (!el) return;
+  el.textContent = v;
+  el.setAttribute('title', `Versión desplegada (${v})`);
+}
+
 async function pandiFetchReleaseBlurbRemoto() {
   try {
     const r = await fetch('/pandi-release.json', { cache: 'no-store', credentials: 'same-origin' });
     if (r.ok) {
       const j = await r.json();
-      if (j && typeof j === 'object') return j;
+      if (j && typeof j === 'object') {
+        pandiActualizarVersionEnPantalla(j.versionLabel);
+        return j;
+      }
     }
   } catch (_) {
     /* sin red */
   }
+  pandiActualizarVersionEnPantalla(PANDI_RELEASE_BLURB.versionLabel);
   return PANDI_RELEASE_BLURB;
 }
+
+pandiActualizarVersionEnPantalla(PANDI_RELEASE_BLURB.versionLabel);
+void pandiFetchReleaseBlurbRemoto();
 
 function pandiPwaNuevaVersionHtmlDesdeBlurb(blurb, opcionesHtml) {
   const b = blurb && typeof blurb === 'object' ? blurb : PANDI_RELEASE_BLURB;
