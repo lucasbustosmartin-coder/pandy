@@ -5,9 +5,9 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.12',
+  versionLabel: 'v3.8.13',
   lines: [
-    'Al dar de alta o editar un cliente o un intermediario, si el nombre ya existe te lo decimos antes de guardar, para no crear fichas repetidas que después hay que dar de baja.',
-    'Mientras se guarda, el botón pasa a «Guardando…» y no se puede mandar otro envío ni cerrar el cuadro por accidente; evita los duplicados por varios clics seguidos.',
+    'En órdenes **cheque en pesos con intermediario**, si invertís quién paga y quién cobra en la transacción del cliente (como en dólar–dólar con intermediario), la cuenta corriente y los movimientos se actualizan con el mismo criterio, sin el aviso que bloqueaba el guardado.',
+    'Corrección al guardar una transacción desde el formulario cuando la orden ya estaba cargada en memoria.',
   ],
 };

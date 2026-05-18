@@ -1,26 +1,18 @@
 const XLSX = require('xlsx');
 const path = require('path');
+const {
+  preservarFechasHistoricasLog,
+  preservarFechasHistoricasVersiones,
+} = require('../../scripts/lib/lyp-bitacora-fechas');
 
-const ZONA_ARGENTINA = 'America/Argentina/Buenos_Aires';
-function ahoraFecha() {
-  return new Date().toLocaleDateString('es-AR', { timeZone: ZONA_ARGENTINA, day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-function ahoraHora() {
-  return new Date().toLocaleTimeString('es-AR', { timeZone: ZONA_ARGENTINA, hour: '2-digit', minute: '2-digit', hour12: false });
-}
-function aplicarHoyAhora(rows) {
-  return rows.map(row => Array.isArray(row)
-    ? row.map(cell => {
-        if (cell === '__HOY__') return ahoraFecha();
-        if (cell === '__AHORA__') return ahoraHora();
-        return cell;
-      })
-    : row);
-}
+const outPath = path.join(__dirname, '..', 'Bitacora_tareas.xlsx');
+const projectRoot = path.join(__dirname, '..');
 
 // --- Hoja Log
 const datosLog = [
   ['Fecha', 'Hora', 'titulo_tarea', 'desc_tarea', 'etapa'],
+  ['__HOY__', '__AHORA__', 'Despliegue v3.8.13 prod + preview estable (OK desplegar, pasos 1–8)', 'Bump `index.html` v3.8.13 + `pandi-release-blurb.js`. **CHEQUE-ARS + intermediario — flip pagador/cobrador (paridad USD-USD+int):** motor CC inyección +mr/−me en egreso P→C, dedupe compromiso con compensación, préstamo gemelo regla B ARS, par cliente con ingreso P→C; **invariante neteo:** exención cuando hay flip o `compensacion_cc_monto_aplicado` (no bloquea sync ni deja CC en pendiente). Fix `ordenParaCompletarIdsTransaccion` en guardado modal transacción. Incluye commit previo **737f1b1** (seguridad RPC Supabase). `main.js`, `index.html`, bitácora. `node scripts/crear-bitacora-excel.js`; `npm run build`. `git push origin main`; `git checkout preview-empleado` + `git merge main` + `git push origin preview-empleado`; `git checkout main`; `git fetch origin` + `git rev-parse origin/main origin/preview-empleado` (mismo SHA). Sin paso 6 CLI; sin `vercel --prod`.', 'Despliegue'],
+  ['__HOY__', '__AHORA__', 'CHEQUE-ARS+int.: flip pag/cob paridad USD-USD+int + invariante neteo con flip', 'Motor: `todoParClientePendienteChequeArsIntParaAlinearCcMotor`, inyección ci_pc en Tx2 P→C, dedupe `filasCcClienteQuitarCompromisoPagoEgresoPandyClienteSiCompensacionFlipChequeArsInt`, `mcEmitirPrestamoGemeloReglaBPandyMonrChequeArsConInter`, `parClienteInstrumentacionChequeArsEjecutado`. Invariante: `ordenChequeArsIntExentoInvarianteNeteoCcPorFlipPagCobCliente` — no exige neteo cero con flip/compensación (fix toast residual 1M ARS y CC pendiente). `main.js`. Backup: `main.js.backup-20260518-090343-pre-cheque-ars-flip-usd-usd-int`.', 'Corrección'],
   ['__HOY__', '__AHORA__', 'Despliegue v3.8.12 prod + preview estable (OK desplegar, pasos 1–8)', 'Bump `index.html` v3.8.12 + `pandi-release-blurb.js`. **ABM clientes e intermediarios:** nombre duplicado bloqueado antes de insert/update (ilike + normalización); UI guardado async con «Guardando…», spinner, deshabilitar Guardar/Cancelar/Cerrar, token de fin como modal transacción. Scripts diagnóstico: `sql/consulta_clientes_nombre_duplicado_y_sin_referencias.sql`, `sql/consulta_intermediarios_nombre_duplicado_y_sin_referencias.sql`. `main.js`, `index.html`. `node scripts/crear-bitacora-excel.js`; `npm run build`. `git push origin main`; `git checkout preview-empleado` + `git merge main` + `git push origin preview-empleado`; `git checkout main`; `git fetch origin` + `git rev-parse origin/main origin/preview-empleado` (mismo SHA). Sin paso 6 CLI; sin `vercel --prod`.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'Despliegue v3.8.11 prod + preview estable (OK desplegar, pasos 1–8)', 'Bump `index.html` v3.8.11 + `pandi-release-blurb.js`. Front: recuperación y cambio de contraseña (Supabase Auth), menú **Cuenta** en cabecera, **Actualizar** fuera del menú, versión bajo logo; docs `SUPABASE_REQUISITOS`, `FASE_A_PRUEBAS_MOVIL_PWA`, `GIT_Y_VERCEL`, reglas Cursor. `node scripts/crear-bitacora-excel.js`; `npm run build`. `git push origin main`; `git checkout preview-empleado` + `git merge main` + `git push origin preview-empleado`; `git checkout main`; `git fetch origin` + `git rev-parse origin/main origin/preview-empleado` (mismo SHA). Sin paso 6 CLI; sin `vercel --prod`.', 'Despliegue'],
   ['__HOY__', '__AHORA__', 'Despliegue v3.8.10 prod + preview estable (OK desplegar, pasos 1–8)', 'Bump `index.html` v3.8.10 + `pandi-release-blurb.js`. Publica comisión intermediario **CHEQUE-ARS** en caja **`banco`** (sync + `asegurarComisionIntermediario`); docs `CHEQUE_ARS_INTERMEDIARIO`, `FLUJOS_CC_REGLA` §8, `CUENTA_CORRIENTE_Y_CAJA`; Resumen bitácora. `node scripts/crear-bitacora-excel.js`; `npm run build`. `git push origin main`; `git checkout preview-empleado` + `git merge main` + `git push origin preview-empleado`; `git checkout main`; `git fetch origin` + `git rev-parse origin/main origin/preview-empleado` (mismo SHA). Sin paso 6 CLI; sin `vercel --prod`.', 'Despliegue'],
@@ -1083,7 +1075,7 @@ const datosLog = [
   ['__HOY__', '__AHORA__', 'Despliegue: eficiencia builds Vercel (regla + doc)', 'bitacora-tareas: paso 6 npx vercel --yes opcional si sigue paso 7; paso 5 sin vercel --prod si Git ya deploya main. GIT_Y_VERCEL §4e minutos de build, §4b ajustado. Objetivo: menos minutos facturados sin relajar paridad preview/prod.', 'Documentación'],
   ];
 
-const datosLogParaExcel = aplicarHoyAhora(datosLog);
+const datosLogParaExcel = preservarFechasHistoricasLog(projectRoot, outPath, datosLog);
 const wsLog = XLSX.utils.aoa_to_sheet(datosLogParaExcel);
 wsLog['!cols'] = [{ wch: 12 }, { wch: 6 }, { wch: 45 }, { wch: 95 }, { wch: 14 }];
 
@@ -1094,7 +1086,7 @@ const funcionalidades = [
   ['Sesión, contraseña y cabecera de la app', '**Login:** «¿Olvidaste tu contraseña?» y flujo por email para definir clave nueva; con sesión, **cambiar contraseña** desde el menú **Cuenta** (engranaje). **Cabecera:** versión de la app debajo del logo; botón **Actualizar** (permisos y datos de la vista) a la izquierda de **Cuenta**; el menú concentra email, nombre en listados y cerrar sesión. Requisitos Supabase para enlaces de recuperación: `docs/SUPABASE_REQUISITOS.md` (Redirect URLs).'],
   ['Caja por órdenes — CHEQUE-ARS: comisión intermediario y ganancia Pandy', 'La fila de **Comisión del acuerdo** (beneficiario intermediario) que impacta **movimientos_caja** en matriz **CHEQUE-ARS** va siempre en **transferencia bancaria** (`caja_tipo` **banco**), no efectivo ni bolsa cheque. En el flujo legacy **`asegurarGananciaPandy`**, la transacción «Ganancia del acuerdo» toma **`modo_pago_id`** del ingreso Cliente→Pandy de referencia y el movimiento de caja usa **`codigoCajaTipoDesdeCodigo`**.'],
   ['Cheque en pesos (CHEQUE-ARS) con intermediario: plantilla y multicontraparte', 'La comparación automática entre la **plantilla de cuatro transacciones** y lo guardado usa **pesos enteros** (redondeo): solo centavos de diferencia no marcan ajuste manual por montos. **Multicontraparte manual** en base de datos solo se enciende por sync automático si hay **desvío de pagador o cobrador** respecto de la plantilla, no alcanza con el flag de instrumentación ajustada por otros motivos. Al validar totales frente al acuerdo con multicontraparte, **CHEQUE-ARS** no usa el modo que suma todas las patas (evita doble conteo cliente+intermediario).'],
-  ['Cuenta corriente — CHEQUE-ARS + intermediario (comisión cliente e intermediario)', 'En sync: fila sintética **+spread** «Comisión del acuerdo» en **CC cliente** (siempre **incluir_en_detalle** en true para que aparezca en Movimientos aunque la regla `es_comision` traiga false). Spread: `max` entre desglose por transacciones y **MonR−MonE** nominal en cabecera; tasa intermediario normalizada fracción o % (`tasaDescuentoIntermediarioFraccionSync`). Si **toda** la comisión es intermediario y coincide con `mr−me`, **no** se duplica la línea sintética negativa en CC intermediario (el par Tx3/Tx4 ya refleja el rubro). Ver `docs/CHEQUE_ARS_INTERMEDIARIO.md`.'],
+  ['Cuenta corriente — CHEQUE-ARS + intermediario (comisión, flip pag/cob)', 'En sync: fila sintética **+spread** «Comisión del acuerdo» en **CC cliente** (siempre **incluir_en_detalle** en true). Spread: `max` entre desglose por transacciones y **MonR−MonE** nominal; tasa intermediario normalizada fracción o %. **Flip pagador/cobrador** (ingreso Cliente↔Pandy invertido, paridad **USD-USD con intermediario**): compensación CC, regla B, alineación egreso P→C (+mr/−me) y **sin** exigir que el libro netee a cero mientras el circuito flip esté activo (evita bloqueo de sync y filas en pendiente). Ver `docs/CHEQUE_ARS_INTERMEDIARIO.md`.'],
   ['Órdenes dólar–pesos y pesos–dólar: precisión en USD y cierre de instrumentación', 'Wizard y tipos por par USD+ARS (incl. compra_usd/vende_usd): hasta **8 decimales** en el lado USD; TC alineado. Instrumentación: montos editables en **USD y EUR** con la misma precisión en tabla y modal de transacción; validación «Listo» con tolerancia por moneda para no rechazar por diferencias mínimas de redondeo. Ver `docs/CUENTA_CORRIENTE_Y_CAJA.md`.'],
   ['Cuenta corriente — comisión del acuerdo (intermediario, síntesis)', 'Al sincronizar la orden, la línea **Comisión del acuerdo** en el libro del **intermediario** se persiste siempre en **negativo** (misma convención que el ingreso a transacción dedicada); aplica con comisión de intermediario en el acuerdo (USD–USD y cruces con tipo de cambio en el motor; CHEQUE-ARS en su bloque de reglas).'],
   ['G/P Operativa — P&L devengado y caja manual', 'Panel Inicio: primera fila **P&L (devengado)** = libro CC + caja por órdenes + comisiones y compensatorio según criterio documentado; **no** incluye caja manual. Fila aparte de **caja manual** (liquidez, tipos con «incluye en G/P»). Ayudas en `index.html` y en catálogo de tipos de caja. SQL `migracion_gp_operativa_detalle.sql` / `migracion_gp_operativa_panel.sql`; RPC `gp_operativa_detalle`. **Reparto + passthrough:** si `|S|+com≈monto_recibido`, bolsa CC intermediario aporte **0** y detalle **`gp-passthrough-ccint-*`**; si bruto embebido, **`gp-reparto-*`**.'],
@@ -1253,6 +1245,7 @@ wsRef['!cols'] = [{ wch: 28 }, { wch: 70 }];
 // --- Hoja Versiones
 const versiones = [
   ['Versión', 'Fecha', 'Descripción'],
+  ['3.8.13', '__HOY__', 'v3.8.13 — Despliegue prod + preview estable (SHA). **CHEQUE-ARS + intermediario — flip pagador/cobrador** alineado a **USD-USD+int:** motor CC (inyección compromiso Tx2 P→C, dedupe con `compensacion_cc_*`, préstamo gemelo regla B en ARS, par cliente con ingreso P→C ejecutado). **Invariante neteo:** no bloquea sync cuando hay flip o compensación persistida (corrige toast «no netea a cero» y CC en pendiente). Fix guardado transacción modal (`ordenParaCompletarIdsTransaccion`). Incluye en rama **737f1b1** seguridad Supabase (revoke PUBLIC/anon en RPC SECURITY DEFINER). Solo `main.js` + UI; sin migración SQL obligatoria en este release. Sin `vercel --prod` rutinario; sin paso 6 CLI.'],
   ['3.8.12', '__HOY__', 'v3.8.12 — Despliegue prod + preview estable (SHA). **ABM clientes e intermediarios:** validación de **nombre duplicado** antes de persistir (PostgREST `ilike` con escape `%`/`_`/`\`, comparación trim+lower en front); **anti doble envío:** botón Guardar «Guardando…», mini-spinner, `aria-busy`, deshabilitar Guardar/Cancelar/Cerrar durante el async; tokens `pandiClienteModalSaveUiToken` / `pandiIntermediarioModalSaveUiToken` alineados al patrón del modal transacción. Scripts solo diagnóstico en repo: `sql/consulta_clientes_nombre_duplicado_y_sin_referencias.sql`, `sql/consulta_intermediarios_nombre_duplicado_y_sin_referencias.sql` (duplicados por nombre normalizado + conteo refs / candidato eliminar si refs_total=0). Sin `vercel --prod` rutinario (push `main`); sin paso 6 CLI preview efímero.'],
   ['3.8.11', '__HOY__', 'v3.8.11 — Despliegue prod + preview estable (SHA). **Auth y cabecera:** recuperación de contraseña (login + enlace email + pantalla nueva clave), cambio de contraseña con sesión (modal desde menú **Cuenta**); menú **Cuenta** (engranaje) con email, nombre en listados y sesión; botón **Actualizar** en cabecera a la izquierda de Cuenta; **versión** visible bajo el logo (sin bloque al pie del sidebar). Bootstrap auth: `PASSWORD_RECOVERY` + `getSession` diferido; `docs/SUPABASE_REQUISITOS` (Redirect URLs), `FASE_A_PRUEBAS_MOVIL_PWA`, `GIT_Y_VERCEL`, reglas Cursor. Sin `vercel --prod` rutinario (push `main`); sin paso 6 CLI preview efímero.'],
   ['3.8.10', '__HOY__', 'v3.8.10 — Despliegue prod + preview estable (SHA). **CHEQUE-ARS (matriz):** comisión intermediario en **`movimientos_caja`** con **`caja_tipo: banco`** (transferencia bancaria obligatoria; sync sintético + `asegurarComisionIntermediario` con hints `banco`/`transferencia`). **`asegurarGananciaPandy`:** modo/caja desde ingreso C→P (sesión previa). Docs y bitácora Resumen alineados. Sin SQL/RPC en este release. Sin `vercel --prod` rutinario; sin paso 6 CLI preview efímero.'],
@@ -1456,7 +1449,7 @@ const versiones = [
   ['1.71', '__HOY__', 'Hotfix Atribución CC (v3.7.19): Se corrigió la lógica del motor de reconstrucción general de Cuenta Corriente. En lugar de hacer fallback al "autor de la última transacción ejecutada" (que ocasionaba que operaciones históricas pendientes o residuales se atribuyeran erróneamente a quien sincroniza), Pandy ahora hace fallback estricto a la cuenta del **creador de la orden**, blindando así la integridad de los arreglos históricos en base de datos.'],
   ['3.8.6', '__HOY__', 'G/P Operativa: bolsa `ganancia_devengada_orden` en detalle (RPC) y app v3.8.6. **Front:** desglose total carga y muestra sección con ganancia neta por orden+moneda (comisiones acuerdo Pandy vs intermediario); cards P&L y filas de resumen excluyen duplicar con caja y esa bolsa. **SQL repo:** `gp_operativa_detalle` acepta `p_bolsa = ganancia_devengada_orden` (no suma a las 7 claves de `gp_operativa_resumen`); `consulta_gp_operativa_detalle_flat_via_rpc` + export Excel con esa bolsa. Requisito: aplicar `migracion_gp_operativa_detalle.sql` en Supabase prod/dev.'],
 ];
-const versionesParaExcel = aplicarHoyAhora(versiones);
+const versionesParaExcel = preservarFechasHistoricasVersiones(projectRoot, outPath, versiones);
 const wsVersiones = XLSX.utils.aoa_to_sheet(versionesParaExcel);
 wsVersiones['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 75 }];
 
@@ -1493,7 +1486,6 @@ const presupuesto = [
 const wsPresupuesto = XLSX.utils.aoa_to_sheet(presupuesto);
 wsPresupuesto['!cols'] = [{ wch: 52 }, { wch: 14 }, { wch: 14 }, { wch: 6 }];
 
-const outPath = path.join(__dirname, '..', 'Bitacora_tareas.xlsx');
 const wb = XLSX.utils.book_new();
 XLSX.utils.book_append_sheet(wb, wsLog, 'Log');
 XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');

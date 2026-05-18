@@ -10491,6 +10491,20 @@ function mcEmitirPrestamoGemeloReglaBPandyMonrUsdUsdConInter(orden, transaccione
 }
 
 /**
+ * CHEQUE-ARS + intermediario, ARS=ARS, sin rollout nueva regla: gemelo «Préstamo al cliente» tras flip P→C ingreso (paridad USD-USD+int).
+ */
+function mcEmitirPrestamoGemeloReglaBPandyMonrChequeArsConInter(orden, transacciones) {
+  if (transacciones != null && nuevaReglaCcRolloutActivoParaOrden(orden, transacciones)) return false;
+  if (!orden || !orden.intermediario_id) return false;
+  const tj =
+    orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+  if (!esSyncOrdenTipoChequeArs(orden, (tj && tj.codigo) || null, tj || {})) return false;
+  const monRCat = String(monedaCatalogoParaOrden(orden.moneda_recibida) || '').toUpperCase();
+  const monECat = String(monedaCatalogoParaOrden(orden.moneda_entregada) || '').toUpperCase();
+  return monRCat === 'ARS' && monECat === 'ARS' && monRCat === monECat;
+}
+
+/**
  * Multicontraparte manual: CC desde el **momento 0** (cada transacción pendiente o ejecutada en el estado que corresponda); caja sigue solo con ejecutadas + Pandy efectivo en el bucle de sync.
  * Cliente del acuerdo frente a Pandy: ingresos ARS pendientes (pagador = acuerdo) → −m; ingreso ejecutado acuerdo→otro cliente → par −m/+m (no cambia obligación neta con Pandy) + línea +m al cobrador tercero; ingreso **Pandy→acuerdo** en monR ejecutado **o pendiente** (Pandy cumple pata del cliente) → **+m** «compromiso» con leyenda explícita; **−m** «Préstamo al cliente (cobertura Pandy — moneda recibida)» **solo** si **USD-USD** catálogo **y** `intermediario_id` (`mcEmitirPrestamoGemeloReglaBPandyMonrUsdUsdConInter(orden, lista)`; sin rollout nueva regla CC; en cruces p. ej. USD-ARS puede quedar solo **+m** «jugando» en CC); ingreso ejecutado **otro cliente→acuerdo** en monR → +m «Compromiso de pago» con leyenda **tercero cumple pata** en CC del acuerdo y **−m cobro** en el tercero (paridad con motor cuando no hay fila cliente→cliente en `reglas_de_negocio`); ingreso ejecutado **Pandy→cliente** sin `cobrador_cliente_id` = acuerdo explícito **no** dispara +m «Compromiso de Pago» plano por cierre genérico a `cidCob` (cualquier moneda de la trx; solo regla B en monR con UUID, o +m al cobrador cliente explícito);
  * ingreso ejecutado acuerdo→Pandy en monR: par **−m (Cobro realizado) +m (Ajuste libro acuerdo)** en CC del acuerdo — **neteo cero** de esa transacción en el libro del acuerdo (distinto de regla B);
@@ -12362,21 +12376,7 @@ function inyectarFilaComisionAcuerdoCcClienteDesdeComisionesOrdenSiFaltaChequeAr
     nroRef != null
       ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroRef, fecha, ahora)
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
-  const tx1Ej = (transacciones || []).some(
-    (t) =>
-      (t.tipo || '').toLowerCase() === 'ingreso' &&
-      String(t.pagador || '').toLowerCase() === 'cliente' &&
-      String(t.cobrador || '').toLowerCase() === 'pandy' &&
-      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-  );
-  const tx2Ej = (transacciones || []).some(
-    (t) =>
-      (t.tipo || '').toLowerCase() === 'egreso' &&
-      String(t.pagador || '').toLowerCase() === 'pandy' &&
-      String(t.cobrador || '').toLowerCase() === 'cliente' &&
-      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-  );
-  const parClienteCerrado = tx1Ej && tx2Ej;
+  const parClienteCerrado = parClienteInstrumentacionChequeArsEjecutado(transacciones);
   const moneda = String(
     monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
   ).toUpperCase();
@@ -12427,6 +12427,50 @@ function esOrdenMismaMonedaConIntermediarioSinMcParaCompensacionCc(orden, totMcS
     .trim()
     .toUpperCase();
   return mr.length > 0 && mr === me;
+}
+
+/** Ingreso ejecutado Pandy→cliente del acuerdo (flip C→P a P→C en misma moneda + int.; solo CHEQUE-ARS / paridad USD-USD+int). */
+function ingresoPandyClienteMonRecibidaEjecutado(transacciones) {
+  return (transacciones || []).some((t) => {
+    if ((t.tipo || '').toLowerCase() !== 'ingreso') return false;
+    if (transaccionEstadoTextoNormalizado(t) !== 'ejecutada') return false;
+    const tn = transaccionNormalizarPagCobVacios(t);
+    const { pag, cob } = pagCobEfectivosTransaccionSync(tn);
+    return pag === 'pandy' && cob === 'cliente';
+  });
+}
+
+/**
+ * CHEQUE-ARS + intermediario: par cliente cerrado si ingreso C→P **o** P→C (flip) ejecutado y egreso P→C ejecutado.
+ */
+function parClienteInstrumentacionChequeArsEjecutado(transacciones) {
+  const ingresoParEj =
+    ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) ||
+    ingresoPandyClienteMonRecibidaEjecutado(transacciones);
+  return ingresoParEj && egresoEntregaAClienteEjecutado(transacciones);
+}
+
+/**
+ * Alineación CC cliente CHEQUE-ARS+int (par Tx1/Tx2): análogo a `todoParClientePendienteConIntParaAlinearCcMotor` en patrón **ci_pc** (egreso P→C).
+ */
+function todoParClientePendienteChequeArsIntParaAlinearCcMotor(intermediarioId, transacciones) {
+  if (!intermediarioId) return false;
+  const hayEgresoPandyClientePendiente = (transacciones || []).some((t) => {
+    if (transaccionEstadoTextoNormalizado(t) !== 'pendiente') return false;
+    if ((t.tipo || '').toLowerCase() !== 'egreso') return false;
+    const tn = transaccionNormalizarPagCobVacios(t);
+    const { pag, cob } = pagCobEfectivosTransaccionSync(tn);
+    return pag === 'pandy' && cob === 'cliente';
+  });
+  if (hayEgresoPandyClientePendiente && !egresoEntregaAClienteEjecutado(transacciones)) return true;
+  if (
+    ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) ||
+    ingresoPandyClienteMonRecibidaEjecutado(transacciones)
+  ) {
+    return false;
+  }
+  if (egresoEntregaAClienteEjecutado(transacciones)) return false;
+  return true;
 }
 
 function esIngresoPagCobClientePandyTn(tn) {
@@ -12655,6 +12699,94 @@ function filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsd
     const enlazaEgresoIc = tid && egresoIntermediarioClienteIds.has(tid);
     const enlazaIngresoComp = tid && ingresoIdsConCompCcFlip.has(tid);
     if (!tid || (!enlazaEgresoIc && !enlazaIngresoComp)) continue;
+    const montoIgualAlgunComp = montosCompAplicados.some((c0) => Math.abs(c0 - m) <= 0.02);
+    if (!montoIgualAlgunComp) continue;
+    rowsCcCliente.splice(i, 1);
+  }
+}
+
+/**
+ * CHEQUE-ARS + intermediario, misma moneda sin MC: con flip C→P a P→C y `compensacion_cc_monto_aplicado`, el motor puede duplicar
+ * «Compromiso de Pago» del egreso **Pandy→Cliente** (Tx2) o del ingreso P→C. Paridad con
+ * `filasCcClienteQuitarCompromisoPagoEgresoInterSiCompensacionFlipTotalUsdUsdInt` (egreso Inter→Cliente en USD-USD+int).
+ */
+function filasCcClienteQuitarCompromisoPagoEgresoPandyClienteSiCompensacionFlipChequeArsInt(
+  rowsCcCliente,
+  orden,
+  ordenId,
+  clienteId,
+  transacciones,
+  usarMulticontraparteSync,
+  codigoOrdenRaw,
+  toJoin,
+) {
+  if (!Array.isArray(rowsCcCliente) || !orden || !clienteId || !ordenId) return;
+  if (!esSyncOrdenChequeArsConIntermediario(orden, codigoOrdenRaw, toJoin || {})) return;
+  if (!esOrdenMismaMonedaConIntermediarioSinMcParaCompensacionCc(orden, !!usarMulticontraparteSync)) return;
+  const monR = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || 'ARS')
+    .toUpperCase();
+  const monE = String(monedaCatalogoParaOrden(orden.moneda_entregada) || orden.moneda_entregada || 'ARS')
+    .toUpperCase();
+  if (monR !== monE) return;
+
+  const montosCompAplicados = [];
+  for (const tRaw of transacciones || []) {
+    if (!tRaw) continue;
+    const comp = Number(tRaw.compensacion_cc_monto_aplicado);
+    if (!Number.isFinite(comp) || comp < 1e-6) continue;
+    if (String(tRaw.tipo || '').toLowerCase() !== 'ingreso') continue;
+    const st = transaccionEstadoTextoNormalizado(tRaw);
+    if (st !== 'ejecutada' && st !== 'pendiente') continue;
+    montosCompAplicados.push(comp);
+  }
+  if (montosCompAplicados.length === 0) return;
+
+  const egresoPandyClienteIds = new Set();
+  for (const tRaw of transacciones || []) {
+    if (!tRaw || tRaw.id == null) continue;
+    const st = transaccionEstadoTextoNormalizado(tRaw);
+    if (st !== 'ejecutada' && st !== 'pendiente') continue;
+    if (String(tRaw.tipo || '').toLowerCase() !== 'egreso') continue;
+    const tn = transaccionNormalizarPagCobVacios(tRaw);
+    const { pag, cob } = pagCobEfectivosTransaccionSync(tn);
+    if (pag !== 'pandy' || cob !== 'cliente') continue;
+    const mon = String(tRaw.moneda || '').toUpperCase();
+    if (mon !== monR) continue;
+    egresoPandyClienteIds.add(String(tRaw.id));
+  }
+
+  const ingresoIdsConCompCcFlip = new Set();
+  for (const tRaw of transacciones || []) {
+    if (!tRaw || tRaw.id == null) continue;
+    const comp0 = Number(tRaw.compensacion_cc_monto_aplicado);
+    if (!Number.isFinite(comp0) || comp0 < 1e-6) continue;
+    if (String(tRaw.tipo || '').toLowerCase() !== 'ingreso') continue;
+    const st0 = transaccionEstadoTextoNormalizado(tRaw);
+    if (st0 !== 'ejecutada' && st0 !== 'pendiente') continue;
+    ingresoIdsConCompCcFlip.add(String(tRaw.id));
+  }
+
+  if (egresoPandyClienteIds.size === 0 && ingresoIdsConCompCcFlip.size === 0) return;
+
+  for (let i = rowsCcCliente.length - 1; i >= 0; i--) {
+    const r = rowsCcCliente[i];
+    if (!r || r.es_movimiento_manual === true) continue;
+    if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
+    const c = String(r.concepto || '');
+    if (!c.includes('Compromiso de Pago')) continue;
+    if (
+      c.includes(SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR) ||
+      c.includes(SUBSTRING_LEYENDA_CC_TERcERO_PATA_MONR) ||
+      c.includes(SUBSTRING_LEYENDA_CC_NUEVA_REGLA_EMPRESA_ASUME_MONR)
+    ) {
+      continue;
+    }
+    const m = Number(r.monto);
+    if (!Number.isFinite(m) || m < 1e-6) continue;
+    const tid = r.transaccion_id != null && String(r.transaccion_id).trim() !== '' ? String(r.transaccion_id).trim() : '';
+    const enlazaEgresoPc = tid && egresoPandyClienteIds.has(tid);
+    const enlazaIngresoComp = tid && ingresoIdsConCompCcFlip.has(tid);
+    if (!tid || (!enlazaEgresoPc && !enlazaIngresoComp)) continue;
     const montoIgualAlgunComp = montosCompAplicados.some((c0) => Math.abs(c0 - m) <= 0.02);
     if (!montoIgualAlgunComp) continue;
     rowsCcCliente.splice(i, 1);
@@ -12996,7 +13128,12 @@ function transaccionPrestamoReglaBPandyAcuerdoMonROConFilaCcPataNegativa(rowsCcC
  */
 function completarCcClientePrestamoReglaBPandyMonSiFalta(rowsCcCliente, orden, ordenId, clienteId, fecha, ahora, transacciones, ordenAnuladaSync) {
   if (!Array.isArray(rowsCcCliente) || !orden || !clienteId || !ordenId) return;
-  if (!mcEmitirPrestamoGemeloReglaBPandyMonrUsdUsdConInter(orden, transacciones)) return;
+  if (
+    !mcEmitirPrestamoGemeloReglaBPandyMonrUsdUsdConInter(orden, transacciones) &&
+    !mcEmitirPrestamoGemeloReglaBPandyMonrChequeArsConInter(orden, transacciones)
+  ) {
+    return;
+  }
   const monR = String(orden.moneda_recibida || 'USD').toUpperCase();
   const subP = SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR;
   const subL = SUBSTRING_LEYENDA_CC_PRESTAMO_PANDY_REGULA_B_MONR;
@@ -13440,21 +13577,7 @@ function asegurarFilaComisionSpreadChequeArsClienteSiFalta(opts) {
     nroRef != null
       ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroRef, fecha, ahora)
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
-  const tx1Ej = (transacciones || []).some(
-    (t) =>
-      (t.tipo || '').toLowerCase() === 'ingreso' &&
-      String(t.pagador || '').toLowerCase() === 'cliente' &&
-      String(t.cobrador || '').toLowerCase() === 'pandy' &&
-      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-  );
-  const tx2Ej = (transacciones || []).some(
-    (t) =>
-      (t.tipo || '').toLowerCase() === 'egreso' &&
-      String(t.pagador || '').toLowerCase() === 'pandy' &&
-      String(t.cobrador || '').toLowerCase() === 'cliente' &&
-      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-  );
-  const parClienteCerrado = tx1Ej && tx2Ej;
+  const parClienteCerrado = parClienteInstrumentacionChequeArsEjecutado(transacciones);
   const moneda = String(
     monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
   ).toUpperCase();
@@ -13578,21 +13701,7 @@ function inyectarComisionChequeArsClienteSiResidualMonR(opts) {
     nroRef != null
       ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroRef, fecha, ahora)
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
-  const tx1Ej = (transacciones || []).some(
-    (t) =>
-      (t.tipo || '').toLowerCase() === 'ingreso' &&
-      String(t.pagador || '').toLowerCase() === 'cliente' &&
-      String(t.cobrador || '').toLowerCase() === 'pandy' &&
-      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-  );
-  const tx2Ej = (transacciones || []).some(
-    (t) =>
-      (t.tipo || '').toLowerCase() === 'egreso' &&
-      String(t.pagador || '').toLowerCase() === 'pandy' &&
-      String(t.cobrador || '').toLowerCase() === 'cliente' &&
-      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-  );
-  const parClienteCerrado = tx1Ej && tx2Ej;
+  const parClienteCerrado = parClienteInstrumentacionChequeArsEjecutado(transacciones);
   const moneda = String(
     monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
   ).toUpperCase();
@@ -13668,21 +13777,7 @@ function empujarComisionSpreadChequeArsClienteSiFaltaUltimoRecurso(
     nroRef != null
       ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroRef, fecha, ahora)
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
-  const tx1Ej = (transacciones || []).some(
-    (t) =>
-      (t.tipo || '').toLowerCase() === 'ingreso' &&
-      String(t.pagador || '').toLowerCase() === 'cliente' &&
-      String(t.cobrador || '').toLowerCase() === 'pandy' &&
-      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-  );
-  const tx2Ej = (transacciones || []).some(
-    (t) =>
-      (t.tipo || '').toLowerCase() === 'egreso' &&
-      String(t.pagador || '').toLowerCase() === 'pandy' &&
-      String(t.cobrador || '').toLowerCase() === 'cliente' &&
-      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-  );
-  const parClienteCerrado = tx1Ej && tx2Ej;
+  const parClienteCerrado = parClienteInstrumentacionChequeArsEjecutado(transacciones);
   const moneda = String(
     monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
   ).toUpperCase();
@@ -13736,21 +13831,7 @@ function garantizarFilaComisionSpreadChequeArsClienteCabeceraMrMeSiFalta(
     nroRef != null
       ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroRef, fecha, ahora)
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
-  const tx1Ej = (transacciones || []).some(
-    (t) =>
-      (t.tipo || '').toLowerCase() === 'ingreso' &&
-      String(t.pagador || '').toLowerCase() === 'cliente' &&
-      String(t.cobrador || '').toLowerCase() === 'pandy' &&
-      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-  );
-  const tx2Ej = (transacciones || []).some(
-    (t) =>
-      (t.tipo || '').toLowerCase() === 'egreso' &&
-      String(t.pagador || '').toLowerCase() === 'pandy' &&
-      String(t.cobrador || '').toLowerCase() === 'cliente' &&
-      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-  );
-  const parClienteCerrado = tx1Ej && tx2Ej;
+  const parClienteCerrado = parClienteInstrumentacionChequeArsEjecutado(transacciones);
   const moneda = String(
     monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
   ).toUpperCase();
@@ -13820,21 +13901,7 @@ function aplicarSyncUnicoChequeArs(fase, ctx) {
         nroTransComisionChequeFb != null
           ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionChequeFb, fecha, ahora)
           : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
-      const tx1EjecutadaFb = transacciones.some(
-        (t) =>
-          (t.tipo || '').toLowerCase() === 'ingreso' &&
-          String(t.pagador || '').toLowerCase() === 'cliente' &&
-          String(t.cobrador || '').toLowerCase() === 'pandy' &&
-          transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-      );
-      const tx2EjecutadaFb = transacciones.some(
-        (t) =>
-          (t.tipo || '').toLowerCase() === 'egreso' &&
-          String(t.pagador || '').toLowerCase() === 'pandy' &&
-          String(t.cobrador || '').toLowerCase() === 'cliente' &&
-          transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-      );
-      const parClienteCerradoFb = tx1EjecutadaFb && tx2EjecutadaFb;
+      const parClienteCerradoFb = parClienteInstrumentacionChequeArsEjecutado(transacciones);
       const montoComisionCcClienteChequeFb =
         spreadAcuerdoChequeInt >= 1e-6 ? spreadAcuerdoChequeInt : comisionPandyMonto;
       const omitCcIntComChequeTodoInterFb = chequeArsCcIntOmitirComisionAcuerdoSinteticaTodoInter(
@@ -13936,21 +14003,7 @@ function aplicarSyncUnicoChequeArs(fase, ctx) {
         nroTransComisionChequeMc != null
           ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionChequeMc, fecha, ahora)
           : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora);
-      const tx1Mc = transacciones.some(
-        (t) =>
-          (t.tipo || '').toLowerCase() === 'ingreso' &&
-          String(t.pagador || '').toLowerCase() === 'cliente' &&
-          String(t.cobrador || '').toLowerCase() === 'pandy' &&
-          transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-      );
-      const tx2Mc = transacciones.some(
-        (t) =>
-          (t.tipo || '').toLowerCase() === 'egreso' &&
-          String(t.pagador || '').toLowerCase() === 'pandy' &&
-          String(t.cobrador || '').toLowerCase() === 'cliente' &&
-          transaccionEstadoTextoNormalizado(t) === 'ejecutada',
-      );
-      const parClienteCerradoMc = tx1Mc && tx2Mc;
+      const parClienteCerradoMc = parClienteInstrumentacionChequeArsEjecutado(transacciones);
       const montoComisionCcClienteChequeMc =
         spreadAcuerdoChequeInt >= 1e-6 ? spreadAcuerdoChequeInt : Number(comisionPandyMonto) || 0;
       const omitCcIntComChequeTodoInterMc = chequeArsCcIntOmitirComisionAcuerdoSinteticaTodoInter(
@@ -14192,13 +14245,10 @@ function pandiDevOmitirInvarianteNeteoCcClientePermitido() {
 }
 
 /**
- * Con `omitirInvarianteNeteoCcClienteAcuerdoCerrado` (MC o desvío plantilla) el invariante suele retornar `{ ok: true }`
- * sin mirar el libro. Para **CHEQUE-ARS + intermediario**, misma fiat (catálogo), **mr > me** y toda la instrumentación
- * **estrictamente** ejecutada con par cliente cerrado, **sí** hay que correr el bucle de neteo: si no, `sync_cc_caja_orden`
- * persistía solo Cobro+Compromiso sin la sintética «Comisión del acuerdo».
- * @returns {boolean}
+ * CHEQUE-ARS + intermediario, misma moneda: flip ingreso **Pandy→Cliente** (o `compensacion_cc_monto_aplicado`) — el libro CC
+ * **no** debe netear a cero (paridad USD-USD+int con regla B / compensación; ver `validarInvarianteNeteoCcClienteAcuerdoCerrado`).
  */
-function exigirBucleNeteoCcClienteChequeArsIntAunqueOmitirInvariante(orden, transacciones, modosMap) {
+function ordenChequeArsIntExentoInvarianteNeteoCcPorFlipPagCobCliente(orden, transacciones) {
   if (!orden || !orden.intermediario_id) return false;
   const tj = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
   const codRaw = tj && tj.codigo != null ? String(tj.codigo).trim() : '';
@@ -14206,8 +14256,89 @@ function exigirBucleNeteoCcClienteChequeArsIntAunqueOmitirInvariante(orden, tran
   const monRCat = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || '').toUpperCase();
   const monECat = String(monedaCatalogoParaOrden(orden.moneda_entregada) || orden.moneda_entregada || '').toUpperCase();
   if (!monRCat || monRCat !== monECat) return false;
+  if (transaccionesListTieneCompensacionCcMontoAplicado(transacciones)) return true;
+  return (transacciones || []).some((tRaw) => {
+    if (!tRaw || (tRaw.concepto || '').includes('Ganancia del acuerdo')) return false;
+    const t = transaccionNormalizarPagCobVacios(tRaw);
+    const st = transaccionEstadoTextoNormalizado(t);
+    if (st === 'anulada') return false;
+    if (String(t.tipo || '').toLowerCase() !== 'ingreso') return false;
+    const { pag, cob } = pagCobEfectivosTransaccionSync(t);
+    const mon = String(monedaCatalogoParaOrden(t.moneda) || t.moneda || '').toUpperCase();
+    return pag === 'pandy' && cob === 'cliente' && mon === monRCat;
+  });
+}
+
+/**
+ * CHEQUE-ARS + int., misma moneda, compensación flip: «Compromiso de Pago» del egreso **Pandy→Cliente** (+me) en monR
+ * (análogo a `sumaMovimientosCompromisoPagoEgresoIntermediarioClienteExentoNeteoUsdUsdConCompensacionTrx` en USD-USD+int).
+ */
+function sumaMovimientosCompromisoPagoEgresoPandyClienteExentoNeteoChequeArsConCompensacionTrx(
+  rowsCliente,
+  clienteId,
+  ordenId,
+  mon,
+  transacciones,
+  orden,
+) {
+  const monU = String(mon || '').toUpperCase();
+  const monR = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || 'ARS').toUpperCase();
+  const monE = String(monedaCatalogoParaOrden(orden.moneda_entregada) || orden.moneda_entregada || 'ARS').toUpperCase();
+  if (monU !== monR || monR !== monE || !orden.intermediario_id) return 0;
+  const tj = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+  const codRaw = tj && tj.codigo != null ? String(tj.codigo).trim() : '';
+  if (!esSyncOrdenTipoChequeArs(orden, codRaw || null, tj || {})) return 0;
+  if (!transaccionesListTieneCompensacionCcMontoAplicado(transacciones)) return 0;
+  const trxById = new Map((transacciones || []).filter((t) => t && t.id != null).map((t) => [String(t.id), t]));
+  let s = 0;
+  for (const r of rowsCliente || []) {
+    if (!r || r.es_movimiento_manual === true) continue;
+    if (String(r.estado || '').toLowerCase() !== 'cerrado') continue;
+    if (String(r.cliente_id || '') !== String(clienteId || '') || String(r.orden_id || '') !== String(ordenId || '')) continue;
+    if (String(r.moneda || '').toUpperCase() !== monU) continue;
+    const c = String(r.concepto || '');
+    if (!c.includes('Compromiso de Pago')) continue;
+    if (
+      c.includes(SUBSTRING_LEYENDA_CC_REGLA_B_PANDY_PATA_MONR) ||
+      c.includes(SUBSTRING_LEYENDA_CC_TERcERO_PATA_MONR) ||
+      c.includes(SUBSTRING_LEYENDA_CC_NUEVA_REGLA_EMPRESA_ASUME_MONR)
+    ) {
+      continue;
+    }
+    const tid = r.transaccion_id;
+    if (tid == null || String(tid).trim() === '') continue;
+    const t = trxById.get(String(tid));
+    if (!t) continue;
+    if (String(t.tipo || '').toLowerCase() !== 'egreso') continue;
+    if (transaccionEstadoTextoNormalizado(t) !== 'ejecutada' && transaccionEstadoTextoNormalizado(t) !== 'pendiente') continue;
+    const tn = transaccionNormalizarPagCobVacios(t);
+    const { pag, cob } = pagCobEfectivosTransaccionSync(tn);
+    if (pag !== 'pandy' || cob !== 'cliente') continue;
+    const m = Number(r.monto);
+    if (Number.isFinite(m)) s += m;
+  }
+  return s;
+}
+
+/**
+ * Con `omitirInvarianteNeteoCcClienteAcuerdoCerrado` (MC o desvío plantilla) el invariante suele retornar `{ ok: true }`
+ * sin mirar el libro. Para **CHEQUE-ARS + intermediario**, misma fiat (catálogo), **mr > me** y toda la instrumentación
+ * **estrictamente** ejecutada con par cliente cerrado, **sí** hay que correr el bucle de neteo: si no, `sync_cc_caja_orden`
+ * persistía solo Cobro+Compromiso sin la sintética «Comisión del acuerdo».
+ * **No** aplica si hay flip P→C / compensación CC (`ordenChequeArsIntExentoInvarianteNeteoCcPorFlipPagCobCliente`).
+ * @returns {boolean}
+ */
+function exigirBucleNeteoCcClienteChequeArsIntAunqueOmitirInvariante(orden, transacciones, modosMap) {
+  if (!orden || !orden.intermediario_id) return false;
+  if (ordenChequeArsIntExentoInvarianteNeteoCcPorFlipPagCobCliente(orden, transacciones)) return false;
+  const tj = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+  const codRaw = tj && tj.codigo != null ? String(tj.codigo).trim() : '';
+  if (!esSyncOrdenTipoChequeArs(orden, codRaw || null, tj || {})) return false;
+  const monRCat = String(monedaCatalogoParaOrden(orden.moneda_recibida) || orden.moneda_recibida || '').toUpperCase();
+  const monECat = String(monedaCatalogoParaOrden(orden.moneda_entregada) || orden.moneda_entregada || '').toUpperCase();
+  if (!monRCat || monRCat !== monECat) return false;
   if (!transaccionesInstrumentacionTodasEjecutadasStrict(transacciones)) return false;
-  if (!ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) || !egresoEntregaAClienteEjecutado(transacciones)) {
+  if (!parClienteInstrumentacionChequeArsEjecutado(transacciones)) {
     return false;
   }
   const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones, modosMap, orden);
@@ -14246,8 +14377,9 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
   if (String(orden && orden.estado || '').toLowerCase() === 'anulada') return { ok: true };
 
   const parClasico =
-    ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
-    egresoEntregaAClienteEjecutado(transacciones);
+    (ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones) &&
+      egresoEntregaAClienteEjecutado(transacciones)) ||
+    parClienteInstrumentacionChequeArsEjecutado(transacciones);
   const ordenEstadoL = String(orden.estado || '').toLowerCase();
   const ordenInstrumentacionCerrada =
     ordenEstadoL === 'orden_ejecutada' || ordenEstadoL === 'instrumentacion_cerrada_ejecucion';
@@ -14316,6 +14448,14 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
     return { ok: true };
   }
 
+  /**
+   * CHEQUE-ARS + int., flip C→P a P→C (ingreso Pandy→Cliente en monR) y/o `compensacion_cc_monto_aplicado`:
+   * el saldo CC del acuerdo **no** netea a cero por diseño (regla B + compromiso Tx2); bloquear `sync_cc_caja_orden` dejaba CC en pendiente.
+   */
+  if (ordenChequeArsIntExentoInvarianteNeteoCcPorFlipPagCobCliente(orden, transacciones)) {
+    return { ok: true };
+  }
+
   const monR = (orden.moneda_recibida || 'USD').toUpperCase();
   const monE = (orden.moneda_entregada || 'USD').toUpperCase();
   const sums = sumaCcClienteCerradoPorMonedaSoloClienteOrden(rowsCcClienteUnicos, clienteId, ordenId);
@@ -14343,7 +14483,15 @@ function validarInvarianteNeteoCcClienteAcuerdoCerrado(opts) {
       transacciones,
       orden,
     );
-    const residual = sum - offsetPata - offsetCompCc - offsetEgresoMeUsdUsdComp;
+    const offsetEgresoPcChequeComp = sumaMovimientosCompromisoPagoEgresoPandyClienteExentoNeteoChequeArsConCompensacionTrx(
+      rowsCcClienteUnicos,
+      clienteId,
+      ordenId,
+      mon,
+      transacciones,
+      orden,
+    );
+    const residual = sum - offsetPata - offsetCompCc - offsetEgresoMeUsdUsdComp - offsetEgresoPcChequeComp;
     if (Math.abs(residual) <= EPS_CC_NETEO_CLIENTE_ORDEN) continue;
 
     const ordLabelInv = orden.numero != null ? String(orden.numero) : String(ordenId || '').slice(0, 8);
@@ -14473,7 +14621,21 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
   const me = Number(orden.monto_entregado) || 0;
   const comM = Number(comisionPandyMonto) || 0;
   const spreadUsdUsd = mr - me;
-  const esUsdUsd = String(tipoOperacionCodigo || '').toUpperCase() === 'USD-USD';
+  const codOpMotor = String(tipoOperacionCodigo || '').toUpperCase();
+  const esUsdUsd = codOpMotor === 'USD-USD';
+  const toJoinMotorFlip =
+    orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+  const codTipoCatMotorFlip =
+    (toJoinMotorFlip && toJoinMotorFlip.codigo) != null ? toJoinMotorFlip.codigo : tipoOperacionCodigo;
+  const esChequeArsIntMotorCc =
+    !!intermediarioId &&
+    (codOpMotor === 'CHEQUE-ARS' ||
+      codOpMotor.startsWith('CHEQUE-ARS') ||
+      esTipoOperacionChequeArsMatrizReglasCc(
+        codTipoCatMotorFlip,
+        toJoinMotorFlip && toJoinMotorFlip.moneda_in,
+        toJoinMotorFlip && toJoinMotorFlip.moneda_out,
+      ));
   /** ci_pc: el egreso P→C es bilateral Pandy–cliente; no debe figurar en CC intermediario (el +mr del C→I ya ancla el flujo frente al int.; −me duplicaba y rompía el saldo vs deudas previas). */
   const patronUsdIntMotor = esUsdUsd && intermediarioId
     ? patronInstrumentacionIntDesdeTransacciones(transacciones, {
@@ -14594,23 +14756,31 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       ? 'anulado'
       : (estado === 'ejecutada' ? 'cerrado' : (estado === 'anulada' ? 'anulado' : 'pendiente'));
     const codOp = String(tipoOperacionCodigo || '').toUpperCase();
-    const todoParCliIntAlinearCc = todoParClientePendienteConIntParaAlinearCcMotor(codOp, intermediarioId, transacciones);
+    const todoParCliIntAlinearCc =
+      todoParClientePendienteConIntParaAlinearCcMotor(codOp, intermediarioId, transacciones) ||
+      (esChequeArsIntMotorCc && todoParClientePendienteChequeArsIntParaAlinearCcMotor(intermediarioId, transacciones));
     /** E,P **ci_pc**: con ingreso C→I ya ejecutado, `contrapartida` pasa a true en el egreso P→C pendiente y el bloque de inyección quedaba cortado por `!contrapartida` → dos «Compromiso de Pago» (+mr y −me). */
     const patronIntCcInyeccionCompromiso = patronInstrumentacionIntDesdeTransacciones(transacciones, {
       orden,
       comisionPandyMonto: comM,
       aplicarFiltroIngresoComisionClientePandy: true,
     });
-    /** **ci_pc** egreso **Pandy→Cliente**: la matriz puede duplicar patas o colapsar a +|trx|; en **USD-USD** el motor reinyecta el par canónico **+mr / −me** (misma `transaccion_id`) en pendiente y ejecutada. */
+    /** **ci_pc** egreso **Pandy→Cliente**: la matriz puede duplicar patas o colapsar a +|trx|; en **USD-USD** el motor reinyecta el par canónico **+mr / −me** (misma `transaccion_id`) en pendiente y ejecutada. CHEQUE-ARS+int (Tx2 P→C): misma inyección sin depender del patrón cp_ic/ci_pc de 2 patas. */
     const inyeccionCompromisoUnaLineaCiPcEgresoPandy =
-      (codOp === 'USD-USD' || codOp === 'USD-ARS' || codOp === 'ARS-USD') &&
-      !!intermediarioId &&
-      patronIntCcInyeccionCompromiso === 'ci_pc' &&
-      tipo === 'egreso' &&
-      (estado === 'pendiente' || estado === 'ejecutada') &&
-      pag === 'pandy' &&
-      cob === 'cliente' &&
-      !!clienteId;
+      ((codOp === 'USD-USD' || codOp === 'USD-ARS' || codOp === 'ARS-USD') &&
+        !!intermediarioId &&
+        patronIntCcInyeccionCompromiso === 'ci_pc' &&
+        tipo === 'egreso' &&
+        (estado === 'pendiente' || estado === 'ejecutada') &&
+        pag === 'pandy' &&
+        cob === 'cliente' &&
+        !!clienteId) ||
+      (esChequeArsIntMotorCc &&
+        tipo === 'egreso' &&
+        (estado === 'pendiente' || estado === 'ejecutada') &&
+        pag === 'pandy' &&
+        cob === 'cliente' &&
+        !!clienteId);
     const monEOrdMotor = String(orden.moneda_entregada || 'USD').toUpperCase();
     /** Misma pata monE (+ ajuste) vía atajo que con egreso ejecutado: si solo exigíamos `ejecutada`, P,P usaba reglas crudas y el detalle CC no coincidía con E,E. */
     const crucesSinIntDoblePataBp =
@@ -14827,12 +14997,19 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         regsClienteCompromisoPago.length >= 1 &&
         !soloDosMontoTransaccionSignosOpuestos &&
         !regsClienteCompromisoPagoSoloMe;
+      const colapsarChequeArsEgresoClienteCompromisoPago =
+        esChequeArsIntMotorCc &&
+        inyeccionCompromisoUnaLineaCiPcEgresoPandy &&
+        regsClienteCompromisoPago.length >= 1 &&
+        !soloDosMontoTransaccionSignosOpuestos &&
+        !regsClienteCompromisoPagoSoloMe;
       const colapsarCompromisoPagoClienteEgresoCiPc =
         tieneClienteMrMePago ||
         (inyeccionCompromisoUnaLineaCiPcEgresoPandy &&
           regsClienteCompromisoPago.length >= 2 &&
           !soloDosMontoTransaccionSignosOpuestos) ||
-        colapsarUsdUsdCiPcEgresoClienteCompromisoPago;
+        colapsarUsdUsdCiPcEgresoClienteCompromisoPago ||
+        colapsarChequeArsEgresoClienteCompromisoPago;
       if (colapsarCompromisoPagoClienteEgresoCiPc) {
         inyectarEgresoClienteCompromisoPagoUnaLinea = true;
         /** La inyección +|monto| ya sustituye el gross; excluir **toda** fila cliente `compromiso_pago` del iter (no solo mr/me), si no queda una segunda regla (p. ej. `monto_transacción` con −) y duplica ± el mismo concepto en CC. */
@@ -14848,9 +15025,10 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     }
     const inyectarEgresoClienteCompromisoPagoDualMrMeUsdUsdCiPc =
       inyectarEgresoClienteCompromisoPagoUnaLinea &&
-      codOp === 'USD-USD' &&
-      patronIntCcInyeccionCompromiso === 'ci_pc' &&
-      inyeccionCompromisoUnaLineaCiPcEgresoPandy;
+      ((codOp === 'USD-USD' && patronIntCcInyeccionCompromiso === 'ci_pc' && inyeccionCompromisoUnaLineaCiPcEgresoPandy) ||
+        esChequeArsIntMotorCc) &&
+      mr >= 1e-12 &&
+      me >= 1e-12;
     if (inyectarEgresoClienteCompromisoPagoDualMrMeUsdUsdCiPc && mr >= 1e-12 && me >= 1e-12) {
       const feIny = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
       const nroIny = t.numero != null ? t.numero : null;
@@ -15424,19 +15602,7 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora))
     : { fecha, estado_fecha: ahora };
   if (esChequeArsMatrizCcMotor && clienteId && montoComisionLineaCcClienteCheque >= 1e-6) {
-    const parClienteCerrado =
-      (transacciones || []).some((t) =>
-        (t.tipo || '').toLowerCase() === 'ingreso' &&
-        String(t.pagador || '').toLowerCase() === 'cliente' &&
-        String(t.cobrador || '').toLowerCase() === 'pandy' &&
-        transaccionEstadoTextoNormalizado(t) === 'ejecutada'
-      ) &&
-      (transacciones || []).some((t) =>
-        (t.tipo || '').toLowerCase() === 'egreso' &&
-        String(t.pagador || '').toLowerCase() === 'pandy' &&
-        String(t.cobrador || '').toLowerCase() === 'cliente' &&
-        transaccionEstadoTextoNormalizado(t) === 'ejecutada'
-      );
+    const parClienteCerrado = parClienteInstrumentacionChequeArsEjecutado(transacciones);
     const condicionPandy = getCondicionComisionReglasNegocio(reglasDeNegocio, tipoOpReglasChequeCc, 'cliente', 'pandy', 'ingreso');
     const estadoComPandy = condicionPandy
       ? estadoEfectivoComision(transacciones, condicionPandy)
@@ -27744,6 +27910,16 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               transacciones,
               usarMulticontraparteSync,
             );
+            filasCcClienteQuitarCompromisoPagoEgresoPandyClienteSiCompensacionFlipChequeArsInt(
+              rowsCcCliente,
+              orden,
+              ordenId,
+              clienteId,
+              transacciones,
+              usarMulticontraparteSync,
+              codigoOrdenRaw,
+              toJoin,
+            );
           }
 
           inyectarFilasCcTrazabilidadTransaccionesAnuladasSinMovimiento(
@@ -31848,7 +32024,10 @@ function saveTransaccion() {
                 entidad: 'transaccion',
                 registro_id: id,
                 transaccion_id: id,
-                orden_id: orden && orden.id ? String(orden.id) : null,
+                orden_id:
+                  ordenParaCompletarIdsTransaccion && ordenParaCompletarIdsTransaccion.id
+                    ? String(ordenParaCompletarIdsTransaccion.id)
+                    : null,
                 instrumentacion_id: instrumentacionId || null,
                 cambios,
               });
