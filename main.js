@@ -74,11 +74,56 @@ function nombreMarcaSistema() {
  * en producción el aviso usa `fetch('/pandi-release.json')` para el despliegue actual aunque el bundle JS esté viejo.
  * Despliegue: ver `.cursor/rules/bitacora-tareas.mdc` → «Novedades al recargar» (`lines` siguen siendo texto plano; se escapan al armar HTML).
  */
-function pandiPwaNuevaVersionHtmlDesdeBlurb(blurb) {
+const PANDI_RELEASE_ACK_KEY = 'pandi_release_notes_ack_v';
+
+/** Evita dos modales de release a la vez (SW en espera vs novedades post-login). */
+let pandiReleaseModalActive = false;
+/** Registro SW PWA (vite-plugin-pwa); null hasta `onRegistered`. */
+let pandiPwaRegistration = null;
+
+function pandiLeerReleaseAckVersion() {
+  try {
+    return String(localStorage.getItem(PANDI_RELEASE_ACK_KEY) || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+function pandiMarcarReleaseAckVersion(versionLabel) {
+  const v = String(versionLabel || '').trim();
+  if (!v) return;
+  try {
+    localStorage.setItem(PANDI_RELEASE_ACK_KEY, v);
+  } catch (_) {
+    /* noop */
+  }
+}
+
+function pandiNormalizarLineaReleaseUsuario(line) {
+  return String(line || '')
+    .replace(/\*\*/g, '')
+    .trim();
+}
+
+async function pandiFetchReleaseBlurbRemoto() {
+  try {
+    const r = await fetch('/pandi-release.json', { cache: 'no-store', credentials: 'same-origin' });
+    if (r.ok) {
+      const j = await r.json();
+      if (j && typeof j === 'object') return j;
+    }
+  } catch (_) {
+    /* sin red */
+  }
+  return PANDI_RELEASE_BLURB;
+}
+
+function pandiPwaNuevaVersionHtmlDesdeBlurb(blurb, opcionesHtml) {
   const b = blurb && typeof blurb === 'object' ? blurb : PANDI_RELEASE_BLURB;
   const v = b && b.versionLabel != null ? String(b.versionLabel).trim() : '';
   const rawLines = b && Array.isArray(b.lines) ? b.lines : [];
-  const lines = rawLines.map((l) => String(l || '').trim()).filter(Boolean);
+  const lines = rawLines.map((l) => pandiNormalizarLineaReleaseUsuario(l)).filter(Boolean);
+  const soloNovedades = !!(opcionesHtml && opcionesHtml.soloNovedades);
   const marca = escapeHtml(nombreMarcaSistema());
   const logoSrc = escapeHtml(logoUrlSeguroParaImgSrc());
   const badge = v ? `<span class="pandi-release-version-badge">${escapeHtml(v)}</span>` : '';
@@ -96,30 +141,58 @@ function pandiPwaNuevaVersionHtmlDesdeBlurb(blurb) {
         .join('') +
       '</ul>';
   }
+  const lead = soloNovedades
+    ? `<p class="pandi-release-lead">Actualizamos <strong>${marca}</strong>. Esto es lo nuevo en esta versión:</p>`
+    : `<p class="pandi-release-lead">Actualizamos <strong>${marca}</strong> con mejoras pensadas para tu día a día. ¿Recargamos ahora para aplicar la actualización?</p>`;
   return (
     '<div class="pandi-release-card">' +
     '<div class="pandi-release-hero">' +
     `<img class="pandi-release-logo" src="${logoSrc}" width="80" height="80" decoding="async" alt="Logo ${marca}" />` +
     badge +
     '</div>' +
-    `<p class="pandi-release-lead">Actualizamos <strong>${marca}</strong> con mejoras pensadas para tu día a día. ¿Recargamos ahora para aplicar la actualización?</p>` +
+    lead +
     listBlock +
     '</div>'
   );
 }
 
 /** Novedades desde el servidor (JSON no precacheado) para el modal antes de recargar; fallback al blurb embebido. Devuelve HTML (ver `showConfirm` con `opciones.html`). */
-async function pandiPwaNuevaVersionHtmlParaPrompt() {
-  try {
-    const r = await fetch('/pandi-release.json', { cache: 'no-store', credentials: 'same-origin' });
-    if (r.ok) {
-      const j = await r.json();
-      if (j && typeof j === 'object') return pandiPwaNuevaVersionHtmlDesdeBlurb(j);
-    }
-  } catch (_) {
-    /* sin red o error */
-  }
-  return pandiPwaNuevaVersionHtmlDesdeBlurb(PANDI_RELEASE_BLURB);
+async function pandiPwaNuevaVersionHtmlParaPrompt(opcionesHtml) {
+  const blurb = await pandiFetchReleaseBlurbRemoto();
+  return pandiPwaNuevaVersionHtmlDesdeBlurb(blurb, opcionesHtml);
+}
+
+/**
+ * Si el despliegue ya está activo (sin SW en espera) pero el usuario no vio las novedades de `versionLabel`,
+ * mostrar el mismo modal «Nueva versión» solo informativo (sin pedir recarga).
+ */
+async function pandiQuizasMostrarNovedadesVersionPostLogin() {
+  if (pandiReleaseModalActive) return;
+  if (pandiPwaRegistration && pandiPwaRegistration.waiting) return;
+  const blurb = await pandiFetchReleaseBlurbRemoto();
+  const v = blurb && blurb.versionLabel != null ? String(blurb.versionLabel).trim() : '';
+  const lines = (blurb && Array.isArray(blurb.lines) ? blurb.lines : [])
+    .map((l) => pandiNormalizarLineaReleaseUsuario(l))
+    .filter(Boolean);
+  if (!v || !lines.length) return;
+  if (pandiLeerReleaseAckVersion() === v) return;
+  pandiReleaseModalActive = true;
+  const msg = await pandiPwaNuevaVersionHtmlParaPrompt({ soloNovedades: true });
+  showConfirm(
+    msg,
+    'Entendido',
+    () => {
+      pandiReleaseModalActive = false;
+      pandiMarcarReleaseAckVersion(v);
+    },
+    () => {
+      pandiReleaseModalActive = false;
+      pandiMarcarReleaseAckVersion(v);
+    },
+    null,
+    'Nueva versión',
+    { html: true, ocultarCancelar: true },
+  );
 }
 
 /** Icono app 192×192: prod (cara clara) o dev/Preview (panda celeste) según `window.PANDI_ICON_192_DEFAULT` en config.js. */
@@ -20938,9 +21011,12 @@ function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar
   if (!backdrop || !texto || !btnAceptar || !btnCancelar) return;
   const opts = opciones && typeof opciones === 'object' ? opciones : null;
   const useHtml = !!(opts && opts.html === true);
+  const ocultarCancelar = !!(opts && opts.ocultarCancelar === true);
   const modalRoot = backdrop.querySelector('.modal.modal-confirm');
   if (modalRoot) modalRoot.classList.toggle('modal-confirm--release', useHtml);
   texto.classList.toggle('modal-confirm-texto--rich', useHtml);
+  btnCancelar.hidden = ocultarCancelar;
+  btnCancelar.setAttribute('aria-hidden', ocultarCancelar ? 'true' : 'false');
   if (useHtml) texto.innerHTML = mensaje;
   else texto.textContent = mensaje;
   if (titulo) titulo.textContent = (tituloModal !== undefined && tituloModal !== null && tituloModal !== '') ? tituloModal : 'Confirmar';
@@ -20957,6 +21033,8 @@ function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar
     if (modalRoot) modalRoot.classList.remove('modal-confirm--release');
     btnAceptar.onclick = null;
     btnCancelar.onclick = null;
+    btnCancelar.hidden = false;
+    btnCancelar.setAttribute('aria-hidden', 'false');
     btnCerrar.onclick = null;
     if (backdrop._confirmMousedown) backdrop.removeEventListener('mousedown', backdrop._confirmMousedown, true);
     if (backdrop._confirmAbort) backdrop.removeEventListener('click', backdrop._confirmAbort, true);
@@ -36056,6 +36134,9 @@ async function finalizeSessionUiSetup() {
   if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
   refreshDataIntervalId = setInterval(refreshCurrentViewData, REFRESH_DATA_INTERVAL_MS);
   setTimeout(() => pandiRefreshOfflineCatalogosCache(), 400);
+  setTimeout(() => {
+    void pandiQuizasMostrarNovedadesVersionPostLogin();
+  }, 900);
 }
 
 function onSessionReady(session, sessionOpts) {
@@ -36242,23 +36323,28 @@ client.auth.getSession().then(({ data: { session } }) => {
 try {
   import('virtual:pwa-register')
     .then(({ registerSW }) => {
-      let pwaPromptActive = false;
-      let pwaReg = null;
       let pwaCheckDebounceTimer = null;
 
       async function showPwaUpdateConfirm() {
-        if (pwaPromptActive) return;
-        pwaPromptActive = true;
+        if (pandiReleaseModalActive) return;
+        pandiReleaseModalActive = true;
         const msg = await pandiPwaNuevaVersionHtmlParaPrompt();
         showConfirm(
           msg,
           'Recargar',
-          () => {
-            pwaPromptActive = false;
+          async () => {
+            pandiReleaseModalActive = false;
+            try {
+              const blurb = await pandiFetchReleaseBlurbRemoto();
+              const v = blurb && blurb.versionLabel != null ? String(blurb.versionLabel).trim() : '';
+              if (v) pandiMarcarReleaseAckVersion(v);
+            } catch (_) {
+              /* noop */
+            }
             void applyPwaUpdate(true);
           },
           () => {
-            pwaPromptActive = false;
+            pandiReleaseModalActive = false;
           },
           'Después',
           'Nueva versión',
@@ -36267,13 +36353,13 @@ try {
       }
 
       async function checkPwaUpdateFromServer() {
-        if (document.visibilityState !== 'visible' || !pwaReg) return;
+        if (document.visibilityState !== 'visible' || !pandiPwaRegistration) return;
         try {
-          await pwaReg.update();
+          await pandiPwaRegistration.update();
         } catch (_) {
           /* sin red o SW no disponible */
         }
-        if (pwaReg.waiting) void showPwaUpdateConfirm();
+        if (pandiPwaRegistration.waiting) void showPwaUpdateConfirm();
       }
 
       function schedulePwaUpdateCheck() {
@@ -36297,7 +36383,7 @@ try {
         },
         onRegistered(reg) {
           if (!reg) return;
-          pwaReg = reg;
+          pandiPwaRegistration = reg;
           document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') schedulePwaUpdateCheck();
           });
