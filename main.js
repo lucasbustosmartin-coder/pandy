@@ -80,22 +80,70 @@ const PANDI_RELEASE_ACK_KEY = 'pandi_release_notes_ack_v';
 let pandiReleaseModalActive = false;
 /** Registro SW PWA (vite-plugin-pwa); null hasta `onRegistered`. */
 let pandiPwaRegistration = null;
+/** Caché en memoria por sesión; `null` = aún no se consultó Supabase. */
+let pandiReleaseAckVersionCache = null;
 
-function pandiLeerReleaseAckVersion() {
+function pandiResetReleaseAckCache() {
+  pandiReleaseAckVersionCache = null;
+}
+
+function pandiReleaseAckLocalStorageKey() {
+  const uid = currentUserId ? String(currentUserId) : '';
+  return uid ? `${PANDI_RELEASE_ACK_KEY}_${uid}` : PANDI_RELEASE_ACK_KEY;
+}
+
+function pandiLeerReleaseAckVersionLocal() {
   try {
-    return String(localStorage.getItem(PANDI_RELEASE_ACK_KEY) || '').trim();
+    return String(localStorage.getItem(pandiReleaseAckLocalStorageKey()) || '').trim();
   } catch (_) {
     return '';
   }
 }
 
-function pandiMarcarReleaseAckVersion(versionLabel) {
+function pandiMarcarReleaseAckVersionLocal(versionLabel) {
   const v = String(versionLabel || '').trim();
   if (!v) return;
   try {
-    localStorage.setItem(PANDI_RELEASE_ACK_KEY, v);
+    localStorage.setItem(pandiReleaseAckLocalStorageKey(), v);
   } catch (_) {
     /* noop */
+  }
+}
+
+/** Última versión de novedades confirmada por el usuario (Supabase; respaldo local por user_id). */
+async function pandiLeerReleaseAckVersionAsync() {
+  if (pandiReleaseAckVersionCache !== null) return pandiReleaseAckVersionCache;
+  const local = pandiLeerReleaseAckVersionLocal();
+  if (!currentUserId) {
+    pandiReleaseAckVersionCache = local;
+    return local;
+  }
+  try {
+    const r = await client.rpc('get_my_release_ack_version');
+    if (!r.error && r.data != null && String(r.data).trim()) {
+      pandiReleaseAckVersionCache = String(r.data).trim();
+      pandiMarcarReleaseAckVersionLocal(pandiReleaseAckVersionCache);
+      return pandiReleaseAckVersionCache;
+    }
+  } catch (_) {
+    /* sin red */
+  }
+  pandiReleaseAckVersionCache = local;
+  return local;
+}
+
+async function pandiMarcarReleaseAckVersionAsync(versionLabel) {
+  const v = String(versionLabel || '').trim();
+  if (!v) return;
+  pandiReleaseAckVersionCache = v;
+  pandiMarcarReleaseAckVersionLocal(v);
+  if (!currentUserId) return;
+  try {
+    await client.rpc('set_my_release_ack_version', { p_version_label: v });
+  } catch (e) {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[Pandi] set_my_release_ack_version:', e && e.message ? e.message : e);
+    }
   }
 }
 
@@ -192,7 +240,8 @@ async function pandiQuizasMostrarNovedadesVersionPostLogin() {
     .map((l) => pandiNormalizarLineaReleaseUsuario(l))
     .filter(Boolean);
   if (!v || !lines.length) return;
-  if (pandiLeerReleaseAckVersion() === v) return;
+  const ack = await pandiLeerReleaseAckVersionAsync();
+  if (ack === v) return;
   pandiReleaseModalActive = true;
   const msg = await pandiPwaNuevaVersionHtmlParaPrompt({ soloNovedades: true });
   showConfirm(
@@ -200,11 +249,11 @@ async function pandiQuizasMostrarNovedadesVersionPostLogin() {
     'Entendido',
     () => {
       pandiReleaseModalActive = false;
-      pandiMarcarReleaseAckVersion(v);
+      void pandiMarcarReleaseAckVersionAsync(v);
     },
     () => {
       pandiReleaseModalActive = false;
-      pandiMarcarReleaseAckVersion(v);
+      void pandiMarcarReleaseAckVersionAsync(v);
     },
     null,
     'Nueva versión',
@@ -36036,7 +36085,10 @@ async function finalizeSessionUiSetup() {
     if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
     refreshDataIntervalId = null;
     ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach((ev) => document.removeEventListener(ev, updateSessionActivity));
-    client.auth.signOut().then(() => showLogin());
+    client.auth.signOut().then(() => {
+      pandiResetReleaseAckCache();
+      showLogin();
+    });
   });
 
   const btnRefresh = document.getElementById('btn-refresh');
@@ -36160,6 +36212,7 @@ function onSessionReady(session, sessionOpts) {
   sessionOpts = sessionOpts || {};
   currentUserEmail = session.user.email || '';
   currentUserId = session.user.id;
+  pandiResetReleaseAckCache();
   lastActivityTime = Date.now();
   const loginErr = document.getElementById('login-error');
   ensureProfile(session)
@@ -36354,7 +36407,7 @@ try {
             try {
               const blurb = await pandiFetchReleaseBlurbRemoto();
               const v = blurb && blurb.versionLabel != null ? String(blurb.versionLabel).trim() : '';
-              if (v) pandiMarcarReleaseAckVersion(v);
+              if (v) void pandiMarcarReleaseAckVersionAsync(v);
             } catch (_) {
               /* noop */
             }
