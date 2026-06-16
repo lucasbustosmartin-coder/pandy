@@ -10652,7 +10652,7 @@ function mcEmitirPrestamoGemeloReglaBPandyMonrChequeArsConInter(orden, transacci
  * egreso ejecutado con cobrador = cliente del acuerdo en monE (pagador Pandy u otro cliente): −m (Pago realizado) +m (ajuste libro acuerdo) en CC del acuerdo. Cruce USD-ARS/ARS-USD sin int. con ingreso Pandy→cliente en monR (ejecutado o pendiente) + egreso Pandy→cliente en monE: el **−m** «Pago realizado» lleva leyenda «Pandy cumple pata en moneda entregada» y el **+m** «Ajuste libro acuerdo» misma transacción (neteo cero en monE en el libro del acuerdo, misma semántica que el par clásico); si pagador es otro cliente, también −m (Cobro realizado) en su CC.
  * Resto de clientes y egresos/ingresos ejecutados: movimientos por entidad. Intermediario: delega en aplicarCcMulticontraparteManualTrx.
  */
-function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt, fallbackUId) {
+function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt, fallbackUId, modosMapMc) {
   const lista = transacciones || [];
 
   const cidAcuerdo = orden.cliente_id || null;
@@ -10700,7 +10700,36 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
     const feMc = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(t, fecha, ahora);
 
     if (pag === 'intermediario' || cob === 'intermediario') {
-      aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, feMc.fecha, feMc.estado_fecha, rowsCcCliente, rowsCcInt, fallbackUId, lista);
+      const resChequeIntMc = resolverCcIntChequeArsPataPandyInterEnMc(t, orden, lista, modosMapMc);
+      if (resChequeIntMc === 'omit') return;
+      if (resChequeIntMc === 'pago_nominal') {
+        inyectarCcIntChequeArsPagoRealizadoNominalPataPandyInter(
+          t,
+          orden,
+          ordenId,
+          ordenNumero,
+          feMc.fecha,
+          feMc.estado_fecha,
+          rowsCcInt,
+          fallbackUId,
+          modosMapMc,
+          lista,
+        );
+        return;
+      }
+      aplicarCcMulticontraparteManualTrx(
+        t,
+        orden,
+        ordenId,
+        ordenNumero,
+        feMc.fecha,
+        feMc.estado_fecha,
+        rowsCcCliente,
+        rowsCcInt,
+        fallbackUId,
+        lista,
+        modosMapMc,
+      );
       return;
     }
 
@@ -11190,8 +11219,21 @@ function aplicarCcMulticontraparteManualConciliacionCompleta(transacciones, orde
 /**
  * CC por transacción (instrumentación multicontraparte manual), una sola trx: usado para patas con intermediario y delegación interna.
  * @param {object[]|null|undefined} [transaccionesOrdenMc] — lista instrumentación (evita duplicar −m con regla B pendiente P→C monR vs I→C monE misma moneda).
+ * @param {Object|null|undefined} [modosMapMc] — mapa modo_pago_id→codigo (CHEQUE-ARS + int. pata P↔I).
  */
-function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fecha, ahora, rowsCcCliente, rowsCcInt, fallbackUId, transaccionesOrdenMc) {
+function aplicarCcMulticontraparteManualTrx(
+  t,
+  orden,
+  ordenId,
+  ordenNumero,
+  fecha,
+  ahora,
+  rowsCcCliente,
+  rowsCcInt,
+  fallbackUId,
+  transaccionesOrdenMc,
+  modosMapMc,
+) {
   const tNorm = transaccionNormalizarPagCobVacios(t);
   const finalUId = tNorm.usuario_id || tNorm.p_usuario_id || fallbackUId || null;
   const monto = Number(tNorm.monto) || 0;
@@ -11343,6 +11385,24 @@ function aplicarCcMulticontraparteManualTrx(t, orden, ordenId, ordenNumero, fech
       });
     }
   }
+  const resChequeIntMcTrx = resolverCcIntChequeArsPataPandyInterEnMc(tNorm, orden, transaccionesOrdenMc, modosMapMc);
+  if (resChequeIntMcTrx === 'omit') return;
+  if (resChequeIntMcTrx === 'pago_nominal') {
+    inyectarCcIntChequeArsPagoRealizadoNominalPataPandyInter(
+      tNorm,
+      orden,
+      ordenId,
+      ordenNumero,
+      fecha,
+      ahora,
+      rowsCcInt,
+      fallbackUId,
+      modosMapMc,
+      transaccionesOrdenMc,
+    );
+    return;
+  }
+
   const iidPag = idInterPagadorEfectivoMulticontraparte(tNorm, orden);
   if (iidPag) {
     rowsCcInt.push({
@@ -13959,6 +14019,18 @@ function garantizarFilaComisionSpreadChequeArsClienteCabeceraMrMeSiFalta(
   if (!Array.isArray(rowsCcCliente) || !orden || !clienteId || !ordenId || ordenAnuladaSync) return;
   if (!esSyncOrdenChequeArsConIntermediario(orden, codigoOrdenRaw, toJoin)) return;
   if (ccClienteTieneFilaComisionDelAcuerdoSintetica(rowsCcCliente, ordenId, clienteId)) return;
+  if (
+    chequeArsIntOmitirComisionSinteticaClienteMcDesvioPagCob(
+      orden,
+      transacciones,
+      true,
+      modosMap,
+      codigoOrdenRaw,
+      toJoin,
+    )
+  ) {
+    return;
+  }
   let mr = Number(orden.monto_recibido) || 0;
   const me = Number(orden.monto_entregado) || 0;
   const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones, modosMap, orden);
@@ -14052,7 +14124,16 @@ function aplicarSyncUnicoChequeArs(fase, ctx) {
       const monSynthFb = String(
         monedaCatalogoParaOrden(comisionPandyMon || orden.moneda_recibida) || comisionPandyMon || orden.moneda_recibida || 'ARS',
       ).toUpperCase();
-      if (clienteId && montoComisionCcClienteChequeFb >= 1e-6) {
+      const omitComisionMcDesvioPre =
+        chequeArsIntOmitirComisionSinteticaClienteMcDesvioPagCob(
+          orden,
+          transacciones,
+          usarMulticontraparteSync,
+          modosMap,
+          codigoOrdenRaw,
+          toJoin,
+        );
+      if (clienteId && montoComisionCcClienteChequeFb >= 1e-6 && !omitComisionMcDesvioPre) {
         rowsCcCliente.push({
           cliente_id: clienteId,
           orden_id: ordenId,
@@ -14179,6 +14260,15 @@ function aplicarSyncUnicoChequeArs(fase, ctx) {
   if (fase === 'post_dedupe') {
     if (!clienteId || !Array.isArray(rowsCcClienteUnicos) || ordenAnuladaSync) return;
     if (!esSyncOrdenChequeArsConIntermediario(orden, codigoOrdenRaw, toJoin)) return;
+    const omitComisionMcDesvioPost = chequeArsIntOmitirComisionSinteticaClienteMcDesvioPagCob(
+      orden,
+      transacciones,
+      usarMulticontraparteSync,
+      modosMap,
+      codigoOrdenRaw,
+      toJoin,
+    );
+    if (omitComisionMcDesvioPost) return;
     inyectarFilaComisionAcuerdoCcClienteDesdeComisionesOrdenSiFaltaChequeArs({
       rowsCcClienteUnicos,
       orden,
@@ -14405,6 +14495,257 @@ function ordenChequeArsIntExentoInvarianteNeteoCcPorFlipPagCobCliente(orden, tra
     const { pag, cob } = pagCobEfectivosTransaccionSync(t);
     const mon = String(monedaCatalogoParaOrden(t.moneda) || t.moneda || '').toUpperCase();
     return pag === 'pandy' && cob === 'cliente' && mon === monRCat;
+  });
+}
+
+/** Modos pago desde mapa id→codigo del sync (para `pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo`). */
+function modosRowsDesdeModosMapSync(modosMap) {
+  if (!modosMap || typeof modosMap !== 'object') return [];
+  return Object.keys(modosMap).map((id) => ({ id, codigo: modosMap[id] }));
+}
+
+/** Contexto tipo operación CHEQUE-ARS en sync MC (embed + `_syncToJoin` / `_syncCodigoOrdenRaw` en `sincronizarCcYCajaDesdeOrden`). */
+function chequeArsIntSyncCtxFromOrden(orden) {
+  const toJoin =
+    (orden && orden._syncToJoin && typeof orden._syncToJoin === 'object' ? orden._syncToJoin : null) ||
+    (orden &&
+      orden.tipos_operacion &&
+      (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion)) ||
+    {};
+  const codRaw =
+    (orden && orden._syncCodigoOrdenRaw != null && String(orden._syncCodigoOrdenRaw).trim() !== ''
+      ? String(orden._syncCodigoOrdenRaw).trim()
+      : null) ||
+    (toJoin && toJoin.codigo != null ? String(toJoin.codigo).trim() : '') ||
+    '';
+  return { toJoin, codRaw };
+}
+
+/**
+ * CHEQUE-ARS + int. pata Pandy↔Intermediario en MC: `omit` (flip Tx4 sin fila CC), `pago_nominal` (+mr), `null` (genérico).
+ * @returns {'omit'|'pago_nominal'|null}
+ */
+function resolverCcIntChequeArsPataPandyInterEnMc(t, orden, transacciones, modosMap) {
+  const { toJoin, codRaw } = chequeArsIntSyncCtxFromOrden(orden);
+  if (!esSyncOrdenChequeArsConIntermediario(orden, codRaw, toJoin)) return null;
+  if (chequeArsIntTrxEsFlipPagCobPataTx4PandyInterEfectivo(t, orden, transacciones, modosMap)) {
+    const hayTx3Canon = (transacciones || []).some((x) =>
+      chequeArsIntTrxEsCanonicaTx3PandyInterChequeEgreso(x, orden, transacciones, modosMap),
+    );
+    return hayTx3Canon ? 'omit' : 'pago_nominal';
+  }
+  if (
+    chequeArsIntTrxEsCanonicaTx3PandyInterChequeEgreso(t, orden, transacciones, modosMap) ||
+    chequeArsIntTrxEsFlipPagCobPataTx3PandyInterCheque(t, orden, transacciones, modosMap)
+  ) {
+    return 'pago_nominal';
+  }
+  return null;
+}
+
+/**
+ * CHEQUE-ARS + intermediario, misma fiat: con MC activo por **desvío vivo** pag/cob (derivación en memoria o flag legado
+ * durante el desvío), la sintética cliente «Comisión del acuerdo» (+spread) **no** debe inyectarse: las patas MC ya
+ * reflejan mr/me y +spread falsearía el saldo (p. ej. egreso P→C flip a C→P). Al revertir plantilla vuelve el motor
+ * canónico con +spread. Con compensación flip ingreso (`compensacion_cc_monto_aplicado`) rige la rama aparte.
+ * @returns {boolean}
+ */
+function chequeArsIntOmitirComisionSinteticaClienteMcDesvioPagCob(
+  orden,
+  transacciones,
+  usarMulticontraparteSync,
+  modosMapOrRows,
+  codigoOrdenRaw,
+  toJoin,
+) {
+  if (!usarMulticontraparteSync) return false;
+  if (!esSyncOrdenChequeArsConIntermediario(orden, codigoOrdenRaw, toJoin)) return false;
+  if (transaccionesListTieneCompensacionCcMontoAplicado(transacciones)) return false;
+  const modosRows = Array.isArray(modosMapOrRows) ? modosMapOrRows : modosRowsDesdeModosMapSync(modosMapOrRows);
+  if (!modosRows.length) return false;
+  return !!pandiDesvioPagadorCobradorPlantillaInstrumentacionVivo(orden, toJoin || {}, transacciones, modosRows);
+}
+
+/**
+ * CHEQUE-ARS + int.: Tx3 canónica — egreso Pandy→Intermediario, monto nominal **mr** (cheque).
+ * @returns {boolean}
+ */
+function chequeArsIntTrxEsCanonicaTx3PandyInterChequeEgreso(t, orden, transacciones, modosMap) {
+  if (!orden || !orden.intermediario_id) return false;
+  const { toJoin, codRaw } = chequeArsIntSyncCtxFromOrden(orden);
+  if (!esSyncOrdenTipoChequeArs(orden, codRaw || null, toJoin)) return false;
+  const tNorm = transaccionNormalizarPagCobVacios(t);
+  const st = transaccionEstadoTextoNormalizado(tNorm);
+  if (st !== 'ejecutada' && st !== 'pendiente') return false;
+  const tipo = (tNorm.tipo || '').toLowerCase();
+  const { pag, cob } = pagCobEfectivosTransaccionSync(tNorm);
+  if (tipo !== 'egreso' || pag !== 'pandy' || cob !== 'intermediario') return false;
+  let mr = Number(orden.monto_recibido) || 0;
+  const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones || [], modosMap, orden);
+  if (mrNom >= 1e-6) mr = mrNom;
+  if (mr < 1e-6) return false;
+  const m = Math.abs(Number(tNorm.monto) || 0);
+  const ref = Math.max(1, mr, m);
+  return Math.abs(m - mr) <= 0.02 * ref;
+}
+
+/**
+ * CHEQUE-ARS + int.: flip de **Tx4** (plantilla ingreso Intermediario→Pandy / efectivo **me**): en vez de que el
+ * intermediario pague a Pandy, **Pandy→Intermediario** (ingreso o egreso con roles invertidos). El monto en la trx
+ * suele ser **me**, **monto_efectivo_intermediario** o **mr − comisión intermediario** (p. ej. 34.125.000).
+ * **No** genera fila CC int. propia: la deuda queda **+mr − comisión** vía Tx3 canónica + sintética comisión.
+ * @returns {boolean}
+ */
+function chequeArsIntTrxEsFlipPagCobPataTx4PandyInterEfectivo(t, orden, transacciones, modosMap) {
+  if (!orden || !orden.intermediario_id) return false;
+  const { toJoin, codRaw } = chequeArsIntSyncCtxFromOrden(orden);
+  if (!esSyncOrdenTipoChequeArs(orden, codRaw || null, toJoin)) return false;
+  const tNorm = transaccionNormalizarPagCobVacios(t);
+  const st = transaccionEstadoTextoNormalizado(tNorm);
+  if (st !== 'ejecutada' && st !== 'pendiente') return false;
+  const tipo = (tNorm.tipo || '').toLowerCase();
+  const { pag, cob } = pagCobEfectivosTransaccionSync(tNorm);
+  /** Canónica Tx4: ingreso Intermediario→Pandy */
+  if (tipo === 'ingreso' && pag === 'intermediario' && cob === 'pandy') return false;
+  /** Canónica Tx3: egreso Pandy→Intermediario (otro helper) */
+  if (tipo === 'egreso' && pag === 'pandy' && cob === 'intermediario') return false;
+  if (pag !== 'pandy' || cob !== 'intermediario') return false;
+  let mr = Number(orden.monto_recibido) || 0;
+  const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones || [], modosMap, orden);
+  if (mrNom >= 1e-6) mr = mrNom;
+  const me = Number(orden.monto_entregado) || 0;
+  const meInt = montoEfectivoIntermediarioChequeArsDesdeOrden(orden, mr);
+  const m = Math.abs(Number(tNorm.monto) || 0);
+  if (m < 1e-6) return false;
+  const ref = Math.max(1, mr, me, meInt, m);
+  const near = (a, b) => Math.abs(a - b) <= 0.02 * Math.max(1, Math.abs(a), Math.abs(b));
+  if (near(m, me) || near(m, meInt)) return true;
+  const tasaFrac = tasaDescuentoIntermediarioFraccionSync(orden.tasa_descuento_intermediario);
+  const comIntEst =
+    tasaFrac != null && tasaFrac > 1e-12 && tasaFrac < 1 ? mr * tasaFrac : Math.max(0, mr - me);
+  if (comIntEst >= 1e-6 && near(m, mr - comIntEst)) return true;
+  return false;
+}
+
+/**
+ * CHEQUE-ARS + int.: flip legacy pata cheque **mr** distinta de Tx3 canónica y distinta de flip Tx4 (p. ej. egreso I→P).
+ * @returns {boolean}
+ */
+function chequeArsIntTrxEsFlipPagCobPataTx3PandyInterCheque(t, orden, transacciones, modosMap) {
+  if (chequeArsIntTrxEsCanonicaTx3PandyInterChequeEgreso(t, orden, transacciones, modosMap)) return false;
+  if (chequeArsIntTrxEsFlipPagCobPataTx4PandyInterEfectivo(t, orden, transacciones, modosMap)) return false;
+  if (!orden || !orden.intermediario_id) return false;
+  const { toJoin, codRaw } = chequeArsIntSyncCtxFromOrden(orden);
+  if (!esSyncOrdenTipoChequeArs(orden, codRaw || null, toJoin)) return false;
+  const tNorm = transaccionNormalizarPagCobVacios(t);
+  const st = transaccionEstadoTextoNormalizado(tNorm);
+  if (st !== 'ejecutada' && st !== 'pendiente') return false;
+  const tipo = (tNorm.tipo || '').toLowerCase();
+  const { pag, cob } = pagCobEfectivosTransaccionSync(tNorm);
+  if (!((pag === 'pandy' && cob === 'intermediario') || (pag === 'intermediario' && cob === 'pandy'))) return false;
+  if (tipo === 'egreso' && pag === 'pandy' && cob === 'intermediario') return false;
+  let mr = Number(orden.monto_recibido) || 0;
+  const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones || [], modosMap, orden);
+  if (mrNom >= 1e-6) mr = mrNom;
+  if (mr < 1e-6) return false;
+  const m = Math.abs(Number(tNorm.monto) || 0);
+  const ref = Math.max(1, mr, m);
+  return Math.abs(m - mr) <= 0.02 * ref;
+}
+
+/**
+ * CHEQUE-ARS + int.: `par_pandy_int` para comisión intermediario — cuenta flip ejecutado de pata cheque **mr** (Tx3).
+ * @returns {'ejecutada'|'pendiente'}
+ */
+function estadoEfectivoComisionChequeArsParPandyInt(transacciones, orden, modosMap) {
+  const hayTx3Canon = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'egreso' &&
+      String(t.pagador || '').toLowerCase() === 'pandy' &&
+      String(t.cobrador || '').toLowerCase() === 'intermediario' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  const hayTx4Canon = (transacciones || []).some(
+    (t) =>
+      (t.tipo || '').toLowerCase() === 'ingreso' &&
+      String(t.pagador || '').toLowerCase() === 'intermediario' &&
+      String(t.cobrador || '').toLowerCase() === 'pandy' &&
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada',
+  );
+  if (hayTx3Canon || hayTx4Canon) return 'ejecutada';
+  const hayFlipTx4Ejecutado = (transacciones || []).some(
+    (t) =>
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada' &&
+      chequeArsIntTrxEsFlipPagCobPataTx4PandyInterEfectivo(t, orden, transacciones, modosMap),
+  );
+  if (hayFlipTx4Ejecutado) return 'ejecutada';
+  const hayFlipTx3Ejecutado = (transacciones || []).some(
+    (t) =>
+      transaccionEstadoTextoNormalizado(t) === 'ejecutada' &&
+      chequeArsIntTrxEsFlipPagCobPataTx3PandyInterCheque(t, orden, transacciones, modosMap),
+  );
+  if (hayFlipTx3Ejecutado) return 'ejecutada';
+  const hayInstrumentacionPandyInt = (transacciones || []).some((t) => {
+    const tipo = (t.tipo || '').toLowerCase();
+    const pag = String(t.pagador || '').toLowerCase();
+    const cob = String(t.cobrador || '').toLowerCase();
+    return (tipo === 'egreso' && pag === 'pandy' && cob === 'intermediario') || (tipo === 'ingreso' && pag === 'intermediario' && cob === 'pandy');
+  });
+  if (hayInstrumentacionPandyInt) return 'pendiente';
+  const tx1 = ingresoDesdeClienteHaciaPandyOIntermediarioEjecutado(transacciones);
+  const tx2 = egresoEntregaAClienteEjecutado(transacciones);
+  return tx1 && tx2 ? 'ejecutada' : 'pendiente';
+}
+
+/**
+ * CC intermediario CHEQUE-ARS: **+mr** «Pago realizado» (Tx3 canónica o flip sin Tx3 previa).
+ */
+function inyectarCcIntChequeArsPagoRealizadoNominalPataPandyInter(
+  t,
+  orden,
+  ordenId,
+  ordenNumero,
+  fecha,
+  ahora,
+  rowsCcInt,
+  fallbackUId,
+  modosMap,
+  transacciones,
+) {
+  const intId = orden.intermediario_id;
+  if (!intId || !ordenId) return;
+  const tNorm = transaccionNormalizarPagCobVacios(t);
+  const estadoMc = transaccionEstadoTextoNormalizado(tNorm);
+  const ordenAnuladaMc = String(orden.estado || '').toLowerCase() === 'anulada';
+  const estadoFilaCc = ordenAnuladaMc
+    ? 'anulado'
+    : estadoMc === 'ejecutada'
+      ? 'cerrado'
+      : estadoMc === 'pendiente'
+        ? 'pendiente'
+        : estadoMc === 'anulada'
+          ? 'anulado'
+          : 'cerrado';
+  let mr = Number(orden.monto_recibido) || 0;
+  const mrNom = montoNominalIngresoAcuerdoChequeArsParaCc(transacciones || [], modosMap, orden);
+  if (mrNom >= 1e-6) mr = mrNom;
+  if (mr < 1e-6) return;
+  const mon = String(monedaCatalogoParaOrden(tNorm.moneda) || tNorm.moneda || 'ARS').toUpperCase();
+  const nro = tNorm.numero != null ? tNorm.numero : null;
+  const finalUId = tNorm.usuario_id || tNorm.p_usuario_id || fallbackUId || null;
+  rowsCcInt.push({
+    intermediario_id: intId,
+    orden_id: ordenId,
+    transaccion_id: tNorm.id,
+    transaccion_numero: nro,
+    moneda: mon,
+    monto: mr,
+    concepto: conceptoCcLeyenda('pago_realizado', ordenNumero, nro),
+    fecha,
+    usuario_id: finalUId,
+    estado: estadoFilaCc,
+    estado_fecha: ahora,
+    ...montosCcPorMoneda(mon, mr),
   });
 }
 
@@ -14762,19 +15103,6 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
   const spreadUsdUsd = mr - me;
   const codOpMotor = String(tipoOperacionCodigo || '').toUpperCase();
   const esUsdUsd = codOpMotor === 'USD-USD';
-  const toJoinMotorFlip =
-    orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
-  const codTipoCatMotorFlip =
-    (toJoinMotorFlip && toJoinMotorFlip.codigo) != null ? toJoinMotorFlip.codigo : tipoOperacionCodigo;
-  const esChequeArsIntMotorCc =
-    !!intermediarioId &&
-    (codOpMotor === 'CHEQUE-ARS' ||
-      codOpMotor.startsWith('CHEQUE-ARS') ||
-      esTipoOperacionChequeArsMatrizReglasCc(
-        codTipoCatMotorFlip,
-        toJoinMotorFlip && toJoinMotorFlip.moneda_in,
-        toJoinMotorFlip && toJoinMotorFlip.moneda_out,
-      ));
   /** ci_pc: el egreso P→C es bilateral Pandy–cliente; no debe figurar en CC intermediario (el +mr del C→I ya ancla el flujo frente al int.; −me duplicaba y rompía el saldo vs deudas previas). */
   const patronUsdIntMotor = esUsdUsd && intermediarioId
     ? patronInstrumentacionIntDesdeTransacciones(transacciones, {
@@ -14789,6 +15117,31 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     const montoT = Number(t.monto) || 0;
     const tNorm = transaccionNormalizarPagCobVacios(t);
     const { pag, cob } = pagCobEfectivosTransaccionSync(tNorm);
+    if (intermediarioId && (pag === 'intermediario' || cob === 'intermediario')) {
+      const resChequeIntMotor = resolverCcIntChequeArsPataPandyInterEnMc(
+        tNorm,
+        orden,
+        transacciones,
+        modosMapMotorCc,
+      );
+      if (resChequeIntMotor === 'omit') return;
+      if (resChequeIntMotor === 'pago_nominal') {
+        const feChequeInt = fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion(tNorm, fecha, ahora);
+        inyectarCcIntChequeArsPagoRealizadoNominalPataPandyInter(
+          tNorm,
+          orden,
+          ordenId,
+          orden.numero,
+          feChequeInt.fecha,
+          feChequeInt.estado_fecha,
+          rowsCcInt,
+          usuarioIdMovimientoCcDesdeTransaccionOOrden(tNorm, orden),
+          modosMapMotorCc,
+          transacciones,
+        );
+        return;
+      }
+    }
     // Instrumentación USD-USD: el ingreso de cobro lleva monto = mr (acuerdo). `comisiones_orden` solo reparte el spread (Pandy/int.); si existiera otra fila ingreso con monto = parte Pandy de ese reparto, no duplicar aquí movimientos por transacción (la comisión implícita cliente sale de la fila `es_comision` + `mr_menos_me` en reglas, bloque más abajo). El cobro principal tiene siempre monto ≈ mr; solo omitir cuando el monto coincide con la parte Pandy y es claramente menor que mr (no es el cobro nominal).
     if (
       comM >= 1e-6 &&
@@ -14895,31 +15248,25 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       ? 'anulado'
       : (estado === 'ejecutada' ? 'cerrado' : (estado === 'anulada' ? 'anulado' : 'pendiente'));
     const codOp = String(tipoOperacionCodigo || '').toUpperCase();
+    /** CHEQUE-ARS+int no usa `todoParClientePendienteChequeArsIntParaAlinearCcMotor` ni el par +mr/−me de cruces/USD-USD (ver `docs/CHEQUE_ARS_INTERMEDIARIO.md`). */
     const todoParCliIntAlinearCc =
-      todoParClientePendienteConIntParaAlinearCcMotor(codOp, intermediarioId, transacciones) ||
-      (esChequeArsIntMotorCc && todoParClientePendienteChequeArsIntParaAlinearCcMotor(intermediarioId, transacciones));
+      todoParClientePendienteConIntParaAlinearCcMotor(codOp, intermediarioId, transacciones);
     /** E,P **ci_pc**: con ingreso C→I ya ejecutado, `contrapartida` pasa a true en el egreso P→C pendiente y el bloque de inyección quedaba cortado por `!contrapartida` → dos «Compromiso de Pago» (+mr y −me). */
     const patronIntCcInyeccionCompromiso = patronInstrumentacionIntDesdeTransacciones(transacciones, {
       orden,
       comisionPandyMonto: comM,
       aplicarFiltroIngresoComisionClientePandy: true,
     });
-    /** **ci_pc** egreso **Pandy→Cliente**: la matriz puede duplicar patas o colapsar a +|trx|; en **USD-USD** el motor reinyecta el par canónico **+mr / −me** (misma `transaccion_id`) en pendiente y ejecutada. CHEQUE-ARS+int (Tx2 P→C): misma inyección sin depender del patrón cp_ic/ci_pc de 2 patas. */
+    /** **ci_pc** egreso **Pandy→Cliente**: la matriz puede duplicar patas o colapsar a +|trx|; en **USD-USD** el motor reinyecta el par canónico **+mr / −me** (misma `transaccion_id`) en pendiente y ejecutada. **CHEQUE-ARS+int** usa solo `reglas_de_negocio` (`compromiso_pago` + `monto_transaccion`); no entra aquí. */
     const inyeccionCompromisoUnaLineaCiPcEgresoPandy =
-      ((codOp === 'USD-USD' || codOp === 'USD-ARS' || codOp === 'ARS-USD') &&
-        !!intermediarioId &&
-        patronIntCcInyeccionCompromiso === 'ci_pc' &&
-        tipo === 'egreso' &&
-        (estado === 'pendiente' || estado === 'ejecutada') &&
-        pag === 'pandy' &&
-        cob === 'cliente' &&
-        !!clienteId) ||
-      (esChequeArsIntMotorCc &&
-        tipo === 'egreso' &&
-        (estado === 'pendiente' || estado === 'ejecutada') &&
-        pag === 'pandy' &&
-        cob === 'cliente' &&
-        !!clienteId);
+      (codOp === 'USD-USD' || codOp === 'USD-ARS' || codOp === 'ARS-USD') &&
+      !!intermediarioId &&
+      patronIntCcInyeccionCompromiso === 'ci_pc' &&
+      tipo === 'egreso' &&
+      (estado === 'pendiente' || estado === 'ejecutada') &&
+      pag === 'pandy' &&
+      cob === 'cliente' &&
+      !!clienteId;
     const monEOrdMotor = String(orden.moneda_entregada || 'USD').toUpperCase();
     /** Misma pata monE (+ ajuste) vía atajo que con egreso ejecutado: si solo exigíamos `ejecutada`, P,P usaba reglas crudas y el detalle CC no coincidía con E,E. */
     const crucesSinIntDoblePataBp =
@@ -15136,19 +15483,12 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         regsClienteCompromisoPago.length >= 1 &&
         !soloDosMontoTransaccionSignosOpuestos &&
         !regsClienteCompromisoPagoSoloMe;
-      const colapsarChequeArsEgresoClienteCompromisoPago =
-        esChequeArsIntMotorCc &&
-        inyeccionCompromisoUnaLineaCiPcEgresoPandy &&
-        regsClienteCompromisoPago.length >= 1 &&
-        !soloDosMontoTransaccionSignosOpuestos &&
-        !regsClienteCompromisoPagoSoloMe;
       const colapsarCompromisoPagoClienteEgresoCiPc =
         tieneClienteMrMePago ||
         (inyeccionCompromisoUnaLineaCiPcEgresoPandy &&
           regsClienteCompromisoPago.length >= 2 &&
           !soloDosMontoTransaccionSignosOpuestos) ||
-        colapsarUsdUsdCiPcEgresoClienteCompromisoPago ||
-        colapsarChequeArsEgresoClienteCompromisoPago;
+        colapsarUsdUsdCiPcEgresoClienteCompromisoPago;
       if (colapsarCompromisoPagoClienteEgresoCiPc) {
         inyectarEgresoClienteCompromisoPagoUnaLinea = true;
         /** La inyección +|monto| ya sustituye el gross; excluir **toda** fila cliente `compromiso_pago` del iter (no solo mr/me), si no queda una segunda regla (p. ej. `monto_transacción` con −) y duplica ± el mismo concepto en CC. */
@@ -15164,8 +15504,9 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
     }
     const inyectarEgresoClienteCompromisoPagoDualMrMeUsdUsdCiPc =
       inyectarEgresoClienteCompromisoPagoUnaLinea &&
-      ((codOp === 'USD-USD' && patronIntCcInyeccionCompromiso === 'ci_pc' && inyeccionCompromisoUnaLineaCiPcEgresoPandy) ||
-        esChequeArsIntMotorCc) &&
+      codOp === 'USD-USD' &&
+      patronIntCcInyeccionCompromiso === 'ci_pc' &&
+      inyeccionCompromisoUnaLineaCiPcEgresoPandy &&
       mr >= 1e-12 &&
       me >= 1e-12;
     if (inyectarEgresoClienteCompromisoPagoDualMrMeUsdUsdCiPc && mr >= 1e-12 && me >= 1e-12) {
@@ -15740,7 +16081,22 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       ? fechaYEstadoFechaMovimientoCcCajaDesdeNumeroTransaccion(transacciones, nroTransComisionConceptoChequeArs, fecha, ahora)
       : fechaYEstadoFechaMovimientoCcCajaDesdeUltimaEjecutada(transacciones, fecha, ahora))
     : { fecha, estado_fecha: ahora };
-  if (esChequeArsMatrizCcMotor && clienteId && montoComisionLineaCcClienteCheque >= 1e-6) {
+  const omitirComisionSinteticaChequeMcDesvio =
+    soloComisiones &&
+    chequeArsIntOmitirComisionSinteticaClienteMcDesvioPagCob(
+      orden,
+      transacciones,
+      true,
+      modosMapMotorCc,
+      tipoOpReglasChequeCc,
+      toJoinMotorCc || {},
+    );
+  if (
+    esChequeArsMatrizCcMotor &&
+    clienteId &&
+    montoComisionLineaCcClienteCheque >= 1e-6 &&
+    !omitirComisionSinteticaChequeMcDesvio
+  ) {
     const parClienteCerrado = parClienteInstrumentacionChequeArsEjecutado(transacciones);
     const condicionPandy = getCondicionComisionReglasNegocio(reglasDeNegocio, tipoOpReglasChequeCc, 'cliente', 'pandy', 'ingreso');
     const estadoComPandy = condicionPandy
@@ -15818,8 +16174,10 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
   if (esChequeArsMatrizCcMotor && intermediarioId && !omitCcIntComisionChequeSpreadYaEnPar) {
     const condicion = getCondicionComisionReglasNegocio(reglasDeNegocio, tipoOpReglasChequeCc, 'pandy', 'intermediario', 'egreso');
     const estadoEf = condicion
-      ? estadoEfectivoComision(transacciones, condicion)
-      : estadoEfectivoComision(transacciones, 'par_pandy_int');
+      ? condicion === 'par_pandy_int'
+        ? estadoEfectivoComisionChequeArsParPandyInt(transacciones, orden, modosMapMotorCc)
+        : estadoEfectivoComision(transacciones, condicion)
+      : estadoEfectivoComisionChequeArsParPandyInt(transacciones, orden, modosMapMotorCc);
     const parIntCerrado = estadoEf === 'ejecutada';
     const reglaComInt = reglaComisionMotorPlantillaDetalle(
       reglasDeNegocio,
@@ -27371,6 +27729,8 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
       const fecha = fechaContableYYYYMMDDDesdeCampoFechaOrden(orden.fecha, fechaHoySync);
       const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
       const codigoOrdenRaw = (toJoin && toJoin.codigo) || null;
+      orden._syncToJoin = toJoin || null;
+      orden._syncCodigoOrdenRaw = codigoOrdenRaw;
       const codigoOrden = normalizarCodigoTipoOperacion(codigoOrdenRaw) || codigoOrdenRaw;
       // `usa_intermediario` del catálogo o orden con intermediario: debe coincidir con el fetch a `reglas_de_negocio`.
       const usaIntermediario =
@@ -27501,26 +27861,71 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
            * plantilla o por flags de ajuste sin cambio real de contrapartes. USD-USD cp_ic + Aj manual sigue en
            * memoria vía `derivMcAutoUsdUsdIntCpIcAjManual` sin depender de este UPDATE.
            */
+          /**
+           * CHEQUE-ARS: no persistir `multicontraparte_manual` por desvío pag/cob (MC derivado en memoria, paridad
+           * USD-USD cp_ic + Aj manual). Al revertir plantilla el sync vuelve al motor canónico sin flag pegajoso.
+           */
           const activarMcAutoSync =
+            !esChequeArsOrden &&
             !multicontraparteManualDb &&
             !multicontraparteSyncNoAuto &&
             eligibleMcInst &&
             !bloquearAutoMcPorCompensacionCcFlip &&
             roleDesvioParaAutoMc;
-          const promActivarMcAuto =
-            activarMcAutoSync
+          const modosRowsSyncMc = rModos.data || [];
+          const idEfSyncMc = (modosRowsSyncMc.find((m) => String(m.codigo || '').toLowerCase() === 'efectivo') || {}).id;
+          const idChqSyncMc = (modosRowsSyncMc.find((m) => String(m.codigo || '').toLowerCase() === 'cheque') || {}).id;
+          const desvioPlantillaCompletaChequeArs =
+            esChequeArsOrden &&
+            !!idEfSyncMc &&
+            pandiEvaluarDesvioInstrumentacionVsPlantillaSistema(
+              orden,
+              toJoin || {},
+              trxSyncIn,
+              'cp_ic',
+              idEfSyncMc,
+              idChqSyncMc || null,
+            ) === false;
+          /** Órdenes CHEQUE-ARS con MC auto-persistido por desvío previo: limpiar al re-alinear plantilla (revert flip). */
+          const desactivarMcAutoPersistidoChequeArs =
+            esChequeArsOrden &&
+            multicontraparteManualDb &&
+            !multicontraparteSyncNoAuto &&
+            !roleDesvioParaAutoMc &&
+            !hayCompensacionCcFlipPersistida &&
+            desvioPlantillaCompletaChequeArs;
+          const promMcInstrumentacion =
+            desactivarMcAutoPersistidoChequeArs
               ? client
                   .from('instrumentacion')
                   .update({
-                    multicontraparte_manual: true,
+                    multicontraparte_manual: false,
                     multicontraparte_sync_no_auto: false,
                     updated_at: new Date().toISOString(),
                   })
                   .eq('id', instId)
-              : Promise.resolve(null);
-          return promActivarMcAuto.then((rMcAuto) => {
+              : activarMcAutoSync
+                ? client
+                    .from('instrumentacion')
+                    .update({
+                      multicontraparte_manual: true,
+                      multicontraparte_sync_no_auto: false,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', instId)
+                : Promise.resolve(null);
+          return promMcInstrumentacion.then((rMcAuto) => {
             let multicontraparteManual = multicontraparteManualDb;
-            if (activarMcAutoSync && rMcAuto && rMcAuto.error) {
+            if (desactivarMcAutoPersistidoChequeArs && rMcAuto && rMcAuto.error) {
+              if (typeof console !== 'undefined' && console.warn) {
+                console.warn(
+                  'sincronizarCcYCajaDesdeOrden: CHEQUE-ARS — no se pudo limpiar multicontraparte_manual al re-alinear plantilla:',
+                  rMcAuto.error.message || rMcAuto.error,
+                );
+              }
+            } else if (desactivarMcAutoPersistidoChequeArs && rMcAuto && !rMcAuto.error) {
+              multicontraparteManual = false;
+            } else if (activarMcAutoSync && rMcAuto && rMcAuto.error) {
               if (typeof console !== 'undefined' && console.warn) {
                 console.warn(
                   'sincronizarCcYCajaDesdeOrden: multicontraparte automático (instrumentación ajustada o desvío pag/cob) no persistido:',
@@ -27668,9 +28073,15 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             !multicontraparteManualDb &&
             instrumentacionAjustadaManualDb &&
             derivUsdUsdIntCpIcAjGeo;
+          /** CHEQUE-ARS + int.: MC en sync solo en memoria mientras hay desvío pag/cob (sin UPDATE en BD). */
+          const derivMcAutoChequeArsIntDesvioPagCob =
+            esChequeArsOrden &&
+            !!orden.intermediario_id &&
+            eligibleMcInst &&
+            roleDesvioParaAutoMc;
           const usarMulticontraparteSync =
             instrumentacionMulticontraparteManualPermitida(orden, toJoin) &&
-            (multicontraparteManual || derivMcAutoUsdUsdIntCpIcAjManual);
+            (multicontraparteManual || derivMcAutoUsdUsdIntCpIcAjManual || derivMcAutoChequeArsIntDesvioPagCob);
           /**
            * Motor completo por trx apagado si MC persistido **o** derivación automática USD-USD cp_ic + Aj manual (`derivMcAutoUsdUsdIntCpIcAjManual`, sin flag en BD).
            * `activarMcAutoSync` ya no persiste MC por solo `instrumentacion_ajustada_manual` (ver bloque UPDATE arriba).
@@ -27875,6 +28286,7 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
               rowsCcCliente,
               rowsCcInt,
               orderUId || orden.usuario_id || null,
+              modosMap,
             );
           }
 
@@ -28188,21 +28600,32 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           );
 
           /** Último refuerzo antes del invariante: MC / omitir invariante no deben dejar pasar el payload sin +spread. */
-          garantizarFilaComisionSpreadChequeArsClienteCabeceraMrMeSiFalta(
-            rowsCcClienteUnicos,
-            orden,
-            ordenId,
-            clienteId,
-            ordenAnuladaSync,
-            codigoOrdenRaw,
-            toJoin,
-            transacciones,
-            fecha,
-            ahora,
-            comisionPandyMonto,
-            comisionPandyMon,
-            modosMap,
-          );
+          if (
+            !chequeArsIntOmitirComisionSinteticaClienteMcDesvioPagCob(
+              orden,
+              transacciones,
+              usarMulticontraparteSync,
+              modosMap,
+              codigoOrdenRaw,
+              toJoin,
+            )
+          ) {
+            garantizarFilaComisionSpreadChequeArsClienteCabeceraMrMeSiFalta(
+              rowsCcClienteUnicos,
+              orden,
+              ordenId,
+              clienteId,
+              ordenAnuladaSync,
+              codigoOrdenRaw,
+              toJoin,
+              transacciones,
+              fecha,
+              ahora,
+              comisionPandyMonto,
+              comisionPandyMon,
+              modosMap,
+            );
+          }
 
           const ordLabelInv = orden.numero != null ? String(orden.numero) : String(ordenId || '').slice(0, 8);
           if (motorCcWarnings.length && !silenciarAvisosInvarianteCc) {

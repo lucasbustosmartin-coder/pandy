@@ -1,6 +1,6 @@
 -- Etiquetas de usuario para listados (órdenes, CC, cajas) sin permiso assign_roles.
 -- La SELECT directa a user_profiles solo devuelve la fila propia o todas si assign_roles;
--- esta función (SECURITY DEFINER) devuelve display_name/email para los UUID solicitados
+-- esta función (SECURITY INVOKER + política user_profiles_select_labels_listados) devuelve display_name/email
 -- y se usa desde el front en fetchMapaEtiquetaUsuarioPorIds.
 -- Ejecutar en Supabase SQL Editor (prod y dev según corresponda).
 
@@ -8,7 +8,7 @@ CREATE OR REPLACE FUNCTION public.user_profiles_labels_for_ids(p_ids uuid[])
 RETURNS TABLE (id uuid, display_name text, email text)
 LANGUAGE sql
 STABLE
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public
 AS $$
   SELECT p.id, p.display_name, p.email

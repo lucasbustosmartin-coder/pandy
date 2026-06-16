@@ -34,7 +34,7 @@ CREATE OR REPLACE FUNCTION public.ordenes_insertar_con_proximo_numero(
 )
 RETURNS TABLE (id uuid, numero integer)
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public
 AS $$
 DECLARE

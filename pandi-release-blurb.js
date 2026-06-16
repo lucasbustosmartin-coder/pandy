@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.14',
+  versionLabel: 'v3.8.15',
   lines: [
-    'Al entrar después de una actualización, el aviso «Nueva versión» muestra las novedades aunque ya tengas la última versión cargada.',
-    'En órdenes cheque en pesos con intermediario, si invertís quién paga y quién cobra (como en dólar–dólar con intermediario), la cuenta corriente y los movimientos se actualizan con el mismo criterio, sin el aviso que bloqueaba el guardado.',
-    'Corrección al guardar una transacción desde el formulario cuando la orden ya estaba cargada en memoria.',
+    'En órdenes cheque en pesos con intermediario, si invertís quién paga y quién cobra en la pata con el intermediario, la cuenta corriente del intermediario muestra el saldo correcto (deuda neta menos comisión).',
+    'Al volver a la instrumentación estándar después de un desvío, la cuenta corriente del cliente vuelve al criterio habitual sin quedar bloqueada por ajustes anteriores.',
+    'Resincronizá las órdenes cheque en pesos con intermediario que hayas modificado para actualizar los movimientos en cuenta corriente.',
   ],
 };

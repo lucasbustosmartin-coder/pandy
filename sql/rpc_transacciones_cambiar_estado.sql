@@ -11,7 +11,7 @@ CREATE OR REPLACE FUNCTION public.transacciones_cambiar_estado(
 )
 RETURNS void
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public
 AS $$
 BEGIN

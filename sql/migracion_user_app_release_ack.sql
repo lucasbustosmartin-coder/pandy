@@ -44,7 +44,7 @@ CREATE OR REPLACE FUNCTION public.get_my_release_ack_version()
 RETURNS text
 LANGUAGE sql
 STABLE
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public
 AS $$
   SELECT version_label
@@ -59,7 +59,7 @@ COMMENT ON FUNCTION public.get_my_release_ack_version() IS
 CREATE OR REPLACE FUNCTION public.set_my_release_ack_version(p_version_label text)
 RETURNS void
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public
 AS $$
 DECLARE

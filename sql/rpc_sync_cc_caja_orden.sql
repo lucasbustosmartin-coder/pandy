@@ -45,7 +45,7 @@ CREATE OR REPLACE FUNCTION public.sync_cc_caja_orden(
 )
 RETURNS void
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public
 AS $$
 DECLARE

@@ -10,9 +10,8 @@
 -- 3) limpiar_base_e2e: solo scripts con service_role → REVOKE authenticated y anon; mantiene service_role.
 -- 4) Re-GRANT EXECUTE a authenticated (y service_role donde ya existía) para no romper la app con sesión.
 --
--- Lint 0029 «authenticated_security_definer_function_executable»: puede seguir apareciendo mientras la app
--- llame RPCs SECURITY DEFINER con usuario logueado; el control real está en auth.uid() / has_permission
--- dentro de cada función. Reducir 0029 implicaría mover lógica a Edge Functions o INVOKER (cambio grande).
+-- Lint 0029 «authenticated_security_definer_function_executable»: corregir con
+-- `sql/migracion_security_advisor_0029_security_invoker_rpc.sql` (SECURITY INVOKER en las RPC de la app).
 --
 -- Orden: ejecutar en Pandy-Dev y en Pandy (producción). Paridad con `sql/rpc_sync_cc_caja_orden.sql` y
 -- `sql/rpc_transacciones_cambiar_estado.sql` (allí se quitó GRANT a anon).

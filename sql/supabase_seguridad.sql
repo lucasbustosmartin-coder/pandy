@@ -144,7 +144,7 @@ CREATE OR REPLACE FUNCTION public.get_users_for_admin()
 RETURNS TABLE (user_id uuid, email text, role text, display_name text)
 LANGUAGE sql
 STABLE
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = ''
 AS $$
   SELECT p.id, p.email, COALESCE(u.role, 'visor'), p.display_name
@@ -157,7 +157,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.set_user_role(p_user_id uuid, p_role text)
 RETURNS void
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 BEGIN
@@ -182,7 +182,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.admin_set_user_display_name(p_user_id uuid, p_display_name text)
 RETURNS void
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 BEGIN
@@ -204,7 +204,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.set_my_display_name(p_display_name text)
 RETURNS void
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 BEGIN
