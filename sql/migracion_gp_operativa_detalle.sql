@@ -3,6 +3,7 @@
 --
 -- 2026-04: con SET search_path = '' no usar SELECT … INTO v (PL) para el JSON agregado: en algunos entornos
 -- Postgres resuelve v como relación → error 42P01 relation "v" does not exist. Patrón canónico: RETURN (SELECT …).
+-- 2026-08: bolsas CC/comisión intermediario materializan gp_operativa_patrones_usd_usd una vez (mismo criterio que el resumen).
 
 CREATE OR REPLACE FUNCTION public.gp_operativa_detalle(p_desde date, p_hasta date, p_bolsa text)
 RETURNS jsonb
@@ -182,6 +183,10 @@ BEGIN
 
   IF b = 'cc_cliente' THEN
     RETURN (
+      WITH gp_pat AS MATERIALIZED (
+        SELECT orden_id, moneda, excl_cc_cli_85_89, excl_flujo_nominal
+        FROM public.gp_operativa_patrones_usd_usd()
+      )
       SELECT COALESCE(
         jsonb_agg(row_json ORDER BY fecha_sort DESC, id_sort DESC),
         '[]'::jsonb
@@ -247,7 +252,15 @@ BEGIN
             )
           ) <= 0.01
         )
-        AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cli_excl_nom_85_89_gp(m.orden_id, m.moneda)
+        AND NOT EXISTS (
+          SELECT 1 FROM gp_pat p
+          WHERE p.orden_id = m.orden_id
+            AND (
+              NULLIF(btrim(COALESCE(m.moneda, '')), '') IS NULL
+              OR p.moneda = upper(btrim(m.moneda))
+            )
+            AND p.excl_cc_cli_85_89
+        )
         AND NOT EXISTS (
           SELECT 1
           FROM public.ordenes od
@@ -381,7 +394,15 @@ BEGIN
             AND (p_desde IS NULL OR mz.fecha >= p_desde)
             AND (p_hasta IS NULL OR mz.fecha <= p_hasta)
         )
-        AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(o.id, o.moneda_recibida)
+        AND NOT EXISTS (
+          SELECT 1 FROM gp_pat p
+          WHERE p.orden_id = o.id
+            AND (
+              NULLIF(btrim(COALESCE(o.moneda_recibida, '')), '') IS NULL
+              OR p.moneda = upper(btrim(o.moneda_recibida))
+            )
+            AND p.excl_flujo_nominal
+        )
         AND EXISTS (
           SELECT 1
           FROM (
@@ -421,6 +442,10 @@ BEGIN
 
   IF b = 'cc_intermediario' THEN
     RETURN (
+      WITH gp_pat AS MATERIALIZED (
+        SELECT orden_id, moneda, excl_cc_cli_85_89, excl_flujo_nominal
+        FROM public.gp_operativa_patrones_usd_usd()
+      )
       SELECT COALESCE(
         jsonb_agg(row_json ORDER BY fecha_sort DESC, id_sort DESC),
         '[]'::jsonb
@@ -472,7 +497,15 @@ BEGIN
         WHERE m.estado IN ('pendiente', 'cerrado')
           AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
           AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
-          AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(m.orden_id, m.moneda)
+          AND NOT EXISTS (
+            SELECT 1 FROM gp_pat p
+            WHERE p.orden_id = m.orden_id
+              AND (
+                NULLIF(btrim(COALESCE(m.moneda, '')), '') IS NULL
+                OR p.moneda = upper(btrim(m.moneda))
+              )
+              AND p.excl_flujo_nominal
+          )
           AND NOT (
             EXISTS (
               SELECT 1
@@ -566,7 +599,15 @@ BEGIN
         INNER JOIN public.ordenes o ON o.id = r.orden_id
         LEFT JOIN public.intermediarios intm ON intm.id = o.intermediario_id
         WHERE r.com_total <> 0
-          AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(r.orden_id, r.moneda)
+          AND NOT EXISTS (
+            SELECT 1 FROM gp_pat p
+            WHERE p.orden_id = r.orden_id
+              AND (
+                NULLIF(btrim(COALESCE(r.moneda, '')), '') IS NULL
+                OR p.moneda = upper(btrim(r.moneda))
+              )
+              AND p.excl_flujo_nominal
+          )
           AND EXISTS (
             SELECT 1
             FROM public.movimientos_cuenta_corriente_intermediario m2
@@ -632,7 +673,15 @@ BEGIN
         INNER JOIN public.ordenes o ON o.id = r.orden_id
         LEFT JOIN public.intermediarios intm ON intm.id = o.intermediario_id
         WHERE r.com_total <> 0
-          AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(r.orden_id, r.moneda)
+          AND NOT EXISTS (
+            SELECT 1 FROM gp_pat p
+            WHERE p.orden_id = r.orden_id
+              AND (
+                NULLIF(btrim(COALESCE(r.moneda, '')), '') IS NULL
+                OR p.moneda = upper(btrim(r.moneda))
+              )
+              AND p.excl_flujo_nominal
+          )
           AND EXISTS (
             SELECT 1
             FROM public.movimientos_cuenta_corriente_intermediario m2
@@ -896,6 +945,10 @@ BEGIN
 
   IF b = 'comisiones_acuerdo_intermediario' THEN
     RETURN (
+      WITH gp_pat AS MATERIALIZED (
+        SELECT orden_id, moneda, excl_cc_cli_85_89, excl_flujo_nominal
+        FROM public.gp_operativa_patrones_usd_usd()
+      )
       SELECT COALESCE(
         jsonb_agg(row_json ORDER BY fecha_sort DESC, id_sort DESC),
         '[]'::jsonb
@@ -923,7 +976,15 @@ BEGIN
       LEFT JOIN public.intermediarios i ON i.id = o.intermediario_id
       WHERE c.beneficiario = 'intermediario'
         AND lower(COALESCE(o.estado, '')) <> 'anulada'
-        AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(o.id, c.moneda)
+        AND NOT EXISTS (
+          SELECT 1 FROM gp_pat p
+          WHERE p.orden_id = o.id
+            AND (
+              NULLIF(btrim(COALESCE(c.moneda, '')), '') IS NULL
+              OR p.moneda = upper(btrim(c.moneda))
+            )
+            AND p.excl_flujo_nominal
+        )
         AND NOT (
           o.intermediario_id IS NOT NULL
           AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))

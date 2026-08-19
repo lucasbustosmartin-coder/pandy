@@ -6,7 +6,7 @@
 
 **Comisión intermediario USD-USD / cruces TC (`ci_pc` vs `cp_ic`):** el motor en `aplicarMotorCcDesdeReglasDeNegocio` bifurca por `patronInstrumentacionIntDesdeTransacciones`: en **`ci_pc`** el monto de la fila sintética respeta **`reglas_de_negocio.signo`**; en **`cp_ic`** se conserva la convención histórica (magnitud positiva salvo rollout MonR/MonE o tasa por transferencia al intermediario). Checklist deploy y conteos prod/dev → **`docs/CC_FIX_COMISION_INTERMEDIARIO_USD_USD_CI_PC.md`**.
 
-**Supabase producción (2026-04, nota operativa):** en la sesión que documentó el fix de `gp_operativa_detalle` (error **42P01** `relation "v"`), la política explícita fue **no ejecutar** ese `CREATE OR REPLACE` ni otros cambios SQL en **producción**; el canónico vive en `sql/` + `docs/SUPABASE_REQUISITOS.md`. **Desarrollo:** alinear pegando `migracion_gp_operativa_detalle.sql` cuando corresponda.
+**Supabase producción (2026-04, nota operativa histórica):** en la sesión que documentó el fix de `gp_operativa_detalle` (error **42P01** `relation "v"`), la política explícita fue **no ejecutar** ese `CREATE OR REPLACE` ni otros cambios SQL en **producción**; el canónico vive en `sql/` + `docs/SUPABASE_REQUISITOS.md`. **2026-08:** en Pandy y Pandy-Dev ya está el detalle/resumen con `gp_operativa_patrones_usd_usd` + CTE `gp_pat` (timeout del período Total en el panel); re-ejecutar los scripts actuales del repo si una base quedó atrás.
 
 ## Regla de negocio
 

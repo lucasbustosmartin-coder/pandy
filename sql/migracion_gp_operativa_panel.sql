@@ -66,6 +66,97 @@ COMMENT ON FUNCTION public.gp_movimiento_caja_ordenes_es_comision_gp(text, publi
 GRANT EXECUTE ON FUNCTION public.gp_movimiento_cc_cuenta_es_linea_comision_gp(text, public.movimiento_clasificacion) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.gp_movimiento_caja_ordenes_es_comision_gp(text, public.movimiento_clasificacion) TO authenticated;
 
+/* Patrones USD-USD + intermediario (81/85/89) en un solo pase sobre transacciones ejecutadas.
+   gp_operativa_resumen / gp_operativa_detalle materializan este set una vez (hash join), para que
+   Total (historial completo) no escale con helpers SQL anidados por cada movimiento. */
+CREATE OR REPLACE FUNCTION public.gp_operativa_patrones_usd_usd()
+RETURNS TABLE (
+  orden_id uuid,
+  moneda text,
+  es_cobertura_81 boolean,
+  es_85 boolean,
+  es_89 boolean,
+  excl_cc_cli_85_89 boolean,
+  excl_flujo_nominal boolean
+)
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+SET search_path = ''
+AS $$
+  WITH usd_usd AS (
+    SELECT
+      o.id AS orden_id,
+      upper(trim(COALESCE(o.moneda_recibida, ''))) AS moneda
+    FROM public.ordenes o
+    WHERE o.intermediario_id IS NOT NULL
+      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))
+      AND btrim(COALESCE(o.moneda_recibida, '')) <> ''
+  ),
+  trx AS (
+    SELECT
+      i.orden_id,
+      upper(trim(COALESCE(t.moneda, ''))) AS moneda,
+      bool_or(
+        lower(COALESCE(t.tipo, '')) = 'ingreso'
+        AND lower(COALESCE(t.pagador, '')) = 'pandy'
+        AND lower(COALESCE(t.cobrador, '')) = 'cliente'
+      ) AS ing_pandy_cli,
+      bool_or(
+        lower(COALESCE(t.tipo, '')) = 'egreso'
+        AND lower(COALESCE(t.pagador, '')) = 'intermediario'
+        AND lower(COALESCE(t.cobrador, '')) = 'cliente'
+      ) AS egr_int_cli,
+      bool_or(
+        lower(COALESCE(t.tipo, '')) = 'ingreso'
+        AND lower(COALESCE(t.pagador, '')) = 'cliente'
+        AND lower(COALESCE(t.cobrador, '')) = 'pandy'
+      ) AS ing_cli_pandy,
+      bool_or(
+        lower(COALESCE(t.tipo, '')) = 'egreso'
+        AND lower(COALESCE(t.pagador, '')) = 'cliente'
+        AND lower(COALESCE(t.cobrador, '')) = 'pandy'
+      ) AS egr_cli_pandy,
+      bool_or(
+        lower(COALESCE(t.tipo, '')) = 'egreso'
+        AND lower(COALESCE(t.pagador, '')) = 'pandy'
+        AND lower(COALESCE(t.cobrador, '')) = 'cliente'
+      ) AS egr_pandy_cli,
+      bool_or(
+        lower(COALESCE(t.tipo, '')) = 'ingreso'
+        AND lower(COALESCE(t.pagador, '')) = 'cliente'
+        AND lower(COALESCE(t.cobrador, '')) = 'intermediario'
+      ) AS ing_cli_int
+    FROM public.transacciones t
+    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
+    WHERE lower(COALESCE(t.estado, '')) = 'ejecutada'
+    GROUP BY i.orden_id, upper(trim(COALESCE(t.moneda, '')))
+  )
+  SELECT
+    u.orden_id,
+    u.moneda,
+    COALESCE(t.ing_pandy_cli AND t.egr_int_cli AND NOT COALESCE(t.ing_cli_pandy, false), false),
+    COALESCE(t.ing_cli_int AND t.egr_cli_pandy AND NOT COALESCE(t.ing_cli_pandy, false), false),
+    COALESCE(t.ing_cli_int AND t.egr_pandy_cli AND NOT COALESCE(t.ing_cli_pandy, false), false),
+    COALESCE(
+      (t.ing_cli_int AND t.egr_cli_pandy AND NOT COALESCE(t.ing_cli_pandy, false))
+      OR (t.ing_cli_int AND t.egr_pandy_cli AND NOT COALESCE(t.ing_cli_pandy, false)),
+      false
+    ),
+    COALESCE(
+      (t.ing_pandy_cli AND t.egr_int_cli AND NOT COALESCE(t.ing_cli_pandy, false))
+      OR (t.ing_cli_int AND t.egr_cli_pandy AND NOT COALESCE(t.ing_cli_pandy, false))
+      OR (t.ing_cli_int AND t.egr_pandy_cli AND NOT COALESCE(t.ing_cli_pandy, false)),
+      false
+    )
+  FROM usd_usd u
+  INNER JOIN trx t ON t.orden_id = u.orden_id AND t.moneda = u.moneda
+$$;
+
+COMMENT ON FUNCTION public.gp_operativa_patrones_usd_usd() IS 'G/P Operativa: patrones USD-USD+intermediario (81 cobertura / 85 cliente→int y cliente→Pandy / 89 liberación) en un set por orden+moneda. Misma semántica que gp_operativa_orden_es_usd_usd_inter_*.';
+
+GRANT EXECUTE ON FUNCTION public.gp_operativa_patrones_usd_usd() TO authenticated;
+
 /* USD-USD + intermediario: Pandy ingresa al cliente e intermediario paga al cliente (sin ingreso cliente→Pandy).
    El libro usa CC cliente (cobertura/préstamo/compensación) y CC intermediario del principal; en P&G la
    realidad económica es solo comisión Pandy (p. ej. orden 81). No confundir con passthrough caja+cliente→Pandy (58/104). */
@@ -79,59 +170,16 @@ STABLE
 PARALLEL SAFE
 SET search_path = ''
 AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.ordenes o
-    WHERE o.id = p_orden_id
-      AND o.intermediario_id IS NOT NULL
-      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))
-      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        o.moneda_recibida
-      )))
-  )
-  AND EXISTS (
-    SELECT 1
-    FROM public.transacciones t
-    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
-    WHERE i.orden_id = p_orden_id
-      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
-      )))
-      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
-      AND lower(COALESCE(t.pagador, '')) = 'pandy'
-      AND lower(COALESCE(t.cobrador, '')) = 'cliente'
-  )
-  AND EXISTS (
-    SELECT 1
-    FROM public.transacciones t
-    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
-    WHERE i.orden_id = p_orden_id
-      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
-      )))
-      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.tipo, '')) = 'egreso'
-      AND lower(COALESCE(t.pagador, '')) = 'intermediario'
-      AND lower(COALESCE(t.cobrador, '')) = 'cliente'
-  )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM public.transacciones t
-    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
-    WHERE i.orden_id = p_orden_id
-      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
-      )))
-      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
-      AND lower(COALESCE(t.pagador, '')) = 'cliente'
-      AND lower(COALESCE(t.cobrador, '')) = 'pandy'
-  );
+  SELECT COALESCE((
+    SELECT p.es_cobertura_81
+    FROM public.gp_operativa_patrones_usd_usd() p
+    WHERE p.orden_id = p_orden_id
+      AND (
+        NULLIF(btrim(COALESCE(p_moneda, '')), '') IS NULL
+        OR p.moneda = upper(btrim(p_moneda))
+      )
+    LIMIT 1
+  ), false);
 $$;
 
 COMMENT ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cobertura_pandy_cc(uuid, text) IS 'G/P Operativa: orden USD-USD con intermediario donde Pandy ingresa al cliente y el intermediario paga al cliente, sin ingreso cliente→Pandy (p. ej. 81). Sirve para no duplicar nominal en CC intermediario / comisión intermediario / sintético passthrough; el desembolso Pandy→cliente en CC cliente **sí** aporta al P&L junto a la comisión Pandy.';
@@ -151,59 +199,15 @@ STABLE
 PARALLEL SAFE
 SET search_path = ''
 AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.ordenes o
-    WHERE o.id = p_orden_id
-      AND o.intermediario_id IS NOT NULL
-      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))
-      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        o.moneda_recibida
-      )))
-  )
-  AND EXISTS (
-    SELECT 1
-    FROM public.transacciones t
-    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
-    WHERE i.orden_id = p_orden_id
-      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
-      )))
-      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
-      AND lower(COALESCE(t.pagador, '')) = 'cliente'
-      AND lower(COALESCE(t.cobrador, '')) = 'intermediario'
-  )
-  AND EXISTS (
-    SELECT 1
-    FROM public.transacciones t
-    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
-    WHERE i.orden_id = p_orden_id
-      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
-      )))
-      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.tipo, '')) = 'egreso'
-      AND lower(COALESCE(t.pagador, '')) = 'cliente'
-      AND lower(COALESCE(t.cobrador, '')) = 'pandy'
-  )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM public.transacciones t
-    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
-    WHERE i.orden_id = p_orden_id
-      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
-      )))
-      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
-      AND lower(COALESCE(t.pagador, '')) = 'cliente'
-      AND lower(COALESCE(t.cobrador, '')) = 'pandy'
-  );
+  SELECT COALESCE((
+    SELECT p.es_85
+    FROM public.gp_operativa_patrones_usd_usd() p
+    WHERE p.orden_id = p_orden_id
+      AND (
+        NULLIF(btrim(COALESCE(p_moneda, '')), '') IS NULL
+        OR p.moneda = upper(btrim(p_moneda))
+      )
+  ), false);
 $$;
 
 COMMENT ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cliente_inter_y_pandy_cc(uuid, text) IS 'G/P Operativa: USD-USD con intermediario, cliente ingresa al intermediario y egresa a Pandy ejecutadas, sin ingreso cliente→Pandy; flujo nominal CC cliente no es ganancia devengada (solo comisión Pandy).';
@@ -223,59 +227,15 @@ STABLE
 PARALLEL SAFE
 SET search_path = ''
 AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.ordenes o
-    WHERE o.id = p_orden_id
-      AND o.intermediario_id IS NOT NULL
-      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))
-      AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        o.moneda_recibida
-      )))
-  )
-  AND EXISTS (
-    SELECT 1
-    FROM public.transacciones t
-    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
-    WHERE i.orden_id = p_orden_id
-      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
-      )))
-      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
-      AND lower(COALESCE(t.pagador, '')) = 'cliente'
-      AND lower(COALESCE(t.cobrador, '')) = 'intermediario'
-  )
-  AND EXISTS (
-    SELECT 1
-    FROM public.transacciones t
-    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
-    WHERE i.orden_id = p_orden_id
-      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
-      )))
-      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.tipo, '')) = 'egreso'
-      AND lower(COALESCE(t.pagador, '')) = 'pandy'
-      AND lower(COALESCE(t.cobrador, '')) = 'cliente'
-  )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM public.transacciones t
-    INNER JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
-    WHERE i.orden_id = p_orden_id
-      AND upper(trim(COALESCE(t.moneda, ''))) = upper(trim(COALESCE(
-        NULLIF(btrim(p_moneda), ''),
-        (SELECT oo.moneda_recibida FROM public.ordenes oo WHERE oo.id = p_orden_id)
-      )))
-      AND lower(COALESCE(t.estado, '')) = 'ejecutada'
-      AND lower(COALESCE(t.tipo, '')) = 'ingreso'
-      AND lower(COALESCE(t.pagador, '')) = 'cliente'
-      AND lower(COALESCE(t.cobrador, '')) = 'pandy'
-  );
+  SELECT COALESCE((
+    SELECT p.es_89
+    FROM public.gp_operativa_patrones_usd_usd() p
+    WHERE p.orden_id = p_orden_id
+      AND (
+        NULLIF(btrim(COALESCE(p_moneda, '')), '') IS NULL
+        OR p.moneda = upper(btrim(p_moneda))
+      )
+  ), false);
 $$;
 
 COMMENT ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cli_int_pandy_libera_cli_cc(uuid, text) IS 'G/P Operativa: USD-USD con intermediario, ingreso cliente→intermediario y egreso Pandy→cliente ejecutados, sin ingreso cliente→Pandy; nominal CC no devenga en P&L (solo comisiones; ej. orden 89).';
@@ -294,8 +254,15 @@ STABLE
 PARALLEL SAFE
 SET search_path = ''
 AS $$
-  SELECT public.gp_operativa_orden_es_usd_usd_inter_cliente_inter_y_pandy_cc(p_orden_id, p_moneda)
-      OR public.gp_operativa_orden_es_usd_usd_inter_cli_int_pandy_libera_cli_cc(p_orden_id, p_moneda);
+  SELECT COALESCE((
+    SELECT p.excl_cc_cli_85_89
+    FROM public.gp_operativa_patrones_usd_usd() p
+    WHERE p.orden_id = p_orden_id
+      AND (
+        NULLIF(btrim(COALESCE(p_moneda, '')), '') IS NULL
+        OR p.moneda = upper(btrim(p_moneda))
+      )
+  ), false);
 $$;
 
 COMMENT ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cc_cli_excl_nom_85_89_gp(uuid, text) IS 'G/P Operativa: excluir flujo nominal en **movimientos reales CC cliente** solo para patrones 85 y 89 (no 81).';
@@ -312,9 +279,15 @@ STABLE
 PARALLEL SAFE
 SET search_path = ''
 AS $$
-  SELECT public.gp_operativa_orden_es_usd_usd_inter_cobertura_pandy_cc(p_orden_id, p_moneda)
-      OR public.gp_operativa_orden_es_usd_usd_inter_cliente_inter_y_pandy_cc(p_orden_id, p_moneda)
-      OR public.gp_operativa_orden_es_usd_usd_inter_cli_int_pandy_libera_cli_cc(p_orden_id, p_moneda);
+  SELECT COALESCE((
+    SELECT p.excl_flujo_nominal
+    FROM public.gp_operativa_patrones_usd_usd() p
+    WHERE p.orden_id = p_orden_id
+      AND (
+        NULLIF(btrim(COALESCE(p_moneda, '')), '') IS NULL
+        OR p.moneda = upper(btrim(p_moneda))
+      )
+  ), false);
 $$;
 
 COMMENT ON FUNCTION public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(uuid, text) IS 'G/P Operativa: orden+moneda con ajuste nominal en CC intermediario / comisión int. / sintético passthrough (81, 85, 89). En **CC cliente movimientos reales** solo excluye 85 y 89 (`cc_cli_excl_nom_85_89_gp`); en 81 el desembolso Pandy→cliente en CC cliente sí suma junto a comisión Pandy.';
@@ -342,6 +315,10 @@ LANGUAGE sql
 STABLE
 SET search_path = ''
 AS $$
+  WITH gp_pat AS MATERIALIZED (
+    SELECT orden_id, moneda, excl_cc_cli_85_89, excl_flujo_nominal
+    FROM public.gp_operativa_patrones_usd_usd()
+  )
   SELECT jsonb_build_object(
     'caja_manual',
     COALESCE(
@@ -485,7 +462,15 @@ AS $$
                  )
                ) <= 0.01
              )
-             AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cli_excl_nom_85_89_gp(m.orden_id, m.moneda)
+             AND NOT EXISTS (
+               SELECT 1 FROM gp_pat p
+               WHERE p.orden_id = m.orden_id
+                 AND (
+                   NULLIF(btrim(COALESCE(m.moneda, '')), '') IS NULL
+                   OR p.moneda = upper(btrim(m.moneda))
+                 )
+                 AND p.excl_cc_cli_85_89
+             )
              AND NOT EXISTS (
                SELECT 1
                FROM public.ordenes od
@@ -536,7 +521,15 @@ AS $$
                  AND (p_desde IS NULL OR mz.fecha >= p_desde)
                  AND (p_hasta IS NULL OR mz.fecha <= p_hasta)
              )
-             AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(o.id, o.moneda_recibida)
+             AND NOT EXISTS (
+               SELECT 1 FROM gp_pat p
+               WHERE p.orden_id = o.id
+                 AND (
+                   NULLIF(btrim(COALESCE(o.moneda_recibida, '')), '') IS NULL
+                   OR p.moneda = upper(btrim(o.moneda_recibida))
+                 )
+                 AND p.excl_flujo_nominal
+             )
              AND EXISTS (
                SELECT 1
                FROM (
@@ -625,7 +618,15 @@ AS $$
              b.moneda,
              (
                CASE
-                 WHEN public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(b.orden_id, b.moneda) THEN 0::numeric
+                 WHEN EXISTS (
+                   SELECT 1 FROM gp_pat p
+                   WHERE p.orden_id = b.orden_id
+                     AND (
+                       NULLIF(btrim(COALESCE(b.moneda, '')), '') IS NULL
+                       OR p.moneda = upper(btrim(b.moneda))
+                     )
+                     AND p.excl_flujo_nominal
+                 ) THEN 0::numeric
                  WHEN r.com_total_reparto IS NOT NULL
                    AND o.monto_recibido IS NOT NULL
                    AND upper(trim(COALESCE(b.moneda, ''))) = upper(trim(COALESCE(o.moneda_recibida, '')))
@@ -710,7 +711,15 @@ AS $$
              WHERE m.estado IN ('pendiente', 'cerrado')
                AND m.clasificacion_movimiento IS DISTINCT FROM 'CC_RESULTADO_ECONOMICO_COMPENSATORIO'::public.movimiento_clasificacion
                AND NOT public.gp_movimiento_cc_cuenta_es_linea_comision_gp(COALESCE(m.concepto, ''), m.clasificacion_movimiento)
-               AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(m.orden_id, m.moneda)
+               AND NOT EXISTS (
+                 SELECT 1 FROM gp_pat p
+                 WHERE p.orden_id = m.orden_id
+                   AND (
+                     NULLIF(btrim(COALESCE(m.moneda, '')), '') IS NULL
+                     OR p.moneda = upper(btrim(m.moneda))
+                   )
+                   AND p.excl_flujo_nominal
+               )
               AND NOT (
                 EXISTS (
                   SELECT 1
@@ -857,7 +866,15 @@ AS $$
            INNER JOIN public.ordenes o ON o.id = c.orden_id
            WHERE c.beneficiario = 'intermediario'
              AND lower(COALESCE(o.estado, '')) <> 'anulada'
-             AND NOT public.gp_operativa_orden_es_usd_usd_inter_cc_cliente_excluir_flujo_nominal_gp(o.id, c.moneda)
+             AND NOT EXISTS (
+               SELECT 1 FROM gp_pat p
+               WHERE p.orden_id = o.id
+                 AND (
+                   NULLIF(btrim(COALESCE(c.moneda, '')), '') IS NULL
+                   OR p.moneda = upper(btrim(c.moneda))
+                 )
+                 AND p.excl_flujo_nominal
+             )
             AND NOT (
               o.intermediario_id IS NOT NULL
               AND upper(trim(COALESCE(o.moneda_recibida, ''))) = upper(trim(COALESCE(o.moneda_entregada, '')))
@@ -1035,6 +1052,6 @@ AS $$
   );
 $$;
 
-COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'P&L operativo de la empresa por moneda (siete bolsas, sin doble conteo): caja manual y caja por órdenes solo cerrado no anulado; CC cliente: flujo + sintético passthrough **monto_recibido − comisión Pandy** (moneda_recibida); CC intermediario: S si passthrough (|S|+com≈mr); **0** si S≈monto_recibido y no passthrough (cobro bruto intermediario; ganancia solo comisión Pandy); si no, S−com (reparto bruto clásico); comisiones Pandy; intermediario NEGADO salvo passthrough. Suma siete claves = caja+libro. Fechas inclusive; NULL = sin límite.';
+COMMENT ON FUNCTION public.gp_operativa_resumen(date, date) IS 'P&L operativo de la empresa por moneda (siete bolsas, sin doble conteo): caja manual y caja por órdenes solo cerrado no anulado; CC cliente: flujo + sintético passthrough **monto_recibido − comisión Pandy** (moneda_recibida); CC intermediario: S si passthrough (|S|+com≈mr); **0** si S≈monto_recibido y no passthrough (cobro bruto intermediario; ganancia solo comisión Pandy); si no, S−com (reparto bruto clásico); comisiones Pandy; intermediario NEGADO salvo passthrough. Suma siete claves = caja+libro. Fechas inclusive; NULL = sin límite. Rendimiento: patrones USD-USD 81/85/89 se materializan una vez vía gp_operativa_patrones_usd_usd (no por cada movimiento).';
 
 GRANT EXECUTE ON FUNCTION public.gp_operativa_resumen(date, date) TO authenticated;

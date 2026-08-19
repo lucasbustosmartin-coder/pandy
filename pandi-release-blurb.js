@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.15',
+  versionLabel: 'v3.8.16',
   lines: [
-    'En órdenes cheque en pesos con intermediario, si invertís quién paga y quién cobra en la pata con el intermediario, la cuenta corriente del intermediario muestra el saldo correcto (deuda neta menos comisión).',
-    'Al volver a la instrumentación estándar después de un desvío, la cuenta corriente del cliente vuelve al criterio habitual sin quedar bloqueada por ajustes anteriores.',
-    'Resincronizá las órdenes cheque en pesos con intermediario que hayas modificado para actualizar los movimientos en cuenta corriente.',
+    'En G/P Operativa, el período Total ahora muestra todo el historial sin cortarse a mitad de carga.',
+    'El listado de movimientos de cada fila del G/P también abre más rápido, con los mismos importes de siempre.',
+    'Día, semana y mes no cambian: solo se agiliza ver el acumulado desde el inicio.',
   ],
 };
