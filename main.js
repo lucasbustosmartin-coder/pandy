@@ -452,6 +452,42 @@ async function pandiSupabaseFetchAll(queryBuilderFn, step) {
   return { data: allData, error: null };
 }
 
+/**
+ * Tamaño de cada `.in(id, …)` hacia PostgREST (GET). Cientos de UUID en un solo filtro cortan la URL
+ * y la consulta vuelve vacía o con error: la grilla CC deja Orden/Tipo op. en «–» aunque `orden_id` exista.
+ * Mismo criterio que el sync global (`chunkEst = 150`).
+ */
+const PANDI_SUPABASE_IN_FILTER_CHUNK = 150;
+
+/**
+ * SELECT filtrado por lista de ids, en tandas. No pagina con `.range`: parte el `.in`.
+ * Solo lectura. Si un lote falla, se conservan los lotes ya leídos.
+ * @param {unknown[]} ids
+ * @param {(slice: unknown[]) => unknown} buildQuery — p. ej. `(slice) => client.from('ordenes').select('id, numero').in('id', slice)`
+ * @returns {Promise<{ data: unknown[], error: unknown }>}
+ */
+async function pandiSupabaseFetchByIdsInChunks(ids, buildQuery) {
+  const list = [];
+  const seen = new Set();
+  (ids || []).forEach((id) => {
+    if (id == null || id === '') return;
+    const k = String(id);
+    if (seen.has(k)) return;
+    seen.add(k);
+    list.push(id);
+  });
+  if (list.length === 0) return { data: [], error: null };
+  const all = [];
+  let lastError = null;
+  for (let i = 0; i < list.length; i += PANDI_SUPABASE_IN_FILTER_CHUNK) {
+    const slice = list.slice(i, i + PANDI_SUPABASE_IN_FILTER_CHUNK);
+    const { data, error } = await pandiSupabaseQuerySafe(buildQuery(slice));
+    if (error) lastError = error;
+    if (data && data.length) all.push.apply(all, data);
+  }
+  return { data: all, error: lastError };
+}
+
 /** Guardar orden / instrumentación en servidor: requiere red alcanzable (cola local es el alternativo). */
 function pandiOrdenWizardRequiereRedServidor() {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
@@ -16501,7 +16537,16 @@ function loadCuentaCorriente(opts) {
     return Promise.all([
       transaccionIds.length > 0 ? client.from('transacciones').select('id, usuario_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
       ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
-      ordenIds.length > 0 ? client.from('ordenes').select('id, usuario_id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario), monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tasa_descuento_intermediario').in('id', ordenIds) : Promise.resolve({ data: [] }),
+      ordenIds.length > 0
+        ? pandiSupabaseFetchByIdsInChunks(ordenIds, (slice) =>
+            client
+              .from('ordenes')
+              .select(
+                'id, usuario_id, numero, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario), monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tasa_descuento_intermediario',
+              )
+              .in('id', slice),
+          )
+        : Promise.resolve({ data: [] }),
       promPendientesCcGlobal,
     ]).then(([rTr, rInst, rOrdenes, pendientesResult]) => {
       const trById = {};
@@ -16522,6 +16567,12 @@ function loadCuentaCorriente(opts) {
       (rInst.data || []).forEach((i) => { instByOrden[i.orden_id] = i.id; });
       const ordenNumeroById = Object.fromEntries((rOrdenes.data || []).map((o) => [o.id, o.numero]));
       const ordenById = Object.fromEntries((rOrdenes.data || []).map((o) => [o.id, o]));
+      if (rOrdenes && rOrdenes.error && typeof console !== 'undefined' && console.warn) {
+        console.warn(
+          'loadCuentaCorriente: no se pudieron leer todas las órdenes para nro. en Movimientos:',
+          rOrdenes.error.message || rOrdenes.error,
+        );
+      }
       const instIds = (rInst.data || []).map((i) => i.id).filter(Boolean);
       const promTrInst = instIds.length > 0
         ? client.from('transacciones').select('id, instrumentacion_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('instrumentacion_id', instIds)

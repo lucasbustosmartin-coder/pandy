@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.16',
+  versionLabel: 'v3.8.17',
   lines: [
-    'En G/P Operativa, el período Total ahora muestra todo el historial sin cortarse a mitad de carga.',
-    'El listado de movimientos de cada fila del G/P también abre más rápido, con los mismos importes de siempre.',
-    'Día, semana y mes no cambian: solo se agiliza ver el acumulado desde el inicio.',
+    'En Cuenta corriente → Movimientos, la columna Orden muestra el número real de la orden (ya no un guión).',
+    'El Excel de esa pantalla exporta el mismo número de orden, alineado a lo que ves en pantalla.',
+    'Los importes no cambian. Los movimientos manuales sin orden siguen mostrando un guión.',
   ],
 };
