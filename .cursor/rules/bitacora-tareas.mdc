@@ -5,6 +5,8 @@ alwaysApply: true
 
 # Bitácora de tareas – Pandi
 
+**Base LyP:** `../.cursor/rules/bitacora-tareas.mdc` (fechas históricas al regenerar; módulo `../../scripts/lib/lyp-bitacora-fechas.js`).
+
 ## Regla que no puede omitirse
 
 Al completar una tarea que toque funcionalidad o UI:
@@ -21,7 +23,7 @@ Si se cambia un ID, un texto de columna, un botón que los tests usan, o un fluj
 - **Datos:** Supabase (PostgreSQL). Tablas según la app. Scripts SQL en `sql/` se ejecutan en Supabase SQL Editor.
 - **Hosting:** Vercel. **Dominios fijos del producto:** producción **https://pandi.company** (Supabase prod) y preview estable **https://preview.pandi.company** (Supabase dev, misma app). **Referencia del front:** `main` / producción; el preview estable se **iguala a ese front** (`merge main` en `preview-empleado`), **no al revés**. Ver pasos 5–8 y `docs/GIT_Y_VERCEL.md` § “Dirección de la paridad” y §4c. Variables **Preview** en Vercel → Supabase **dev**.
 - **Repositorio:** Git/GitHub (rama `main`). Estructura: `sql/`, `scripts/`, `docs/`, `Base/` (ver regla estructura-proyecto).
-- **Bitácora:** Node.js + SheetJS (xlsx). Script `scripts/crear-bitacora-excel.js` genera `Bitacora_tareas.xlsx` (en raíz) con las solapas **Log**, **Resumen**, **Ref Git y Vercel**, **Versiones**, **Tecnología**.
+- **Bitácora:** Node.js + SheetJS (xlsx). Script `scripts/crear-bitacora-excel.js` genera `Bitacora_tareas.xlsx` (en raíz) con las solapas **Log**, **Resumen**, **Ref Git y Vercel**, **Versiones**, **Tecnología**. Al regenerar, conserva Fecha/Hora de filas ya presentes en **Log** y **Versiones** (módulo compartido LyP).
 
 ---
 
@@ -31,7 +33,7 @@ Al completar una tarea relevante en este proyecto, revisar **cada** solapa y act
 
 1. **Solapa Log**  
    Agregar una fila en el array `datosLog` de `crear-bitacora-excel.js` con: Fecha, Hora, titulo_tarea, desc_tarea, etapa.  
-   **Fecha y hora:** usar siempre la **fecha y hora actual en Argentina** (timezone America/Argentina/Buenos_Aires). Al agregar la entrada, usar los placeholders `__HOY__` y `__AHORA__` (el script los reemplaza por la fecha/hora en Argentina al ejecutar).  
+   **Fecha y hora:** en la **nueva fila** usar fecha y hora en Argentina (`dd/mm/aaaa`, `HH:mm`, timezone America/Argentina/Buenos_Aires). Opcionalmente `__HOY__` / `__AHORA__` solo en esa fila nueva la primera vez que se genera el Excel. **No** reescribir fechas/horas de filas ya registradas: al ejecutar `node scripts/crear-bitacora-excel.js`, el script conserva Fecha/Hora existentes en `Bitacora_tareas.xlsx` (solapas Log y Versiones).  
    **Cuándo:** siempre que la tarea sea un trabajo realizado (cambio, feature, corrección, script SQL, regla, doc, etc.).
 
 2. **Solapa Resumen**  
@@ -108,7 +110,7 @@ Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK de
    En **`pandi-release-blurb.js`**, actualizar **`PANDI_RELEASE_BLURB`** cumpliendo la subsección **«Novedades al recargar»** arriba: **solo el agente** redacta `lines` y alinea **`versionLabel`** al texto de **`#sidebar-version`** (cabecera); **quien pide el despliegue no tiene que tocar este archivo** salvo excepción acordada. Tras `vite build`, **`pandi-release.json`** en `dist/` refleja ese objeto (el modal lo pide por red para no depender del bundle viejo del service worker).
 
 2. **Actualizar todas las solapas de la bitácora que correspondan** en `scripts/crear-bitacora-excel.js` (revisar cada una y no omitir las que apliquen):
-   - **Versiones:** siempre en despliegue. Agregar una fila en el array `versiones` con (Versión, Fecha, Descripción del despliegue). Usar la misma versión que `#sidebar-version` en cabecera (ej. 1.1 sin la "v"). **Fecha:** usar `__HOY__` (el script la reemplaza por la fecha en Argentina al generar el Excel). Incluir los cambios principales.
+   - **Versiones:** siempre en despliegue. Agregar una fila en el array `versiones` con (Versión, Fecha, Descripción del despliegue). Usar la misma versión que `#sidebar-version` en cabecera (ej. 1.1 sin la "v"). **Fecha:** fecha literal del despliegue en Argentina, o `__HOY__` solo en la fila nueva (el script conserva fechas de versiones ya escritas en el Excel). Incluir los cambios principales.
    - **Log:** si hubo tareas en la sesión, agregar las entradas en `datosLog` (Fecha, Hora, titulo_tarea, desc_tarea, etapa).
    - **Resumen:** si los cambios agregan o modifican funcionalidad de la app, agregar o actualizar las filas en `funcionalidades`.
 

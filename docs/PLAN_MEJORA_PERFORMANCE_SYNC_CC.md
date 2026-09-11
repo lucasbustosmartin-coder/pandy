@@ -1,8 +1,10 @@
 # Plan de mejora — performance sincronización CC / carga Cuenta corriente (Pandi)
 
 > **Recordatorio:** retomar este documento cuando se trabaje en lentitud, sync, RPC `sync_cc_caja_orden` o carga de la vista CC.
+>
+> **No olvidar (producto, 2026-09-10):** el recorte real de tiempo en **Refrescar** es la **opción A** (RPC batch: varias órdenes en un viaje). Lo de ahora es solo **B** (más paralelo, misma cantidad de RPC). Ver § «Decisión 2026-09-10: B ahora, A después».
 
-## Estado (retomado 2026-04-21; actualizado 2026-04-22 — pausa Fase 2; **prod 1.2 aplicada** antes del deploy v3.8.2)
+## Estado (retomado 2026-04-21; actualizado 2026-09-10 — B en Refrescar; A pendiente)
 
 | Fase | Estado | Notas |
 |------|--------|--------|
@@ -11,13 +13,37 @@
 | **1.1 — Caché `getReglasDeNegocio`** | **Hecho** | `main.js`: TTL 2 min + invalidación ABM reglas. |
 | **1.2 — RPC huérfanos O(n+m)** | **Hecho 2026-04-22** | `sync_cc_caja_orden`: anti-join huérfanos. **Pandy-Dev** y **producción (Pandy):** migración `sql/migracion_sync_cc_caja_orden_huerfanos_antijoin.sql` **aplicada en prod antes del deploy front v3.8.2** (confirmado por operador). Paridad con dev. Índice 1.3 en prod desde antes. |
 | **1.3 — Índices** | **Hecho 2026-04-22** | `EXPLAIN ANALYZE` en **Pandy-Dev**: CC cliente por `orden_id` era **Seq Scan**; índice `idx_mov_cc_orden_id` (`sql/migracion_cc_indice_mov_cliente_orden_id.sql`). **Pandy (prod) + Pandy-Dev:** migración aplicada (MCP). |
+| **1.4 — Refrescar más paralelo (opción B)** | **Hecho 2026-09-10** | Botones Refrescar CC: lotes de **8** (`PANDI_CC_SYNC_ORDENES_CONCURRENCY_REFRESCAR`). Login / Inicio / Cajas / apertura CC siguen en **4**. Misma RPC por orden; no cambia saldos ni payloads. Ganancia acotada (sigue N×RTT). |
+| **1.5 — RPC batch varias órdenes (opción A)** | **Pendiente — encarar** | Recorte real de tiempo. Ver § «Decisión 2026-09-10». Más trabajo y riesgo; **hay que hacerlo** cuando B deje de alcanzar o haya prioridad. |
 | **2 — CC que escala** | **Pausado** | Ver §«Pausa y retoma». Sin queja de cliente aún; retomar cuando suba volumen CC/pendientes o haya prioridad de producto. |
+
+## Decisión 2026-09-10: B ahora, A después (no olvidar)
+
+**Contexto:** en producción, **Refrescar** en Cuenta corriente se siente lento. No es la pintura de la grilla: es `onCcRefrescarClick` → `sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion` → **una RPC `sync_cc_caja_orden` por cada orden** no anulada con instrumentación (~N×RTT). En local parece rápido porque hay pocas órdenes.
+
+**Acuerdo de producto (esta fecha):**
+
+| Opción | Qué es | Decisión |
+|--------|--------|----------|
+| **B** | Subir el paralelismo **solo** en Refrescar (4 → 8 órdenes a la vez). Sigue habiendo **N** viajes HTTP. Login / Inicio / Cajas / primera apertura CC **no** cambian (siguen en 4 para no saturar el pool HTTP mientras se lee la vista). | **Hecho ahora.** Código: `PANDI_CC_SYNC_ORDENES_CONCURRENCY_REFRESCAR` + `opts.concurrency`. Condición: **no** cambiar datos de BD ni saldos/movimientos (mismos payloads, misma RPC por orden). |
+| **A** | **RPC batch:** una (o pocas) llamadas que sincronicen **varias órdenes** en el servidor. Baja N de round-trips; es el único recorte de tiempo de verdad a medida que crezca el volumen. | **Pendiente. Hay que encararlo.** No es opcional a largo plazo: B solo alivia un poco el volumen actual. |
+
+**Por qué B no alcanza para siempre:** el techo sigue siendo **cantidad de órdenes × latencia de cada RPC**. Duplicar el paralelo (4→8) como mucho acerca el tiempo total a la mitad *si* el cuello es el pool HTTP y no la CPU del navegador ni Postgres. Con cientos de órdenes, Refrescar seguirá midiendo en **minutos** hasta que exista A.
+
+**Qué implica A (para retomar sin redescubrirlo):**
+
+1. Nueva RPC (o extensión de `sync_cc_caja_orden`) que reciba **varios** `orden_id` + payloads, o que arme el payload en servidor (más grande: portar el motor).
+2. El front deja de disparar N `sync_cc_caja_orden` en Refrescar; una o pocas llamadas.
+3. Riesgo: timeouts, tamaño JSON, invariante/neteo por orden, tests E2E 91/92 y sync por transacción; **acuerdo + verificación de impacto** antes de mutar SQL/prod.
+4. No mezclar con Fase 2 (filtro fechas / agregación de lectura): A es **escritura/sync**; Fase 2 es **lectura** de la vista CC.
+
+**Cuándo retomar A:** cuando Refrescar con B siga siendo lento en prod, suba el número de órdenes con instrumentación, o haya prioridad explícita. Hasta entonces, **no** subir la concurrencia de login/Inicio/Cajas por encima de 4 sin medir saturación HTTP.
 
 ### Pausa y retoma (2026-04-22)
 
 **Cierre de esta etapa:** Fases **0** y **1** (0 → 1.3) quedaron resueltas en **código**, **Pandy-Dev** y **producción** (incluye migración **1.2** RPC anti-join en prod, ejecutada antes del deploy v3.8.2). La **Fase 2** no se implementa ahora.
 
-**Perspectiva interna:** el operador puede seguir notando lentitud sobre todo en **Refrescar** CC (muchas RPC `sync_cc_caja_orden` × RTT — diseño actual). **Cliente / usuario final:** hasta aquí **no hubo reclamos**; no hay presión comercial inmediata para batch en servidor ni para filtro/agregación masiva.
+**Perspectiva interna:** el operador puede seguir notando lentitud sobre todo en **Refrescar** CC (muchas RPC `sync_cc_caja_orden` × RTT — diseño actual). **2026-09-10:** se aplicó **opción B** (más paralelo en Refrescar); **opción A** (batch) sigue pendiente y **hay que encararla**. **Cliente / usuario final:** hasta abr. 2026 **no hubo reclamos**; no hay presión comercial inmediata para filtro/agregación (Fase 2).
 
 **Cuándo retomar el plan (Fase 2 en adelante):** crecimiento fuerte de filas CC o de `transacciones` pendientes; reclamos de lentitud; necesidad de histórico por fechas o saldos server-side; o decisión explícita de producto.
 
@@ -45,7 +71,7 @@ Medición con `sql/util_cc_performance_diagnostico_counts.sql` en **producción*
 3. **RPC `sync_cc_caja_orden`** — huérfanos ya en anti-join (2026-04-22); sigue costo fijo por orden (parseo JSONB, upsert por fila, transacción única).
 4. **UI bloqueada** (mismo hilo JS que calcula y pinta) vs sensación de “tarda el servidor”.
 
-**Refrescar en Cuenta corriente:** dispara el sync global completo a propósito. En Red, **~1 fila `sync_cc_caja_orden` por orden** con instrumentación (no anulada) es esperado; con ~440 órdenes verás ~440 peticiones aunque los movimientos en BD sean pocos. Acortar eso implica RPC batch en servidor o menos órdenes de prueba en dev.
+**Refrescar en Cuenta corriente:** dispara el sync global completo a propósito. En Red, **~1 fila `sync_cc_caja_orden` por orden** con instrumentación (no anulada) es esperado; con ~440 órdenes verás ~440 peticiones aunque los movimientos en BD sean pocos. Desde **2026-09-10** esas RPC van de a **8 en paralelo** (opción B); el conteo N no baja. Acortar N implica **opción A** (RPC batch) — § «Decisión 2026-09-10».
 
 ### Network post-fix (dev local, 2026-04-22)
 
@@ -73,7 +99,7 @@ Interpretación: el §1.0 cumple el objetivo de **no** multiplicar RPC al navega
 
 **Migración:** `sql/migracion_cc_indice_mov_cliente_orden_id.sql` — aplicada en **Pandy-Dev** y **Pandy (prod)** (MCP). Bootstrap dev: entrada en `scripts/concat-bootstrap-dev-sql.js`.
 
-**Siguiente foco del plan:** **Fase 2** (filtro fecha CC, pendientes acotados, agregación) cuando el volumen de filas lo justifique.
+**Siguiente foco del plan:** **opción A** (RPC batch, §«Decisión 2026-09-10») cuando Refrescar con B no alcance; **Fase 2** (filtro fecha CC, pendientes acotados, agregación) cuando el volumen de **filas** de lectura lo justifique.
 
 ## Contexto
 
@@ -92,7 +118,7 @@ El crecimiento de la base impacta sobre todo el punto **2** y el fetch de pendie
 | RPC `sync_cc_caja_orden` | Huérfanos: **anti-join** `NOT EXISTS` (2026-04-22); CC cliente: **idx_mov_cc_orden_id** en `orden_id` (2026-04-22); upsert sigue por fila JSON. |
 | `loadCuentaCorriente` | Lee **todas** las filas CC (paginado en bucle); escala con volumen total. |
 | Pendientes CC | Lee **todas** las trx `pendiente` del sistema. |
-| Sync global todas las órdenes | Paralelo por lotes de **4**; no en `loadOrdenes`; cooldown Inicio/Cajas; excluye `anulada`; defer post-login 2 s (2026-04-22). |
+| Sync global todas las órdenes | Paralelo por lotes de **4** (login/Inicio/Cajas/apertura CC); **Refrescar** lotes de **8** (2026-09-10, opción B). No en `loadOrdenes`; cooldown Inicio/Cajas; excluye `anulada`; defer post-login 2 s. **Pendiente A:** batch RPC (N viajes → pocos). |
 
 Referencia código: `main.js` (`sincronizarCcYCajaDesdeOrden`, `loadCuentaCorriente`, `pandiSupabaseFetchAll`, `sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion`); `sql/rpc_sync_cc_caja_orden.sql`.
 
@@ -102,9 +128,9 @@ Referencia código: `main.js` (`sincronizarCcYCajaDesdeOrden`, `loadCuentaCorrie
 2. **Fase 1.2 (RPC huérfanos)** — **Hecho** (ver tabla §Estado).
 3. **Fase 1.3 (índices + EXPLAIN)** — **Hecho** (ver §«Fase 1.3 — EXPLAIN y índice»); índice aplicado en **prod y dev**.
 4. **Fase 2** — **Pausada** (§«Pausa y retoma»): filtro por fechas, pendientes acotados, agregación en servidor cuando volumen o negocio lo exijan.
-5. **Fase 3 / RPC batch** — Solo si negocio acepta el riesgo y el esfuerzo: **una** RPC que reciba varias órdenes o mover sync pesado al servidor; implica tests E2E y migración cuidadosa.
+5. **Opción A / Fase 3 — RPC batch (pendiente, encarar):** **una** RPC que reciba varias órdenes o mover sync pesado al servidor. Es el recorte real de **Refrescar**. Acuerdo + impacto + tests E2E. Detalle: § «Decisión 2026-09-10: B ahora, A después».
 
-**Refrescar** seguirá generando **N** RPCs mientras el modelo sea “una orden = una llamada”; acortar eso corresponde al ítem **5** (Fase 3) o a limpieza de órdenes de prueba en dev.
+**Refrescar** seguirá generando **N** RPCs mientras el modelo sea “una orden = una llamada”; B solo las solapa más. Acortar N es el ítem **5** (opción A).
 
 ## Fase 0 — Medir
 
@@ -125,11 +151,11 @@ Referencia código: `main.js` (`sincronizarCcYCajaDesdeOrden`, `loadCuentaCorrie
 2. Saldos vía **agregación en servidor** (vista/RPC/materialized) sin traer todas las filas.
 3. Pendientes: acotar `transacciones` pendientes a `instrumentacion_id` relevante, no global.
 
-## Fase 3 — Arquitectura (si hace falta)
+## Fase 3 — Arquitectura (opción A / batch)
 
-- Sync derivado en servidor (Edge/SQL) solo si se justifica duplicar/portar lógica con tests.
-- Cola async para operaciones masivas.
+- **Opción A (pendiente, encarar):** RPC que sincronicen **varias órdenes** en un viaje, o sync derivado en servidor (Edge/SQL) si se justifica portar el motor con tests. Ver § «Decisión 2026-09-10».
+- Cola async para operaciones masivas (solo si A aún no alcanza).
 
 ---
 
-*Documento generado a partir de revisión técnica en conversación; sin cambios de producto acordados aquí.*
+*Documento vivo: decisiones de producto (B ahora / A después, 2026-09-10) quedan en §Estado y §«Decisión 2026-09-10».*

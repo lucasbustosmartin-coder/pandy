@@ -48,7 +48,7 @@ Equivalente a lo que en Sistema-Contable está en `src/utils`: no escriben datos
 | **montosCcPorMoneda**, **montosCcPorOrden**, **numCc**, **ratioCc**, **montosCancelacionDesdeOrden** | Helpers de montos por moneda para CC. | Si la sync está en Supabase, estos solo tienen sentido en el backend; en el front quedarían solo si se usan para preview o listados que no vienen ya calculados. |
 | **showToast**, **showConfirm**, **dismissAllToasts** | Mensajería y confirmaciones. | **main.js** (o un pequeño módulo de UI). |
 | **loadCuentaCorriente**, **loadCajas**, **fetchMovimientosCcPorEntidad**, **buildCcResumenRows**, **renderCcResumenTable**, etc. | Carga de datos desde Supabase y **render** de tablas/vistas. | **main.js**: solo lectura y UI; no definen reglas de negocio. |
-| **sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion** | Orquesta llamadas a sync por cada orden. | Si sync pasa a Supabase, esta función se reemplaza por una llamada a una sola RPC/Edge “sync todas las órdenes” o por N llamadas a “sync una orden” desde el front (igual que ahora, pero la lógica pesada está en Supabase). |
+| **sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion** | Orquesta llamadas a sync por cada orden (lotes de 4 en login/Inicio/Cajas/apertura CC; lotes de 8 en **Refrescar**). `opts.concurrency` 1–12; si ya hay corrida en vuelo, reutiliza la misma promesa. | **Opción A pendiente** (`docs/PLAN_MEJORA_PERFORMANCE_SYNC_CC.md` § 2026-09-10): reemplazar N RPC por una/pocas “sync varias órdenes”. Hasta entonces el front sigue con N llamadas a `sync_cc_caja_orden`. Si el motor pesado pasa a Supabase, esta función se reemplaza por esa RPC batch o por N llamadas a “sync una orden” con lógica en servidor. |
 
 ---
 

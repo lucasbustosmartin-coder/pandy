@@ -230,9 +230,9 @@ test.describe('CHEQUE-ARS comisión acuerdo CC (invariante + sync global)', () =
         const btnAnular = fila.locator('.btn-anular-orden-tabla');
         if ((await btnAnular.count()) === 0 || !(await btnAnular.isVisible())) break;
         await btnAnular.click();
-        await expect(page.locator('#modal-confirm-backdrop')).toBeVisible({ timeout: 5000 });
-        await page.getByRole('button', { name: /anular orden/i }).click();
-        await expect(page.locator('#modal-confirm-backdrop')).toBeHidden({ timeout: 10000 });
+        await expect(page.locator('#modal-confirm-backdrop.activo')).toBeVisible({ timeout: 20000 });
+        await page.locator('#modal-confirm-aceptar').click();
+        await expect(page.locator('#modal-confirm-backdrop')).toBeHidden({ timeout: 30000 });
         await page.waitForTimeout(1200);
       }
 

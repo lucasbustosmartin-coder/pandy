@@ -4815,10 +4815,478 @@ function fetchTransaccionesParaAnulacionOrden(ordenId) {
       if (!instId) return { transacciones: [], instrumentacionId: null };
       return client
         .from('transacciones')
-        .select('id, usuario_id, estado')
+        .select('id, usuario_id, estado, numero, tipo, monto, moneda')
         .eq('instrumentacion_id', instId)
+        .order('numero', { ascending: true })
         .then((rTr) => ({ transacciones: rTr.data || [], instrumentacionId: instId }));
     });
+}
+
+function pandiEstadoMovimientoEsAnulado(est) {
+  const e = String(est || '').toLowerCase().trim();
+  return e === 'anulado' || e === 'anulada';
+}
+
+function pandiFilaCcDerivadaVivaParaAnular(m) {
+  if (!m || m.es_movimiento_manual === true) return false;
+  return !pandiEstadoMovimientoEsAnulado(m.estado);
+}
+
+function pandiLeerSumaMontoAgregada(row) {
+  if (!row || typeof row !== 'object') return 0;
+  if (row.sum != null && Number.isFinite(Number(row.sum))) return Number(row.sum);
+  if (row.monto != null && Number.isFinite(Number(row.monto))) return Number(row.monto);
+  const vals = Object.values(row);
+  for (let i = 0; i < vals.length; i++) {
+    if (typeof vals[i] === 'number' && Number.isFinite(vals[i])) return vals[i];
+  }
+  return 0;
+}
+
+function pandiNumeroTransaccionParaUi(t) {
+  if (t && t.numero != null && String(t.numero).trim() !== '') return String(t.numero);
+  return '';
+}
+
+function pandiEtiquetaEstadoTransaccionAnular(est) {
+  const e = String(est || '').toLowerCase().trim();
+  if (e === 'ejecutada') return 'Ejecutada';
+  if (e === 'pendiente') return 'Pendiente';
+  if (e === 'anulada') return 'Anulada';
+  return est ? String(est) : '—';
+}
+
+function pandiEtiquetaBeneficiarioComisionAnular(benef) {
+  const b = String(benef || '').toLowerCase().trim();
+  if (b === 'pandy' || b === 'empresa') return nombreMarcaSistema();
+  if (b === 'intermediario') return 'Intermediario';
+  return benef ? String(benef) : '—';
+}
+
+/** Suma CC no anulada de una entidad (mismas columnas que Saldos). `ok: false` si falla la lectura. */
+function pandiSumarSaldoCcNoAnuladoPorMoneda(tabla, colEntidad, entidadId) {
+  if (!entidadId) return Promise.resolve({ ok: true, saldos: { USD: 0, ARS: 0, EUR: 0 } });
+  return pandiSupabaseFetchAll(() =>
+    client
+      .from(tabla)
+      .select('moneda, monto, monto_usd, monto_ars, monto_eur, estado')
+      .eq(colEntidad, entidadId),
+  ).then((r) => {
+    if (r.error && !(r.data && r.data.length)) return { ok: false, saldos: { USD: 0, ARS: 0, EUR: 0 } };
+    const saldos = { USD: 0, ARS: 0, EUR: 0 };
+    (r.data || []).forEach((m) => {
+      if (pandiEstadoMovimientoEsAnulado(m.estado)) return;
+      const z = getMontosMovimientoCcResumen(m);
+      saldos.USD += z.USD || 0;
+      saldos.ARS += z.ARS || 0;
+      saldos.EUR += z.EUR || 0;
+    });
+    return { ok: true, saldos };
+  });
+}
+
+function pandiAporteOrdenPorEntidadMoneda(filas, idKey) {
+  const map = {};
+  (filas || []).forEach((m) => {
+    if (!pandiFilaCcDerivadaVivaParaAnular(m)) return;
+    const eid = m[idKey] != null ? String(m[idKey]) : '';
+    if (!eid) return;
+    const z = getMontosMovimientoCcResumen(m);
+    if (!map[eid]) map[eid] = { USD: 0, ARS: 0, EUR: 0 };
+    map[eid].USD += z.USD || 0;
+    map[eid].ARS += z.ARS || 0;
+    map[eid].EUR += z.EUR || 0;
+  });
+  return map;
+}
+
+function pandiAporteCajaPorMoneda(filas) {
+  const out = { USD: 0, ARS: 0, EUR: 0 };
+  (filas || []).forEach((m) => {
+    if (pandiEstadoMovimientoEsAnulado(m && m.estado)) return;
+    const mon = String((m && m.moneda) || '').toUpperCase();
+    const val = Number(m && m.monto) || 0;
+    if (out[mon] != null) out[mon] += val;
+  });
+  return out;
+}
+
+function fetchImpactoAnulacionOrden(ordenId) {
+  return client
+    .from('ordenes')
+    .select('id, numero, estado, cliente_id, intermediario_id')
+    .eq('id', ordenId)
+    .single()
+    .then((rOrd) => {
+      if (rOrd.error || !rOrd.data) {
+        return Promise.reject(new Error((rOrd.error && rOrd.error.message) || 'Orden no encontrada'));
+      }
+      const ord = rOrd.data;
+      return Promise.all([
+        fetchTransaccionesParaAnulacionOrden(ordenId),
+        client
+          .from('movimientos_cuenta_corriente')
+          .select(
+            'id, cliente_id, moneda, monto, monto_usd, monto_ars, monto_eur, estado, concepto, transaccion_id, transaccion_numero, es_movimiento_manual, fecha',
+          )
+          .eq('orden_id', ordenId),
+        client
+          .from('movimientos_cuenta_corriente_intermediario')
+          .select(
+            'id, intermediario_id, moneda, monto, monto_usd, monto_ars, monto_eur, estado, concepto, transaccion_id, transaccion_numero, es_movimiento_manual, fecha',
+          )
+          .eq('orden_id', ordenId),
+        client
+          .from('movimientos_caja')
+          .select('id, moneda, monto, estado, concepto, transaccion_id, caja_tipo, fecha')
+          .eq('orden_id', ordenId),
+        client.from('comisiones_orden').select('id, moneda, monto, beneficiario').eq('orden_id', ordenId),
+        ord.cliente_id
+          ? client.from('clientes').select('id, nombre').eq('id', ord.cliente_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        ord.intermediario_id
+          ? client.from('intermediarios').select('id, nombre').eq('id', ord.intermediario_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]).then(([packTr, rCc, rInt, rCaja, rCom, rCliNom, rIntNom]) => {
+        if (rCc.error) return Promise.reject(new Error(rCc.error.message || 'No se pudo leer CC cliente'));
+        if (rInt.error) return Promise.reject(new Error(rInt.error.message || 'No se pudo leer CC intermediario'));
+        if (rCaja.error) return Promise.reject(new Error(rCaja.error.message || 'No se pudo leer caja'));
+        const ccCli = rCc.data || [];
+        const ccInt = rInt.data || [];
+        const caja = rCaja.data || [];
+        const nombresCli = {};
+        const nombresInt = {};
+        if (rCliNom.data && rCliNom.data.id) nombresCli[String(rCliNom.data.id)] = rCliNom.data.nombre || 'Cliente';
+        if (rIntNom.data && rIntNom.data.id) nombresInt[String(rIntNom.data.id)] = rIntNom.data.nombre || 'Intermediario';
+        const extraCli = [...new Set(ccCli.map((m) => m.cliente_id).filter(Boolean).map(String))].filter((id) => !nombresCli[id]);
+        const extraInt = [...new Set(ccInt.map((m) => m.intermediario_id).filter(Boolean).map(String))].filter((id) => !nombresInt[id]);
+        const pNomCli =
+          extraCli.length > 0
+            ? pandiSupabaseFetchByIdsInChunks(extraCli, (slice) => client.from('clientes').select('id, nombre').in('id', slice))
+            : Promise.resolve({ data: [] });
+        const pNomInt =
+          extraInt.length > 0
+            ? pandiSupabaseFetchByIdsInChunks(extraInt, (slice) => client.from('intermediarios').select('id, nombre').in('id', slice))
+            : Promise.resolve({ data: [] });
+        return Promise.all([pNomCli, pNomInt]).then(([rNc, rNi]) => {
+          (rNc.data || []).forEach((row) => {
+            if (row && row.id) nombresCli[String(row.id)] = row.nombre || 'Cliente';
+          });
+          (rNi.data || []).forEach((row) => {
+            if (row && row.id) nombresInt[String(row.id)] = row.nombre || 'Intermediario';
+          });
+          const aporteCli = pandiAporteOrdenPorEntidadMoneda(ccCli, 'cliente_id');
+          const aporteInt = pandiAporteOrdenPorEntidadMoneda(ccInt, 'intermediario_id');
+          const idsCli = Object.keys(aporteCli);
+          const idsInt = Object.keys(aporteInt);
+          return Promise.all([
+            Promise.all(idsCli.map((id) => pandiSumarSaldoCcNoAnuladoPorMoneda('movimientos_cuenta_corriente', 'cliente_id', id).then((s) => ({ id, ...s })))),
+            Promise.all(idsInt.map((id) => pandiSumarSaldoCcNoAnuladoPorMoneda('movimientos_cuenta_corriente_intermediario', 'intermediario_id', id).then((s) => ({ id, ...s })))),
+          ]).then(([sumCli, sumInt]) => {
+            const saldoCli = {};
+            const saldoInt = {};
+            let saldosGlobalesOk = true;
+            sumCli.forEach((s) => {
+              if (!s.ok) saldosGlobalesOk = false;
+              saldoCli[s.id] = s.saldos;
+            });
+            sumInt.forEach((s) => {
+              if (!s.ok) saldosGlobalesOk = false;
+              saldoInt[s.id] = s.saldos;
+            });
+            return {
+              ordenId,
+              ordenNumero: ord.numero,
+              estadoOrden: ord.estado,
+              clienteId: ord.cliente_id,
+              intermediarioId: ord.intermediario_id,
+              transacciones: packTr.transacciones || [],
+              instrumentacionId: packTr.instrumentacionId,
+              ccCli,
+              ccInt,
+              caja,
+              comisiones: rCom.data || [],
+              nombresCli,
+              nombresInt,
+              aporteCli,
+              aporteInt,
+              saldoCli,
+              saldoInt,
+              aporteCaja: pandiAporteCajaPorMoneda(caja),
+              saldosGlobalesOk,
+            };
+          });
+        });
+      });
+    });
+}
+
+function pandiHtmlFilasImpactoCc(tipoLabel, aporteMap, saldoMap, nombres, saldosGlobalesOk) {
+  const ids = Object.keys(aporteMap || {});
+  if (!ids.length) return '';
+  const monedas = ['USD', 'ARS', 'EUR'];
+  let filas = '';
+  ids.forEach((id) => {
+    const nombre = nombres[id] || tipoLabel;
+    monedas.forEach((mon) => {
+      const delta = Number((aporteMap[id] && aporteMap[id][mon]) || 0);
+      if (Math.abs(delta) < 1e-9) return;
+      const actual = saldosGlobalesOk && saldoMap[id] ? Number(saldoMap[id][mon]) || 0 : null;
+      const despues = actual != null ? actual - delta : null;
+      filas +=
+        '<tr><td>' +
+        escapeHtml(tipoLabel) +
+        ' ' +
+        escapeHtml(nombre) +
+        '</td><td>' +
+        escapeHtml(mon) +
+        '</td><td class="num">' +
+        (actual == null ? '—' : escapeHtml(formatImporteDisplay(actual))) +
+        '</td><td class="num">' +
+        escapeHtml(formatImporteDisplay(delta)) +
+        '</td><td class="num">' +
+        (despues == null ? '—' : escapeHtml(formatImporteDisplay(despues))) +
+        '</td></tr>';
+    });
+  });
+  if (!filas) return '';
+  return (
+    '<div class="pandi-anular-impacto-tabla-wrap"><table><thead><tr><th>Entidad</th><th>Moneda</th><th>Saldo actual</th><th>Esta orden</th><th>Saldo después</th></tr></thead><tbody>' +
+    filas +
+    '</tbody></table></div>'
+  );
+}
+
+function htmlConfirmacionAnularOrden(snap) {
+  const nro = snap.ordenNumero != null ? String(snap.ordenNumero) : '—';
+  const est = String(snap.estadoOrden || '—');
+  const quien = (currentUserDisplayName && String(currentUserDisplayName).trim()) || (currentUserEmail && String(currentUserEmail).trim()) || 'tu usuario';
+  const trx = snap.transacciones || [];
+  let htmlTrx = '<p>No hay transacciones en la instrumentación.</p>';
+  if (trx.length) {
+    htmlTrx =
+      '<div class="pandi-anular-impacto-tabla-wrap"><table><thead><tr><th>Trans.</th><th>Tipo</th><th>Moneda</th><th>Importe</th><th>Estado</th></tr></thead><tbody>' +
+      trx
+        .map((t) => {
+          const n = pandiNumeroTransaccionParaUi(t);
+          const tipo = t.tipo ? String(t.tipo) : '—';
+          const mon = t.moneda ? String(t.moneda).toUpperCase() : '—';
+          const imp = t.monto != null && t.monto !== '' ? formatImporteDisplay(t.monto) : '—';
+          return (
+            '<tr><td>' +
+            escapeHtml(n || '—') +
+            '</td><td>' +
+            escapeHtml(tipo) +
+            '</td><td>' +
+            escapeHtml(mon) +
+            '</td><td class="num">' +
+            escapeHtml(imp) +
+            '</td><td>' +
+            escapeHtml(pandiEtiquetaEstadoTransaccionAnular(t.estado)) +
+            '</td></tr>'
+          );
+        })
+        .join('') +
+      '</tbody></table></div>';
+  }
+  const coms = snap.comisiones || [];
+  let htmlCom = '';
+  if (coms.length) {
+    htmlCom =
+      '<h3>Comisiones del acuerdo</h3><p>Se eliminan estas filas de la orden (dejan de quedar importes colgados).</p>' +
+      '<div class="pandi-anular-impacto-tabla-wrap"><table><thead><tr><th>A favor de</th><th>Moneda</th><th>Importe</th></tr></thead><tbody>' +
+      coms
+        .map((c) => {
+          const mon = c.moneda ? String(c.moneda).toUpperCase() : '—';
+          const imp = c.monto != null && c.monto !== '' ? formatImporteDisplay(c.monto) : '—';
+          return (
+            '<tr><td>' +
+            escapeHtml(pandiEtiquetaBeneficiarioComisionAnular(c.beneficiario)) +
+            '</td><td>' +
+            escapeHtml(mon) +
+            '</td><td class="num">' +
+            escapeHtml(imp) +
+            '</td></tr>'
+          );
+        })
+        .join('') +
+      '</tbody></table></div>';
+  }
+  const htmlCli = pandiHtmlFilasImpactoCc('Cliente', snap.aporteCli, snap.saldoCli, snap.nombresCli, snap.saldosGlobalesOk);
+  const htmlInt = pandiHtmlFilasImpactoCc('Intermediario', snap.aporteInt, snap.saldoInt, snap.nombresInt, snap.saldosGlobalesOk);
+  const cajaViva = (snap.caja || []).filter((m) => !pandiEstadoMovimientoEsAnulado(m.estado));
+  let htmlCaja = '';
+  if (cajaViva.length) {
+    const monedas = ['USD', 'ARS', 'EUR'];
+    let filasC = '';
+    monedas.forEach((mon) => {
+      const v = Number((snap.aporteCaja && snap.aporteCaja[mon]) || 0);
+      if (Math.abs(v) < 1e-9) return;
+      filasC +=
+        '<tr><td>Caja derivada</td><td>' +
+        escapeHtml(mon) +
+        '</td><td class="num">' +
+        escapeHtml(formatImporteDisplay(v)) +
+        '</td></tr>';
+    });
+    htmlCaja =
+      '<h3>Caja</h3><p>Los movimientos de caja de esta orden también quedan anulados y dejan de sumar.</p>' +
+      (filasC
+        ? '<div class="pandi-anular-impacto-tabla-wrap"><table><thead><tr><th></th><th>Moneda</th><th>Importe que deja de sumar</th></tr></thead><tbody>' +
+          filasC +
+          '</tbody></table></div>'
+        : '<p>' + cajaViva.length + ' movimiento(s) de caja.</p>');
+  }
+  const nManual =
+    (snap.ccCli || []).filter((m) => m.es_movimiento_manual === true).length +
+    (snap.ccInt || []).filter((m) => m.es_movimiento_manual === true).length;
+  const estUi =
+    {
+      pendiente_instrumentar: 'Pendiente de instrumentar',
+      instrumentacion_parcial: 'Instrumentación parcial',
+      instrumentacion_cerrada_ejecucion: 'Cerrada en ejecución',
+      orden_ejecutada: 'Orden ejecutada',
+      anulada: 'Anulada',
+    }[est] || est.replace(/_/g, ' ');
+  return (
+    '<div class="pandi-anular-impacto">' +
+    '<p>La orden <strong>Nº ' +
+    escapeHtml(nro) +
+    '</strong> (hoy: ' +
+    escapeHtml(estUi) +
+    ') pasará a <strong>Anulada</strong>.</p>' +
+    '<p>Las <strong>' +
+    trx.length +
+    '</strong> transacción(es) de esta orden pasan a <strong>Anulada</strong>:</p>' +
+    htmlTrx +
+    htmlCom +
+    '<h3>Cuenta corriente</h3>' +
+    '<p>Las filas derivadas de esta orden quedan en Anulado y <strong>dejan de sumar al saldo</strong>.</p>' +
+    (htmlCli || htmlInt
+      ? htmlCli + htmlInt
+      : '<p>No hay movimientos de CC derivados que hoy sumen al saldo.</p>') +
+    (snap.saldosGlobalesOk
+      ? ''
+      : '<p class="aviso">No se pudo leer el saldo global de alguna entidad; igual se anulan las filas de esta orden.</p>') +
+    htmlCaja +
+    (nManual ? '<p>Hay ' + nManual + ' movimiento(s) <strong>manuales</strong> de CC ligados a la orden: <strong>no se tocan</strong>.</p>' : '') +
+    '<p>Queda registrado en <strong>Auditoría</strong> a nombre de <strong>' +
+    escapeHtml(quien) +
+    '</strong>, con cada registro afectado (orden, transacciones, CC y caja).</p>' +
+    '<p>No se puede deshacer desde la app.</p>' +
+    '<p><strong>¿Confirmás la anulación?</strong></p>' +
+    '</div>'
+  );
+}
+
+function pandiCambiosAuditoriaAnularOrden(snap, extraMeta) {
+  const cambios = [];
+  const nro = snap.ordenNumero != null ? String(snap.ordenNumero) : '';
+  cambios.push({
+    campo: 'Orden ' + (nro ? '#' + nro : '') + ' estado',
+    anterior: snap.estadoOrden || null,
+    nuevo: 'anulada',
+  });
+  (snap.transacciones || []).forEach((t) => {
+    const est = String(t.estado || '').toLowerCase();
+    if (est === 'anulada') return;
+    const num = pandiNumeroTransaccionParaUi(t) || 'sin número';
+    cambios.push({
+      campo: 'Transacción ' + num,
+      anterior: t.estado || null,
+      nuevo: 'anulada',
+    });
+  });
+  const pushCc = (m, libro, nombre) => {
+    if (!pandiFilaCcDerivadaVivaParaAnular(m)) return;
+    const z = getMontosMovimientoCcResumen(m);
+    const mon = String(m.moneda || '').toUpperCase() || (Math.abs(z.USD) >= 1e-9 ? 'USD' : Math.abs(z.ARS) >= 1e-9 ? 'ARS' : 'EUR');
+    const imp = mon === 'USD' ? z.USD : mon === 'ARS' ? z.ARS : z.EUR;
+    const nTr = m.transaccion_numero != null ? String(m.transaccion_numero) : '';
+    cambios.push({
+      campo:
+        'CC ' +
+        libro +
+        (nombre ? ' ' + nombre : '') +
+        ' ' +
+        mon +
+        (nTr ? ' trans. ' + nTr : ''),
+      anterior: (m.estado || '') + ' ' + formatImporteDisplay(imp),
+      nuevo: 'anulado',
+    });
+  };
+  (snap.ccCli || []).forEach((m) => {
+    const nom = m.cliente_id && snap.nombresCli ? snap.nombresCli[String(m.cliente_id)] : '';
+    pushCc(m, 'cliente', nom);
+  });
+  (snap.ccInt || []).forEach((m) => {
+    const nom = m.intermediario_id && snap.nombresInt ? snap.nombresInt[String(m.intermediario_id)] : '';
+    pushCc(m, 'intermediario', nom);
+  });
+  (snap.caja || []).forEach((m) => {
+    if (pandiEstadoMovimientoEsAnulado(m.estado)) return;
+    cambios.push({
+      campo: 'Caja ' + String(m.caja_tipo || '') + ' ' + String(m.moneda || ''),
+      anterior: (m.estado || '') + ' ' + formatImporteDisplay(m.monto),
+      nuevo: 'anulado',
+    });
+  });
+  (snap.comisiones || []).forEach((c) => {
+    cambios.push({
+      campo: 'Comisión acuerdo ' + String(c.beneficiario || '') + ' ' + String(c.moneda || ''),
+      anterior: formatImporteDisplay(c.monto),
+      nuevo: '(eliminada)',
+    });
+  });
+  if (extraMeta && extraMeta.verificacion_ok === false) {
+    cambios.push({
+      campo: 'Verificación post-anulación',
+      anterior: null,
+      nuevo: extraMeta.verificacion_msg || 'quedaron filas derivadas no anuladas',
+    });
+  }
+  return cambios;
+}
+
+function pandiDetalleAuditoriaAnularOrden(snap, extraMeta) {
+  const quien =
+    (currentUserDisplayName && String(currentUserDisplayName).trim()) ||
+    (currentUserEmail && String(currentUserEmail).trim()) ||
+    String(currentUserId || '');
+  const nro = snap.ordenNumero != null ? String(snap.ordenNumero) : String(snap.ordenId || '');
+  const lineas = [];
+  lineas.push('Quién: ' + quien);
+  lineas.push('Orden #' + nro + ': ' + (snap.estadoOrden || '') + ' → anulada.');
+  const trx = (snap.transacciones || []).filter((t) => String(t.estado || '').toLowerCase() !== 'anulada');
+  if (trx.length) {
+    lineas.push(
+      'Transacciones → anulada: ' +
+        trx.map((t) => (pandiNumeroTransaccionParaUi(t) || 'sin número') + ' (' + (t.estado || '') + ')').join('; ') +
+        '.',
+    );
+  }
+  const ccVivos =
+    (snap.ccCli || []).filter(pandiFilaCcDerivadaVivaParaAnular).length +
+    (snap.ccInt || []).filter(pandiFilaCcDerivadaVivaParaAnular).length;
+  const cajaVivos = (snap.caja || []).filter((m) => !pandiEstadoMovimientoEsAnulado(m.estado)).length;
+  lineas.push('CC derivada que deja de sumar: ' + ccVivos + ' fila(s). Caja derivada: ' + cajaVivos + ' fila(s).');
+  if ((snap.comisiones || []).length) {
+    lineas.push(
+      'Comisiones del acuerdo eliminadas: ' +
+        (snap.comisiones || [])
+          .map((c) => pandiEtiquetaBeneficiarioComisionAnular(c.beneficiario) + ' ' + formatImporteDisplay(c.monto) + ' ' + String(c.moneda || ''))
+          .join('; ') +
+        '.',
+    );
+  }
+  if (extraMeta && extraMeta.sync_ok === false) lineas.push('El recálculo (sync) falló; se forzó estado anulado en derivados.');
+  if (extraMeta && extraMeta.red_seguridad) lineas.push('Red de seguridad: UPDATE a anulado en CC/caja derivados de esta orden.');
+  if (extraMeta && extraMeta.verificacion_ok === false) {
+    lineas.push('Verificación: ' + (extraMeta.verificacion_msg || 'quedaron filas no anuladas.'));
+  } else {
+    lineas.push('Verificación: no quedan derivados de esta orden sumando al saldo.');
+  }
+  return lineas.join('\n').slice(0, 8000);
 }
 
 /** Marca todas las transacciones de la instrumentación como anuladas (coherente con orden anulada). */
@@ -4830,7 +5298,7 @@ function anularTodasTransaccionesInstrumentacion(instrumentacionId, _ahora) {
     .eq('instrumentacion_id', instrumentacionId)
     .neq('estado', 'anulada')
     .then((r) => {
-      if (r.error) showToast('Error al anular transacciones: ' + (r.error.message || ''), 'error');
+      if (r.error) return Promise.reject(new Error(r.error.message || 'No se pudieron anular las transacciones'));
       return r;
     });
 }
@@ -4842,110 +5310,244 @@ function transaccionesTodasPendientesParaAnulacion(list) {
 }
 
 /**
- * UPDATE masivo de CC/caja a anulado por orden (legado).
- * La **anulación de orden** en la app usa `sincronizarCcYCajaDesdeOrden` (regenera filas); se mantiene por si hace falta un parche manual puntual en BD.
+ * UPDATE masivo de CC/caja derivados a anulado por orden (red de seguridad al anular).
+ * No toca movimientos CC manuales. Solo la orden que se está anulando (no historial).
  */
 function anularMovimientosCcYCajaNoManualPorOrden(ordenId, ahora) {
-  return client
-    .from('movimientos_cuenta_corriente')
-    .update({ estado: 'anulado', estado_fecha: ahora })
-    .eq('orden_id', ordenId)
-    .neq('estado', 'anulado')
-    .or('es_movimiento_manual.is.null,es_movimiento_manual.eq.false')
+  const filtroNoAnulado = (q) => q.not('estado', 'in', '(anulado,anulada)');
+  return filtroNoAnulado(
+    client
+      .from('movimientos_cuenta_corriente')
+      .update({ estado: 'anulado', estado_fecha: ahora })
+      .eq('orden_id', ordenId)
+      .or('es_movimiento_manual.is.null,es_movimiento_manual.eq.false'),
+  )
     .then((rCc) => {
-      if (rCc.error) showToast('Error al anular CC cliente: ' + (rCc.error.message || ''), 'error');
-      return client
-        .from('movimientos_cuenta_corriente_intermediario')
-        .update({ estado: 'anulado', estado_fecha: ahora })
-        .eq('orden_id', ordenId)
-        .neq('estado', 'anulado')
-        .or('es_movimiento_manual.is.null,es_movimiento_manual.eq.false');
+      if (rCc.error) return Promise.reject(new Error('CC cliente: ' + (rCc.error.message || '')));
+      return filtroNoAnulado(
+        client
+          .from('movimientos_cuenta_corriente_intermediario')
+          .update({ estado: 'anulado', estado_fecha: ahora })
+          .eq('orden_id', ordenId)
+          .or('es_movimiento_manual.is.null,es_movimiento_manual.eq.false'),
+      );
     })
     .then((rCi) => {
-      if (rCi.error) showToast('Error al anular CC intermediario: ' + (rCi.error.message || ''), 'error');
-      return client
-        .from('movimientos_caja')
-        .update({ estado: 'anulado', estado_fecha: ahora })
-        .eq('orden_id', ordenId)
-        .neq('estado', 'anulado');
+      if (rCi.error) return Promise.reject(new Error('CC intermediario: ' + (rCi.error.message || '')));
+      return filtroNoAnulado(
+        client.from('movimientos_caja').update({ estado: 'anulado', estado_fecha: ahora }).eq('orden_id', ordenId),
+      );
     })
     .then((rCaja) => {
-      if (rCaja.error) showToast('Error al anular caja: ' + (rCaja.error.message || ''), 'error');
+      if (rCaja.error) return Promise.reject(new Error('Caja: ' + (rCaja.error.message || '')));
       return { ok: true };
     });
 }
 
+function pandiContarDerivadosVivosTrasAnularOrden(ordenId, instrumentacionId) {
+  const cnt = (tabla, extra) => {
+    let q = client.from(tabla).select('id', { count: 'exact', head: true }).eq('orden_id', ordenId).not('estado', 'in', '(anulado,anulada)');
+    if (extra) q = extra(q);
+    return q.then((r) => {
+      if (r.error) return Promise.reject(new Error(r.error.message || 'conteo ' + tabla));
+      return r.count || 0;
+    });
+  };
+  const pTr = instrumentacionId
+    ? client
+        .from('transacciones')
+        .select('id', { count: 'exact', head: true })
+        .eq('instrumentacion_id', instrumentacionId)
+        .neq('estado', 'anulada')
+        .then((r) => {
+          if (r.error) return Promise.reject(new Error(r.error.message || 'conteo transacciones'));
+          return r.count || 0;
+        })
+    : Promise.resolve(0);
+  return Promise.all([
+    cnt('movimientos_cuenta_corriente', (q) => q.or('es_movimiento_manual.is.null,es_movimiento_manual.eq.false')),
+    cnt('movimientos_cuenta_corriente_intermediario', (q) => q.or('es_movimiento_manual.is.null,es_movimiento_manual.eq.false')),
+    cnt('movimientos_caja'),
+    pTr,
+  ]).then(([nCli, nInt, nCaja, nTr]) => ({ nCli, nInt, nCaja, nTr, total: nCli + nInt + nCaja + nTr }));
+}
+
+function registrarAuditoriaAnularOrden(snap, extraMeta) {
+  if (!snap || !snap.ordenId) return Promise.resolve();
+  const cambios = pandiCambiosAuditoriaAnularOrden(snap, extraMeta);
+  const detalle = pandiDetalleAuditoriaAnularOrden(snap, extraMeta);
+  const extra = {
+    instrumentacion_id: snap.instrumentacionId || null,
+    todas_transacciones_pendientes: transaccionesTodasPendientesParaAnulacion(snap.transacciones),
+    afecto_cc_caja: true,
+    orden_estaba_ejecutada: String(snap.estadoOrden || '') === 'orden_ejecutada',
+    registros: {
+      transacciones: (snap.transacciones || []).map((t) => ({
+        id: t.id,
+        numero: t.numero,
+        estado_antes: t.estado,
+      })),
+      cc_cliente: (snap.ccCli || []).filter(pandiFilaCcDerivadaVivaParaAnular).map((m) => ({
+        id: m.id,
+        cliente_id: m.cliente_id,
+        moneda: m.moneda,
+        monto: m.monto,
+        estado_antes: m.estado,
+        transaccion_numero: m.transaccion_numero,
+        concepto: m.concepto,
+      })),
+      cc_intermediario: (snap.ccInt || []).filter(pandiFilaCcDerivadaVivaParaAnular).map((m) => ({
+        id: m.id,
+        intermediario_id: m.intermediario_id,
+        moneda: m.moneda,
+        monto: m.monto,
+        estado_antes: m.estado,
+        transaccion_numero: m.transaccion_numero,
+        concepto: m.concepto,
+      })),
+      caja: (snap.caja || [])
+        .filter((m) => !pandiEstadoMovimientoEsAnulado(m.estado))
+        .map((m) => ({
+          id: m.id,
+          moneda: m.moneda,
+          monto: m.monto,
+          estado_antes: m.estado,
+          caja_tipo: m.caja_tipo,
+          transaccion_id: m.transaccion_id,
+        })),
+      comisiones_eliminadas: (snap.comisiones || []).map((c) => ({
+        id: c.id,
+        moneda: c.moneda,
+        monto: c.monto,
+        beneficiario: c.beneficiario,
+      })),
+    },
+    ...(extraMeta && typeof extraMeta === 'object' ? extraMeta : {}),
+  };
+  if (cambios.length) {
+    return registrarAuditoriaAppCambios('orden', 'anular', detalle, {
+      entidad: 'orden',
+      registro_id: snap.ordenId,
+      orden_id: snap.ordenId,
+      instrumentacion_id: snap.instrumentacionId || null,
+      cambios,
+      extra,
+    });
+  }
+  return registrarAuditoriaApp('orden', 'anular', detalle, {
+    orden_id: snap.ordenId,
+    instrumentacion_id: snap.instrumentacionId || null,
+    ...extra,
+  });
+}
+
 /**
- * Persiste anulación: orden → anulada; elimina `comisiones_orden` y `orden_comisiones_generadas` de la orden;
- * transacciones → anulada; luego **siempre** `sincronizarCcYCajaDesdeOrden`
- * (regenera CC/caja derivada: filas CC con `estado` anulado ligadas a trx anuladas; caja solo por trx ejecutadas).
- * Incluye órdenes en estado orden_ejecutada (acción grave; confirmación en UI).
+ * Persiste anulación: orden → anulada; elimina comisiones del acuerdo; transacciones → anulada;
+ * sync CC/caja; **red de seguridad** UPDATE derivados a anulado; verificación de que no quede nada sumando.
+ * Auditoría con quién y cada registro. Solo la orden confirmada (no historial).
  */
-function ejecutarAnulacionOrdenCompleta(ordenId) {
+function ejecutarAnulacionOrdenCompleta(ordenId, snapOpt) {
   const ahora = new Date().toISOString();
-  return client
-    .from('ordenes')
-    .select('id, usuario_id, estado, numero')
-    .eq('id', ordenId)
-    .single()
-    .then((rOrd) => {
-      const ord = rOrd.data;
-      if (rOrd.error || !ord) return Promise.reject(new Error((rOrd.error && rOrd.error.message) || 'Orden no encontrada'));
-      if (ord.estado === 'anulada') {
-        showToast('La orden ya está anulada.', 'info');
-        return { yaAnulada: true };
-      }
-      const eraEjecutada = ord.estado === 'orden_ejecutada';
-      return fetchTransaccionesParaAnulacionOrden(ordenId).then(({ transacciones, instrumentacionId }) => {
-        const todasPendientes = transaccionesTodasPendientesParaAnulacion(transacciones);
+  const pSnap =
+    snapOpt && snapOpt.ordenId === ordenId
+      ? Promise.resolve(snapOpt)
+      : fetchImpactoAnulacionOrden(ordenId).catch(() => null);
+  return pSnap.then((snapIn) =>
+    client
+      .from('ordenes')
+      .select('id, usuario_id, estado, numero')
+      .eq('id', ordenId)
+      .single()
+      .then((rOrd) => {
+        const ord = rOrd.data;
+        if (rOrd.error || !ord) return Promise.reject(new Error((rOrd.error && rOrd.error.message) || 'Orden no encontrada'));
+        if (ord.estado === 'anulada') {
+          showToast('La orden ya está anulada.', 'info');
+          return { yaAnulada: true };
+        }
+        const snap = snapIn || {
+          ordenId,
+          ordenNumero: ord.numero,
+          estadoOrden: ord.estado,
+          transacciones: [],
+          instrumentacionId: null,
+          ccCli: [],
+          ccInt: [],
+          caja: [],
+          comisiones: [],
+          nombresCli: {},
+          nombresInt: {},
+        };
+        const todasPendientes = transaccionesTodasPendientesParaAnulacion(snap.transacciones);
+        let syncOk = true;
         return client
           .from('ordenes')
           .update({ estado: 'anulada', updated_at: ahora })
           .eq('id', ordenId)
           .then((rUp) => {
             if (rUp.error) return Promise.reject(new Error(rUp.error.message || 'No se pudo anular la orden'));
-            const detalle =
-              'Orden anulada' +
-              (ord.numero != null ? ' #' + ord.numero : '') +
-              (eraEjecutada ? ' (estaba Orden ejecutada).' : '. ') +
-              ' Comisiones del acuerdo (comisiones_orden) y marcas orden_comisiones_generadas eliminadas.' +
-              ' Transacciones de instrumentación marcadas anulada.' +
-              ' CC y caja de la orden recalculadas por sincronización (CC en anulado donde corresponde; no suman al saldo).';
-            function finAuditoria() {
-              registrarAuditoriaApp('orden', 'anular', detalle, {
-                orden_id: ordenId,
-                instrumentacion_id: instrumentacionId,
-                todas_transacciones_pendientes: todasPendientes,
-                afecto_cc_caja: true,
-                orden_estaba_ejecutada: eraEjecutada,
-              });
+            return client.from('comisiones_orden').delete().eq('orden_id', ordenId);
+          })
+          .then((rDelCo) => {
+            if (rDelCo && rDelCo.error) {
+              return Promise.reject(new Error(rDelCo.error.message || 'No se pudieron eliminar las comisiones de la orden'));
             }
-            return client
-              .from('comisiones_orden')
-              .delete()
-              .eq('orden_id', ordenId)
-              .then((rDelCo) => {
-                if (rDelCo.error) {
-                  return Promise.reject(new Error(rDelCo.error.message || 'No se pudieron eliminar las comisiones de la orden'));
-                }
-                return client.from('orden_comisiones_generadas').delete().eq('orden_id', ordenId);
-              })
-              .then((rDelOcg) => {
-                if (rDelOcg.error) {
-                  return Promise.reject(new Error(rDelOcg.error.message || 'No se pudieron eliminar las marcas de comisiones generadas'));
-                }
-                return anularTodasTransaccionesInstrumentacion(instrumentacionId, ahora);
-              })
-              .then(() =>
-                sincronizarCcYCajaDesdeOrden(ordenId, { silenciarAvisosInvarianteCc: false, propagarError: true }),
-              )
-              .then(() => {
-                finAuditoria();
-                return { ok: true, todasPendientes };
-              });
+            return client.from('orden_comisiones_generadas').delete().eq('orden_id', ordenId);
+          })
+          .then((rDelOcg) => {
+            if (rDelOcg && rDelOcg.error) {
+              return Promise.reject(new Error(rDelOcg.error.message || 'No se pudieron eliminar las marcas de comisiones generadas'));
+            }
+            return anularTodasTransaccionesInstrumentacion(snap.instrumentacionId, ahora).catch((errTr) => {
+              if (typeof console !== 'undefined' && console.warn) {
+                console.warn('Anular orden: no se pudieron anular todas las transacciones; se continúa con CC/caja', errTr && (errTr.message || errTr));
+              }
+              return null;
+            });
+          })
+          .then(() =>
+            sincronizarCcYCajaDesdeOrden(ordenId, { silenciarAvisosInvarianteCc: false, propagarError: true }).catch((err) => {
+              syncOk = false;
+              if (typeof console !== 'undefined' && console.warn) {
+                console.warn('Anular orden: sync CC/caja falló; se aplica red de seguridad', err && (err.message || err));
+              }
+              return null;
+            }),
+          )
+          .then(() => anularMovimientosCcYCajaNoManualPorOrden(ordenId, ahora))
+          .then(() => anularTodasTransaccionesInstrumentacion(snap.instrumentacionId, ahora).catch(() => null))
+          .then(() => pandiContarDerivadosVivosTrasAnularOrden(ordenId, snap.instrumentacionId))
+          .then((cnt) => {
+            const extra = {
+              sync_ok: syncOk,
+              red_seguridad: true,
+              verificacion_ok: cnt.total === 0,
+            };
+            if (cnt.total > 0) {
+              extra.verificacion_ok = false;
+              extra.verificacion_msg =
+                'Quedaron vivos: transacciones ' +
+                cnt.nTr +
+                ', CC cliente ' +
+                cnt.nCli +
+                ', CC intermediario ' +
+                cnt.nInt +
+                ', caja ' +
+                cnt.nCaja;
+            }
+            return registrarAuditoriaAnularOrden(snap, extra).then(() => {
+              if (cnt.total > 0) {
+                return Promise.reject(
+                  new Error(
+                    'La orden quedó anulada pero aún hay registros que suman al saldo. ' + extra.verificacion_msg,
+                  ),
+                );
+              }
+              return { ok: true, todasPendientes, syncOk };
+            });
           });
-      });
-    });
+      }),
+  );
 }
 
 function refrescarVistasTrasAnularOrden(cerrarModalOrden) {
@@ -4958,25 +5560,43 @@ function refrescarVistasTrasAnularOrden(cerrarModalOrden) {
 
 function solicitarConfirmacionYAnularOrden(ordenId, callbacks) {
   if (pandiAvisoSiSinServidorParaEscritura('Anular una orden en el servidor', { requiereListadoOrdenesVivo: true })) return;
-  client
-    .from('ordenes')
-    .select('estado')
-    .eq('id', ordenId)
-    .single()
-    .then((rSt) => {
-      const st = (rSt.data && rSt.data.estado) || '';
-      const esEjecutada = st === 'orden_ejecutada';
-      const base =
-        'La orden pasará a estado Anulada.\n\n' +
-        'Se eliminan las filas de **comisiones del acuerdo** (`comisiones_orden`) y las marcas de comisiones generadas asociadas a la orden, para que no queden importes en pendiente.\n\n' +
-        'Después se recalculan la cuenta corriente (cliente e intermediario) y la caja **derivadas** de esta orden: las filas CC ligadas a transacciones anuladas quedan visibles con estado **Anulada** y **no suman** al saldo. La caja solo refleja transacciones que estuvieron ejecutadas. Los movimientos CC **manuales** no se regeneran con el sync.\n\n' +
-        'Es una operación sensible.\n\n' +
-        '¿Confirmás la anulación?';
-      const msg = esEjecutada
-        ? 'La orden está en estado Orden ejecutada: suele implicar transacciones ya cerradas y movimientos contables reales. Al anular se marcará la orden como Anulada y se volverá a sincronizar CC y caja desde la instrumentación (mismo criterio que arriba).\n\n' + base
-        : base;
+  showToast('Preparando anulación…', 'info');
+  fetchImpactoAnulacionOrden(ordenId)
+    .then((snap) => {
+      const esEjecutada = String(snap.estadoOrden || '') === 'orden_ejecutada';
       showConfirm(
-        msg,
+        htmlConfirmacionAnularOrden(snap),
+        'Anular orden',
+        () => {
+          ejecutarAnulacionOrdenCompleta(ordenId, snap)
+            .then((res) => {
+              if (res && res.yaAnulada) return;
+              if (!res || !res.ok) return;
+              showToast(
+                res.syncOk === false
+                  ? 'Orden anulada. El recálculo avisó un error; las filas derivadas quedaron en Anulado y no suman al saldo.'
+                  : 'Orden anulada. Las transacciones y la cuenta corriente derivada no suman al saldo.',
+                'success',
+              );
+              if (callbacks && callbacks.onExito) callbacks.onExito();
+              else refrescarVistasTrasAnularOrden(false);
+            })
+            .catch((err) => {
+              showToast('Error al anular: ' + (err && err.message ? err.message : String(err)), 'error');
+            });
+        },
+        null,
+        'Cancelar',
+        esEjecutada ? 'Anular orden ejecutada' : 'Anular orden',
+        { html: true, variante: 'impacto' },
+      );
+    })
+    .catch((err) => {
+      showToast('No se pudo armar el detalle de impacto. Podés confirmar igual.', 'info');
+      showConfirm(
+        'No se pudo calcular el impacto en saldos (' +
+          ((err && err.message) || 'error') +
+          ').\n\nSi confirmás, la orden pasa a Anulada, las transacciones también, y se fuerza Anulado en la cuenta corriente y caja derivadas de esta orden para que no sumen al saldo. Queda registro en Auditoría.\n\n¿Confirmás la anulación?',
         'Anular orden',
         () => {
           ejecutarAnulacionOrdenCompleta(ordenId)
@@ -4987,17 +5607,14 @@ function solicitarConfirmacionYAnularOrden(ordenId, callbacks) {
               if (callbacks && callbacks.onExito) callbacks.onExito();
               else refrescarVistasTrasAnularOrden(false);
             })
-            .catch((err) => {
-              showToast('Error al anular: ' + (err && err.message ? err.message : String(err)), 'error');
+            .catch((e) => {
+              showToast('Error al anular: ' + (e && e.message ? e.message : String(e)), 'error');
             });
         },
         null,
         'Cancelar',
-        esEjecutada ? 'Anular orden ejecutada' : 'Anular orden'
+        'Anular orden',
       );
-    })
-    .catch(() => {
-      showToast('No se pudo cargar el estado de la orden. Intentá de nuevo.', 'error');
     });
 }
 
@@ -16316,19 +16933,13 @@ function setCcSaldoCards(saldos) {
 }
 
 /**
- * Recalcula CC y caja desde orden + transacciones para todas las órdenes que tienen instrumentación.
- * Así, al refrescar la página o abrir Cuenta corriente, los movimientos quedan derivados de la fuente de verdad (no hace falta truncar).
- *
- * - **Paralelo por lotes:** cada `sincronizarCcYCajaDesdeOrden` es por `orden_id` distinto (sin mezclar filas entre órdenes); varias en paralelo reducen la latencia total respecto del encadenamiento 1 a 1.
- * - **Una sola corrida en vuelo:** si Cajas, Inicio y CC piden sync a la vez, comparten la misma promesa.
- * - **Cooldown (sessionStorage):** tras un sync exitoso, `loadCuentaCorriente` puede omitir repetirlo al reabrir el menú antes de `PANDI_CC_GLOBAL_SYNC_COOLDOWN_MS` (el botón Refrescar y los flujos con `skipSyncGlobal: false` tras error siguen forzando lectura coherente cuando aplica).
- */
-/**
- * Paralelismo de `sincronizarCcYCajaDesdeOrden` en sync global.
- * Valores altos (~8+) pueden **saturar** el pool HTTP del navegador: la vista CC (fetch movimientos) compite
- * con cientos de `sync_cc_caja_orden` y la UI “tarda una eternidad” aunque la BD sea chica.
+ * Paralelismo de `sincronizarCcYCajaDesdeOrden` en sync global (login, Inicio, Cajas, primera apertura CC).
+ * Valores altos (~8+) pueden **saturar** el pool HTTP del navegador si al mismo tiempo se leen movimientos de CC.
+ * El botón **Refrescar** usa `PANDI_CC_SYNC_ORDENES_CONCURRENCY_REFRESCAR` (termina el sync y recién después pinta).
  */
 const PANDI_CC_SYNC_ORDENES_CONCURRENCY = 4;
+/** Solo `#cc-btn-refrescar` / movimientos: mismo sync por orden, más paralelo. No cambia payloads ni saldos. */
+const PANDI_CC_SYNC_ORDENES_CONCURRENCY_REFRESCAR = 8;
 
 /** Atrasar el sync global del primer login para que `loadCuentaCorriente` / otras vistas ganen la red primero (ms). */
 const PANDI_CC_GLOBAL_SYNC_DEFER_LOGIN_MS = 2000;
@@ -16355,8 +16966,23 @@ function debeOmitirCcGlobalSyncPorCooldownSesion() {
   }
 }
 
-function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion() {
+/**
+ * Recalcula CC y caja desde orden + transacciones para todas las órdenes que tienen instrumentación.
+ * Así, al refrescar la página o abrir Cuenta corriente, los movimientos quedan derivados de la fuente de verdad (no hace falta truncar).
+ *
+ * - **Paralelo por lotes:** cada `sincronizarCcYCajaDesdeOrden` es por `orden_id` distinto (sin mezclar filas entre órdenes); varias en paralelo reducen la latencia total respecto del encadenamiento 1 a 1.
+ * - **Una sola corrida en vuelo:** si Cajas, Inicio y CC piden sync a la vez, comparten la misma promesa (aunque Refrescar pida concurrencia 8, espera la corrida ya iniciada).
+ * - **Cooldown (sessionStorage):** tras un sync exitoso, `loadCuentaCorriente` puede omitir repetirlo al reabrir el menú antes de `PANDI_CC_GLOBAL_SYNC_COOLDOWN_MS` (el botón Refrescar y los flujos con `skipSyncGlobal: false` tras error siguen forzando lectura coherente cuando aplica).
+ * - **opts.concurrency:** tope de órdenes en paralelo (1–12). Login / Inicio / Cajas / apertura CC usan 4; Refrescar usa 8. No cambia payloads ni saldos.
+ * **Pendiente (no olvidar):** recorte real = RPC batch varias órdenes en un viaje — `docs/PLAN_MEJORA_PERFORMANCE_SYNC_CC.md` § «Decisión 2026-09-10: B ahora, A después».
+ */
+function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal) {
   if (pandiCcSyncTodasEnVuelo) return pandiCcSyncTodasEnVuelo;
+  const concPedida = Number(optsSyncGlobal && optsSyncGlobal.concurrency);
+  const conc =
+    Number.isFinite(concPedida) && concPedida >= 1
+      ? Math.min(12, Math.max(1, Math.floor(concPedida)))
+      : PANDI_CC_SYNC_ORDENES_CONCURRENCY;
   const p = (async () => {
     const r = await client.from('instrumentacion').select('orden_id');
     if (r.error) return;
@@ -16381,7 +17007,6 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion() {
       marcarCcGlobalSyncExitosoEnSesion();
       return;
     }
-    const conc = PANDI_CC_SYNC_ORDENES_CONCURRENCY;
     const fallosSyncCc = [];
     for (let i = 0; i < ordenIds.length; i += conc) {
       const chunk = ordenIds.slice(i, i + conc);
@@ -20030,7 +20655,9 @@ function setupCuentaCorriente() {
     ccRefrescarSyncEnCurso = true;
     setCcRefrescarBotonesBusy(true);
     showToast('Sincronizando CC y caja desde órdenes…', 'info');
-    sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
+    sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion({
+      concurrency: PANDI_CC_SYNC_ORDENES_CONCURRENCY_REFRESCAR,
+    })
       .then(() => {
         loadCuentaCorriente({ skipSyncGlobal: true });
         showToast('Cuenta corriente actualizada.', 'success');
@@ -21474,7 +22101,9 @@ function dismissAllToasts() {
 
 /**
  * Confirmación con mensajería interna (no usar confirm() del navegador).
- * `opciones.html === true`: `mensaje` es HTML confiable (solo generado por la app); se aplica layout «Nueva versión» (clase `modal-confirm--release`).
+ * `opciones.html === true`: `mensaje` es HTML confiable (solo generado por la app).
+ * Layout «Nueva versión» (`modal-confirm--release`) si no se pasa `variante: 'impacto'`.
+ * `variante: 'impacto'` — cartel de anular orden (tabla de saldos, más ancho).
  */
 function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar, tituloModal, opciones) {
   const backdrop = document.getElementById('modal-confirm-backdrop');
@@ -21486,9 +22115,13 @@ function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar
   if (!backdrop || !texto || !btnAceptar || !btnCancelar) return;
   const opts = opciones && typeof opciones === 'object' ? opciones : null;
   const useHtml = !!(opts && opts.html === true);
+  const varianteImpacto = !!(opts && opts.variante === 'impacto');
   const ocultarCancelar = !!(opts && opts.ocultarCancelar === true);
   const modalRoot = backdrop.querySelector('.modal.modal-confirm');
-  if (modalRoot) modalRoot.classList.toggle('modal-confirm--release', useHtml);
+  if (modalRoot) {
+    modalRoot.classList.toggle('modal-confirm--release', useHtml && !varianteImpacto);
+    modalRoot.classList.toggle('modal-confirm--impacto', varianteImpacto);
+  }
   texto.classList.toggle('modal-confirm-texto--rich', useHtml);
   btnCancelar.hidden = ocultarCancelar;
   btnCancelar.setAttribute('aria-hidden', ocultarCancelar ? 'true' : 'false');
@@ -21505,7 +22138,10 @@ function showConfirm(mensaje, textoConfirmar, onConfirm, onCancel, textoCancelar
     texto.textContent = '';
     texto.innerHTML = '';
     texto.classList.remove('modal-confirm-texto--rich');
-    if (modalRoot) modalRoot.classList.remove('modal-confirm--release');
+    if (modalRoot) {
+      modalRoot.classList.remove('modal-confirm--release');
+      modalRoot.classList.remove('modal-confirm--impacto');
+    }
     btnAceptar.onclick = null;
     btnCancelar.onclick = null;
     btnCancelar.hidden = false;
