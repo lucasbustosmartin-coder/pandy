@@ -2,6 +2,10 @@
 -- Reemplaza `gp_operativa_control_calidad` (el front pasa a llamar solo `control_calidad_informe`).
 -- Requiere: migracion_gp_operativa_panel.sql (helpers gp_movimiento_*_gp y gp_concepto_es_*), ordenes/transacciones/instrumentacion estándar.
 -- Ejecutar en Supabase SQL Editor (Pandy y Pandy-Dev).
+--
+-- Excepción `trans_*_sin_registro_cc`: CHEQUE-ARS + intermediario, pata flip Tx4
+-- (ingreso Pandy→Intermediario). El motor no emite CC propia; el libro Pandy–int. vive en Tx3
+-- (egreso Pandy→Intermediario) + comisión. No es hueco si Tx3 tiene CC intermediario viva.
 
 INSERT INTO public.app_permission (permission, description) VALUES
   (
@@ -271,6 +275,32 @@ BEGIN
         WHERE m.transaccion_id = t.id
           AND COALESCE(lower(m.estado), '') <> 'anulado'
       )
+      /* CHEQUE-ARS+int flip Tx4: CC int. en Tx3; exigir fila en esta trx duplicaría el libro. */
+      AND NOT (
+        o.intermediario_id IS NOT NULL
+        AND lower(COALESCE(t.tipo, '')) = 'ingreso'
+        AND lower(COALESCE(t.pagador, '')) = 'pandy'
+        AND lower(COALESCE(t.cobrador, '')) = 'intermediario'
+        AND EXISTS (
+          SELECT 1
+          FROM public.tipos_operacion top
+          WHERE top.id = o.tipo_operacion_id
+            AND top.codigo = 'CHEQUE-ARS'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM public.transacciones t3
+          INNER JOIN public.instrumentacion i3 ON i3.id = t3.instrumentacion_id
+          INNER JOIN public.movimientos_cuenta_corriente_intermediario m3
+            ON m3.transaccion_id = t3.id
+           AND COALESCE(lower(m3.estado), '') <> 'anulado'
+          WHERE i3.orden_id = o.id
+            AND t3.id IS DISTINCT FROM t.id
+            AND lower(COALESCE(t3.tipo, '')) = 'egreso'
+            AND lower(COALESCE(t3.pagador, '')) = 'pandy'
+            AND lower(COALESCE(t3.cobrador, '')) = 'intermediario'
+        )
+      )
   ),
   c AS (SELECT count(*)::int AS n FROM base),
   lim AS (SELECT * FROM base ORDER BY orden_numero NULLS LAST, transaccion_numero LIMIT 200)
@@ -327,6 +357,32 @@ BEGIN
         FROM public.movimientos_cuenta_corriente_intermediario m
         WHERE m.transaccion_id = t.id
           AND COALESCE(lower(m.estado), '') <> 'anulado'
+      )
+      /* Misma excepción flip Tx4 CHEQUE-ARS+int (CC en Tx3). */
+      AND NOT (
+        o.intermediario_id IS NOT NULL
+        AND lower(COALESCE(t.tipo, '')) = 'ingreso'
+        AND lower(COALESCE(t.pagador, '')) = 'pandy'
+        AND lower(COALESCE(t.cobrador, '')) = 'intermediario'
+        AND EXISTS (
+          SELECT 1
+          FROM public.tipos_operacion top
+          WHERE top.id = o.tipo_operacion_id
+            AND top.codigo = 'CHEQUE-ARS'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM public.transacciones t3
+          INNER JOIN public.instrumentacion i3 ON i3.id = t3.instrumentacion_id
+          INNER JOIN public.movimientos_cuenta_corriente_intermediario m3
+            ON m3.transaccion_id = t3.id
+           AND COALESCE(lower(m3.estado), '') <> 'anulado'
+          WHERE i3.orden_id = o.id
+            AND t3.id IS DISTINCT FROM t.id
+            AND lower(COALESCE(t3.tipo, '')) = 'egreso'
+            AND lower(COALESCE(t3.pagador, '')) = 'pandy'
+            AND lower(COALESCE(t3.cobrador, '')) = 'intermediario'
+        )
       )
   ),
   c AS (SELECT count(*)::int AS n FROM base),
@@ -623,6 +679,6 @@ END;
 $fn$;
 
 COMMENT ON FUNCTION public.control_calidad_informe(date, date) IS
-  'Control de calidad: parejas CC↔caja (cliente e intermediario) + transacciones vs CC en ambos libros por fecha de orden (incluye órdenes anuladas). Transacción anulada: filas CC no manuales deben estar en estado anulado. Requiere ver_control_calidad o ver_gp_operativo_control_calidad.';
+  'Control de calidad: parejas CC↔caja (cliente e intermediario) + transacciones vs CC en ambos libros por fecha de orden (incluye órdenes anuladas). Transacción anulada: filas CC no manuales deben estar en estado anulado. Excepción sin_registro_cc: CHEQUE-ARS+int flip Tx4 (ingreso Pandy→Intermediario) si Tx3 tiene CC int. viva. Requiere ver_control_calidad o ver_gp_operativo_control_calidad.';
 
 GRANT EXECUTE ON FUNCTION public.control_calidad_informe(date, date) TO authenticated;

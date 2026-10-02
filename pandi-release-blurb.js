@@ -5,7 +5,7 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.18',
+  versionLabel: 'v3.8.19',
   lines: [
     'Mejoras de rendimiento general, pensadas para que la app siga respondiendo bien a medida que crece el volumen de datos.',
     'Al actualizar pantallas con mucha información, el recálculo aprovecha mejor la conexión.',

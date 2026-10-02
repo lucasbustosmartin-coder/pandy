@@ -8934,13 +8934,13 @@ function loadControlCalidadVista() {
           titulo: 'Transacción ejecutada sin movimientos en cuenta corriente',
           idBase: 'cc-qc-sin-cc-ej-h',
           hint:
-            'Por <strong>fecha de orden</strong> en el período (toda orden, incluida anulada). Transacción <strong>ejecutada</strong> sin ninguna fila no anulada en <code>movimientos_cuenta_corriente</code> ni en <code>movimientos_cuenta_corriente_intermediario</code>.',
+            'Por <strong>fecha de orden</strong> en el período (toda orden, incluida anulada). Transacción <strong>ejecutada</strong> sin ninguna fila no anulada en <code>movimientos_cuenta_corriente</code> ni en <code>movimientos_cuenta_corriente_intermediario</code>. No incluye CHEQUE-ARS con intermediario cuando la pata Pandy→Intermediario (efectivo, sentido invertido) ya está cubierta por el movimiento de la pata cheque.',
         }),
         renderControlCalidadSeccionSinRegistroCc(pendienteSinCc, {
           titulo: 'Transacción pendiente sin movimientos en cuenta corriente',
           idBase: 'cc-qc-sin-cc-pend-h',
           hint:
-            'Por <strong>fecha de orden</strong> en el período (toda orden, incluida anulada). Transacción <strong>pendiente</strong> sin ninguna fila no anulada en <code>movimientos_cuenta_corriente</code> ni en <code>movimientos_cuenta_corriente_intermediario</code>.',
+            'Por <strong>fecha de orden</strong> en el período (toda orden, incluida anulada). Transacción <strong>pendiente</strong> sin ninguna fila no anulada en <code>movimientos_cuenta_corriente</code> ni en <code>movimientos_cuenta_corriente_intermediario</code>. Misma excepción CHEQUE-ARS con intermediario (pata efectivo Pandy→Intermediario cubierta por la pata cheque).',
         }),
         renderControlCalidadSeccionEjNoCerrado(ejNoCerr),
         renderControlCalidadSeccionPendNoPendiente(pendNoPend),
