@@ -71,7 +71,7 @@ Los movimientos **manuales** no se modifican. La caja (`movimientos_caja`) no en
 
 ### 7.2 Persistencia: libro INSERT / UPDATE / ANULAR (sin DELETE)
 
-`sync_cc_caja_orden` trata CC cliente, CC intermediario y caja **derivada** como libro: si la clave lógica ya existe (fila viva), **actualiza**; si no, **inserta**; lo que estaba vivo y ya no viene en el JSON se marca **`anulado`** (no se borra). Lock por orden. Un vivo por clave (`sql/migracion_sync_cc_caja_orden_anular_sin_delete.sql`). Cada alta, edición material y anulación deja fila en `auditoria_app` categoría **`cc_caja_sync`** (monto, moneda, caja, medio de pago). El front **no** tiene fallback delete+insert. Manuales (`es_movimiento_manual`) y caja con `tipo_movimiento_id` no se tocan.
+`sync_cc_caja_orden` trata CC cliente, CC intermediario y caja **derivada** como libro: si la clave lógica ya existe (fila viva), **actualiza**; si no, **inserta**; lo que estaba vivo y ya no viene en el JSON se marca **`anulado`** (no se borra). **Gemelos:** si hay varias vivas con la misma identidad, se conserva la más antigua (`created_at`, `id`) y se anulan las demás. Lock por orden. Un vivo por clave (`sql/migracion_sync_cc_caja_orden_anular_sin_delete.sql`). Cada alta, edición material y anulación deja fila en `auditoria_app` categoría **`cc_caja_sync`** (monto, moneda, caja, medio de pago). El front **no** tiene fallback delete+insert. Manuales (`es_movimiento_manual`) y caja con `tipo_movimiento_id` no se tocan. Las órdenes **23, 28, 41, 42 y 106** no entran a esta RPC (`docs/CC_EXCLUSION_SYNC_ORDENES_23_Y_41.md`). Control de calidad lista los gemelos vivos (`cc_caja_gemelos_vivos`).
 
 ## 8. Comisiones generadas (Ganancia Pandy, Comisión intermediario)
 

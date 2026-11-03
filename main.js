@@ -8816,6 +8816,47 @@ function renderControlCalidadTrxAnuladaCcNoAnulado(block) {
   );
 }
 
+const CONTROL_CALIDAD_LIBRO_LABEL = {
+  cc_cliente: 'CC cliente',
+  cc_intermediario: 'CC intermediario',
+  caja: 'Caja',
+};
+
+function renderControlCalidadSeccionGemelos(block) {
+  const total = Number(block && block.total) || 0;
+  const items = block && Array.isArray(block.items) ? block.items : [];
+  const extra = total > items.length ? ` Se listan ${items.length} de ${total}.` : '';
+  let body = '';
+  if (total === 0) {
+    body = '<p class="control-calidad-seccion-msg">Sin duplicados vivos.</p>';
+  } else {
+    const rows = items
+      .map((row) => {
+        const nro = row.orden_numero;
+        const congelada = pandiCcSyncOrdenNumeroExcluido(nro);
+        const lab = CONTROL_CALIDAD_LIBRO_LABEL[row.libro] || row.libro || '';
+        const suma = Number(row.suma);
+        return `<tr>
+          <td>${escapeHtml(String(nro != null ? nro : ''))}</td>
+          <td>${escapeHtml(String(row.fecha_orden || ''))}</td>
+          <td>${escapeHtml(lab)}</td>
+          <td>${escapeHtml(String(row.entidad || ''))}</td>
+          <td>${escapeHtml(String(row.transaccion_numero != null ? row.transaccion_numero : ''))}</td>
+          <td>${escapeHtml(String(row.moneda || ''))}</td>
+          <td>${escapeHtml(String(row.copias != null ? row.copias : ''))}</td>
+          <td class="${inicioGpClaseSigno(suma)}">${escapeHtml(formatImporteDisplay(suma))}</td>
+          <td>${escapeHtml(String(row.concepto || ''))}</td>
+          <td>${congelada ? 'Congelada (no se toca)' : 'Se corrige al Refrescar'}</td>
+        </tr>`;
+      })
+      .join('');
+    body = `<div class="tabla-clientes-wrap tabla-wrap-con-scroll"><table class="tabla-listado-ordenes control-calidad-tabla"><thead><tr>
+      <th>Orden</th><th>Fecha orden</th><th>Libro</th><th>Entidad</th><th>Trans.</th><th>Moneda</th><th>Copias</th><th>Suma</th><th>Concepto</th><th>Sync</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  return `<section class="control-calidad-seccion" aria-labelledby="cc-qc-gemelos-h"><h4 id="cc-qc-gemelos-h">Movimientos duplicados vivos (${total})</h4><p class="control-calidad-hint">Libro actual (no filtra por período): más de una fila no anulada con la misma identidad de sync (orden, transacción, moneda y clave). El Refrescar deja la más antigua y anula el resto, <strong>salvo</strong> las órdenes congeladas (23, 28, 41, 42 y 106), que se listan acá pero no se escriben.${extra}</p>${body}</section>`;
+}
+
 /** Panel Control de calidad: intermediarios sin fila en `contraparte_vinculo` (pendientes de vincular a cliente). */
 function loadControlCalidadIntermediariosSinVinculoPanel() {
   const block = document.getElementById('control-calidad-inter-sin-vinculo-block');
@@ -8928,7 +8969,7 @@ function loadControlCalidadVista() {
   if (leyenda) {
     if (controlCalidadPeriodo === 'total') {
       leyenda.textContent =
-        'Período: todo el historial. Parejas CC↔caja por fechas de movimientos; transacciones por fecha de orden (CC cliente e intermediario). Argentina.';
+        'Período: todo el historial. Parejas CC↔caja por fechas de movimientos; transacciones por fecha de orden (CC cliente e intermediario). Duplicados vivos: libro actual, sin filtro de período. Argentina.';
     } else if (rango.desde && rango.hasta) {
       leyenda.textContent = `Período: ${rango.desde} al ${rango.hasta} (inclusive). Argentina.`;
     } else {
@@ -8989,6 +9030,7 @@ function loadControlCalidadVista() {
       const ejNoCerr = j.trans_ejecutada_cc_no_cerrado || {};
       const pendNoPend = j.trans_pendiente_cc_no_pendiente || {};
       const html = [
+        renderControlCalidadSeccionGemelos(j.cc_caja_gemelos_vivos || {}),
         renderControlCalidadSeccionParejas(parejas),
         renderControlCalidadSeccionSinRegistroCc(ejecutadaSinCc, {
           titulo: 'Transacción ejecutada sin movimientos en cuenta corriente',

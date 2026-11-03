@@ -1,6 +1,8 @@
 # Exclusión de sync CC/caja — órdenes 23, 28, 41, 42 y 106
 
-**Fecha de la foto:** 2026-11-02 (consultas de solo lectura a **Pandy** producción y **Pandy-Dev**). Actualizado **2026-11-03:** se suman **28** y **42** a la exclusión.  
+**Fecha de la foto:** 2026-11-02 (consultas de solo lectura a **Pandy** producción y **Pandy-Dev**). Actualizado **2026-11-03:** se suman **28** y **42** a la exclusión.
+
+**Memoria del despliegue v3.8.20 (causas, gemelos, qué se toca):** `docs/CC_DESPLIEGUE_V3_8_20_CAMBIOS_Y_CAUSAS.docx` (fuente `docs/CC_DESPLIEGUE_V3_8_20_CAMBIOS_Y_CAUSAS.md`).  
 **Código:** `PANDI_CC_SYNC_EXCLUIR_NUMEROS_ORDEN` en `main.js` (`[23, 28, 41, 42, 106]`).  
 **Al desplegar sí se sincronizan:** **576** (Dacharry/Rou) y **788** (Guido).  
 **Excel de consulta (todas las órdenes con impacto):** `docs/CC_ORDENES_IMPACTO_CAMBIOS_SYNC.xlsx` (misma copia en `docs/CC_ORDENES_23_Y_41_IMPACTO.xlsx`). Regenerar con `node scripts/crear-excel-ordenes-23-41-impacto.js`.
@@ -48,6 +50,8 @@ Auditoría Dev (`auditoria_app`, categoría `cc_caja_sync`) agrupa por nro. de o
 
 Mientras la lista tenga 23, 28, 41, 42 y 106, **ni un Guardar** les cambia CC/caja. Si hace falta operarlas de nuevo, hay que **sacarlas de la constante** (paso abajo).
 
+**Detección y ajuste de gemelos (post v3.8.20):** la RPC anula copias extra de la misma identidad (deja la más antigua). **Control de calidad** las lista (`cc_caja_gemelos_vivos`) y marca las congeladas como «no se toca». Un Refrescar **sí** corrige **576**. **No** corrige 23/28/41/42/106: el front no las envía. Los índices únicos siguen **sin** crearse en prod mientras esas congeladas tengan gemelos.
+
 ## Cómo volver a sincronizarlas (futuro)
 
 1. En `main.js`, en `PANDI_CC_SYNC_EXCLUIR_NUMEROS_ORDEN`, quitar `23`, `28`, `41`, `42` y/o `106`.
@@ -90,7 +94,7 @@ No hace falta SQL para “activar” el sync: alcanza el front.
 - Gemelos CC en prod (Pablo Franck netea 0; Rou USD **8.756** con duplicado). Caja de la orden **sin** gemelo.
 - Si se sincronizara: CC Rou **→ 4.378**.
 
-## Copy del modal «Nueva versión» (v3.8.20)
+## Copy del modal «Nueva versión» (v3.8.20 y v3.8.21)
 
 Texto desplegado (lavado, visible al recargar; **sin** auditoría):
 

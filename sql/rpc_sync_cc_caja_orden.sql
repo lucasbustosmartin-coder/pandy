@@ -2,6 +2,7 @@
 -- El front construye los rows (misma lógica que hoy) y los envía en JSONB.
 -- Versión **libro**: INSERT altas, UPDATE si cambió algo útil, ANULAR huérfanos (estado = anulado).
 -- **No DELETE** de filas derivadas. Conserva `id` cuando la clave lógica es la misma.
+-- Gemelos: si hay varias vivas con la misma identidad, se conserva la más antigua y se anulan las demás.
 -- Capa 2: identidad = transacción + moneda + `sync_clave` (familia de leyenda + signo). El monto se edita in-place.
 -- No toca filas CC con `es_movimiento_manual = true`. Caja: solo `tipo_movimiento_id IS NULL` (derivados).
 -- Lock por orden (pg_advisory_xact_lock) para no insertar gemelos con dos syncs concurrentes.
@@ -365,6 +366,28 @@ BEGIN
             NULLIF(trim(elem->>'sync_clave'), ''),
             public.sync_cc_caja_clave_identidad(elem->>'concepto', (elem->>'monto')::numeric, 'cc')
           )
+          AND m.id = (
+            SELECT m2.id
+            FROM public.movimientos_cuenta_corriente m2
+            WHERE m2.orden_id = p_orden_id
+              AND COALESCE(m2.es_movimiento_manual, false) = false
+              AND COALESCE(lower(m2.estado), '') NOT IN ('anulado', 'anulada')
+              AND m2.cliente_id = (elem->>'cliente_id')::uuid
+              AND m2.transaccion_id IS NOT DISTINCT FROM NULLIF(TRIM(COALESCE(elem->>'transaccion_id', '')), '')::uuid
+              AND m2.transaccion_numero IS NOT DISTINCT FROM (
+                CASE
+                  WHEN trim(COALESCE(elem->>'transaccion_numero', '')) = '' THEN NULL
+                  ELSE (trim(elem->>'transaccion_numero'))::integer
+                END
+              )
+              AND upper(trim(m2.moneda)) = upper(trim(COALESCE(elem->>'moneda', '')))
+              AND m2.sync_clave IS NOT DISTINCT FROM COALESCE(
+                NULLIF(trim(elem->>'sync_clave'), ''),
+                public.sync_cc_caja_clave_identidad(elem->>'concepto', (elem->>'monto')::numeric, 'cc')
+              )
+            ORDER BY m2.created_at ASC NULLS LAST, m2.id
+            LIMIT 1
+          )
       )
     RETURNING m.id, m.cliente_id, m.transaccion_id, m.transaccion_numero, m.monto, m.moneda, m.concepto, m.estado
   LOOP
@@ -581,6 +604,28 @@ BEGIN
           AND m.sync_clave IS NOT DISTINCT FROM COALESCE(
             NULLIF(trim(elem->>'sync_clave'), ''),
             public.sync_cc_caja_clave_identidad(elem->>'concepto', (elem->>'monto')::numeric, 'cc')
+          )
+          AND m.id = (
+            SELECT m2.id
+            FROM public.movimientos_cuenta_corriente_intermediario m2
+            WHERE m2.orden_id = p_orden_id
+              AND COALESCE(m2.es_movimiento_manual, false) = false
+              AND COALESCE(lower(m2.estado), '') NOT IN ('anulado', 'anulada')
+              AND m2.intermediario_id = (elem->>'intermediario_id')::uuid
+              AND m2.transaccion_id IS NOT DISTINCT FROM NULLIF(TRIM(COALESCE(elem->>'transaccion_id', '')), '')::uuid
+              AND m2.transaccion_numero IS NOT DISTINCT FROM (
+                CASE
+                  WHEN trim(COALESCE(elem->>'transaccion_numero', '')) = '' THEN NULL
+                  ELSE (trim(elem->>'transaccion_numero'))::integer
+                END
+              )
+              AND upper(trim(m2.moneda)) = upper(trim(COALESCE(elem->>'moneda', '')))
+              AND m2.sync_clave IS NOT DISTINCT FROM COALESCE(
+                NULLIF(trim(elem->>'sync_clave'), ''),
+                public.sync_cc_caja_clave_identidad(elem->>'concepto', (elem->>'monto')::numeric, 'cc')
+              )
+            ORDER BY m2.created_at ASC NULLS LAST, m2.id
+            LIMIT 1
           )
       )
     RETURNING m.id, m.intermediario_id, m.transaccion_id, m.transaccion_numero, m.monto, m.moneda, m.concepto
@@ -817,6 +862,44 @@ BEGIN
               AND m.transaccion_id IS NULL
             )
           )
+          AND m.id = (
+            SELECT m2.id
+            FROM public.movimientos_caja m2
+            WHERE m2.tipo_movimiento_id IS NULL
+              AND COALESCE(lower(m2.estado), '') NOT IN ('anulado', 'anulada')
+              AND (
+                m2.orden_id = p_orden_id
+                OR (cardinality(ids_trx) > 0 AND m2.transaccion_id IS NOT NULL AND m2.transaccion_id = ANY (ids_trx))
+              )
+              AND m2.transaccion_id IS NOT DISTINCT FROM NULLIF(TRIM(COALESCE(elem->>'transaccion_id', '')), '')::uuid
+              AND m2.transaccion_numero IS NOT DISTINCT FROM (
+                CASE
+                  WHEN trim(COALESCE(elem->>'transaccion_numero', '')) = '' THEN NULL
+                  ELSE (trim(elem->>'transaccion_numero'))::integer
+                END
+              )
+              AND m2.orden_numero IS NOT DISTINCT FROM (
+                CASE
+                  WHEN trim(COALESCE(elem->>'orden_numero', '')) = '' THEN NULL
+                  ELSE (trim(elem->>'orden_numero'))::integer
+                END
+              )
+              AND upper(trim(m2.moneda)) = upper(trim(COALESCE(elem->>'moneda', '')))
+              AND COALESCE(m2.caja_tipo, 'efectivo') = COALESCE(elem->>'caja_tipo', 'efectivo')
+              AND (
+                m2.sync_clave IS NOT DISTINCT FROM COALESCE(
+                  NULLIF(trim(elem->>'sync_clave'), ''),
+                  public.sync_cc_caja_clave_identidad(elem->>'concepto', (elem->>'monto')::numeric, 'caja')
+                )
+                OR (
+                  m2.sync_clave IS NULL
+                  AND m2.monto IS NOT DISTINCT FROM (elem->>'monto')::numeric
+                  AND left(COALESCE(m2.concepto, ''), 72) IS NOT DISTINCT FROM left(COALESCE(elem->>'concepto', ''), 72)
+                )
+              )
+            ORDER BY m2.created_at ASC NULLS LAST, m2.id
+            LIMIT 1
+          )
       )
     RETURNING m.id, m.transaccion_id, m.transaccion_numero, m.orden_numero, m.monto, m.moneda, m.concepto, m.caja_tipo
   LOOP
@@ -855,7 +938,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.sync_cc_caja_orden IS
-  'Sync CC cliente, CC intermediario y caja para una orden (JSONB desde el front). Libro: INSERT/UPDATE/ANULAR (sin DELETE). Capa 2: match por sync_clave (familia+signo), no por monto. Lock por orden. Auditoría cc_caja_sync. Huérfanos: estado anulado. Respeta CC manual. Caja: solo tipo_movimiento_id IS NULL.';
+  'Sync CC cliente, CC intermediario y caja para una orden (JSONB desde el front). Libro: INSERT/UPDATE/ANULAR (sin DELETE). Capa 2: match por sync_clave (familia+signo), no por monto. Gemelos vivos: deja la fila más antigua y anula las demás de la misma identidad. Lock por orden. Auditoría cc_caja_sync. Huérfanos: estado anulado. Respeta CC manual. Caja: solo tipo_movimiento_id IS NULL.';
 
 REVOKE ALL ON FUNCTION public.sync_cc_caja_fmt_monto(numeric, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.sync_cc_caja_fmt_monto(numeric, text) FROM anon;

@@ -6,6 +6,10 @@
 -- Excepción `trans_*_sin_registro_cc`: CHEQUE-ARS + intermediario, pata flip Tx4
 -- (ingreso Pandy→Intermediario). El motor no emite CC propia; el libro Pandy–int. vive en Tx3
 -- (egreso Pandy→Intermediario) + comisión. No es hueco si Tx3 tiene CC intermediario viva.
+--
+-- `cc_caja_gemelos_vivos`: más de una fila viva con la misma identidad de sync (CC cliente,
+-- CC intermediario y caja derivada). Libro actual, no filtra período. El front marca las
+-- órdenes congeladas (23, 28, 41, 42, 106) para no sugerir que Refrescar las va a tocar.
 
 INSERT INTO public.app_permission (permission, description) VALUES
   (
@@ -44,6 +48,7 @@ DECLARE
   j_pend_no_pend jsonb;
   j_trx_anulada_sin_cc jsonb;
   j_trx_anulada_cc_no_anulado jsonb;
+  j_cc_gemelos jsonb;
 BEGIN
   IF NOT (
     (SELECT public.has_permission('ver_control_calidad'))
@@ -665,6 +670,119 @@ BEGIN
   INTO j_trx_anulada_cc_no_anulado
   FROM (SELECT 1) _wb;
 
+  /* --- Gemelos vivos (misma identidad de sync, más de una fila no anulada). Libro actual, no filtra período. --- */
+  WITH
+  cli AS (
+    SELECT
+      o.numero AS orden_numero,
+      o.id AS orden_id,
+      o.fecha::text AS fecha_orden,
+      'cc_cliente'::text AS libro,
+      c.nombre AS entidad,
+      m.transaccion_numero,
+      upper(trim(m.moneda)) AS moneda,
+      COALESCE(
+        NULLIF(trim(m.sync_clave), ''),
+        public.sync_cc_caja_clave_identidad(m.concepto, m.monto, 'cc')
+      ) AS clave,
+      count(*)::int AS copias,
+      round(sum(m.monto)::numeric, 4) AS suma,
+      max(left(COALESCE(m.concepto, ''), 80)) AS concepto
+    FROM public.movimientos_cuenta_corriente m
+    INNER JOIN public.ordenes o ON o.id = m.orden_id
+    LEFT JOIN public.clientes c ON c.id = m.cliente_id
+    WHERE COALESCE(m.es_movimiento_manual, false) = false
+      AND COALESCE(lower(trim(m.estado::text)), '') NOT IN ('anulado', 'anulada')
+    GROUP BY o.numero, o.id, o.fecha, c.nombre, m.transaccion_numero, upper(trim(m.moneda)),
+      COALESCE(NULLIF(trim(m.sync_clave), ''), public.sync_cc_caja_clave_identidad(m.concepto, m.monto, 'cc'))
+    HAVING count(*) > 1
+  ),
+  inti AS (
+    SELECT
+      o.numero AS orden_numero,
+      o.id AS orden_id,
+      o.fecha::text AS fecha_orden,
+      'cc_intermediario'::text AS libro,
+      i.nombre AS entidad,
+      m.transaccion_numero,
+      upper(trim(m.moneda)) AS moneda,
+      COALESCE(
+        NULLIF(trim(m.sync_clave), ''),
+        public.sync_cc_caja_clave_identidad(m.concepto, m.monto, 'cc')
+      ) AS clave,
+      count(*)::int AS copias,
+      round(sum(m.monto)::numeric, 4) AS suma,
+      max(left(COALESCE(m.concepto, ''), 80)) AS concepto
+    FROM public.movimientos_cuenta_corriente_intermediario m
+    INNER JOIN public.ordenes o ON o.id = m.orden_id
+    LEFT JOIN public.intermediarios i ON i.id = m.intermediario_id
+    WHERE COALESCE(m.es_movimiento_manual, false) = false
+      AND COALESCE(lower(trim(m.estado::text)), '') NOT IN ('anulado', 'anulada')
+    GROUP BY o.numero, o.id, o.fecha, i.nombre, m.transaccion_numero, upper(trim(m.moneda)),
+      COALESCE(NULLIF(trim(m.sync_clave), ''), public.sync_cc_caja_clave_identidad(m.concepto, m.monto, 'cc'))
+    HAVING count(*) > 1
+  ),
+  caja AS (
+    SELECT
+      o.numero AS orden_numero,
+      o.id AS orden_id,
+      o.fecha::text AS fecha_orden,
+      'caja'::text AS libro,
+      COALESCE(m.caja_tipo, 'efectivo') AS entidad,
+      m.transaccion_numero,
+      upper(trim(m.moneda)) AS moneda,
+      COALESCE(
+        NULLIF(trim(m.sync_clave), ''),
+        public.sync_cc_caja_clave_identidad(m.concepto, m.monto, 'caja')
+      ) AS clave,
+      count(*)::int AS copias,
+      round(sum(m.monto)::numeric, 4) AS suma,
+      max(left(COALESCE(m.concepto, ''), 80)) AS concepto
+    FROM public.movimientos_caja m
+    INNER JOIN public.ordenes o ON o.id = m.orden_id
+    WHERE m.tipo_movimiento_id IS NULL
+      AND COALESCE(lower(trim(m.estado::text)), '') NOT IN ('anulado', 'anulada')
+    GROUP BY o.numero, o.id, o.fecha, COALESCE(m.caja_tipo, 'efectivo'), m.transaccion_numero, upper(trim(m.moneda)),
+      COALESCE(NULLIF(trim(m.sync_clave), ''), public.sync_cc_caja_clave_identidad(m.concepto, m.monto, 'caja'))
+    HAVING count(*) > 1
+  ),
+  todos AS (
+    SELECT * FROM cli
+    UNION ALL
+    SELECT * FROM inti
+    UNION ALL
+    SELECT * FROM caja
+  ),
+  c AS (SELECT count(*)::int AS n FROM todos),
+  lim AS (SELECT * FROM todos ORDER BY orden_numero NULLS LAST, libro, transaccion_numero NULLS LAST LIMIT 200)
+  SELECT jsonb_build_object(
+    'total', (SELECT n FROM c),
+    'items', COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'orden_id', b.orden_id,
+            'orden_numero', b.orden_numero,
+            'fecha_orden', b.fecha_orden,
+            'libro', b.libro,
+            'entidad', b.entidad,
+            'transaccion_numero', b.transaccion_numero,
+            'moneda', b.moneda,
+            'clave', b.clave,
+            'copias', b.copias,
+            'suma', b.suma,
+            'concepto', b.concepto
+          )
+          ORDER BY b.orden_numero NULLS LAST, b.libro, b.transaccion_numero NULLS LAST
+        )
+        FROM lim b
+      ),
+      '[]'::jsonb
+    )
+  )
+  INTO j_cc_gemelos
+  FROM (SELECT 1) _wg;
+
   RETURN jsonb_build_object(
     'ok', true,
     'parejas_cc_caja', j_parejas,
@@ -673,12 +791,13 @@ BEGIN
     'trans_ejecutada_cc_no_cerrado', j_ej_no_cerr,
     'trans_pendiente_cc_no_pendiente', j_pend_no_pend,
     'trans_anulada_sin_registro_cc', j_trx_anulada_sin_cc,
-    'trans_anulada_cc_estado_no_anulado', j_trx_anulada_cc_no_anulado
+    'trans_anulada_cc_estado_no_anulado', j_trx_anulada_cc_no_anulado,
+    'cc_caja_gemelos_vivos', j_cc_gemelos
   );
 END;
 $fn$;
 
 COMMENT ON FUNCTION public.control_calidad_informe(date, date) IS
-  'Control de calidad: parejas CC↔caja (cliente e intermediario) + transacciones vs CC en ambos libros por fecha de orden (incluye órdenes anuladas). Transacción anulada: filas CC no manuales deben estar en estado anulado. Excepción sin_registro_cc: CHEQUE-ARS+int flip Tx4 (ingreso Pandy→Intermediario) si Tx3 tiene CC int. viva. Requiere ver_control_calidad o ver_gp_operativo_control_calidad.';
+  'Control de calidad: parejas CC↔caja, transacciones vs CC, y gemelos vivos (misma identidad de sync, más de una fila). Transacción anulada: filas CC no manuales deben estar en estado anulado. Excepción sin_registro_cc: CHEQUE-ARS+int flip Tx4 si Tx3 tiene CC int. viva. Requiere ver_control_calidad o ver_gp_operativo_control_calidad.';
 
 GRANT EXECUTE ON FUNCTION public.control_calidad_informe(date, date) TO authenticated;
