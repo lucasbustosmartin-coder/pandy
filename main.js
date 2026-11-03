@@ -454,10 +454,19 @@ async function pandiSupabaseFetchAll(queryBuilderFn, step) {
 
 /**
  * Tamaño de cada `.in(id, …)` hacia PostgREST (GET). Cientos de UUID en un solo filtro cortan la URL
- * y la consulta vuelve vacía o con error: la grilla CC deja Orden/Tipo op. en «–» aunque `orden_id` exista.
+ * y la consulta vuelve vacía o con error: la grilla CC deja Orden/Tipo op. en «–» y Pagador/Cobrador
+ * caen al fallback (cliente de la orden en ambos roles) aunque `transaccion_id` exista.
  * Mismo criterio que el sync global (`chunkEst = 150`).
  */
 const PANDI_SUPABASE_IN_FILTER_CHUNK = 150;
+
+/** Columnas de `transacciones` para pintar Pagador/Cobrador en CC (misma semántica que instrumentación). */
+const PANDI_CC_TRX_SELECT_PAG_COB =
+  'id, usuario_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id';
+const PANDI_CC_TRX_SELECT_PAG_COB_CON_INST =
+  'id, instrumentacion_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id';
+/** Embed de la trx en cada fila CC: Pagador/Cobrador no dependen de un segundo `.in` masivo. */
+const PANDI_CC_TRX_EMBED_PAG_COB = ', transacciones(' + PANDI_CC_TRX_SELECT_PAG_COB + ')';
 
 /**
  * SELECT filtrado por lista de ids, en tandas. No pagina con `.range`: parte el `.in`.
@@ -486,6 +495,24 @@ async function pandiSupabaseFetchByIdsInChunks(ids, buildQuery) {
     if (data && data.length) all.push.apply(all, data);
   }
   return { data: all, error: lastError };
+}
+
+function pandiCcFetchTransaccionesPorIds(ids) {
+  return pandiSupabaseFetchByIdsInChunks(ids, (slice) =>
+    client.from('transacciones').select(PANDI_CC_TRX_SELECT_PAG_COB).in('id', slice)
+  );
+}
+
+function pandiCcFetchInstrumentacionPorOrdenIds(ordenIds) {
+  return pandiSupabaseFetchByIdsInChunks(ordenIds, (slice) =>
+    client.from('instrumentacion').select('id, orden_id').in('orden_id', slice)
+  );
+}
+
+function pandiCcFetchTransaccionesPorInstrumentacionIds(instIds) {
+  return pandiSupabaseFetchByIdsInChunks(instIds, (slice) =>
+    client.from('transacciones').select(PANDI_CC_TRX_SELECT_PAG_COB_CON_INST).in('instrumentacion_id', slice)
+  );
 }
 
 /** Guardar orden / instrumentación en servidor: requiere red alcanzable (cola local es el alternativo). */
@@ -4276,19 +4303,50 @@ function inferClasificacionMovimientoCajaRowSync(row) {
   return MOVIMIENTO_CLASIFICACION.LEGACY_SIN_CLASIFICAR;
 }
 
-/** Asigna `clasificacion_movimiento` en cada fila antes de `sync_cc_caja_orden` / fallback (idempotente por corrida). */
+/**
+ * Identidad estable de una fila derivada (capa 2). Alineada a `public.sync_cc_caja_clave_identidad`.
+ * Familia de leyenda + signo; el importe no entra en la clave (un recálculo de monto actualiza la misma fila).
+ */
+function pandiCcSyncClaveIdentidad(concepto, monto, libro) {
+  const c = String(concepto || '').toLowerCase();
+  const n = Number(monto);
+  const sg = !Number.isFinite(n) || n === 0 ? 'cero' : n < 0 ? 'neg' : 'pos';
+  let fam;
+  if (String(libro || '') === 'caja') {
+    if (c.startsWith('ingreso de ')) fam = 'ingreso';
+    else if (c.startsWith('egreso de ')) fam = 'egreso';
+    else if (/^comisi[oó]n del acuerdo/.test(c)) fam = 'comision_acuerdo';
+    else if (c.startsWith('ganancia del acuerdo')) fam = 'ganancia_acuerdo';
+    else fam = 'otros:' + c.slice(0, 48);
+  } else if (c.startsWith('compromiso de pago')) fam = 'compromiso_pago';
+  else if (c.startsWith('pago realizado')) fam = 'pago_realizado';
+  else if (c.startsWith('cobro realizado')) fam = 'cobro_realizado';
+  else if (c.startsWith('ajuste libro')) fam = 'ajuste_libro';
+  else if (c.startsWith('compromiso a cobrar')) fam = 'compromiso_cobrar';
+  else if (/^comisi[oó]n del acuerdo/.test(c)) fam = 'comision_acuerdo';
+  else if (c.startsWith('contra cobro')) fam = 'contra_cobro';
+  else if (/^pr[eé]stamo al cliente/.test(c)) fam = 'prestamo_pandy';
+  else if (c.startsWith('compensaci') || c.startsWith('compensación') || c.startsWith('compensacion')) fam = 'compensacion';
+  else fam = 'otros:' + c.slice(0, 48);
+  return fam + ':' + sg;
+}
+
+/** Asigna `clasificacion_movimiento` y `sync_clave` en cada fila antes de `sync_cc_caja_orden` (idempotente por corrida). */
 function enriquecerFilasSyncConClasificacionMovimiento(rowsCcCliente, rowsCcInt, rowsCaja) {
   (rowsCcCliente || []).forEach((r) => {
     if (!r || typeof r !== 'object') return;
     r.clasificacion_movimiento = inferClasificacionMovimientoCuentaCorrienteRow(r, false);
+    r.sync_clave = pandiCcSyncClaveIdentidad(r.concepto, r.monto, 'cc');
   });
   (rowsCcInt || []).forEach((r) => {
     if (!r || typeof r !== 'object') return;
     r.clasificacion_movimiento = inferClasificacionMovimientoCuentaCorrienteRow(r, true);
+    r.sync_clave = pandiCcSyncClaveIdentidad(r.concepto, r.monto, 'cc');
   });
   (rowsCaja || []).forEach((r) => {
     if (!r || typeof r !== 'object') return;
     r.clasificacion_movimiento = inferClasificacionMovimientoCajaRowSync(r);
+    r.sync_clave = pandiCcSyncClaveIdentidad(r.concepto, r.monto, 'caja');
   });
 }
 
@@ -6556,12 +6614,14 @@ function _dedupeMovimientosCajaRows(raw) {
 }
 
 function _queryMovimientosCajaCerradosSinSync() {
-  return client
-    .from('movimientos_caja')
-    .select('id, moneda, monto, concepto, fecha, tipo_movimiento_id, orden_id, transaccion_id, orden_numero, transaccion_numero, estado, estado_fecha, caja_tipo, usuario_id')
-    .eq('estado', 'cerrado')
-    .order('fecha', { ascending: false })
-    .order('created_at', { ascending: false });
+  return pandiSupabaseFetchAll(() =>
+    client
+      .from('movimientos_caja')
+      .select('id, moneda, monto, concepto, fecha, tipo_movimiento_id, orden_id, transaccion_id, orden_numero, transaccion_numero, estado, estado_fecha, caja_tipo, usuario_id, created_at')
+      .eq('estado', 'cerrado')
+      .order('fecha', { ascending: false })
+      .order('created_at', { ascending: false }),
+  );
 }
 
 /**
@@ -10287,7 +10347,9 @@ function openModalOrdenesPendientes(estadoFilter) {
   const selectOrdPend = ordenesTieneNumeroColumn
     ? 'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual,multicontraparte_sync_no_auto)'
     : 'id, usuario_id, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, usd_usd_tasa_cliente_modo, observaciones, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual,multicontraparte_sync_no_auto)';
-  client.from('ordenes').select(selectOrdPend).neq('estado', 'orden_ejecutada').neq('estado', 'anulada').order('fecha', { ascending: false }).order('created_at', { ascending: false }).then((res) => {
+  pandiSupabaseFetchAll(() =>
+    client.from('ordenes').select(selectOrdPend).neq('estado', 'orden_ejecutada').neq('estado', 'anulada').order('fecha', { ascending: false }).order('created_at', { ascending: false }),
+  ).then((res) => {
       if (res.error) {
         loadingEl.style.display = 'none';
         tbody.innerHTML = `<tr><td colspan="${PANDI_ORDENES_PENDIENTES_TABLA_COLSPAN}">Error: ` + escapeHtml(res.error.message || '') + '</td></tr>';
@@ -10377,7 +10439,9 @@ function openModalTransaccionesPendientes() {
   loadingEl.style.display = 'block';
   wrapEl.style.display = 'none';
   tbody.innerHTML = '';
-  client.from('transacciones').select('id, tipo, moneda, monto, cobrador, pagador, estado, concepto, tipo_cambio, modo_pago_id, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('estado', 'pendiente').order('created_at', { ascending: false }).then((rTr) => {
+  pandiSupabaseFetchAll(() =>
+    client.from('transacciones').select('id, tipo, moneda, monto, cobrador, pagador, estado, concepto, tipo_cambio, modo_pago_id, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('estado', 'pendiente').order('created_at', { ascending: false }),
+  ).then((rTr) => {
     if (rTr.error) {
       loadingEl.style.display = 'none';
       tbody.innerHTML = '<tr><td colspan="10">Error: ' + (rTr.error.message || '') + '</td></tr>';
@@ -10570,6 +10634,8 @@ let ccMovimientosMostrarTodoHistorial = false;
 let ccDetalleMovimientosRangoInicializado = false;
 /** Evita que una carga de CC antigua pise una más nueva (fetch paralelo + recarga post-sync). */
 let ccCargaSerial = 0;
+/** Botón Refrescar CC: no pintar saldos ni aceptar el refresco automático hasta el load final. */
+let pandiCcRefrescarEnCurso = false;
 /** Filtro opcional por cliente_id o intermediario_id en solapa Movimientos (vacío = todos). */
 let ccDetalleFiltroEntidadId = '';
 /** Filtro opcional por número de orden en Movimientos (texto exacto sobre `orden_numero`; vacío = todas). */
@@ -10636,17 +10702,27 @@ function ccManualNombreDisplayRol(rol, clienteId, intermediarioId, clientesById,
 /** Clave estable para mapas indexados por transaccion_id (evita fallas UUID string vs otro tipo). */
 function ccTrxMapKey(transaccionId) {
   if (transaccionId == null || transaccionId === '') return '';
-  return String(transaccionId);
+  return String(transaccionId).toLowerCase();
+}
+
+/** Fila `transacciones` embebida en el SELECT de CC (`transaccion_id` FK). */
+function ccTrxRowDesdeMovimientoCc(mov) {
+  if (!mov) return null;
+  const nested = mov.transacciones != null ? mov.transacciones : mov.transaccion;
+  if (!nested) return null;
+  if (Array.isArray(nested)) return nested[0] || null;
+  if (typeof nested === 'object') return nested;
+  return null;
 }
 
 /**
- * Completa pagador/cobrador/tipo en mapas desde filas de `transacciones` (clave = String(id)).
+ * Completa pagador/cobrador/tipo en mapas desde filas de `transacciones` (clave = ccTrxMapKey).
  * Útil tras el SELECT por movimientos y el SELECT por instrumentación: unifica metadatos.
  */
 function ccAbsorberMetaTransaccionesEnMaps(trPagadorById, trCobradorById, trTipoById, lista) {
   (lista || []).forEach((t) => {
-    if (!t || t.id == null || t.id === '') return;
-    const id = String(t.id);
+    const id = ccTrxMapKey(t && t.id);
+    if (!id) return;
     if (t.tipo != null && String(t.tipo).trim() !== '') trTipoById[id] = String(t.tipo).toLowerCase();
     if (t.pagador != null && String(t.pagador).trim() !== '') trPagadorById[id] = String(t.pagador).toLowerCase();
     else if (trPagadorById[id] === undefined) trPagadorById[id] = (t.pagador || '').toString().toLowerCase();
@@ -10771,21 +10847,15 @@ function ccNombresPagadorCobradorMovimiento(mov, tipoEntidad, ordenById, cliente
   }
   function rolPagadorTransaccion(m) {
     const k = ccTrxMapKey(m.transaccion_id);
-    let pag = k ? trPagadorById[k] : undefined;
-    if (pag == null || String(pag).trim() === '') {
-      const tipoTr = String((k && trTipoById[k]) || '').toLowerCase();
-      pag = tipoTr === 'egreso' ? 'pandy' : 'cliente';
-    } else pag = String(pag).toLowerCase();
-    return pag;
+    const pag = k ? trPagadorById[k] : undefined;
+    if (pag == null || String(pag).trim() === '') return '';
+    return String(pag).toLowerCase();
   }
   function rolCobradorTransaccion(m) {
     const k = ccTrxMapKey(m.transaccion_id);
-    let cob = k ? trCobradorById[k] : undefined;
-    if (cob == null || String(cob).trim() === '') {
-      const tipoTr = String((k && trTipoById[k]) || '').toLowerCase();
-      cob = tipoTr === 'ingreso' ? 'pandy' : 'cliente';
-    } else cob = String(cob).toLowerCase();
-    return cob;
+    const cob = k ? trCobradorById[k] : undefined;
+    if (cob == null || String(cob).trim() === '') return '';
+    return String(cob).toLowerCase();
   }
   if (mov.es_movimiento_manual && mov.manual_pagador_rol && mov.manual_cobrador_rol) {
     return {
@@ -10823,7 +10893,8 @@ function ccNombresPagadorCobradorMovimiento(mov, tipoEntidad, ordenById, cliente
     }
     return { ccPagador: emp, ccCobrador: nomInt };
   }
-  const tRow = ccTrxRowParaDisplay(mov.transaccion_id, trRowById, trPagadorById, trCobradorById, trTipoById, trParticipanteIdsByTrx, trMonedaById);
+  const tRow = ccTrxRowDesdeMovimientoCc(mov)
+    || ccTrxRowParaDisplay(mov.transaccion_id, trRowById, trPagadorById, trCobradorById, trTipoById, trParticipanteIdsByTrx, trMonedaById);
   if (tRow) {
     if (!ccMovimientoReflejaMonedaTransaccion(mov, tRow)) {
       return { ccPagador: '–', ccCobrador: '–' };
@@ -16940,6 +17011,269 @@ function setCcSaldoCards(saldos) {
 const PANDI_CC_SYNC_ORDENES_CONCURRENCY = 4;
 /** Solo `#cc-btn-refrescar` / movimientos: mismo sync por orden, más paralelo. No cambia payloads ni saldos. */
 const PANDI_CC_SYNC_ORDENES_CONCURRENCY_REFRESCAR = 8;
+/** Órdenes por llamada a `sync_cc_caja_ordenes` (opción A). Acotado para no chocar el timeout de PostgREST. */
+const PANDI_CC_SYNC_ORDENES_BATCH_TAMANIO = 10;
+/**
+ * Órdenes que **no** se persisten en sync CC/caja (Refrescar, login, guardar).
+ * Congelan el libro de **producción** tal como está (caja y CC).
+ * Quitar el número de esta lista para volver a sincronizarlas. Doc: `docs/CC_EXCLUSION_SYNC_ORDENES_23_Y_41.md`.
+ */
+const PANDI_CC_SYNC_EXCLUIR_NUMEROS_ORDEN = Object.freeze([23, 28, 41, 42, 106]);
+const PANDI_CC_SYNC_EXCLUIR_NUMEROS_SET = new Set(PANDI_CC_SYNC_EXCLUIR_NUMEROS_ORDEN);
+
+function pandiCcSyncOrdenNumeroExcluido(numero) {
+  const n = Number(numero);
+  return Number.isFinite(n) && PANDI_CC_SYNC_EXCLUIR_NUMEROS_SET.has(n);
+}
+
+/** Tandas de lectura del botón Refrescar (opción 4): mismo `.in` de 150. Login/Inicio/Cajas no lo usan. */
+const PANDI_CC_SYNC_PREFETCH_TAMANIO = PANDI_SUPABASE_IN_FILTER_CHUNK;
+/** Primeras órdenes de cada tanda: se arma el payload también por el camino viejo y se compara. */
+const PANDI_CC_SYNC_PREFETCH_DUAL_POR_TANDA = 1;
+const PANDI_CC_SYNC_ORDEN_SELECT =
+  'id, usuario_id, numero, estado, fecha, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, intermediarios(nombre)';
+const PANDI_CC_SYNC_INST_SELECT =
+  'id, orden_id, multicontraparte_manual, instrumentacion_ajustada_manual, multicontraparte_sync_no_auto';
+const PANDI_CC_SYNC_TRX_SELECT =
+  'id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at, compensacion_cc_monto_aplicado, compensacion_cc_saldo_cliente_moneda_antes';
+const PANDI_CC_SYNC_TRX_SELECT_PREFETCH = PANDI_CC_SYNC_TRX_SELECT + ', created_at';
+/** Si el servidor no tiene `sync_cc_caja_ordenes` (prod aún sin la RPC), el Refrescar cae a N×`sync_cc_caja_orden`. */
+let pandiCcSyncBatchRpcDisponible = true;
+
+function pandiCcSyncOrdenarTrxPrefetch(rows) {
+  return (rows || []).slice().sort((a, b) => {
+    const na = Number(a && a.numero);
+    const nb = Number(b && b.numero);
+    const aNum = Number.isFinite(na) ? na : 0;
+    const bNum = Number.isFinite(nb) ? nb : 0;
+    if (aNum !== bNum) return aNum - bNum;
+    return String((a && a.created_at) || '').localeCompare(String((b && b.created_at) || ''));
+  });
+}
+
+function pandiCcSyncNormFilaPayloadCmp(row) {
+  if (!row || typeof row !== 'object') return row;
+  const o = {};
+  Object.keys(row)
+    .sort()
+    .forEach((k) => {
+      if (k === 'estado_fecha' || k === 'updated_at' || k === 'created_at') return;
+      let v = row[k];
+      if (typeof v === 'number' && Number.isFinite(v)) v = Math.round(v * 1e6) / 1e6;
+      o[k] = v;
+    });
+  return o;
+}
+
+function pandiCcSyncNormListaPayloadCmp(arr) {
+  return (arr || [])
+    .map(pandiCcSyncNormFilaPayloadCmp)
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+}
+
+function pandiCcSyncPayloadsEquivalentes(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  const pa = {
+    p_orden_id: a.p_orden_id,
+    p_usuario_id: a.p_usuario_id || null,
+    p_rows_cc_cliente: pandiCcSyncNormListaPayloadCmp(a.p_rows_cc_cliente),
+    p_rows_cc_int: pandiCcSyncNormListaPayloadCmp(a.p_rows_cc_int),
+    p_rows_caja: pandiCcSyncNormListaPayloadCmp(a.p_rows_caja),
+  };
+  const pb = {
+    p_orden_id: b.p_orden_id,
+    p_usuario_id: b.p_usuario_id || null,
+    p_rows_cc_cliente: pandiCcSyncNormListaPayloadCmp(b.p_rows_cc_cliente),
+    p_rows_cc_int: pandiCcSyncNormListaPayloadCmp(b.p_rows_cc_int),
+    p_rows_caja: pandiCcSyncNormListaPayloadCmp(b.p_rows_caja),
+  };
+  return JSON.stringify(pa) === JSON.stringify(pb);
+}
+
+async function pandiCcSyncPrefetchCatalogosRefrescar() {
+  const rModos = await client.from('modos_pago').select('id, codigo');
+  if (rModos.error || !Array.isArray(rModos.data) || rModos.data.length === 0) return null;
+  const rVin = await pandiSupabaseFetchAll(() =>
+    client.from('contraparte_vinculo').select('intermediario_id, cliente_id'),
+  );
+  if (rVin.error) return null;
+  const mapVinculo = new Map();
+  (rVin.data || []).forEach((v) => {
+    if (!v || v.intermediario_id == null) return;
+    const cid = v.cliente_id != null && String(v.cliente_id).trim() !== '' ? String(v.cliente_id).trim() : '';
+    if (cid) mapVinculo.set(String(v.intermediario_id), cid);
+  });
+  return { modosPago: rModos.data, mapVinculo };
+}
+
+async function pandiCcSyncPrefetchDatosOrdenes(ordenIds, catalogos) {
+  const map = new Map();
+  if (!ordenIds || !ordenIds.length || !catalogos) return map;
+  const rOrd = await pandiSupabaseFetchByIdsInChunks(ordenIds, (slice) =>
+    client.from('ordenes').select(PANDI_CC_SYNC_ORDEN_SELECT).in('id', slice),
+  );
+  if (rOrd.error && !(rOrd.data && rOrd.data.length)) return map;
+  const rInst = await pandiSupabaseFetchByIdsInChunks(ordenIds, (slice) =>
+    client.from('instrumentacion').select(PANDI_CC_SYNC_INST_SELECT).in('orden_id', slice),
+  );
+  const instByOrden = new Map();
+  (rInst.data || []).forEach((row) => {
+    if (row && row.orden_id) instByOrden.set(String(row.orden_id), row);
+  });
+  const instIds = (rInst.data || []).map((row) => row && row.id).filter(Boolean);
+  const trxAll = [];
+  for (let i = 0; i < instIds.length; i += PANDI_SUPABASE_IN_FILTER_CHUNK) {
+    const slice = instIds.slice(i, i + PANDI_SUPABASE_IN_FILTER_CHUNK);
+    const rTr = await pandiSupabaseFetchAll(() =>
+      client.from('transacciones').select(PANDI_CC_SYNC_TRX_SELECT_PREFETCH).in('instrumentacion_id', slice),
+    );
+    if (rTr.error && !(rTr.data && rTr.data.length)) continue;
+    if (rTr.data && rTr.data.length) trxAll.push.apply(trxAll, rTr.data);
+  }
+  const trxByInst = new Map();
+  trxAll.forEach((t) => {
+    if (!t || t.instrumentacion_id == null) return;
+    const k = String(t.instrumentacion_id);
+    if (!trxByInst.has(k)) trxByInst.set(k, []);
+    trxByInst.get(k).push(t);
+  });
+  const rCom = await pandiSupabaseFetchByIdsInChunks(ordenIds, (slice) =>
+    client.from('comisiones_orden').select('orden_id, moneda, monto, beneficiario').in('orden_id', slice),
+  );
+  const comByOrden = new Map();
+  (rCom.data || []).forEach((c) => {
+    if (!c || c.orden_id == null) return;
+    const k = String(c.orden_id);
+    if (!comByOrden.has(k)) comByOrden.set(k, []);
+    comByOrden.get(k).push({ moneda: c.moneda, monto: c.monto, beneficiario: c.beneficiario });
+  });
+  (rOrd.data || []).forEach((orden) => {
+    if (!orden || !orden.id) return;
+    const oid = String(orden.id);
+    const inst = instByOrden.get(oid);
+    if (!inst || !inst.id) return;
+    const intId = orden.intermediario_id != null ? String(orden.intermediario_id) : '';
+    map.set(oid, {
+      orden,
+      instrumentacion: inst,
+      transacciones: pandiCcSyncOrdenarTrxPrefetch(trxByInst.get(String(inst.id)) || []),
+      comisiones: comByOrden.get(oid) || [],
+      modosPago: catalogos.modosPago,
+      vinculoClienteId: intId && catalogos.mapVinculo.has(intId) ? catalogos.mapVinculo.get(intId) : null,
+    });
+  });
+  return map;
+}
+
+function pandiCcSyncRpcNoExisteEnServidor(err) {
+  if (!err) return false;
+  const code = String(err.code || '');
+  const msg = String(err.message || err.details || err.hint || '');
+  return code === 'PGRST202' || /could not find the function/i.test(msg) || /schema cache/i.test(msg);
+}
+
+function enviarSyncCcCajaOrdenUna(payload, optsEnvio) {
+  optsEnvio = optsEnvio || {};
+  if (payload && pandiCcSyncOrdenNumeroExcluido(payload._ordenNumero)) {
+    return Promise.resolve(payload);
+  }
+  return client
+    .rpc('sync_cc_caja_orden', {
+      p_orden_id: payload.p_orden_id,
+      p_usuario_id: payload.p_usuario_id || null,
+      p_rows_cc_cliente: payload.p_rows_cc_cliente,
+      p_rows_cc_int: payload.p_rows_cc_int,
+      p_rows_caja: payload.p_rows_caja,
+    })
+    .then((rRpc) => {
+      if (rRpc.error) {
+        if (!optsEnvio.silenciarError) {
+          console.warn('sync_cc_caja_orden:', rRpc.error.message || rRpc.error);
+          showToast(
+            'Error al guardar movimientos de CC (orden ' + (payload._ordenNumero || payload.p_orden_id) + '): ' + (rRpc.error.message || rRpc.error),
+            'error',
+            8000,
+          );
+        }
+        const errRpc = new Error(rRpc.error.message || String(rRpc.error));
+        errRpc.code = 'SYNC_CC_CAJA_RPC';
+        errRpc.cause = rRpc.error;
+        return Promise.reject(errRpc);
+      }
+      return payload;
+    });
+}
+
+/**
+ * Escribe un lote de payloads vía `sync_cc_caja_ordenes`. Si la RPC no existe, una vez por sesión cae a N llamadas simples.
+ * @returns {Promise<{ errores: Array<{ ordenId: string, msg: string }> }>}
+ */
+function enviarSyncCcCajaOrdenesLote(items) {
+  const vacio = { errores: [] };
+  items = (items || []).filter((it) => !pandiCcSyncOrdenNumeroExcluido(it && it._ordenNumero));
+  if (!items || items.length === 0) return Promise.resolve(vacio);
+  const persistirOk = (okItems) =>
+    Promise.all(okItems.map((it) => pandiPersistInstrumentacionAjustadaManualParaOrden(it.p_orden_id))).then(() => undefined);
+  const enviarUnoAUno = () => {
+    const errores = [];
+    let cadena = Promise.resolve();
+    items.forEach((it) => {
+      cadena = cadena.then(() =>
+        enviarSyncCcCajaOrdenUna(it, { silenciarError: true })
+          .then(() => persistirOk([it]))
+          .catch((err) => {
+            errores.push({
+              ordenId: it.p_orden_id,
+              msg: (err && (err.message || err.code)) || String(err),
+            });
+            return null;
+          }),
+      );
+    });
+    return cadena.then(() => ({ errores }));
+  };
+  if (pandiCcSyncBatchRpcDisponible === false) return enviarUnoAUno();
+  const pItems = items.map((it) => ({
+    orden_id: it.p_orden_id,
+    usuario_id: it.p_usuario_id || null,
+    rows_cc_cliente: it.p_rows_cc_cliente || [],
+    rows_cc_int: it.p_rows_cc_int || [],
+    rows_caja: it.p_rows_caja || [],
+  }));
+  return client
+    .rpc('sync_cc_caja_ordenes', {
+      p_items: pItems,
+      p_usuario_id: (typeof currentUserId !== 'undefined' && currentUserId) || (items[0] && items[0].p_usuario_id) || null,
+    })
+    .then((rRpc) => {
+      if (rRpc.error) {
+        if (pandiCcSyncRpcNoExisteEnServidor(rRpc.error)) {
+          pandiCcSyncBatchRpcDisponible = false;
+          if (typeof console !== 'undefined' && console.warn) {
+            console.warn('[Pandi CC] sync_cc_caja_ordenes no disponible; Refrescar usa sync_cc_caja_orden por orden.');
+          }
+          return enviarUnoAUno();
+        }
+        const errRpc = new Error(rRpc.error.message || String(rRpc.error));
+        errRpc.code = 'SYNC_CC_CAJA_RPC_BATCH';
+        return Promise.reject(errRpc);
+      }
+      const body = rRpc.data && typeof rRpc.data === 'object' ? rRpc.data : {};
+      const rawErr = Array.isArray(body.errores) ? body.errores : [];
+      const fallidas = new Set(
+        rawErr
+          .map((e) => (e && (e.orden_id || e.ordenId) != null ? String(e.orden_id || e.ordenId) : ''))
+          .filter(Boolean),
+      );
+      const errores = rawErr.map((e) => ({
+        ordenId: e && (e.orden_id || e.ordenId),
+        msg: (e && (e.error || e.message || e.msg)) || 'error en lote',
+      }));
+      const okItems = items.filter((it) => it && it.p_orden_id != null && !fallidas.has(String(it.p_orden_id)));
+      return persistirOk(okItems).then(() => ({ errores }));
+    });
+}
 
 /** Atrasar el sync global del primer login para que `loadCuentaCorriente` / otras vistas ganen la red primero (ms). */
 const PANDI_CC_GLOBAL_SYNC_DEFER_LOGIN_MS = 2000;
@@ -16947,6 +17281,26 @@ const PANDI_CC_GLOBAL_SYNC_COOLDOWN_MS = 60000;
 const PANDI_LS_CC_LAST_FULL_SYNC_MS = 'pandi_cc_last_full_sync_ms';
 
 let pandiCcSyncTodasEnVuelo = null;
+/** Callback del modal Refrescar: se puede enganchar a una corrida ya iniciada (login/Inicio/Cajas). */
+let pandiCcSyncOnProgreso = null;
+let pandiCcSyncProgresoActual = null;
+
+function pandiCcSyncEmitirProgreso(hechas, total, fase, detalle) {
+  const info = {
+    hechas: hechas || 0,
+    total: total || 0,
+    fase: fase || 'sincronizando',
+  };
+  if (detalle) info.detalle = detalle;
+  pandiCcSyncProgresoActual = info;
+  const cb = pandiCcSyncOnProgreso;
+  if (typeof cb !== 'function') return;
+  try {
+    cb(info);
+  } catch (_) {
+    /* no cortar el sync por un fallo de UI */
+  }
+}
 
 function marcarCcGlobalSyncExitosoEnSesion() {
   try {
@@ -16971,19 +17325,36 @@ function debeOmitirCcGlobalSyncPorCooldownSesion() {
  * Así, al refrescar la página o abrir Cuenta corriente, los movimientos quedan derivados de la fuente de verdad (no hace falta truncar).
  *
  * - **Paralelo por lotes:** cada `sincronizarCcYCajaDesdeOrden` es por `orden_id` distinto (sin mezclar filas entre órdenes); varias en paralelo reducen la latencia total respecto del encadenamiento 1 a 1.
- * - **Una sola corrida en vuelo:** si Cajas, Inicio y CC piden sync a la vez, comparten la misma promesa (aunque Refrescar pida concurrencia 8, espera la corrida ya iniciada).
+ * - **Una sola corrida en vuelo:** si Cajas, Inicio y CC piden sync a la vez, comparten la misma promesa (aunque Refrescar pida concurrencia 8, espera la corrida ya iniciada). El modal de Refrescar se engancha a esa corrida y muestra su avance.
  * - **Cooldown (sessionStorage):** tras un sync exitoso, `loadCuentaCorriente` puede omitir repetirlo al reabrir el menú antes de `PANDI_CC_GLOBAL_SYNC_COOLDOWN_MS` (el botón Refrescar y los flujos con `skipSyncGlobal: false` tras error siguen forzando lectura coherente cuando aplica).
  * - **opts.concurrency:** tope de órdenes en paralelo (1–12). Login / Inicio / Cajas / apertura CC usan 4; Refrescar usa 8. No cambia payloads ni saldos.
- * **Pendiente (no olvidar):** recorte real = RPC batch varias órdenes en un viaje — `docs/PLAN_MEJORA_PERFORMANCE_SYNC_CC.md` § «Decisión 2026-09-10: B ahora, A después».
+ * - **opts.usarBatchRpc:** Refrescar arma el payload en el navegador (mismo motor) y escribe con `sync_cc_caja_ordenes` (lotes de `PANDI_CC_SYNC_ORDENES_BATCH_TAMANIO`). Lee órdenes/trx/comisiones en tandas (`datosPrefetch`) para no pagar un viaje de red por orden. Si la RPC no está en el servidor, cae a N×`sync_cc_caja_orden`. Login / Inicio / Cajas no usan este flag.
+ * - **opts.onProgreso:** `{ hechas, total, fase, detalle }` (`preparando` | `sincronizando`). Solo lo usa el modal de Refrescar; login/Inicio/Cajas no lo pasan. Si Refrescar llega con una corrida ya en vuelo, el callback se engancha igual.
+ * - **Exclusión nro. 23, 28, 41, 42 y 106:** no se calculan ni se persisten (`PANDI_CC_SYNC_EXCLUIR_NUMEROS_ORDEN`). Ver `docs/CC_EXCLUSION_SYNC_ORDENES_23_Y_41.md`. Al desplegar solo se tocan **576** y **788**.
  */
 function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal) {
+  if (optsSyncGlobal && typeof optsSyncGlobal.onProgreso === 'function') {
+    pandiCcSyncOnProgreso = optsSyncGlobal.onProgreso;
+    if (pandiCcSyncProgresoActual) {
+      pandiCcSyncEmitirProgreso(
+        pandiCcSyncProgresoActual.hechas,
+        pandiCcSyncProgresoActual.total,
+        pandiCcSyncProgresoActual.fase,
+        pandiCcSyncProgresoActual.detalle,
+      );
+    } else if (pandiCcSyncTodasEnVuelo) {
+      pandiCcSyncEmitirProgreso(0, 0, 'preparando', 'Hay una sincronización en curso…');
+    }
+  }
   if (pandiCcSyncTodasEnVuelo) return pandiCcSyncTodasEnVuelo;
   const concPedida = Number(optsSyncGlobal && optsSyncGlobal.concurrency);
   const conc =
     Number.isFinite(concPedida) && concPedida >= 1
       ? Math.min(12, Math.max(1, Math.floor(concPedida)))
       : PANDI_CC_SYNC_ORDENES_CONCURRENCY;
+  const usarBatchRpc = optsSyncGlobal && optsSyncGlobal.usarBatchRpc === true;
   const p = (async () => {
+    pandiCcSyncEmitirProgreso(0, 0, 'preparando', 'Leyendo instrumentación…');
     const r = await client.from('instrumentacion').select('orden_id');
     if (r.error) return;
     let ordenIds = [...new Set((r.data || []).map((x) => x.orden_id).filter(Boolean))];
@@ -16991,38 +17362,188 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal)
       marcarCcGlobalSyncExitosoEnSesion();
       return;
     }
+    pandiCcSyncEmitirProgreso(0, ordenIds.length, 'preparando', 'Revisando estado de las órdenes…');
     const anulada = new Set();
+    const omitirSyncNumero = new Set();
     const chunkEst = 150;
     for (let j = 0; j < ordenIds.length; j += chunkEst) {
-      const rEst = await client.from('ordenes').select('id, estado').in('id', ordenIds.slice(j, j + chunkEst));
+      const rEst = await client.from('ordenes').select('id, estado, numero').in('id', ordenIds.slice(j, j + chunkEst));
       if (rEst.error) break;
       (rEst.data || []).forEach((o) => {
         if (String(o.estado || '').toLowerCase() === 'anulada') anulada.add(String(o.id));
+        if (pandiCcSyncOrdenNumeroExcluido(o.numero)) omitirSyncNumero.add(String(o.id));
       });
+      pandiCcSyncEmitirProgreso(
+        Math.min(ordenIds.length, j + chunkEst),
+        ordenIds.length,
+        'preparando',
+        'Revisando estado de las órdenes…',
+      );
     }
-    if (anulada.size > 0) {
-      ordenIds = ordenIds.filter((id) => id != null && !anulada.has(String(id)));
+    if (anulada.size > 0 || omitirSyncNumero.size > 0) {
+      ordenIds = ordenIds.filter(
+        (id) => id != null && !anulada.has(String(id)) && !omitirSyncNumero.has(String(id)),
+      );
+    }
+    if (omitirSyncNumero.size > 0 && typeof console !== 'undefined' && console.warn) {
+      console.warn(
+        '[Pandi CC] sync global: se omiten órdenes',
+        PANDI_CC_SYNC_EXCLUIR_NUMEROS_ORDEN.join(', '),
+        '(libro CC/caja congelado; docs/CC_EXCLUSION_SYNC_ORDENES_23_Y_41.md)',
+      );
     }
     if (ordenIds.length === 0) {
       marcarCcGlobalSyncExitosoEnSesion();
       return;
     }
+    pandiCcSyncEmitirProgreso(0, ordenIds.length, 'sincronizando');
     const fallosSyncCc = [];
-    for (let i = 0; i < ordenIds.length; i += conc) {
-      const chunk = ordenIds.slice(i, i + conc);
-      await Promise.all(
-        chunk.map((ordenId) =>
-          sincronizarCcYCajaDesdeOrden(ordenId, { silenciarAvisosInvarianteCc: true }).catch((err) => {
-            const msg = err && (err.message || err.code || String(err));
-            fallosSyncCc.push({ ordenId, msg });
-            if (typeof console !== 'undefined' && console.warn) {
-              console.warn('[Pandi CC] sync global orden', ordenId, msg);
-            }
-            return null;
-          }),
-        ),
+    const registrarFalloSync = (ordenId, msg) => {
+      fallosSyncCc.push({ ordenId, msg });
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[Pandi CC] sync global orden', ordenId, msg);
+      }
+    };
+    let bufferBatch = [];
+    const flushBatchSyncCc = async (forzarResto) => {
+      const tam = PANDI_CC_SYNC_ORDENES_BATCH_TAMANIO;
+      while (bufferBatch.length >= tam || (forzarResto && bufferBatch.length > 0)) {
+        const n = Math.min(forzarResto && bufferBatch.length < tam ? bufferBatch.length : tam, bufferBatch.length);
+        const slice = bufferBatch.splice(0, n);
+        try {
+          const resLote = await enviarSyncCcCajaOrdenesLote(slice);
+          (resLote && resLote.errores ? resLote.errores : []).forEach((e) => {
+            registrarFalloSync(e.ordenId, e.msg);
+          });
+        } catch (errLote) {
+          const msgLote = errLote && (errLote.message || errLote.code || String(errLote));
+          slice.forEach((it) => registrarFalloSync(it.p_orden_id, msgLote));
+        }
+      }
+    };
+    const optsSyncUna = {
+      silenciarAvisosInvarianteCc: true,
+      devolverPayloadSinRpc: usarBatchRpc,
+      silenciarErrorSync: usarBatchRpc,
+    };
+    const syncUnaOrden = (ordenId, datosPrefetch) =>
+      sincronizarCcYCajaDesdeOrden(
+        ordenId,
+        datosPrefetch ? Object.assign({}, optsSyncUna, { datosPrefetch }) : optsSyncUna,
       );
+    const correrSyncUnaOrden = (ordenId, datosPrefetch) =>
+      syncUnaOrden(ordenId, datosPrefetch).catch((err) => {
+        registrarFalloSync(ordenId, err && (err.message || err.code || String(err)));
+        return null;
+      });
+    const procesarChunkIds = async (chunk, pack, prefetchHabilitadoRef, dualPendienteRef) => {
+      const resultados = await Promise.all(
+        chunk.map(async (ordenId) => {
+          const datos = pack && pack.get(String(ordenId));
+          if (!usarBatchRpc || !prefetchHabilitadoRef.ok || !datos) {
+            return correrSyncUnaOrden(ordenId, null);
+          }
+          let hacerDual = false;
+          if (dualPendienteRef.ok) {
+            dualPendienteRef.ok = false;
+            hacerDual = true;
+          }
+          if (hacerDual) {
+            let pre = null;
+            let live = null;
+            let errPre = null;
+            let errLive = null;
+            try {
+              pre = await syncUnaOrden(ordenId, datos);
+            } catch (err) {
+              errPre = err;
+            }
+            try {
+              live = await syncUnaOrden(ordenId, null);
+            } catch (err) {
+              errLive = err;
+            }
+            const preOk = !!(pre && pre.p_orden_id);
+            const liveOk = !!(live && live.p_orden_id);
+            if (preOk && liveOk) {
+              if (!pandiCcSyncPayloadsEquivalentes(pre, live)) {
+                prefetchHabilitadoRef.ok = false;
+                if (typeof console !== 'undefined' && console.warn) {
+                  console.warn(
+                    '[Pandi CC] prefetch Refrescar ≠ lectura por orden; se usa el camino actual',
+                    ordenId,
+                    pre && pre._ordenNumero,
+                  );
+                }
+                return live;
+              }
+              return pre;
+            }
+            if (preOk && !liveOk) return pre;
+            if (!preOk && liveOk) {
+              prefetchHabilitadoRef.ok = false;
+              return live;
+            }
+            registrarFalloSync(
+              ordenId,
+              (errLive || errPre) && ((errLive || errPre).message || (errLive || errPre).code || String(errLive || errPre)),
+            );
+            return null;
+          }
+          return correrSyncUnaOrden(ordenId, datos);
+        }),
+      );
+      if (usarBatchRpc) {
+        resultados.forEach((pay) => {
+          if (pay && pay.p_orden_id) bufferBatch.push(pay);
+        });
+        await flushBatchSyncCc(false);
+      }
+    };
+    if (usarBatchRpc) {
+      const catalogos = await pandiCcSyncPrefetchCatalogosRefrescar();
+      const prefetchHabilitadoRef = { ok: !!catalogos };
+      if (!catalogos && typeof console !== 'undefined' && console.warn) {
+        console.warn('[Pandi CC] prefetch Refrescar: sin catálogos; se usa lectura por orden');
+      }
+      const tamPref = PANDI_CC_SYNC_PREFETCH_TAMANIO;
+      for (let base = 0; base < ordenIds.length; base += tamPref) {
+        const idSlice = ordenIds.slice(base, base + tamPref);
+        pandiCcSyncEmitirProgreso(base, ordenIds.length, 'sincronizando', 'Leyendo órdenes…');
+        let pack = new Map();
+        if (prefetchHabilitadoRef.ok) {
+          try {
+            pack = await pandiCcSyncPrefetchDatosOrdenes(idSlice, catalogos);
+          } catch (errPref) {
+            prefetchHabilitadoRef.ok = false;
+            pack = new Map();
+            if (typeof console !== 'undefined' && console.warn) {
+              console.warn('[Pandi CC] prefetch Refrescar falló; se usa lectura por orden', errPref);
+            }
+          }
+        }
+        const dualPendienteRef = {
+          ok: prefetchHabilitadoRef.ok && PANDI_CC_SYNC_PREFETCH_DUAL_POR_TANDA > 0,
+        };
+        for (let j = 0; j < idSlice.length; j += conc) {
+          const chunk = idSlice.slice(j, j + conc);
+          await procesarChunkIds(chunk, pack, prefetchHabilitadoRef, dualPendienteRef);
+          pandiCcSyncEmitirProgreso(
+            Math.min(ordenIds.length, base + j + chunk.length),
+            ordenIds.length,
+            'sincronizando',
+          );
+        }
+      }
+    } else {
+      for (let i = 0; i < ordenIds.length; i += conc) {
+        const chunk = ordenIds.slice(i, i + conc);
+        await procesarChunkIds(chunk, null, { ok: false }, { ok: false });
+        pandiCcSyncEmitirProgreso(Math.min(ordenIds.length, i + chunk.length), ordenIds.length, 'sincronizando');
+      }
     }
+    if (usarBatchRpc) await flushBatchSyncCc(true);
+    pandiCcSyncEmitirProgreso(ordenIds.length, ordenIds.length, 'sincronizando');
     if (fallosSyncCc.length > 0) {
       const primera = fallosSyncCc[0];
       const e = new Error(
@@ -17038,8 +17559,100 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal)
   pandiCcSyncTodasEnVuelo = p;
   p.finally(() => {
     if (pandiCcSyncTodasEnVuelo === p) pandiCcSyncTodasEnVuelo = null;
+    pandiCcSyncOnProgreso = null;
+    pandiCcSyncProgresoActual = null;
   });
   return p;
+}
+
+function pandiCcMostrarOverlayCarga() {
+  const loadingEl = document.getElementById('cc-loading');
+  const contenido = document.getElementById('cc-contenido');
+  const panelSaldos = document.getElementById('cc-panel-saldos');
+  const panelMov = document.getElementById('cc-panel-movimientos');
+  if (loadingEl) loadingEl.style.display = 'block';
+  if (contenido) contenido.style.display = 'none';
+  if (panelSaldos) panelSaldos.style.display = 'none';
+  if (panelMov) panelMov.style.display = 'none';
+}
+
+let pandiCcSyncProgresoTimerId = null;
+let pandiCcSyncProgresoInicioMs = 0;
+
+function pandiCcSyncFormatearTiempo(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m + ':' + (r < 10 ? '0' : '') + r;
+}
+
+function actualizarTiempoModalCcSyncProgreso() {
+  const el = document.getElementById('modal-cc-sync-progreso-tiempo');
+  if (!el || !pandiCcSyncProgresoInicioMs) return;
+  el.textContent = 'Tiempo: ' + pandiCcSyncFormatearTiempo(Date.now() - pandiCcSyncProgresoInicioMs);
+}
+
+function actualizarModalCcSyncProgreso(info) {
+  info = info || {};
+  const hechas = Math.max(0, Number(info.hechas) || 0);
+  const total = Math.max(0, Number(info.total) || 0);
+  const fase = info.fase || 'sincronizando';
+  const detalle = info.detalle != null ? String(info.detalle).trim() : '';
+  const estadoEl = document.getElementById('modal-cc-sync-progreso-estado');
+  const cuentaEl = document.getElementById('modal-cc-sync-progreso-cuenta');
+  const bar = document.getElementById('modal-cc-sync-progreso-bar');
+  const fill = document.getElementById('modal-cc-sync-progreso-fill');
+  let pct = 0;
+  let texto = 'Preparando órdenes…';
+  let cuenta = '';
+  let indet = false;
+  if (fase === 'cargando') {
+    pct = 96;
+    texto = 'Actualizando saldos…';
+    cuenta = 'Casi listo';
+  } else if (fase === 'preparando') {
+    pct = 8;
+    texto = detalle || 'Preparando órdenes…';
+    indet = true;
+  } else if (total > 0) {
+    pct = Math.min(95, Math.round((hechas / total) * 95));
+    texto = detalle || 'Sincronizando órdenes…';
+    cuenta = hechas + ' de ' + total;
+  } else {
+    texto = detalle || 'Sincronizando…';
+    indet = true;
+  }
+  if (estadoEl) estadoEl.textContent = texto;
+  if (cuentaEl) cuentaEl.textContent = cuenta;
+  if (bar) {
+    bar.setAttribute('aria-valuenow', String(pct));
+    bar.classList.toggle('cc-sync-progreso-indet', indet);
+  }
+  if (fill) fill.style.width = pct + '%';
+}
+
+function abrirModalCcSyncProgreso() {
+  const bd = document.getElementById('modal-cc-sync-progreso-backdrop');
+  if (!bd) return;
+  pandiCcSyncProgresoInicioMs = Date.now();
+  actualizarModalCcSyncProgreso({ hechas: 0, total: 0, fase: 'preparando', detalle: 'Preparando órdenes…' });
+  actualizarTiempoModalCcSyncProgreso();
+  if (pandiCcSyncProgresoTimerId) clearInterval(pandiCcSyncProgresoTimerId);
+  pandiCcSyncProgresoTimerId = setInterval(actualizarTiempoModalCcSyncProgreso, 500);
+  bd.classList.add('activo');
+  bd.setAttribute('aria-hidden', 'false');
+}
+
+function cerrarModalCcSyncProgreso() {
+  if (pandiCcSyncProgresoTimerId) {
+    clearInterval(pandiCcSyncProgresoTimerId);
+    pandiCcSyncProgresoTimerId = null;
+  }
+  pandiCcSyncProgresoInicioMs = 0;
+  const bd = document.getElementById('modal-cc-sync-progreso-backdrop');
+  if (!bd) return;
+  bd.classList.remove('activo');
+  bd.setAttribute('aria-hidden', 'true');
 }
 
 function loadCuentaCorriente(opts) {
@@ -17049,16 +17662,20 @@ function loadCuentaCorriente(opts) {
   const ccStuckRecovery = opts._ccStuckRecovery === true;
   /** Tras sync explícito (p. ej. botón Refrescar): solo leer movimientos, no volver a borrar/reinsertar toda la CC. */
   const skipSyncGlobal = opts.skipSyncGlobal === true;
+  const pintarTrasRefrescar = opts.pintarTrasRefrescar === true;
+  if (pandiCcRefrescarEnCurso && !pintarTrasRefrescar) {
+    return Promise.resolve();
+  }
   const loadingEl = document.getElementById('cc-loading');
   const contenido = document.getElementById('cc-contenido');
   const tbody = document.getElementById('cc-resumen-tbody');
   const panelSaldos = document.getElementById('cc-panel-saldos');
   const panelMov = document.getElementById('cc-panel-movimientos');
-  if (!contenido || !tbody) return;
+  if (!contenido || !tbody) return Promise.resolve();
 
   const miTicket = ++ccCargaSerial;
   const silentCc = isPandiBackgroundRefresh();
-  const loadingShownAtCc = silentCc ? 0 : Date.now();
+  const loadingShownAtCc = silentCc ? 0 : (Number(opts.loadingShownAt) > 0 ? Number(opts.loadingShownAt) : Date.now());
   if (!silentCc) {
     if (loadingEl) loadingEl.style.display = 'block';
     contenido.style.display = 'none';
@@ -17071,10 +17688,10 @@ function loadCuentaCorriente(opts) {
 
   // Lectura de movimientos: pandiSupabaseFetchAll pagina con el tamaño configurado en Seguridad (app_config supabase_select_page_size).
   return Promise.all([
-      client.from('clientes').select('id, nombre').order('nombre', { ascending: true }),
-      client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true }),
-      pandiSupabaseFetchAll(() => client.from('movimientos_cuenta_corriente').select('id, usuario_id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS)),
-      pandiSupabaseFetchAll(() => client.from('movimientos_cuenta_corriente_intermediario').select('id, usuario_id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS)),
+      pandiSupabaseFetchAll(() => client.from('clientes').select('id, nombre').order('nombre', { ascending: true })),
+      pandiSupabaseFetchAll(() => client.from('intermediarios').select('id, nombre').order('nombre', { ascending: true })),
+      pandiSupabaseFetchAll(() => client.from('movimientos_cuenta_corriente').select('id, usuario_id, cliente_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS + PANDI_CC_TRX_EMBED_PAG_COB)),
+      pandiSupabaseFetchAll(() => client.from('movimientos_cuenta_corriente_intermediario').select('id, usuario_id, intermediario_id, orden_id, transaccion_id, transaccion_numero, fecha, moneda, monto, concepto, monto_usd, monto_ars, monto_eur, estado, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id' + CC_MOV_MANUAL_PAG_COB_COLS + PANDI_CC_TRX_EMBED_PAG_COB)),
       client.from('contraparte_vinculo').select('intermediario_id, cliente_id'),
     ])
     .then(([rClientes, rInt, rMovCli, rMovInt, rVin]) => {
@@ -17096,8 +17713,8 @@ function loadCuentaCorriente(opts) {
     const ordenIds = [...new Set([...(movCliRaw.map((m) => m.orden_id)), ...(movIntRaw.map((m) => m.orden_id))].filter(Boolean))];
     // Una sola carga de pendientes CC: instrumentación (global + por órdenes con movimientos) → órdenes → transacciones pendientes. Regla unificada para cliente e intermediario.
     const promPendientesCcGlobal = Promise.all([
-      client.from('instrumentacion').select('id, orden_id'),
-      ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
+      pandiSupabaseFetchAll(() => client.from('instrumentacion').select('id, orden_id')),
+      ordenIds.length > 0 ? pandiCcFetchInstrumentacionPorOrdenIds(ordenIds) : Promise.resolve({ data: [] }),
     ]).then(([rInstAll, rInstFromOrdenes]) => {
       const instAll = (rInstAll.data || []).filter((i) => i && i.id);
       const instFromOrdenes = (rInstFromOrdenes.data || []).filter((i) => i && i.id);
@@ -17107,15 +17724,19 @@ function loadCuentaCorriente(opts) {
       const inst = Object.values(instById);
       const ordenIdsFromInst = [...new Set(inst.map((i) => i.orden_id).filter(Boolean))];
       if (ordenIdsFromInst.length === 0) return { pendienteClienteAjusteByCli: {}, pendientePandyDebeIntByInt: {} };
-      return client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tipo_operacion_id, tipos_operacion(codigo, usa_intermediario)')
-          .in('id', ordenIdsFromInst)
+      return pandiSupabaseFetchByIdsInChunks(ordenIdsFromInst, (slice) =>
+        client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, monto_recibido, monto_entregado, moneda_recibida, moneda_entregada, tipo_operacion_id, tipos_operacion(codigo, usa_intermediario)')
+          .in('id', slice),
+      )
           .then((rO) => {
             if (rO.error) return { pendienteClienteAjusteByCli: {}, pendientePandyDebeIntByInt: {} };
             const ordenes = rO.data || [];
             const ordenById = Object.fromEntries(ordenes.map((o) => [o.id, o]));
             const instIdSet = new Set(inst.map((i) => i.id));
             const instIdToOrdenId = Object.fromEntries(inst.map((i) => [i.id, i.orden_id]));
-            return client.from('instrumentacion').select('orden_id, multicontraparte_manual').in('orden_id', ordenIdsFromInst).then((rMc) => {
+            return pandiSupabaseFetchByIdsInChunks(ordenIdsFromInst, (slice) =>
+              client.from('instrumentacion').select('orden_id, multicontraparte_manual').in('orden_id', slice),
+            ).then((rMc) => {
               const mcOrdenIds = new Set((rMc.data || []).filter((row) => row.multicontraparte_manual).map((row) => row.orden_id));
               const ordenMcElegibleById = {};
               ordenes.forEach((o) => {
@@ -17160,8 +17781,8 @@ function loadCuentaCorriente(opts) {
     })
       .catch(() => ({ pendienteClienteAjusteByCli: {}, pendientePandyDebeIntByInt: {} }));
     return Promise.all([
-      transaccionIds.length > 0 ? client.from('transacciones').select('id, usuario_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
-      ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
+      transaccionIds.length > 0 ? pandiCcFetchTransaccionesPorIds(transaccionIds) : Promise.resolve({ data: [] }),
+      ordenIds.length > 0 ? pandiCcFetchInstrumentacionPorOrdenIds(ordenIds) : Promise.resolve({ data: [] }),
       ordenIds.length > 0
         ? pandiSupabaseFetchByIdsInChunks(ordenIds, (slice) =>
             client
@@ -17179,9 +17800,13 @@ function loadCuentaCorriente(opts) {
       const trCobradorById = {};
       const trTipoById = {};
       const trRowById = {};
+      if (rTr && rTr.error && typeof console !== 'undefined' && console.warn) {
+        console.warn('loadCuentaCorriente: transacciones Pagador/Cobrador:', rTr.error.message || rTr.error);
+      }
       (rTr.data || []).forEach((t) => {
         if (t.id == null || t.id === '') return;
-        const id = String(t.id);
+        const id = ccTrxMapKey(t.id);
+        if (!id) return;
         trById[id] = t.estado;
         trPagadorById[id] = (t.pagador || '').toString().toLowerCase();
         if (t.cobrador != null) trCobradorById[id] = String(t.cobrador).toLowerCase();
@@ -17200,7 +17825,7 @@ function loadCuentaCorriente(opts) {
       }
       const instIds = (rInst.data || []).map((i) => i.id).filter(Boolean);
       const promTrInst = instIds.length > 0
-        ? client.from('transacciones').select('id, instrumentacion_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('instrumentacion_id', instIds)
+        ? pandiCcFetchTransaccionesPorInstrumentacionIds(instIds)
         : Promise.resolve({ data: [] });
       return promTrInst.then((rTrInst) => ({
         rTrInst,
@@ -17223,7 +17848,8 @@ function loadCuentaCorriente(opts) {
       const cobradorIntermediarioIdByTrx = {};
       function ingestTrxParticipanteIds(t) {
         if (!t || t.id == null || t.id === '') return;
-        const kid = String(t.id);
+        const kid = ccTrxMapKey(t.id);
+        if (!kid) return;
         if (t.pagador_cliente_id) pagadorClienteIdByTrx[kid] = t.pagador_cliente_id;
         if (t.cobrador_cliente_id) cobradorClienteIdByTrx[kid] = t.cobrador_cliente_id;
         if (t.pagador_intermediario_id) pagadorIntermediarioIdByTrx[kid] = t.pagador_intermediario_id;
@@ -17232,8 +17858,9 @@ function loadCuentaCorriente(opts) {
       (rTrMovsRaw || []).forEach(ingestTrxParticipanteIds);
       (rTrInst.data || []).forEach(ingestTrxParticipanteIds);
       (rTrInst.data || []).forEach((t) => {
-        if (t.id == null || t.id === '') return;
-        trRowById[String(t.id)] = t;
+        const kid = ccTrxMapKey(t && t.id);
+        if (!kid) return;
+        trRowById[kid] = t;
       });
       ccAbsorberMetaTransaccionesEnMaps(trPagadorById, trCobradorById, trTipoById, rTrInst.data || []);
       const trParticipanteIdsByTrx = {
@@ -17340,11 +17967,13 @@ function loadCuentaCorriente(opts) {
       const usdUsdIntCliEgresoPandyClientePendienteByCli = ccMapClienteUsdUsdIntEgresoPandyClientePendiente(ordenById || {}, transaccionesByOrdenId);
       return delayMinLoadingSiNoEsBackground(loadingShownAtCc).then(() => {
         if (miTicket !== ccCargaSerial) return;
+        if (pandiCcRefrescarEnCurso && !pintarTrasRefrescar) return;
         buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl, contenido, tbody, ordenNumeroById, trPagadorById || {}, trTipoById || {}, trCobradorById || {}, ordenById || {}, pendientePandyDebeIntByInt || {}, pendienteClienteAjusteByCli || {}, saldoClienteByCliPrecomp, saldoIntByIdPrecomp, chequeCliIngChequePendienteByCli, chequeCliEgresoPandyClientePendienteByCli, chequeIntIngresoIntPandyPendienteByInt, chequeIntEgresoPandyIntPendienteByInt, usdUsdIntCliIngPendienteByCli, usdUsdIntCliEgresoPandyClientePendienteByCli, trParticipanteIdsByTrx || {}, transaccionesByOrdenId || {}, trRowById || {}, vinculoClientePorIntermediario);
       });
     });
   }).catch(async (err) => {
     if (miTicket !== ccCargaSerial) return;
+    if (pandiCcRefrescarEnCurso && !pintarTrasRefrescar) return;
     const msg = err && err.message != null ? String(err.message) : String(err || '');
     const esRed =
       pandiEsErrorRedOrdenesMessage(msg) || (typeof navigator !== 'undefined' && navigator.onLine === false);
@@ -17692,16 +18321,13 @@ function buildCcResumenRows(clientes, intermediarios, movCli, movInt, loadingEl,
       cc_intermediario_consolidado_nombre: nomIntRow,
     });
   });
-  // Corazón de la app: un movimiento lógico = una fila. Manuales sin orden comparten orden/trans null y concepto parecido: dedupe por id para no colapsar patas distintas del mismo grupo.
-  const detalleKey = (a) => {
-    if (a.es_movimiento_manual) {
-      return [a.tipo, 'manual', a.id != null ? String(a.id) : '', String(a.monto ?? ''), (a.concepto || '').slice(0, 80)].join('\t');
-    }
-    return [a.tipo, a.orden_id, a.transaccion_id, a.monto, (a.concepto || '').slice(0, 60)].join('\t');
-  };
+  // Una fila persistida = una fila en Movimientos y en el Excel (misma suma que Saldos / ojito).
+  // No colapsar por orden+trans+monto+concepto: eso escondía gemelos vivos y el Excel no conciliaba con el saldo.
+  // Solo se evita listar dos veces el mismo id si el armado lo empujó duplicado.
   const seenDetalle = new Set();
   const detalleListUnicos = detalleList.filter((a) => {
-    const k = detalleKey(a);
+    if (a.id == null || a.id === '') return true;
+    const k = String(a.tipo || '') + '\t' + String(a.id);
     if (seenDetalle.has(k)) return false;
     seenDetalle.add(k);
     return true;
@@ -18510,8 +19136,8 @@ function continuarFetchMovimientosCcCore(movimientos, ordenes, tipo, entityId, l
   const transaccionIds = [...new Set((movimientos.map((m) => m.transaccion_id)).filter(Boolean))];
   const ordenIds = [...new Set((movimientos.map((m) => m.orden_id)).filter(Boolean))];
   return Promise.all([
-      transaccionIds.length > 0 ? client.from('transacciones').select('id, usuario_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('id', transaccionIds) : Promise.resolve({ data: [] }),
-      ordenIds.length > 0 ? client.from('instrumentacion').select('id, orden_id').in('orden_id', ordenIds) : Promise.resolve({ data: [] }),
+      transaccionIds.length > 0 ? pandiCcFetchTransaccionesPorIds(transaccionIds) : Promise.resolve({ data: [] }),
+      ordenIds.length > 0 ? pandiCcFetchInstrumentacionPorOrdenIds(ordenIds) : Promise.resolve({ data: [] }),
     ]).then(([rTr, rInst]) => {
       const trById = {};
       const trTipoById = {};
@@ -18519,8 +19145,8 @@ function continuarFetchMovimientosCcCore(movimientos, ordenes, tipo, entityId, l
       const trCobradorById = {};
       const trRowById = {};
       (rTr.data || []).forEach((t) => {
-        if (t.id == null || t.id === '') return;
-        const id = String(t.id);
+        const id = ccTrxMapKey(t && t.id);
+        if (!id) return;
         trById[id] = t.estado;
         if (t.tipo != null) trTipoById[id] = String(t.tipo).toLowerCase();
         trPagadorById[id] = (t.pagador || '').toString().toLowerCase();
@@ -18531,7 +19157,7 @@ function continuarFetchMovimientosCcCore(movimientos, ordenes, tipo, entityId, l
       (rInst.data || []).forEach((i) => { instByOrden[i.orden_id] = i.id; });
       const instIds = (rInst.data || []).map((i) => i.id).filter(Boolean);
       const promTrInst = instIds.length > 0
-        ? client.from('transacciones').select('id, instrumentacion_id, estado, tipo, owner, pagador, cobrador, monto, moneda, numero, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').in('instrumentacion_id', instIds)
+        ? pandiCcFetchTransaccionesPorInstrumentacionIds(instIds)
         : Promise.resolve({ data: [] });
       return promTrInst.then((rTrInst) => ({ rTrInst, rTrMovsRaw: rTr.data || [], trById, instByOrden, trTipoById, trPagadorById, trCobradorById, trRowById }));
     }).then(({ rTrInst, rTrMovsRaw, trById, instByOrden, trTipoById, trPagadorById, trCobradorById, trRowById }) => {
@@ -18540,8 +19166,8 @@ function continuarFetchMovimientosCcCore(movimientos, ordenes, tipo, entityId, l
       const pagadorIntermediarioIdByTrx = {};
       const cobradorIntermediarioIdByTrx = {};
       function ingestTrxParticipanteIdsModal(t) {
-        if (!t || t.id == null || t.id === '') return;
-        const kid = String(t.id);
+        const kid = ccTrxMapKey(t && t.id);
+        if (!kid) return;
         if (t.pagador_cliente_id) pagadorClienteIdByTrx[kid] = t.pagador_cliente_id;
         if (t.cobrador_cliente_id) cobradorClienteIdByTrx[kid] = t.cobrador_cliente_id;
         if (t.pagador_intermediario_id) pagadorIntermediarioIdByTrx[kid] = t.pagador_intermediario_id;
@@ -18550,8 +19176,9 @@ function continuarFetchMovimientosCcCore(movimientos, ordenes, tipo, entityId, l
       (rTrMovsRaw || []).forEach(ingestTrxParticipanteIdsModal);
       (rTrInst.data || []).forEach(ingestTrxParticipanteIdsModal);
       (rTrInst.data || []).forEach((t) => {
-        if (t.id == null || t.id === '') return;
-        trRowById[String(t.id)] = t;
+        const kid = ccTrxMapKey(t && t.id);
+        if (!kid) return;
+        trRowById[kid] = t;
       });
       ccAbsorberMetaTransaccionesEnMaps(trPagadorById, trCobradorById, trTipoById, rTrInst.data || []);
       const trParticipanteIdsByTrx = {
@@ -18751,10 +19378,10 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
     : 'id, usuario_id, cliente_id, intermediario_id, fecha, estado, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, tipo_operacion_id, tipos_operacion(codigo, nombre, icono_modo, icono_url_publica, moneda_in, moneda_out, usa_intermediario)';
   const selectMovCli =
     'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id, cliente_id' +
-    CC_MOV_MANUAL_PAG_COB_COLS;
+    CC_MOV_MANUAL_PAG_COB_COLS + PANDI_CC_TRX_EMBED_PAG_COB;
   const selectMovInt =
     'id, moneda, monto, concepto, fecha, estado, estado_fecha, monto_usd, monto_ars, monto_eur, orden_id, transaccion_id, transaccion_numero, incluir_en_detalle, es_movimiento_manual, manual_tip_movimiento, usuario_id, intermediario_id' +
-    CC_MOV_MANUAL_PAG_COB_COLS;
+    CC_MOV_MANUAL_PAG_COB_COLS + PANDI_CC_TRX_EMBED_PAG_COB;
   if (tipo === 'intermediario') {
     return client
       .from('contraparte_vinculo')
@@ -18764,24 +19391,28 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
       .then((rVin) => {
         const linkedCid =
           rVin && !rVin.error && rVin.data && rVin.data.cliente_id != null ? rVin.data.cliente_id : null;
-        const qOrdInt = client.from('ordenes').select(selOrden).neq('estado', 'anulada').match({ intermediario_id: entityId });
+        const qOrdInt = pandiSupabaseFetchAll(() => client.from('ordenes').select(selOrden).neq('estado', 'anulada').match({ intermediario_id: entityId }));
         const qOrdCli = linkedCid
-          ? client.from('ordenes').select(selOrden).neq('estado', 'anulada').match({ cliente_id: linkedCid })
+          ? pandiSupabaseFetchAll(() => client.from('ordenes').select(selOrden).neq('estado', 'anulada').match({ cliente_id: linkedCid }))
           : Promise.resolve({ data: [] });
         return Promise.all([
-          client
-            .from('movimientos_cuenta_corriente_intermediario')
-            .select(selectMovInt)
-            .match({ intermediario_id: entityId })
-            .order('fecha', { ascending: false })
-            .order('created_at', { ascending: false }),
+          pandiSupabaseFetchAll(() =>
+            client
+              .from('movimientos_cuenta_corriente_intermediario')
+              .select(selectMovInt)
+              .match({ intermediario_id: entityId })
+              .order('fecha', { ascending: false })
+              .order('created_at', { ascending: false }),
+          ),
           linkedCid
-            ? client
-                .from('movimientos_cuenta_corriente')
-                .select(selectMovCli)
-                .match({ cliente_id: linkedCid })
-                .order('fecha', { ascending: false })
-                .order('created_at', { ascending: false })
+            ? pandiSupabaseFetchAll(() =>
+                client
+                  .from('movimientos_cuenta_corriente')
+                  .select(selectMovCli)
+                  .match({ cliente_id: linkedCid })
+                  .order('fecha', { ascending: false })
+                  .order('created_at', { ascending: false }),
+              )
             : Promise.resolve({ data: [] }),
           qOrdInt,
           qOrdCli,
@@ -18802,13 +19433,15 @@ function fetchMovimientosCcPorEntidad(tipo, entityId) {
       });
   }
   return Promise.all([
-    client
-      .from('movimientos_cuenta_corriente')
-      .select(selectMovCli)
-      .match({ cliente_id: entityId })
-      .order('fecha', { ascending: false })
-      .order('created_at', { ascending: false }),
-    client.from('ordenes').select(selOrden).neq('estado', 'anulada').match({ cliente_id: entityId }),
+    pandiSupabaseFetchAll(() =>
+      client
+        .from('movimientos_cuenta_corriente')
+        .select(selectMovCli)
+        .match({ cliente_id: entityId })
+        .order('fecha', { ascending: false })
+        .order('created_at', { ascending: false }),
+    ),
+    pandiSupabaseFetchAll(() => client.from('ordenes').select(selOrden).neq('estado', 'anulada').match({ cliente_id: entityId })),
   ]).then(([rMov, rOrd]) => {
     if (rMov.error) return Promise.reject(rMov.error);
     if (rOrd.error) return Promise.reject(rOrd.error);
@@ -20653,13 +21286,27 @@ function setupCuentaCorriente() {
   function onCcRefrescarClick() {
     if (ccRefrescarSyncEnCurso) return;
     ccRefrescarSyncEnCurso = true;
+    pandiCcRefrescarEnCurso = true;
+    ccCargaSerial += 1;
+    const loadingShownAt = Date.now();
     setCcRefrescarBotonesBusy(true);
-    showToast('Sincronizando CC y caja desde órdenes…', 'info');
+    pandiCcMostrarOverlayCarga();
+    abrirModalCcSyncProgreso();
+    const optsCargaFinal = {
+      skipSyncGlobal: true,
+      pintarTrasRefrescar: true,
+      loadingShownAt,
+    };
     sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion({
       concurrency: PANDI_CC_SYNC_ORDENES_CONCURRENCY_REFRESCAR,
+      usarBatchRpc: true,
+      onProgreso: actualizarModalCcSyncProgreso,
     })
       .then(() => {
-        loadCuentaCorriente({ skipSyncGlobal: true });
+        actualizarModalCcSyncProgreso({ hechas: 1, total: 1, fase: 'cargando' });
+        return loadCuentaCorriente(optsCargaFinal);
+      })
+      .then(() => {
         showToast('Cuenta corriente actualizada.', 'success');
         setTimeout(() => {
           const tbody = document.getElementById('cc-vista-detalle-tbody');
@@ -20671,8 +21318,17 @@ function setupCuentaCorriente() {
       })
       .catch((e) => {
         showToast(e && (e.message || String(e)) || 'Error al sincronizar', 'error');
+        actualizarModalCcSyncProgreso({ hechas: 1, total: 1, fase: 'cargando' });
+        return loadCuentaCorriente(optsCargaFinal).catch(() => {
+          const loadingEl = document.getElementById('cc-loading');
+          const contenido = document.getElementById('cc-contenido');
+          if (loadingEl) loadingEl.style.display = 'none';
+          if (contenido) contenido.style.display = 'block';
+        });
       })
       .finally(() => {
+        cerrarModalCcSyncProgreso();
+        pandiCcRefrescarEnCurso = false;
         ccRefrescarSyncEnCurso = false;
         setCcRefrescarBotonesBusy(false);
       });
@@ -23878,12 +24534,13 @@ function loadOrdenes() {
     'id, usuario_id, numero, cliente_id, fecha, estado, tipo_operacion_id, operacion_directa, intermediario_id, moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, usd_usd_tasa_cliente_modo, observaciones, usuario_id, instrumentacion(multicontraparte_manual,instrumentacion_ajustada_manual,multicontraparte_sync_no_auto)';
 
   function runLoadOrdenes(selectCols) {
-    return client
-      .from('ordenes')
-      .select(selectCols)
-      .order('fecha', { ascending: false })
-      .order('created_at', { ascending: false })
-      .then((res) => {
+    return pandiSupabaseFetchAll(() =>
+      client
+        .from('ordenes')
+        .select(selectCols)
+        .order('fecha', { ascending: false })
+        .order('created_at', { ascending: false }),
+    ).then((res) => {
         if (res.error) {
           const msg = String(res.error.message || '');
           if ((msg.includes('intermediario_pago_transferencia') || msg.includes('intermediario pago transferencia')) && selectCols.includes('intermediario_pago_transferencia')) {
@@ -28390,12 +29047,12 @@ function insertarMovimientosCcParaTransaccion(transaccionId, orden, t, estadoTra
 /**
  * Sincroniza CC (cliente e intermediario) y caja desde la orden y sus transacciones.
  * Regla única: orden + instrumentación son la fuente de verdad; CC y caja se recalculan por derivación.
- * La RPC `sync_cc_caja_orden` en Supabase aplica **diff** (UPDATE/INSERT/DELETE por clave lógica; ver `sql/rpc_sync_cc_caja_orden.sql`). El fallback en cliente sigue siendo delete+insert si la RPC falla.
+ * La RPC `sync_cc_caja_orden` en Supabase aplica **libro** (UPDATE/INSERT/ANULAR; sin DELETE; ver `sql/rpc_sync_cc_caja_orden.sql`). Si la RPC falla no se reconstruye CC/caja desde el cliente.
  * Fecha contable y estado_fecha de cada fila derivada se anclan a la transacción (`fecha_ejecucion`, `updated_at` cuando aplica); sin ejecución, comisiones sintéticas y coherencia anulada usan el día de `ordenes.fecha` (no la fecha del resync). Ver `fechaYEstadoFechaMovimientoCcCajaDesdeTransaccion`.
  * Si `ordenes.estado` es **anulada** y alguna transacción de la instrumentación no está **anulada**, antes del cálculo se intenta **UPDATE** en `transacciones` (coherencia orden↔instrumentación); si falla el UPDATE, se alinean estados en memoria para el sync y se deja traza en consola.
  * **Invariante neteo CC cliente del acuerdo:** si el acuerdo está “cerrado” para este criterio (par ingreso+egreso clásico ejecutados, o multicontraparte manual con todas las transacciones ejecutadas o anuladas), la suma por moneda de las filas CC cerradas de ese cliente y orden debe ser cero, salvo el residual explicado por patas regla B y por la fila sintética «Comisión del acuerdo» sin `transaccion_id` (spread mr−me). Si no cumple, **no** se llama a `sync_cc_caja_orden` (no se persiste CC/caja derivada de este cálculo).
  * @param {string} ordenId
- * @param {{ silenciarAvisosInvarianteCc?: boolean, propagarError?: boolean, silenciarErrorSync?: boolean }} [optsSyncCc] Si `silenciarAvisosInvarianteCc`, no muestra toasts de diagnóstico del motor ni del neteo (p. ej. sync global encadenado); el bloqueo por neteo igual evita la RPC. Si `propagarError`, el `.catch` final **rechaza** la promesa (p. ej. tras anular orden) en lugar de resolver en silencio. Si `silenciarErrorSync`, ante fallo distinto del invariante de neteo no se muestra toast (solo consola; p. ej. sync en segundo plano al abrir orden).
+ * @param {{ silenciarAvisosInvarianteCc?: boolean, propagarError?: boolean, silenciarErrorSync?: boolean, devolverPayloadSinRpc?: boolean, datosPrefetch?: object }} [optsSyncCc] Si `silenciarAvisosInvarianteCc`, no muestra toasts de diagnóstico del motor ni del neteo (p. ej. sync global encadenado); el bloqueo por neteo igual evita la RPC. Si `propagarError`, el `.catch` final **rechaza** la promesa (p. ej. tras anular orden) en lugar de resolver en silencio. Si `silenciarErrorSync`, ante fallo distinto del invariante de neteo no se muestra toast (solo consola; p. ej. sync en segundo plano al abrir orden). Si `devolverPayloadSinRpc`, no llama a la RPC: resuelve con el payload para `sync_cc_caja_ordenes` (Refrescar opción A). Si `datosPrefetch`, omite los SELECT por orden (solo Refrescar).
  * @returns {Promise<void>}
  */
 function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
@@ -28406,11 +29063,34 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
   if (!ordenId) return Promise.resolve();
   const fechaHoySync = fechaHoyYYYYMMDDArgentina();
   const ahora = new Date().toISOString();
+  const prefetch = optsSyncCc.datosPrefetch && typeof optsSyncCc.datosPrefetch === 'object' ? optsSyncCc.datosPrefetch : null;
+  const usarPrefetch = !!(
+    prefetch &&
+    prefetch.orden &&
+    prefetch.instrumentacion &&
+    prefetch.instrumentacion.id &&
+    Array.isArray(prefetch.transacciones) &&
+    Array.isArray(prefetch.comisiones) &&
+    Array.isArray(prefetch.modosPago)
+  );
+  const pOrden = usarPrefetch
+    ? Promise.resolve({ data: prefetch.orden, error: null })
+    : client.from('ordenes').select(PANDI_CC_SYNC_ORDEN_SELECT).eq('id', ordenId).single();
 
-  return client.from('ordenes').select('id, usuario_id, numero, estado, fecha, cliente_id, intermediario_id, tipo_operacion_id, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario), moneda_recibida, moneda_entregada, monto_recibido, monto_entregado, cotizacion, tasa_descuento_intermediario, intermediario_pago_transferencia, intermediario_transferencia_cobra_tasa, intermediario_transferencia_tasa, intermediarios(nombre)').eq('id', ordenId).single()
+  return pOrden
     .then((rOrd) => {
       if (rOrd.error || !rOrd.data) return Promise.resolve();
       const orden = rOrd.data;
+      if (pandiCcSyncOrdenNumeroExcluido(orden.numero)) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn(
+            '[Pandi CC] sync omitido: orden',
+            orden.numero,
+            '(exclusión 23/28/41/42/106; docs/CC_EXCLUSION_SYNC_ORDENES_23_Y_41.md)',
+          );
+        }
+        return Promise.resolve();
+      }
       const ordenAnuladaSync = String(orden.estado || '').toLowerCase() === 'anulada';
       /** Día contable de respaldo en sync: siempre `ordenes.fecha` (comisiones sin trx, trx anuladas sin `fecha_ejecucion`); último recurso «hoy» solo si la orden no tiene fecha. */
       const fecha = fechaContableYYYYMMDDDesdeCampoFechaOrden(orden.fecha, fechaHoySync);
@@ -28454,33 +29134,46 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
           const tieneReglasNeg = Array.isArray(reglasDeNegocio) && reglasDeNegocio.length > 0;
           /** Una sola regla: si hay filas para este tipo + intermediario, el motor CC es solo `reglas_de_negocio` (sin cc_modelo_reglas). */
           const usarMotorReglasNegocio = tieneReglasNeg;
-          return client
-            .from('instrumentacion')
-            .select('id, multicontraparte_manual, instrumentacion_ajustada_manual, multicontraparte_sync_no_auto')
-            .eq('orden_id', ordenId)
-            .maybeSingle()
-            .then((rInst) => {
+          const pInst = usarPrefetch
+            ? Promise.resolve({ data: prefetch.instrumentacion, error: null })
+            : client
+                .from('instrumentacion')
+                .select(PANDI_CC_SYNC_INST_SELECT)
+                .eq('orden_id', ordenId)
+                .maybeSingle();
+          return pInst.then((rInst) => {
         if (!rInst.data || !rInst.data.id) return Promise.resolve();
         const instId = rInst.data.id;
         const multicontraparteManualDb = !!(rInst.data && rInst.data.multicontraparte_manual);
         const multicontraparteSyncNoAuto = !!(rInst.data && rInst.data.multicontraparte_sync_no_auto);
         const instrumentacionAjustadaManualDb = !!(rInst.data && rInst.data.instrumentacion_ajustada_manual);
-        const selectColsTrxInstrumentacionSync =
-          'id, usuario_id, numero, tipo, monto, moneda, cobrador, pagador, estado, modo_pago_id, concepto, instrumentacion_id, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id, fecha_ejecucion, updated_at, compensacion_cc_monto_aplicado, compensacion_cc_saldo_cliente_moneda_antes';
-        return Promise.all([
-          client
-            .from('transacciones')
-            .select(selectColsTrxInstrumentacionSync)
-            .eq('instrumentacion_id', instId)
-            .order('numero', { ascending: true })
-            .order('created_at', { ascending: true }),
-          client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
-          client.from('modos_pago').select('id, codigo'),
-          orden.intermediario_id ? client.from('intermediarios').select('nombre').eq('id', orden.intermediario_id).maybeSingle() : Promise.resolve({ data: null }),
-          orden.intermediario_id
-            ? client.from('contraparte_vinculo').select('cliente_id').eq('intermediario_id', orden.intermediario_id).maybeSingle()
-            : Promise.resolve({ data: null }),
-        ])
+        const selectColsTrxInstrumentacionSync = PANDI_CC_SYNC_TRX_SELECT;
+        const pTrxYCatalogos = usarPrefetch
+          ? Promise.resolve([
+              { data: prefetch.transacciones, error: null },
+              { data: prefetch.comisiones, error: null },
+              { data: prefetch.modosPago, error: null },
+              { data: null },
+              {
+                data: prefetch.vinculoClienteId ? { cliente_id: prefetch.vinculoClienteId } : null,
+                error: null,
+              },
+            ])
+          : Promise.all([
+              client
+                .from('transacciones')
+                .select(selectColsTrxInstrumentacionSync)
+                .eq('instrumentacion_id', instId)
+                .order('numero', { ascending: true })
+                .order('created_at', { ascending: true }),
+              client.from('comisiones_orden').select('moneda, monto, beneficiario').eq('orden_id', ordenId),
+              client.from('modos_pago').select('id, codigo'),
+              orden.intermediario_id ? client.from('intermediarios').select('nombre').eq('id', orden.intermediario_id).maybeSingle() : Promise.resolve({ data: null }),
+              orden.intermediario_id
+                ? client.from('contraparte_vinculo').select('cliente_id').eq('intermediario_id', orden.intermediario_id).maybeSingle()
+                : Promise.resolve({ data: null }),
+            ]);
+        return pTrxYCatalogos
           .then(([rTr, rCom, rModos, rIntNom, rVinInt]) => {
             const cidVinInt =
               rVinInt && !rVinInt.error && rVinInt.data && rVinInt.data.cliente_id != null && String(rVinInt.data.cliente_id).trim() !== ''
@@ -29349,24 +30042,18 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
 
           const idsTrx = transacciones.map((t) => t.id).filter(Boolean);
           enriquecerFilasSyncConClasificacionMovimiento(rowsCcClienteUnicos, rowsCcIntUnicos, rowsCaja);
-          return client.rpc('sync_cc_caja_orden', {
+          const payloadSyncCc = {
             p_orden_id: ordenId,
             p_usuario_id: orderUId || orden.usuario_id || null,
             p_rows_cc_cliente: rowsCcClienteUnicos,
             p_rows_cc_int: rowsCcIntUnicos,
             p_rows_caja: rowsCaja,
-          }).then((rRpc) => {
-            if (rRpc.error) {
-              console.warn('sync_cc_caja_orden:', rRpc.error.message || rRpc.error);
-              return fallbackSyncCcCaja(ordenId, idsTrx, rowsCcClienteUnicos, rowsCcIntUnicos, rowsCaja)
-                .catch((e) => {
-                  showToast('Error al guardar movimientos de CC (orden ' + (orden.numero || ordenId) + '): ' + (e && (e.message || e.details) || String(e)), 'error', 8000);
-                  throw e;
-                })
-                .then(() => pandiPersistInstrumentacionAjustadaManualParaOrden(ordenId));
-            }
-            return pandiPersistInstrumentacionAjustadaManualParaOrden(ordenId);
-          });
+            _ordenNumero: orden.numero,
+          };
+          if (optsSyncCc.devolverPayloadSinRpc === true) {
+            return payloadSyncCc;
+          }
+          return enviarSyncCcCajaOrdenUna(payloadSyncCc).then(() => pandiPersistInstrumentacionAjustadaManualParaOrden(ordenId));
           });
         });
       });
@@ -29388,22 +30075,12 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
     });
 }
 
-/** Fallback cuando la RPC sync_cc_caja_orden no existe o falla: delete + insert desde el cliente (mismo resultado, sin atomicidad en una transacción). */
-function fallbackSyncCcCaja(ordenId, idsTrx, rowsCcCliente, rowsCcInt, rowsCaja) {
-  const promDelCc = client.from('movimientos_cuenta_corriente').delete().eq('orden_id', ordenId);
-  const promDelCcInt = client.from('movimientos_cuenta_corriente_intermediario').delete().eq('orden_id', ordenId);
-  const promDelCajaTrx = (idsTrx && idsTrx.length > 0)
-    ? client.from('movimientos_caja').delete().in('transaccion_id', idsTrx)
-    : Promise.resolve();
-  const promDelCajaComision = client.from('movimientos_caja').delete().eq('orden_id', ordenId).is('transaccion_id', null);
-  return Promise.all([promDelCc, promDelCcInt, promDelCajaTrx, promDelCajaComision]).then(() => {
-    const inserts = [];
-    (rowsCcCliente || []).forEach((row) => inserts.push(client.from('movimientos_cuenta_corriente').insert(row)));
-    (rowsCcInt || []).forEach((row) => inserts.push(client.from('movimientos_cuenta_corriente_intermediario').insert(row)));
-    (rowsCaja || []).forEach((row) => inserts.push(client.from('movimientos_caja').insert(row)));
-    if (inserts.length === 0) return Promise.resolve();
-    return Promise.all(inserts);
-  });
+/**
+ * El fallback delete+insert quedó deshabilitado (capa 1: la CC/caja derivada no se borra).
+ * Cuerpo anterior: `main.js.backup-20261102-182220-pre-cc-sync-sin-delete`.
+ */
+function fallbackSyncCcCaja() {
+  return Promise.reject(new Error('El recálculo de cuenta corriente y caja no borra filas. Si falló el servidor, reintentá; no se reconstruye la orden desde el navegador.'));
 }
 
 /** Tabla orden_comisiones_generadas: una fila por (orden_id, tipo) evita duplicar Ganancia Pandy y Comisión intermediario al re-ejecutar. */
@@ -34323,9 +35000,9 @@ function loadClientes() {
   }
 
   return Promise.all([
-    client.from('clientes').select('id, nombre, documento, email, telefono, direccion, activo').order('nombre', { ascending: true }),
-    client.from('contraparte_vinculo').select('intermediario_id, cliente_id'),
-    client.from('intermediarios').select('id, nombre'),
+    pandiSupabaseFetchAll(() => client.from('clientes').select('id, nombre, documento, email, telefono, direccion, activo').order('nombre', { ascending: true })),
+    pandiSupabaseFetchAll(() => client.from('contraparte_vinculo').select('intermediario_id, cliente_id')),
+    pandiSupabaseFetchAll(() => client.from('intermediarios').select('id, nombre')),
   ]).then(([res, rVin, rInt]) => {
       loadingEl.style.display = 'none';
       if (res.error) {
@@ -34629,9 +35306,9 @@ function loadIntermediarios() {
   }
 
   return Promise.all([
-    client.from('intermediarios').select('id, nombre, documento, email, telefono, direccion, activo').order('nombre', { ascending: true }),
-    client.from('contraparte_vinculo').select('intermediario_id, cliente_id'),
-    client.from('clientes').select('id, nombre'),
+    pandiSupabaseFetchAll(() => client.from('intermediarios').select('id, nombre, documento, email, telefono, direccion, activo').order('nombre', { ascending: true })),
+    pandiSupabaseFetchAll(() => client.from('contraparte_vinculo').select('intermediario_id, cliente_id')),
+    pandiSupabaseFetchAll(() => client.from('clientes').select('id, nombre')),
   ]).then(([res, rVin, rCli]) => {
       loadingEl.style.display = 'none';
       if (res.error) {
@@ -36135,6 +36812,32 @@ const AUDITORIA_CAMPO_ETIQUETA = {
   usd_usd_tasa_cliente_modo: 'Modo tasa USD cliente',
 };
 
+function auditoriaEtiquetaCategoria(cat) {
+  const k = String(cat || '').trim().toLowerCase();
+  const m = {
+    transaccion: 'Transacción',
+    orden: 'Orden',
+    cc_manual: 'CC manual',
+    caja_manual: 'Caja manual',
+    cc_caja_sync: 'Cuenta corriente y caja',
+    app: 'App',
+  };
+  return m[k] || (cat ? String(cat) : '—');
+}
+
+function auditoriaEtiquetaAccion(accion) {
+  const k = String(accion || '').trim().toLowerCase();
+  const m = {
+    alta: 'Alta',
+    editar: 'Edición',
+    anular: 'Anulación',
+    editar_monto: 'Edición de monto',
+    editar_modo_pago: 'Edición de medio de pago',
+    cambiar_estado: 'Cambio de estado',
+  };
+  return m[k] || (accion ? String(accion).replace(/_/g, ' ') : '—');
+}
+
 function auditoriaEtiquetaCampo(campo) {
   const k = String(campo || '').trim();
   if (!k) return '—';
@@ -36339,7 +37042,13 @@ function auditoriaLegibleRolParte(val) {
 
 function auditoriaLegibleEstadoTrx(val) {
   const s = String(val || '').toLowerCase();
-  const m = { pendiente: 'Pendiente', ejecutada: 'Ejecutada', anulada: 'Anulada' };
+  const m = {
+    pendiente: 'Pendiente',
+    ejecutada: 'Ejecutada',
+    anulada: 'Anulada',
+    anulado: 'Anulado',
+    cerrado: 'Cerrado',
+  };
   return m[s] != null ? m[s] : val != null && val !== '' ? String(val) : '—';
 }
 
@@ -36713,7 +37422,13 @@ function abrirModalAuditoriaDetallePorId(id) {
       `<p style="margin-bottom:0;"><strong>Quién:</strong> ${escapeHtml(usuarioLabel)}</p>${mailLine}`;
   }
   if (meta) {
-    meta.textContent = `Categoría: ${row.categoria || '–'} · Acción: ${row.accion || '–'}`;
+    const extraLibro = md.libro ? ` · Libro: ${md.libro}` : '';
+    const extraCaja = md.caja ? ` · Caja: ${md.caja}` : '';
+    const extraMedio = md.medio_pago ? ` · Medio de pago: ${md.medio_pago}` : '';
+    const extraMoneda = md.moneda ? ` · Moneda: ${md.moneda}` : '';
+    meta.textContent =
+      `Categoría: ${auditoriaEtiquetaCategoria(row.categoria)} · Acción: ${auditoriaEtiquetaAccion(row.accion)}`
+      + extraLibro + extraCaja + extraMedio + extraMoneda;
   }
   if (preTexto) preTexto.textContent = row.detalle && String(row.detalle).trim() ? row.detalle : '—';
 
@@ -36782,10 +37497,10 @@ function renderAuditoriaVistaFilas(rows, usuarioMap, append) {
       return `<tr data-auditoria-id="${rid}">
         <td>${escapeHtml(formatAuditoriaFechaHoraArt(r.creado_en))}</td>
         <td>${escapeHtml(uLab)}</td>
-        <td>${escapeHtml(r.categoria || '')}</td>
+        <td>${escapeHtml(auditoriaEtiquetaCategoria(r.categoria))}</td>
         <td style="text-align:center;">${escapeHtml(nOrd)}</td>
         <td style="text-align:center;">${escapeHtml(nTrx)}</td>
-        <td>${escapeHtml(r.accion || '')}</td>
+        <td>${escapeHtml(auditoriaEtiquetaAccion(r.accion))}</td>
         <td class="auditoria-col-detalle">${escapeHtml(detShort)}</td>
         <td style="text-align:center;">${badge}</td>
         <td><button type="button" class="btn-secondary btn-auditoria-ver" data-auditoria-open="${rid}" title="Ver detalle y metadata"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/></svg></span>Ver</button></td>
@@ -36922,10 +37637,10 @@ function exportarAuditoriaVistaExcel() {
     return [
       formatAuditoriaFechaHoraArt(r.creado_en),
       uLab,
-      r.categoria || '',
+      auditoriaEtiquetaCategoria(r.categoria),
       nOrd,
       nTrx,
-      r.accion || '',
+      auditoriaEtiquetaAccion(r.accion),
       r.detalle || '',
       nCam,
       metaStr,
@@ -37090,6 +37805,7 @@ function refreshCurrentViewData() {
   if (typeof pandiModoReducidoOffline !== 'undefined' && pandiModoReducidoOffline) return;
   if (document.querySelector('.modal-backdrop.activo')) return;
   if (hasExpandedSectionInCurrentView()) return;
+  if (pandiCcRefrescarEnCurso && currentVistaId === 'vista-cuenta-corriente') return;
   const loaders = {
     'vista-inicio': loadInicio,
     'vista-ordenes': loadOrdenes,

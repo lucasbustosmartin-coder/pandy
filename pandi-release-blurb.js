@@ -5,10 +5,10 @@
  * El build genera `dist/pandi-release.json` para leerlo con red (no queda atrapado en el bundle viejo del SW).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.19',
+  versionLabel: 'v3.8.20',
   lines: [
-    'Mejoras de rendimiento general, pensadas para que la app siga respondiendo bien a medida que crece el volumen de datos.',
-    'Al actualizar pantallas con mucha información, el recálculo aprovecha mejor la conexión.',
-    'Los importes y el criterio de las operaciones no cambian con esta versión.',
+    'Ajustes para mejorar el rendimiento.',
+    'Control de registros duplicados.',
+    'En cuenta corriente, el listado y el Excel muestran todos los movimientos, igual que el saldo.',
   ],
 };

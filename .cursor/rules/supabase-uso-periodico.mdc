@@ -1,0 +1,16 @@
+---
+description: Revisión periódica de uso Supabase (requests / PITR). Silencio salvo fecha o riesgo.
+alwaysApply: true
+---
+
+# Pandi — uso Supabase (requests / PITR)
+
+No es trabajo de producto. **No** activar PITR, **no** bajar requests, **no** tocar la app por este tema.
+
+## Cuándo actuar
+
+- **Antes del 2026-11-13:** no mencionar esto salvo que el usuario hable de PITR, requests, billing de Supabase o un mail de uso.
+- **En o después de esa fecha** (o si el usuario lo menciona): en silencio, verificación **solo lectura** (MCP prod Pandy `bxwxuzbahewvptarlnxm`: logs ~7 días, conteos). Criterio y campos vivos: store personal `workflows/pandi-supabase-uso-periodico.md`.
+- **Hay riesgo** si el run-rate estimado es **≥ ~12 M requests/mes** (doble de la línea base 6,1 M del 2026-10-13) o aparece cargo extra de disco/egress/compute. Entonces **avisar en el chat** para verlo juntos. Si no hay riesgo: no decir nada y empujar `proxima_revision` ~30 días en ese archivo del store.
+
+Línea base 2026-10-13: mail ~6,1 M requests/mes; backups diarios 7 días; decisión de dejar todo como está.

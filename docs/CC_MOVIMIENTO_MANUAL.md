@@ -84,6 +84,8 @@ Ejecutar los scripts necesarios en Supabase SQL Editor.
 
 Si la fila tiene `manual_pagador_rol` y `manual_cobrador_rol`, el front arma los nombres desde esos campos y los combos de id. Las filas antiguas solo con `manual_tip_movimiento` siguen mostrándose con la lógica previa.
 
+Las filas **derivadas de una transacción** (no manuales) copian Pagador/Cobrador de esa transacción, no del cliente o intermediario dueño del libro CC. El SELECT de CC embebe `transacciones` por FK; de respaldo, lectura en tandas de ids. Sin eso, un `.in` masivo dejaba el mapa vacío y el fallback pintaba el cliente de la orden en ambos roles.
+
 ## Sincronización por orden
 
 Los sync borran movimientos con `orden_id` de esa orden. Los manuales tienen `orden_id` null y **no** se eliminan al resync.

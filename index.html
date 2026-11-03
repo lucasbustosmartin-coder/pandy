@@ -373,7 +373,7 @@
       <header class="page-header">
         <div class="page-header-brand">
           <span class="page-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="page-logo" id="page-logo" /></span>
-          <span id="sidebar-version" class="header-app-version" aria-label="Versión de la app" title="Versión desplegada">v3.8.19</span>
+          <span id="sidebar-version" class="header-app-version" aria-label="Versión de la app" title="Versión desplegada">v3.8.20</span>
         </div>
         <h1 id="page-title">Panel de Control</h1>
         <div class="page-header-toolbar">
@@ -797,13 +797,13 @@
               <label id="cc-resumen-filtro-nombre-label" for="cc-resumen-filtro-nombre" class="ordenes-filtro-label cc-resumen-filtro-nombre-label">Buscar cliente</label>
               <input type="search" id="cc-resumen-filtro-nombre" class="cc-input-filtro-nombre" placeholder="Nombre…" autocomplete="off" enterkeyhint="search" />
             </div>
-            <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Sincroniza todas las órdenes con instrumentación (una petición al servidor por orden). Con muchas órdenes puede tardar más de un minuto; no es un fallo de la base." aria-label="Refrescar cuenta corriente">
+            <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Sincroniza todas las órdenes con instrumentación. Puede tardar; se muestra el avance en un cuadro." aria-label="Refrescar cuenta corriente">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span><span id="cc-btn-refrescar-label">Refrescar</span><span id="cc-btn-refrescar-spinner" class="transaccion-mini-spinner transaccion-mini-spinner--on-secondary cc-refrescar-inline-spinner" hidden aria-hidden="true"></span>
             </button>
             <button type="button" class="btn-primary" id="cc-btn-movimiento-manual" title="Registrar movimiento de cuenta corriente sin orden" aria-label="Nuevo movimiento en cuenta corriente" style="display:none;">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-37"></use></svg></span>Nuevo movimiento
             </button>
-            <button type="button" class="btn-excel" id="cc-btn-exportar-excel" title="Exportar a Excel: en Saldos, las filas que ves (incl. filtro por nombre); en Movimientos, el listado filtrado y ordenado" aria-label="Exportar a Excel cuenta corriente">
+            <button type="button" class="btn-excel" id="cc-btn-exportar-excel" title="Exportar a Excel: en Saldos, las filas que ves (incl. filtro por nombre); en Movimientos, el listado filtrado y ordenado (mismas filas que el saldo, sin ocultar duplicados)" aria-label="Exportar a Excel cuenta corriente">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-35"></use></svg></span>Exportar
             </button>
           </div>
@@ -860,7 +860,7 @@
               </div>
             </div>
             <div class="cc-toolbar-mov-col-acciones">
-              <button type="button" class="btn-secondary btn-icon-only" id="cc-btn-refrescar-movimientos" title="Igual que Refrescar: sync global de todas las órdenes con instrumentación (una petición por orden; puede tardar si hay muchas)." aria-label="Refrescar movimientos cuenta corriente">
+              <button type="button" class="btn-secondary btn-icon-only" id="cc-btn-refrescar-movimientos" title="Igual que Refrescar: sincroniza todas las órdenes; se muestra el avance en un cuadro." aria-label="Refrescar movimientos cuenta corriente">
                 <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span><span id="cc-btn-refrescar-movimientos-spinner" class="transaccion-mini-spinner transaccion-mini-spinner--on-secondary cc-refrescar-inline-spinner" hidden aria-hidden="true"></span>
               </button>
               <button type="button" class="btn-primary btn-icon-only" id="cc-btn-movimiento-manual-mov" title="Nuevo movimiento manual (sin orden)" aria-label="Nuevo movimiento en cuenta corriente" style="display:none;">
@@ -1146,11 +1146,12 @@
           <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Categoría
             <select id="auditoria-filtro-categoria" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; min-width:10rem; max-width:100%; box-sizing:border-box;">
               <option value="">(todas)</option>
-              <option value="transaccion">transaccion</option>
-              <option value="orden">orden</option>
-              <option value="cc_manual">cc_manual</option>
-              <option value="caja_manual">caja_manual</option>
-              <option value="app">app</option>
+              <option value="transaccion">Transacción</option>
+              <option value="orden">Orden</option>
+              <option value="cc_manual">CC manual</option>
+              <option value="caja_manual">Caja manual</option>
+              <option value="cc_caja_sync">Cuenta corriente y caja</option>
+              <option value="app">App</option>
             </select>
           </label>
           <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Acción (contiene)
@@ -2684,6 +2685,23 @@
       </div>
       <div class="modal-body">
         <div id="modal-help-contenido" style="color:#374151; line-height:1.55; font-size:0.95rem;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Avance de Refrescar CC: no se cierra a mano (ni Escape ni clic afuera) -->
+  <div id="modal-cc-sync-progreso-backdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal modal-confirm modal-cc-sync-progreso" role="dialog" aria-modal="true" aria-labelledby="modal-cc-sync-progreso-titulo" aria-describedby="modal-cc-sync-progreso-estado">
+      <div class="modal-header">
+        <h2 id="modal-cc-sync-progreso-titulo">Sincronizando cuenta corriente</h2>
+      </div>
+      <div class="modal-body">
+        <p id="modal-cc-sync-progreso-estado" class="modal-confirm-texto">Preparando órdenes…</p>
+        <div class="cc-sync-progreso-track" id="modal-cc-sync-progreso-bar" role="progressbar" aria-labelledby="modal-cc-sync-progreso-titulo" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="cc-sync-progreso-fill" id="modal-cc-sync-progreso-fill"></div>
+        </div>
+        <p id="modal-cc-sync-progreso-cuenta" class="cc-sync-progreso-cuenta" aria-live="polite"></p>
+        <p id="modal-cc-sync-progreso-tiempo" class="cc-sync-progreso-tiempo">Tiempo: 0:00</p>
       </div>
     </div>
   </div>

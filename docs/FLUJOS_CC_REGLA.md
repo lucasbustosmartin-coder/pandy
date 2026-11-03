@@ -69,6 +69,10 @@ Tras deduplicar filas y aplicar el bloque «transacción anulada → movimiento 
 
 Los movimientos **manuales** no se modifican. La caja (`movimientos_caja`) no entra en este refuerzo.
 
+### 7.2 Persistencia: libro INSERT / UPDATE / ANULAR (sin DELETE)
+
+`sync_cc_caja_orden` trata CC cliente, CC intermediario y caja **derivada** como libro: si la clave lógica ya existe (fila viva), **actualiza**; si no, **inserta**; lo que estaba vivo y ya no viene en el JSON se marca **`anulado`** (no se borra). Lock por orden. Un vivo por clave (`sql/migracion_sync_cc_caja_orden_anular_sin_delete.sql`). Cada alta, edición material y anulación deja fila en `auditoria_app` categoría **`cc_caja_sync`** (monto, moneda, caja, medio de pago). El front **no** tiene fallback delete+insert. Manuales (`es_movimiento_manual`) y caja con `tipo_movimiento_id` no se tocan.
+
 ## 8. Comisiones generadas (Ganancia Pandy, Comisión intermediario)
 
 Para que la cuenta corriente cierre y no se dupliquen transacciones al pasar ejecutada→pendiente→ejecutada:

@@ -97,6 +97,9 @@ const BOOTSTRAP_FILES = [
   'migracion_transaccion_revertida_una_vez.sql',
   'rpc_transacciones_cambiar_estado.sql',
   'rpc_sync_cc_caja_orden.sql',
+  'rpc_sync_cc_caja_ordenes.sql',
+  'migracion_sync_cc_caja_orden_anular_sin_delete.sql',
+  'migracion_sync_cc_caja_clave_identidad.sql',
   'ordenes_insertar_con_proximo_numero.sql',
 ];
 

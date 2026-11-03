@@ -1183,6 +1183,52 @@
     .modal.modal-confirm { width: max-content; max-width: min(95vw, 560px); min-width: 200px; }
     .modal-confirm .modal-body { max-height: min(55vh, 22rem); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
     .modal-confirm .modal-confirm-texto { margin: 0; color: #333; line-height: 1.5; white-space: pre-line; }
+    #modal-cc-sync-progreso-backdrop.activo { z-index: 1100; }
+    .modal.modal-cc-sync-progreso { width: min(92vw, 28rem); max-width: min(95vw, 28rem); min-width: min(92vw, 16rem); }
+    .modal-cc-sync-progreso .modal-body { max-height: none; overflow: hidden; }
+    .cc-sync-progreso-track {
+      margin: 0.9rem 0 0.45rem;
+      height: 10px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      overflow: hidden;
+    }
+    .cc-sync-progreso-fill {
+      height: 100%;
+      width: 0%;
+      background: #0d7d3d;
+      border-radius: 999px;
+      transform: translateX(0);
+      transition: width 0.25s ease;
+    }
+    .cc-sync-progreso-track.cc-sync-progreso-indet .cc-sync-progreso-fill {
+      width: 36% !important;
+      animation: cc-sync-progreso-slide 1.15s ease-in-out infinite;
+    }
+    @keyframes cc-sync-progreso-slide {
+      0% { transform: translateX(-130%); }
+      100% { transform: translateX(340%); }
+    }
+    .cc-sync-progreso-cuenta {
+      margin: 0;
+      font-size: 0.9rem;
+      color: #555;
+      font-variant-numeric: tabular-nums;
+    }
+    .cc-sync-progreso-tiempo {
+      margin: 0.35rem 0 0;
+      font-size: 0.8rem;
+      color: #6b7280;
+      font-variant-numeric: tabular-nums;
+    }
+    @media (max-width: 480px) {
+      .modal.modal-cc-sync-progreso { width: min(96vw, 28rem); }
+      .cc-sync-progreso-track { height: 12px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cc-sync-progreso-fill { transition: none; }
+      .cc-sync-progreso-track.cc-sync-progreso-indet .cc-sync-progreso-fill { animation: none; width: 50% !important; }
+    }
     /* Modal «Nueva versión» (PWA / actualización): layout con logo empresa o icono app */
     .modal.modal-confirm.modal-confirm--release { max-width: min(96vw, 440px); }
     .modal-confirm--release .modal-body { max-height: min(72vh, 32rem); }

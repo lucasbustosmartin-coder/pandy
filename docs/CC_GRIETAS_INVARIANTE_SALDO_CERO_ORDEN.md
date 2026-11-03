@@ -95,17 +95,17 @@ Con MC activo, la CC se arma solo con `aplicarCcMulticontraparteManualConciliaci
 
 ---
 
-## 10. Persistencia: RPC y fallback
+## 10. Persistencia: RPC (libro, sin fallback delete+insert)
 
-`sync_cc_caja_orden` **persiste** el JSON que arma el front; **no** recalcula ni valida el invariante en servidor. Si el front construye filas inconsistentes, la base las guarda.
+`sync_cc_caja_orden` **persiste** el JSON que arma el front (INSERT/UPDATE/ANULAR; **sin DELETE**); **no** recalcula ni valida el invariante en servidor. Si el front construye filas inconsistentes, la base las guarda (o anula las que ya no vienen).
 
 **Mitigación en front (estado CC):** antes del RPC, `refuerzoEstadoCcCoherenteConInstrumentacion` alinea `estado` de las filas derivadas con el conjunto de transacciones de instrumentación (todas ejecutadas → todo `cerrado`; mixto → ancla por `transaccion_id`; sintéticas sin id si hay pendientes; orden anulada ya unificada a `anulado`). Ver `docs/FLUJOS_CC_REGLA.md` §7.1. No sustituye validación de neteo ni lógica en SQL.
 
 **Mitigación (neteo + comisión acuerdo):** la fila sintética «Comisión del acuerdo» **sin** `transaccion_id` (spread mr−me en USD-USD, etc.) pasa a `cerrado` con el refuerzo cuando toda la instrumentación está ejecutada; `validarInvarianteNeteoCcClienteAcuerdoCerrado` **descuenta** su monto en esa moneda del residual (junto con las patas regla B), para que no bloquee `sync_cc_caja_orden` mientras el libro del cliente refleja pata bruta + spread.
 
-Si falla la RPC, **`fallbackSyncCcCaja`** intenta el mismo conjunto por otra vía; tampoco valida invariantes.
+Si falla la RPC, el cliente **no** reconstruye CC/caja (el fallback delete+insert quedó deshabilitado). Hay que reintentar el sync.
 
-**Grieta:** no hay “última línea de defensa” en PostgreSQL para el cero por orden.
+**Grieta:** no hay “última línea de defensa” en PostgreSQL para el cero por orden. El índice único de un vivo evita gemelos; no valida neteo.
 
 ---
 

@@ -37,7 +37,7 @@ Mismo criterio SQL: **3 órdenes** con comisión en +, no anuladas, C→I MonR �
 
 1. **Backup** en producción de lo que acuerden operativamente (p. ej. snapshot o export de **saldos** y tablas **movimientos_cuenta_corriente** / **movimientos_cuenta_corriente_intermediario** relevantes, o política interna de backup).
 2. **Desplegar** el front que incluye el `main.js` corregido (Vercel prod cuando corresponda).
-3. **No** hace falta migración SQL nueva para este fix: el cambio es solo en el cliente que **rearma** el payload del sync (`sincronizarCcYCajaDesdeOrden` → RPC `sync_cc_caja_orden` o delete+insert fallback).
+3. **No** hace falta migración SQL nueva para este fix: el cambio es solo en el cliente que **rearma** el payload del sync (`sincronizarCcYCajaDesdeOrden` → RPC `sync_cc_caja_orden`). El fallback delete+insert del navegador quedó deshabilitado.
 4. **Re-sincronizar** las órdenes afectadas: abrir cada orden y guardar / **Refrescar** en Cuenta corriente (sync global), según el procedimiento habitual, para que las filas de comisión se **regeneren** con el signo correcto en `ci_pc`.
 5. **Revalidar** saldos CC intermediario y reportes (G/P, Saldos) en un subconjunto de órdenes `ci_pc` y `cp_ic` tras el sync.
 
