@@ -9,7 +9,7 @@
 | Fase | Estado | Notas |
 |------|--------|--------|
 | **0 — Medir** | **Hecho 2026-04-22** | Evidencia Network en §«Network post-fix»; SQL `sql/util_cc_performance_diagnostico_counts.sql` sigue recomendable para dimensionar N vs filas CC. |
-| **1.0 — Menos RPCs sync global** | **Hecho 2026-04-22; recorte plazo 2026-11-03** | `loadOrdenes` sin sync; Inicio/Cajas con cooldown; excluye `anulada`; omite ejecutadas fuera de `dias_laborables_editar_anular` salvo Refrescar Admin «Toda la historia»; concurrencia **4**. Sync post-login **diferido 2 s**. |
+| **1.0 — Menos RPCs sync global** | **Hecho 2026-04-22; recorte plazo 2026-11-03; release 2026-11-03** | `loadOrdenes` sin sync; Inicio/Cajas con cooldown; excluye `anulada`; omite ejecutadas fuera de `dias_laborables_editar_anular` salvo Refrescar Admin «Toda la historia»; concurrencia **4**. Sync post-login **espera el cartel «Nueva versión»** (Recargar/Entendido) y recién **diferido 2 s**. |
 | **1.1 — Caché `getReglasDeNegocio`** | **Hecho** | `main.js`: TTL 2 min + invalidación ABM reglas. |
 | **1.2 — RPC huérfanos O(n+m)** | **Hecho 2026-04-22; superado 2026-11-02; prod 2026-11-03** | Anti-join histórico (DELETE huérfanos). **Capa 1:** los huérfanos se **anulan** (`estado = anulado`), no se borran; lock por orden. **Capa 2:** identidad `sync_clave` (sin monto). **Gemelos:** anula copias extra (deja la más antigua). Únicos de un vivo **no** en prod mientras 28/41/42 tengan gemelos. Cuerpo: `sql/rpc_sync_cc_caja_orden.sql`. El script `migracion_sync_cc_caja_orden_huerfanos_antijoin.sql` no reaplicar. |
 | **1.3 — Índices** | **Hecho 2026-04-22** | `EXPLAIN ANALYZE` en **Pandy-Dev**: CC cliente por `orden_id` era **Seq Scan**; índice `idx_mov_cc_orden_id` (`sql/migracion_cc_indice_mov_cliente_orden_id.sql`). **Pandy (prod) + Pandy-Dev:** migración aplicada (MCP). |
@@ -119,7 +119,7 @@ El crecimiento de la base impacta sobre todo el punto **2** y el fetch de pendie
 | RPC `sync_cc_caja_orden` | Huérfanos: **ANULAR** (`estado = anulado`, sin DELETE; 2026-11-02 en Dev). CC cliente: **idx_mov_cc_orden_id** en `orden_id` (2026-04-22); upsert por fila JSON + lock por orden. |
 | `loadCuentaCorriente` | Lee **todas** las filas CC (paginado en bucle); escala con volumen total. |
 | Pendientes CC | Lee **todas** las trx `pendiente` del sistema. |
-| Sync global todas las órdenes | Paralelo por lotes de **4** (login/Inicio/Cajas/apertura CC); **Refrescar** lecturas en tandas de 150 + cálculo en 8 + escritura batch de 10 (`sync_cc_caja_ordenes`, Dev 2026-11-02). No en `loadOrdenes`; cooldown Inicio/Cajas; excluye `anulada`; defer post-login 2 s. |
+| Sync global todas las órdenes | Paralelo por lotes de **4** (login/Inicio/Cajas/apertura CC); **Refrescar** lecturas en tandas de 150 + cálculo en 8 + escritura batch de 10 (`sync_cc_caja_ordenes`, Dev 2026-11-02). No en `loadOrdenes`; cooldown Inicio/Cajas; excluye `anulada`; login espera cartel «Nueva versión» y recién defer 2 s. |
 
 Referencia código: `main.js` (`sincronizarCcYCajaDesdeOrden`, `loadCuentaCorriente`, `pandiSupabaseFetchAll`, `sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion`); `sql/rpc_sync_cc_caja_orden.sql`.
 

@@ -78,6 +78,13 @@ const PANDI_RELEASE_ACK_KEY = 'pandi_release_notes_ack_v';
 
 /** Evita dos modales de release a la vez (SW en espera vs novedades post-login). */
 let pandiReleaseModalActive = false;
+/**
+ * Login / Inicio / Cajas no arrancan el sync masivo mientras el cartel de nueva versión está pendiente
+ * (Recargar porque el JS está viejo, o Entendido de novedades). El botón Refrescar no usa este freno.
+ */
+let pandiReleaseBloqueaSyncAutomatico = false;
+/** `registerSW` → apply; null hasta que el plugin PWA esté listo. */
+let pandiApplyPwaUpdateFn = null;
 /** Registro SW PWA (vite-plugin-pwa); null hasta `onRegistered`. */
 let pandiPwaRegistration = null;
 /** Caché en memoria por sesión; `null` = aún no se consultó Supabase. */
@@ -227,38 +234,133 @@ async function pandiPwaNuevaVersionHtmlParaPrompt(opcionesHtml) {
   return pandiPwaNuevaVersionHtmlDesdeBlurb(blurb, opcionesHtml);
 }
 
+function pandiVersionRemotaDistintaAlBundle(blurb) {
+  const remote = blurb && blurb.versionLabel != null ? String(blurb.versionLabel).trim() : '';
+  const local = String(PANDI_RELEASE_BLURB.versionLabel || '').trim();
+  return !!(remote && local && remote !== local);
+}
+
+function pandiOmitirSyncAutomaticoPorRelease() {
+  if (pandiReleaseBloqueaSyncAutomatico) return true;
+  if (pandiPwaRegistration && pandiPwaRegistration.waiting) return true;
+  return false;
+}
+
+function pandiArrancarSyncGlobalPostLoginSiCorresponde() {
+  if (pandiOmitirSyncAutomaticoPorRelease()) return;
+  setTimeout(() => {
+    if (pandiOmitirSyncAutomaticoPorRelease()) return;
+    sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
+      .catch(() => {})
+      .then(() => {
+        if (currentVistaId === 'vista-inicio') refrescarPanelInicioCajasTrasSyncGlobal();
+        else if (currentVistaId === 'vista-cajas') refrescarVistaCajasTrasSyncGlobal();
+        else if (currentVistaId === 'vista-cuenta-corriente') {
+          void loadCuentaCorriente({ skipSyncGlobal: true, esRecargaPostSync: true });
+        }
+      });
+  }, PANDI_CC_GLOBAL_SYNC_DEFER_LOGIN_MS);
+}
+
+async function pandiAplicarActualizacionPwaORecargar() {
+  try {
+    const blurb = await pandiFetchReleaseBlurbRemoto();
+    const v = blurb && blurb.versionLabel != null ? String(blurb.versionLabel).trim() : '';
+    if (v) void pandiMarcarReleaseAckVersionAsync(v);
+  } catch (_) {
+    /* noop */
+  }
+  if (typeof pandiApplyPwaUpdateFn === 'function') {
+    void pandiApplyPwaUpdateFn(true);
+    return;
+  }
+  try {
+    location.reload();
+  } catch (_) {
+    /* noop */
+  }
+}
+
+function pandiMostrarModalNuevaVersionRecargar() {
+  if (pandiReleaseModalActive) return;
+  pandiReleaseModalActive = true;
+  pandiReleaseBloqueaSyncAutomatico = true;
+  void pandiPwaNuevaVersionHtmlParaPrompt().then((msg) => {
+    showConfirm(
+      msg,
+      'Recargar',
+      () => {
+        pandiReleaseModalActive = false;
+        void pandiAplicarActualizacionPwaORecargar();
+      },
+      () => {
+        pandiReleaseModalActive = false;
+      },
+      'Después',
+      'Nueva versión',
+      { html: true },
+    );
+  });
+}
+
 /**
  * Si el despliegue ya está activo (sin SW en espera) pero el usuario no vio las novedades de `versionLabel`,
- * mostrar el mismo modal «Nueva versión» solo informativo (sin pedir recarga).
+ * mostrar el mismo modal «Nueva versión» solo informativo (sin pedir recarga). El sync masivo espera a Entendido.
  */
-async function pandiQuizasMostrarNovedadesVersionPostLogin() {
+function pandiMostrarModalNovedadesVersionEntendido(versionLabel) {
   if (pandiReleaseModalActive) return;
-  if (pandiPwaRegistration && pandiPwaRegistration.waiting) return;
+  pandiReleaseModalActive = true;
+  pandiReleaseBloqueaSyncAutomatico = true;
+  const v = String(versionLabel || '').trim();
+  void pandiPwaNuevaVersionHtmlParaPrompt({ soloNovedades: true }).then((msg) => {
+    showConfirm(
+      msg,
+      'Entendido',
+      () => {
+        pandiReleaseModalActive = false;
+        pandiReleaseBloqueaSyncAutomatico = false;
+        void pandiMarcarReleaseAckVersionAsync(v);
+        pandiArrancarSyncGlobalPostLoginSiCorresponde();
+      },
+      () => {
+        pandiReleaseModalActive = false;
+        pandiReleaseBloqueaSyncAutomatico = false;
+        void pandiMarcarReleaseAckVersionAsync(v);
+        pandiArrancarSyncGlobalPostLoginSiCorresponde();
+      },
+      null,
+      'Nueva versión',
+      { html: true, ocultarCancelar: true },
+    );
+  });
+}
+
+/**
+ * Tras el login: si el JS está viejo o hay SW en espera, pedir Recargar y no sincronizar.
+ * Si solo faltan ver las novedades, esperar Entendido. Si ya está al día, arrancar el sync diferido.
+ */
+async function pandiTrasLoginResolverReleaseYSync() {
   const blurb = await pandiFetchReleaseBlurbRemoto();
+  const jsViejo = pandiVersionRemotaDistintaAlBundle(blurb);
+  const swEspera = !!(pandiPwaRegistration && pandiPwaRegistration.waiting);
+  if (jsViejo || swEspera) {
+    pandiReleaseBloqueaSyncAutomatico = true;
+    pandiMostrarModalNuevaVersionRecargar();
+    return;
+  }
   const v = blurb && blurb.versionLabel != null ? String(blurb.versionLabel).trim() : '';
   const lines = (blurb && Array.isArray(blurb.lines) ? blurb.lines : [])
     .map((l) => pandiNormalizarLineaReleaseUsuario(l))
     .filter(Boolean);
-  if (!v || !lines.length) return;
-  const ack = await pandiLeerReleaseAckVersionAsync();
-  if (ack === v) return;
-  pandiReleaseModalActive = true;
-  const msg = await pandiPwaNuevaVersionHtmlParaPrompt({ soloNovedades: true });
-  showConfirm(
-    msg,
-    'Entendido',
-    () => {
-      pandiReleaseModalActive = false;
-      void pandiMarcarReleaseAckVersionAsync(v);
-    },
-    () => {
-      pandiReleaseModalActive = false;
-      void pandiMarcarReleaseAckVersionAsync(v);
-    },
-    null,
-    'Nueva versión',
-    { html: true, ocultarCancelar: true },
-  );
+  if (v && lines.length) {
+    const ack = await pandiLeerReleaseAckVersionAsync();
+    if (ack !== v) {
+      pandiMostrarModalNovedadesVersionEntendido(v);
+      return;
+    }
+  }
+  pandiReleaseBloqueaSyncAutomatico = false;
+  pandiArrancarSyncGlobalPostLoginSiCorresponde();
 }
 
 /** Icono app 192×192: prod (cara clara) o dev/Preview (panda celeste) según `window.PANDI_ICON_192_DEFAULT` en config.js. */
@@ -8668,7 +8770,7 @@ function loadCajas(opts) {
     cajasSaldoIds.forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = '–'; });
   }
 
-  if (!silentCajas && !debeOmitirCcGlobalSyncPorCooldownSesion()) {
+  if (!silentCajas && !debeOmitirCcGlobalSyncPorCooldownSesion() && !pandiOmitirSyncAutomaticoPorRelease()) {
     sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
       .catch(() => {})
       .then(() => refrescarVistaCajasTrasSyncGlobal());
@@ -10439,7 +10541,7 @@ function loadInicio() {
   // Refresco automático (~30 s): no encadenar sync global de todas las órdenes (pesado y vacía/repinta G/P).
   // Igual criterio que loadCuentaCorriente con isPandiBackgroundRefresh.
   // Cooldown: evita re-disparar N RPCs al volver a Inicio si el sync global ya corrió hace poco (p. ej. login + Órdenes).
-  if (!isPandiBackgroundRefresh() && !debeOmitirCcGlobalSyncPorCooldownSesion()) {
+  if (!isPandiBackgroundRefresh() && !debeOmitirCcGlobalSyncPorCooldownSesion() && !pandiOmitirSyncAutomaticoPorRelease()) {
     sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion()
       .catch(() => {})
       .then(() => refrescarPanelInicioCajasTrasSyncGlobal());
@@ -17692,6 +17794,7 @@ function debeOmitirCcGlobalSyncPorCooldownSesion() {
  * - **opts.onProgreso:** `{ hechas, total, fase, detalle }` (`preparando` | `sincronizando`). Solo lo usa el modal de Refrescar; login/Inicio/Cajas no lo pasan. Si Refrescar llega con una corrida ya en vuelo, el callback se engancha igual.
  * - **Exclusión nro. 23, 28, 41, 42 y 106:** no se calculan ni se persisten (`PANDI_CC_SYNC_EXCLUIR_NUMEROS_ORDEN`). Ver `docs/CC_EXCLUSION_SYNC_ORDENES_23_Y_41.md`. Al desplegar solo se tocan **576** y **788**.
  * - **Plazo (`dias_laborables_editar_anular`):** por defecto no se persisten órdenes **ya ejecutadas** fuera de N días hábiles (mismo criterio que editar/anular). Login / Inicio / Cajas y Refrescar de no Admin. **opts.recorrerHistoria:** solo Refrescar Admin tras confirmar; recorre también esas órdenes (congeladas 23/28/41/42/106 siguen fuera). Guardar una orden no usa este recorte.
+ * - **Cartel «Nueva versión»:** el sync automático de login / Inicio / Cajas no arranca mientras pide Recargar (JS viejo o SW en espera) o Entendido (novedades). Tras Entendido, o si ya se vio esa versión, el login difiere ~2 s. El botón Refrescar no espera el cartel.
  */
 function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal) {
   if (optsSyncGlobal && typeof optsSyncGlobal.onProgreso === 'function') {
@@ -38438,6 +38541,7 @@ function startSessionTimeoutCheck() {
 async function finalizeSessionUiSetup() {
   if (pandiSessionUiBootstrapped) return;
   pandiSessionUiBootstrapped = true;
+  pandiReleaseBloqueaSyncAutomatico = true;
   // No bloquear el registro de listeners ni showAppContent: si IndexedDB no resuelve (Safari, pestañas colgadas),
   // antes el await impedía setupModalOrden y el botón «Nueva orden» no hacía nada.
   void pandiOfflineQueueInit().catch((e) => {
@@ -38445,11 +38549,6 @@ async function finalizeSessionUiSetup() {
   });
   startSessionTimeoutCheck();
   showAppContent();
-  // Sync global post-login: si arranca en el mismo tick que la navegación a CC, cientos de RPC compiten con
-  // los SELECT de movimientos y la pestaña Red “explota”. Diferir unos segundos deja pintar CC/Inicio primero.
-  setTimeout(() => {
-    sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion().catch(() => {});
-  }, PANDI_CC_GLOBAL_SYNC_DEFER_LOGIN_MS);
   const userEmailEl = document.getElementById('user-email');
   if (userEmailEl) userEmailEl.textContent = currentUserEmail;
   const userDisplayInp = document.getElementById('user-display-name-input');
@@ -38606,9 +38705,7 @@ async function finalizeSessionUiSetup() {
   if (refreshDataIntervalId) clearInterval(refreshDataIntervalId);
   refreshDataIntervalId = setInterval(refreshCurrentViewData, REFRESH_DATA_INTERVAL_MS);
   setTimeout(() => pandiRefreshOfflineCatalogosCache(), 400);
-  setTimeout(() => {
-    void pandiQuizasMostrarNovedadesVersionPostLogin();
-  }, 900);
+  void pandiTrasLoginResolverReleaseYSync();
 }
 
 function onSessionReady(session, sessionOpts) {
@@ -38807,30 +38904,8 @@ try {
       let pwaCheckDebounceTimer = null;
 
       async function showPwaUpdateConfirm() {
-        if (pandiReleaseModalActive) return;
-        pandiReleaseModalActive = true;
-        const msg = await pandiPwaNuevaVersionHtmlParaPrompt();
-        showConfirm(
-          msg,
-          'Recargar',
-          async () => {
-            pandiReleaseModalActive = false;
-            try {
-              const blurb = await pandiFetchReleaseBlurbRemoto();
-              const v = blurb && blurb.versionLabel != null ? String(blurb.versionLabel).trim() : '';
-              if (v) void pandiMarcarReleaseAckVersionAsync(v);
-            } catch (_) {
-              /* noop */
-            }
-            void applyPwaUpdate(true);
-          },
-          () => {
-            pandiReleaseModalActive = false;
-          },
-          'Después',
-          'Nueva versión',
-          { html: true },
-        );
+        pandiReleaseBloqueaSyncAutomatico = true;
+        pandiMostrarModalNuevaVersionRecargar();
       }
 
       async function checkPwaUpdateFromServer() {
@@ -38875,6 +38950,7 @@ try {
           void checkPwaUpdateFromServer();
         },
       });
+      pandiApplyPwaUpdateFn = applyPwaUpdate;
     })
     .catch(() => {});
 } catch (e) {

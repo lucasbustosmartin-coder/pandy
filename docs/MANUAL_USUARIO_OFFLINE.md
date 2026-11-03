@@ -23,7 +23,7 @@ En esas condiciones verás mensajes del tipo *«… no está disponible sin cone
 - **Android / Chrome o Edge:** menú → Instalar o “Agregar a pantalla de inicio”.  
 - **iPhone / iPad (Safari):** Compartir → “Añadir a inicio”.
 
-Conviene entrar **al menos una vez con buena conexión** para que se guarden la interfaz y los archivos. Si aparece aviso de **nueva versión**, usá **Recargar** para no quedar con código viejo.
+Conviene entrar **al menos una vez con buena conexión** para que se guarden la interfaz y los archivos. Si aparece aviso de **nueva versión**, usá **Recargar** (o **Entendido** si ya está actualizada) **antes** de seguir: el recálculo de cuenta corriente del ingreso espera ese paso, para no correr con la versión anterior.
 
 ---
 
