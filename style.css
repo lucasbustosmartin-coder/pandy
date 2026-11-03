@@ -1610,6 +1610,26 @@
     }
     .btn-anular-orden-tabla-peligro:hover { background: #991b1b; border-color: #7f1d1d; color: #fff; }
     .btn-anular-orden-tabla-peligro .btn-icon svg { stroke: currentColor; }
+    /* Plazo de edición/anulación vencido: el botón sigue visible para mostrar el cartel. */
+    .btn-plazo-vencido,
+    .btn-editar.btn-plazo-vencido,
+    .btn-secondary.btn-plazo-vencido,
+    .btn-anular-orden-tabla-peligro.btn-plazo-vencido,
+    .form-actions .btn-anular-orden-peligro.btn-plazo-vencido {
+      background: #d97706 !important;
+      color: #fff !important;
+      border-color: #b45309 !important;
+    }
+    .btn-plazo-vencido:hover,
+    .btn-editar.btn-plazo-vencido:hover,
+    .btn-secondary.btn-plazo-vencido:hover,
+    .btn-anular-orden-tabla-peligro.btn-plazo-vencido:hover,
+    .form-actions .btn-anular-orden-peligro.btn-plazo-vencido:hover {
+      background: #b45309 !important;
+      border-color: #92400e !important;
+      color: #fff !important;
+    }
+    .btn-plazo-vencido .btn-icon svg { stroke: currentColor; }
     .btn-excel { padding: 0.5rem 1rem; border: 1px solid #0d7d3d; background: #0d7d3d; color: #fff; border-radius: 8px; cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; min-height: 2.25rem; box-sizing: border-box; }
     .btn-excel:hover { background: #0a5c2e; border-color: #0a5c2e; }
     .btn-excel .btn-icon { width: 18px; height: 18px; flex-shrink: 0; }

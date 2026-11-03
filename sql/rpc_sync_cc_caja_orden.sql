@@ -187,7 +187,7 @@ BEGIN
       v_trx_n := (trim(r->>'transaccion_numero'))::integer;
     END IF;
     v_mon := upper(trim(COALESCE(r->>'moneda', '')));
-    v_monto := (r->>'monto')::numeric;
+    v_monto := round((r->>'monto')::numeric, 4);
     v_concepto := r->>'concepto';
     v_clasificacion := public.parse_movimiento_clasificacion_desde_jsonb(r);
     v_clave := COALESCE(
@@ -240,7 +240,7 @@ BEGIN
         v_old_concepto IS DISTINCT FROM v_concepto
         OR v_old_fecha IS DISTINCT FROM v_fecha
         OR upper(trim(COALESCE(v_old_mon, ''))) IS DISTINCT FROM v_mon
-        OR v_old_monto IS DISTINCT FROM v_monto
+        OR round(COALESCE(v_old_monto, 0), 4) IS DISTINCT FROM round(COALESCE(v_monto, 0), 4)
         OR v_old_estado IS DISTINCT FROM v_estado
       );
       UPDATE public.movimientos_cuenta_corriente m
@@ -431,7 +431,7 @@ BEGIN
       v_trx_n := (trim(r->>'transaccion_numero'))::integer;
     END IF;
     v_mon := upper(trim(COALESCE(r->>'moneda', '')));
-    v_monto := (r->>'monto')::numeric;
+    v_monto := round((r->>'monto')::numeric, 4);
     v_concepto := r->>'concepto';
     v_clasificacion := public.parse_movimiento_clasificacion_desde_jsonb(r);
     v_clave := COALESCE(
@@ -479,7 +479,7 @@ BEGIN
         v_old_concepto IS DISTINCT FROM v_concepto
         OR v_old_fecha IS DISTINCT FROM v_fecha
         OR upper(trim(COALESCE(v_old_mon, ''))) IS DISTINCT FROM v_mon
-        OR v_old_monto IS DISTINCT FROM v_monto
+        OR round(COALESCE(v_old_monto, 0), 4) IS DISTINCT FROM round(COALESCE(v_monto, 0), 4)
         OR v_old_estado IS DISTINCT FROM v_estado
       );
       UPDATE public.movimientos_cuenta_corriente_intermediario m
@@ -674,7 +674,7 @@ BEGIN
       v_ord_num := (trim(r->>'orden_numero'))::integer;
     END IF;
     v_mon := upper(trim(COALESCE(r->>'moneda', '')));
-    v_monto := (r->>'monto')::numeric;
+    v_monto := round((r->>'monto')::numeric, 4);
     v_caja_tipo := COALESCE(r->>'caja_tipo', 'efectivo');
     v_concepto := r->>'concepto';
     v_clasificacion := public.parse_movimiento_clasificacion_desde_jsonb(r);
@@ -712,7 +712,7 @@ BEGIN
 
     IF v_mid IS NOT NULL THEN
       v_material := (
-        v_old_monto IS DISTINCT FROM v_monto
+        round(COALESCE(v_old_monto, 0), 4) IS DISTINCT FROM round(COALESCE(v_monto, 0), 4)
         OR upper(trim(COALESCE(v_old_mon, ''))) IS DISTINCT FROM v_mon
         OR COALESCE(v_old_caja, 'efectivo') IS DISTINCT FROM v_caja_tipo
         OR v_old_concepto IS DISTINCT FROM v_concepto

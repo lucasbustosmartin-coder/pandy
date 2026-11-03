@@ -10,6 +10,8 @@ En este proyecto **todas las fechas de negocio (día contable)** y los **rangos 
 | `fechaYYYYMMDDEnZonaArgentina(instante)` | Día YYYY-MM-DD en Argentina para un `Date` o un ISO timestamptz (p. ej. derivar día contable desde `updated_at` sin usar el prefijo UTC del string). |
 | `fechaHoyYYYYMMDDArgentina()` | Hoy calendario Argentina (defaults de órdenes, caja, CC, filtros “Hoy”, cola offline, etc.). |
 | `fechaAddDaysYYYYMMDDArgentina(ymd, delta)` | Suma días en calendario anclando mediodía ART (`T15:00:00.000Z`) para no cruzar de día al sumar. |
+| `fechaWeekdayIsoArgentina(ymd)` / `fechaEsDiaLaborableLunVieArgentina(ymd)` | Día de la semana 1=lun…7=dom y si es hábil (lun–vie) en zona Argentina. |
+| `fechaAddBusinessDaysYYYYMMDDArgentina(ymd, n)` | Suma **N días hábiles** (lun–vie) en calendario Argentina. Usado por el plazo de editar/anular (`app_config.dias_laborables_editar_anular`, default 10). |
 | `ultimoDiaDelMesGregoriano(anio, mes1a12)` | Último día del mes (gregoriano puro, sin TZ del navegador); usado en rango **mes** de G/P Operativa. |
 | `estadoFechaUtcAnclaDiaContableArgentina(ymd)` | ISO UTC que representa ese día contable en Argentina (misma ancla que `fechaAddDays…`); solo cuando no hay `updated_at` real. |
 

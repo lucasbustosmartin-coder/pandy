@@ -2,14 +2,14 @@
 
 > **Recordatorio:** retomar este documento cuando se trabaje en lentitud, sync, RPC `sync_cc_caja_orden` o carga de la vista CC.
 >
-> **2026-11-03:** **opción A** aplicada en **Pandy y Pandy-Dev** (RPC `sync_cc_caja_ordenes`, 10 órdenes por viaje, solo botón Refrescar). Login/Inicio/Cajas siguen en N×`sync_cc_caja_orden`. Ver § «Decisión 2026-09-10» y §Estado 1.5.
+> **2026-11-03:** **opción A** aplicada en **Pandy y Pandy-Dev** (RPC `sync_cc_caja_ordenes`, 10 órdenes por viaje, solo botón Refrescar). Login/Inicio/Cajas siguen en N×`sync_cc_caja_orden`. El sync masivo **omite** órdenes ejecutadas fuera del plazo de Seguridad (default 10 días hábiles); el Admin en Refrescar puede elegir **Toda la historia**. Ver § «Decisión 2026-09-10» y §Estado 1.5.
 
 ## Estado (retomado 2026-04-21; actualizado 2026-09-10 — B en Refrescar; A pendiente)
 
 | Fase | Estado | Notas |
 |------|--------|--------|
 | **0 — Medir** | **Hecho 2026-04-22** | Evidencia Network en §«Network post-fix»; SQL `sql/util_cc_performance_diagnostico_counts.sql` sigue recomendable para dimensionar N vs filas CC. |
-| **1.0 — Menos RPCs sync global** | **Hecho 2026-04-22** | `loadOrdenes` sin sync; Inicio/Cajas con cooldown; excluye `anulada`; concurrencia **4** (no saturar pool HTTP). Sync post-login **diferido 2 s** (`PANDI_CC_GLOBAL_SYNC_DEFER_LOGIN_MS`) para no competir con la primera carga de CC. |
+| **1.0 — Menos RPCs sync global** | **Hecho 2026-04-22; recorte plazo 2026-11-03** | `loadOrdenes` sin sync; Inicio/Cajas con cooldown; excluye `anulada`; omite ejecutadas fuera de `dias_laborables_editar_anular` salvo Refrescar Admin «Toda la historia»; concurrencia **4**. Sync post-login **diferido 2 s**. |
 | **1.1 — Caché `getReglasDeNegocio`** | **Hecho** | `main.js`: TTL 2 min + invalidación ABM reglas. |
 | **1.2 — RPC huérfanos O(n+m)** | **Hecho 2026-04-22; superado 2026-11-02; prod 2026-11-03** | Anti-join histórico (DELETE huérfanos). **Capa 1:** los huérfanos se **anulan** (`estado = anulado`), no se borran; lock por orden. **Capa 2:** identidad `sync_clave` (sin monto). **Gemelos:** anula copias extra (deja la más antigua). Únicos de un vivo **no** en prod mientras 28/41/42 tengan gemelos. Cuerpo: `sql/rpc_sync_cc_caja_orden.sql`. El script `migracion_sync_cc_caja_orden_huerfanos_antijoin.sql` no reaplicar. |
 | **1.3 — Índices** | **Hecho 2026-04-22** | `EXPLAIN ANALYZE` en **Pandy-Dev**: CC cliente por `orden_id` era **Seq Scan**; índice `idx_mov_cc_orden_id` (`sql/migracion_cc_indice_mov_cliente_orden_id.sql`). **Pandy (prod) + Pandy-Dev:** migración aplicada (MCP). |

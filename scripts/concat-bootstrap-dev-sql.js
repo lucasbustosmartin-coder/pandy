@@ -44,6 +44,7 @@ const BOOTSTRAP_FILES = [
   'app_config_session_timeout.sql',
   'migracion_app_config_supabase_select_page_size.sql',
   'migracion_app_config_usd_usd_comision_fija_intermediario.sql',
+  'migracion_app_config_plazo_editar_anular.sql',
   'migracion_permisos_ordenes_transacciones.sql',
   'migracion_permisos_vistas.sql',
   'migracion_permisos_inicio_tarjetas_pendientes_split.sql',
