@@ -17794,7 +17794,7 @@ function debeOmitirCcGlobalSyncPorCooldownSesion() {
  * - **opts.onProgreso:** `{ hechas, total, fase, detalle }` (`preparando` | `sincronizando`). Solo lo usa el modal de Refrescar; login/Inicio/Cajas no lo pasan. Si Refrescar llega con una corrida ya en vuelo, el callback se engancha igual.
  * - **Exclusión nro. 23, 28, 41, 42 y 106:** no se calculan ni se persisten (`PANDI_CC_SYNC_EXCLUIR_NUMEROS_ORDEN`). Ver `docs/CC_EXCLUSION_SYNC_ORDENES_23_Y_41.md`. Al desplegar solo se tocan **576** y **788**.
  * - **Plazo (`dias_laborables_editar_anular`):** por defecto no se persisten órdenes **ya ejecutadas** fuera de N días hábiles (mismo criterio que editar/anular). Login / Inicio / Cajas y Refrescar de no Admin. **opts.recorrerHistoria:** solo Refrescar Admin tras confirmar; recorre también esas órdenes (congeladas 23/28/41/42/106 siguen fuera). Guardar una orden no usa este recorte.
- * - **Cartel «Nueva versión»:** el sync automático de login / Inicio / Cajas no arranca mientras pide Recargar (JS viejo o SW en espera) o Entendido (novedades). Tras Entendido, o si ya se vio esa versión, el login difiere ~2 s. El botón Refrescar no espera el cartel.
+ * - **Cartel «Nueva versión»:** el sync automático de login / Inicio / Cajas no arranca mientras pide Recargar (JS viejo o SW en espera) o Entendido (novedades). Tras Entendido, o si ya se vio esa versión, el login difiere ~2 s. Si `pandi-release.json` no trae `lines`, no hay cartel de novedades y el sync no espera Entendido. El botón Refrescar no espera el cartel.
  */
 function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal) {
   if (optsSyncGlobal && typeof optsSyncGlobal.onProgreso === 'function') {
@@ -30140,12 +30140,15 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
 
             if (usarMulticontraparteSync && !esGananciaTrx && !esComisionPandyTrx) {
               if (esEjecutada) {
-                const codigoModoMc = (modosMap[t.modo_pago_id] || 'efectivo').toString().toLowerCase();
+                const codigoModoMcRaw = modosMap[t.modo_pago_id];
+                const codigoModoMc = codigoModoMcRaw != null && String(codigoModoMcRaw).trim() !== ''
+                  ? String(codigoModoMcRaw).toLowerCase()
+                  : '';
                 const pagDb =
                   t.pagador != null && String(t.pagador).trim() !== '' ? String(t.pagador).toLowerCase() : null;
                 const cobDb =
                   t.cobrador != null && String(t.cobrador).trim() !== '' ? String(t.cobrador).toLowerCase() : null;
-                if (pagDb && cobDb && (pagDb === 'pandy' || cobDb === 'pandy') && codigoModoMc === 'efectivo') {
+                if (codigoModoMc === 'efectivo' && pagDb && cobDb && (pagDb === 'pandy' || cobDb === 'pandy')) {
                   const signoCaja = cobDb === 'pandy' ? 1 : -1;
                   const conceptoCaja = conceptoCajaTransaccion(cobDb === 'pandy', mon, monto, orden.numero, t.numero);
                   rowsCaja.push({
@@ -30167,22 +30170,24 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
 
             if (esEjecutada) {
               if (pag === 'pandy' || cob === 'pandy') {
-                const codigoModo = modosMap[t.modo_pago_id] || 'efectivo';
-                const cajaTipo = codigoCajaTipoDesdeCodigo(codigoModo);
-                const signoCaja = cob === 'pandy' ? 1 : -1;
-                const conceptoCaja = esGananciaTrx ? conceptoCajaTransaccionEspecial(t.concepto, mon, monto, orden.numero, t.numero) : conceptoCajaTransaccion(cob === 'pandy', mon, monto, orden.numero, t.numero);
-                rowsCaja.push({
-                  moneda: mon,
-                  monto: signoCaja * monto,
-                  caja_tipo: cajaTipo,
-                  transaccion_id: transaccionId,
-                  orden_id: ordenId,
-                  orden_numero: orden.numero != null ? orden.numero : null,
-                  transaccion_numero: t.numero != null ? t.numero : null,
-                  concepto: conceptoCaja,
-                  fecha: feT.fecha,
-                  usuario_id: usuarioIdRegistroCajaDesdeOrdenSync(transacciones, t),
-                });
+                const codigoModoRaw = modosMap[t.modo_pago_id];
+                if (codigoModoRaw != null && String(codigoModoRaw).trim() !== '') {
+                  const cajaTipo = codigoCajaTipoDesdeCodigo(codigoModoRaw);
+                  const signoCaja = cob === 'pandy' ? 1 : -1;
+                  const conceptoCaja = esGananciaTrx ? conceptoCajaTransaccionEspecial(t.concepto, mon, monto, orden.numero, t.numero) : conceptoCajaTransaccion(cob === 'pandy', mon, monto, orden.numero, t.numero);
+                  rowsCaja.push({
+                    moneda: mon,
+                    monto: signoCaja * monto,
+                    caja_tipo: cajaTipo,
+                    transaccion_id: transaccionId,
+                    orden_id: ordenId,
+                    orden_numero: orden.numero != null ? orden.numero : null,
+                    transaccion_numero: t.numero != null ? t.numero : null,
+                    concepto: conceptoCaja,
+                    fecha: feT.fecha,
+                    usuario_id: usuarioIdRegistroCajaDesdeOrdenSync(transacciones, t),
+                  });
+                }
               }
             }
 

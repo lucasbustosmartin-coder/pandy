@@ -2,6 +2,8 @@
 -- El front construye los rows (misma lógica que hoy) y los envía en JSONB.
 -- Versión **libro**: INSERT altas, UPDATE si cambió algo útil, ANULAR huérfanos (estado = anulado).
 -- **No DELETE** de filas derivadas. Conserva `id` cuando la clave lógica es la misma.
+-- **No reabrir anulados:** el match ignora filas `anulado`/`anulada`. Si el payload pide esa identidad y no hay vivo, INSERT (no UPDATE del anulado a cerrado).
+-- **Caja efectivo:** no INSERT/UPDATE efectivo si la transacción es transferencia o cheque (evita inventar efectivo tipo 439/577).
 -- Gemelos: si hay varias vivas con la misma identidad, se conserva la más antigua y se anulan las demás.
 -- Capa 2: identidad = transacción + moneda + `sync_clave` (familia de leyenda + signo). El monto se edita in-place.
 -- No toca filas CC con `es_movimiento_manual = true`. Caja: solo `tipo_movimiento_id IS NULL` (derivados).
@@ -161,6 +163,7 @@ DECLARE
   v_old_fecha date;
   v_material boolean;
   v_aud record;
+  v_modo_trx text;
 BEGIN
   IF p_orden_id IS NULL THEN
     RETURN;
@@ -200,6 +203,7 @@ BEGIN
     FROM public.movimientos_cuenta_corriente m
     WHERE m.orden_id = p_orden_id
       AND COALESCE(m.es_movimiento_manual, false) = false
+      AND COALESCE(lower(m.estado), '') NOT IN ('anulado', 'anulada')
       AND m.cliente_id = v_cli
       AND m.transaccion_id IS NOT DISTINCT FROM v_trx
       AND m.transaccion_numero IS NOT DISTINCT FROM v_trx_n
@@ -212,8 +216,7 @@ BEGIN
           AND left(COALESCE(m.concepto, ''), 72) IS NOT DISTINCT FROM left(COALESCE(v_concepto, ''), 72)
         )
       )
-    ORDER BY CASE WHEN COALESCE(lower(m.estado), '') IN ('anulado', 'anulada') THEN 1 ELSE 0 END,
-             m.created_at ASC NULLS LAST, m.id
+    ORDER BY m.created_at ASC NULLS LAST, m.id
     LIMIT 1;
 
     v_fecha := COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina());
@@ -444,6 +447,7 @@ BEGIN
     FROM public.movimientos_cuenta_corriente_intermediario m
     WHERE m.orden_id = p_orden_id
       AND COALESCE(m.es_movimiento_manual, false) = false
+      AND COALESCE(lower(m.estado), '') NOT IN ('anulado', 'anulada')
       AND m.intermediario_id = v_int
       AND m.transaccion_id IS NOT DISTINCT FROM v_trx
       AND m.transaccion_numero IS NOT DISTINCT FROM v_trx_n
@@ -456,8 +460,7 @@ BEGIN
           AND left(COALESCE(m.concepto, ''), 72) IS NOT DISTINCT FROM left(COALESCE(v_concepto, ''), 72)
         )
       )
-    ORDER BY CASE WHEN COALESCE(lower(m.estado), '') IN ('anulado', 'anulada') THEN 1 ELSE 0 END,
-             m.created_at ASC NULLS LAST, m.id
+    ORDER BY m.created_at ASC NULLS LAST, m.id
     LIMIT 1;
 
     v_fecha := COALESCE((r->>'fecha')::date, public.fecha_hoy_argentina());
@@ -662,6 +665,7 @@ BEGIN
   -- ========== Caja (derivados: sin tipo_movimiento_id) ==========
   FOR r IN SELECT * FROM jsonb_array_elements(COALESCE(p_rows_caja, '[]'::jsonb))
   LOOP
+    v_mid := NULL;
     v_trx := NULLIF(TRIM(COALESCE(r->>'transaccion_id', '')), '')::uuid;
     IF trim(COALESCE(r->>'transaccion_numero', '')) = '' THEN
       v_trx_n := NULL;
@@ -686,10 +690,26 @@ BEGIN
     v_usuario := NULLIF(TRIM(COALESCE(r->>'usuario_id', '')), '')::uuid;
     v_estado := COALESCE(NULLIF(trim(r->>'estado'), ''), 'cerrado');
 
+    v_modo_trx := NULL;
+    IF v_trx IS NOT NULL THEN
+      SELECT lower(trim(mp.codigo))
+      INTO v_modo_trx
+      FROM public.transacciones t
+      JOIN public.modos_pago mp ON mp.id = t.modo_pago_id
+      WHERE t.id = v_trx
+      LIMIT 1;
+    END IF;
+    IF lower(COALESCE(v_caja_tipo, 'efectivo')) = 'efectivo'
+       AND v_trx IS NOT NULL
+       AND (v_modo_trx IS NULL OR v_modo_trx IN ('transferencia', 'cheque')) THEN
+      CONTINUE;
+    END IF;
+
     SELECT m.id, m.estado, m.monto, m.moneda, m.concepto, m.fecha, m.caja_tipo
     INTO v_mid, v_old_estado, v_old_monto, v_old_mon, v_old_concepto, v_old_fecha, v_old_caja
     FROM public.movimientos_caja m
     WHERE m.tipo_movimiento_id IS NULL
+      AND COALESCE(lower(m.estado), '') NOT IN ('anulado', 'anulada')
       AND m.transaccion_numero IS NOT DISTINCT FROM v_trx_n
       AND upper(trim(m.moneda)) = v_mon
       AND COALESCE(m.caja_tipo, 'efectivo') = v_caja_tipo
@@ -706,8 +726,7 @@ BEGIN
         (v_trx IS NOT NULL AND m.transaccion_id = v_trx)
         OR (v_trx IS NULL AND m.orden_id = p_orden_id AND m.transaccion_id IS NULL)
       )
-    ORDER BY CASE WHEN COALESCE(lower(m.estado), '') IN ('anulado', 'anulada') THEN 1 ELSE 0 END,
-             m.created_at ASC NULLS LAST, m.id
+    ORDER BY m.created_at ASC NULLS LAST, m.id
     LIMIT 1;
 
     IF v_mid IS NOT NULL THEN
@@ -938,7 +957,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.sync_cc_caja_orden IS
-  'Sync CC cliente, CC intermediario y caja para una orden (JSONB desde el front). Libro: INSERT/UPDATE/ANULAR (sin DELETE). Capa 2: match por sync_clave (familia+signo), no por monto. Gemelos vivos: deja la fila más antigua y anula las demás de la misma identidad. Lock por orden. Auditoría cc_caja_sync. Huérfanos: estado anulado. Respeta CC manual. Caja: solo tipo_movimiento_id IS NULL.';
+  'Sync CC cliente, CC intermediario y caja para una orden (JSONB desde el front). Libro: INSERT/UPDATE/ANULAR (sin DELETE). No reabre filas anuladas (si hace falta la identidad, INSERT). Caja efectivo: no persiste si la transacción es transferencia, cheque o el modo no está. Capa 2: match por sync_clave (familia+signo), no por monto. Gemelos vivos: deja la fila más antigua y anula las demás. Lock por orden. Auditoría cc_caja_sync. Huérfanos: estado anulado (compromiso al ejecutar, para no duplicar saldo). Respeta CC manual. Caja: solo tipo_movimiento_id IS NULL.';
 
 REVOKE ALL ON FUNCTION public.sync_cc_caja_fmt_monto(numeric, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.sync_cc_caja_fmt_monto(numeric, text) FROM anon;
