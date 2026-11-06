@@ -2636,6 +2636,90 @@
     }
     .cc-input-fecha:hover { border-color: #9ca3af; }
     .cc-input-fecha:focus { outline: none; border-color: #0d7d3d; box-shadow: 0 0 0 2px rgba(13, 125, 61, 0.2); }
+    /* Filtros activos (mismo criterio visual que Fornitalia): borde/fondo teal, etiqueta más marcada. No cambia el valor ni la consulta. */
+    .ordenes-filtro-label.filtro-activo > span,
+    .auditoria-filtro-grupo.filtro-activo,
+    .form-group.filtro-activo > label,
+    .cc-toolbar-filtro-nombre-wrap.filtro-activo > label,
+    label.filtro-activo > span {
+      color: #0f766e;
+      font-weight: 700;
+    }
+    select.filtro-activo,
+    input.filtro-activo,
+    .select-filtro.filtro-activo,
+    .cc-input-fecha.filtro-activo,
+    .cc-input-nro-orden.filtro-activo,
+    .cc-input-filtro-nombre.filtro-activo,
+    .auditoria-input-fecha.filtro-activo {
+      border-color: #0d9488 !important;
+      background-color: #f0fdfa !important;
+      color: #134e4a;
+      font-weight: 600;
+      box-shadow: inset 0 0 0 1px #0d9488;
+    }
+    select.filtro-activo:focus,
+    input.filtro-activo:focus,
+    .select-filtro.filtro-activo:focus,
+    .cc-input-fecha.filtro-activo:focus,
+    .cc-input-nro-orden.filtro-activo:focus,
+    .cc-input-filtro-nombre.filtro-activo:focus {
+      box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.28), inset 0 0 0 1px #0d9488;
+    }
+    input[type="checkbox"].filtro-activo {
+      accent-color: #0d9488;
+      box-shadow: none;
+      background-color: transparent !important;
+      border-color: #0d9488 !important;
+    }
+    /* Botones que filtran: el elegido se ve presionado (mismo teal). No cambia qué recortan. */
+    .cajas-tabs-caja-tipo > .btn-secondary,
+    #cajas-mov-btn-hoy,
+    #cajas-mov-btn-todo,
+    #cc-detalle-btn-hoy,
+    #cc-detalle-btn-todo-historial {
+      background: #fff;
+      color: #374151;
+      border: 1px solid #d1d5db;
+      cursor: pointer;
+    }
+    .cajas-tabs-caja-tipo > .btn-secondary,
+    #cajas-mov-btn-hoy,
+    #cajas-mov-btn-todo {
+      padding: 0.45rem 0.75rem;
+      font-size: 0.9rem;
+    }
+    .cajas-tabs-caja-tipo > .btn-secondary:hover,
+    #cajas-mov-btn-hoy:hover,
+    #cajas-mov-btn-todo:hover,
+    #cc-detalle-btn-hoy:hover,
+    #cc-detalle-btn-todo-historial:hover {
+      background: #f0fdfa;
+      border-color: #99f6e4;
+    }
+    .toggle-moneda button.activo,
+    .inicio-gp-periodos button.activo,
+    .cajas-tabs-caja-tipo > button.activo,
+    #cajas-mov-btn-hoy.activo,
+    #cajas-mov-btn-todo.activo,
+    #cc-detalle-btn-hoy.activo,
+    #cc-detalle-btn-todo-historial.activo {
+      background: #0d9488 !important;
+      color: #fff !important;
+      border-color: #0f766e !important;
+      font-weight: 700;
+      box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.28);
+    }
+    .toggle-moneda button.activo {
+      box-shadow: inset 0 0 0 1px #0f766e;
+    }
+    #cc-detalle-btn-hoy.activo .btn-icon svg,
+    #cc-detalle-btn-todo-historial.activo .btn-icon svg,
+    #cajas-mov-btn-hoy.activo .btn-icon svg,
+    #cajas-mov-btn-todo.activo .btn-icon svg,
+    .cajas-tabs-caja-tipo > button.activo .btn-icon svg {
+      stroke: currentColor;
+    }
     .cajas-loading { color: #666; }
     .cajas-loading.vista-loading-spinner { padding: 1.5rem; }
     .tabla-movimientos-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; margin-top: 0.75rem; }

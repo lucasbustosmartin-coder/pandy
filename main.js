@@ -1483,7 +1483,7 @@ async function pandiImportOfflineQueueSequential() {
       }
       const ver = item.v || 1;
       if (ver === 2 && item.transaccionesPlantilla && item.transaccionesPlantilla.length) {
-        const resOrd = await insertOrdenConProximoNumero(payload);
+        const resOrd = await insertOrdenConProximoNumero(payload, { origen: 'cola_offline' });
         if (resOrd.error) {
           failed.push({ ...item, syncState: 'error', lastError: resOrd.error.message || 'error', attempts: (item.attempts || 0) + 1 });
           showToast('No se importó una orden local: ' + (resOrd.error.message || 'error'), 'error');
@@ -1502,6 +1502,7 @@ async function pandiImportOfflineQueueSequential() {
             if (rCom.error) {
               throw new Error(rCom.error.message || 'comisiones');
             }
+            registrarAuditoriaComisionesOrden(ordenId, crows);
           }
           const insInst = await pandiSupabaseQuerySafe(
             client.from('instrumentacion').insert({ orden_id: ordenId }).select('id').single(),
@@ -1539,7 +1540,10 @@ async function pandiImportOfflineQueueSequential() {
             if (rTr.error) {
               throw new Error(rTr.error.message || 'transacción');
             }
-            if (rTr.data && rTr.data.id) trxIds.push(rTr.data.id);
+            if (rTr.data && rTr.data.id) {
+              trxIds.push(rTr.data.id);
+              registrarAuditoriaTransaccionAlta(rTr.data.id, insRow, { origen: 'cola_offline', orden_id: ordenId });
+            }
           }
           const numeroOrden = resOrd.data && resOrd.data[0] && resOrd.data[0].numero != null ? resOrd.data[0].numero : null;
           const ordenMetaImport = { ...payload, id: ordenId, numero: numeroOrden };
@@ -1571,7 +1575,7 @@ async function pandiImportOfflineQueueSequential() {
         }
         continue;
       }
-      const res = await insertOrdenConProximoNumero(payload);
+      const res = await insertOrdenConProximoNumero(payload, { origen: 'cola_offline' });
       if (res.error) {
         const copy = { ...item, syncState: 'error', lastError: res.error.message || 'error', attempts: (item.attempts || 0) + 1 };
         failed.push(copy);
@@ -5006,6 +5010,132 @@ function registrarAuditoriaApp(categoria, accion, detalle, metadata) {
   });
 }
 
+/**
+ * Altas de acciones de usuario. Nunca bloquea el guardado: `void` + el INSERT de auditoría ya traga el error.
+ */
+function registrarAuditoriaAlta(categoria, detalle, metadata) {
+  void registrarAuditoriaApp(categoria, 'alta', detalle, metadata);
+}
+
+function registrarAuditoriaOrdenAlta(ordenId, payload, extra) {
+  if (!ordenId) return;
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const x = extra && typeof extra === 'object' ? extra : {};
+  const nro = x.numero != null ? x.numero : p.numero;
+  const det =
+    'Alta de orden' +
+    (nro != null && String(nro).trim() !== '' ? ' nº ' + String(nro) : '') +
+    (x.origen === 'cola_offline' ? ' (cola offline).' : '.');
+  registrarAuditoriaAlta('orden', det, {
+    entidad: 'orden',
+    registro_id: ordenId,
+    orden_id: ordenId,
+    orden_numero: nro != null ? nro : null,
+    cliente_id: p.cliente_id || null,
+    intermediario_id: p.intermediario_id || null,
+    tipo_operacion_id: p.tipo_operacion_id || null,
+    moneda_recibida: p.moneda_recibida || null,
+    moneda_entregada: p.moneda_entregada || null,
+    monto_recibido: p.monto_recibido != null ? Number(p.monto_recibido) : null,
+    monto_entregado: p.monto_entregado != null ? Number(p.monto_entregado) : null,
+    fecha: p.fecha || null,
+    estado: p.estado || null,
+    origen: x.origen || 'manual',
+  });
+}
+
+function registrarAuditoriaTransaccionAlta(registroId, fila, extra) {
+  if (!registroId) return;
+  const f = fila && typeof fila === 'object' ? fila : {};
+  const x = extra && typeof extra === 'object' ? extra : {};
+  const num = x.transaccion_numero != null ? x.transaccion_numero : f.numero;
+  const origen = x.origen || 'manual';
+  const det =
+    'Alta de transacción' +
+    (num != null && String(num).trim() !== '' ? ' nº ' + String(num) : '') +
+    (f.tipo ? ' (' + f.tipo + ')' : '') +
+    (f.moneda ? ' ' + String(f.moneda) : '') +
+    (f.monto != null && f.monto !== '' ? ' ' + String(f.monto) : '') +
+    (origen && origen !== 'manual' ? ' [' + origen + ']' : '') +
+    '.';
+  registrarAuditoriaAlta('transaccion', det, {
+    entidad: 'transaccion',
+    registro_id: registroId,
+    transaccion_id: registroId,
+    orden_id: x.orden_id || null,
+    instrumentacion_id: f.instrumentacion_id || x.instrumentacion_id || null,
+    tipo: f.tipo || null,
+    moneda: f.moneda || null,
+    monto: f.monto != null && f.monto !== '' ? Number(f.monto) : null,
+    estado: f.estado || null,
+    pagador: f.pagador || null,
+    cobrador: f.cobrador || null,
+    concepto: f.concepto || null,
+    origen,
+  });
+}
+
+function registrarAuditoriaComisionesOrden(ordenId, rows) {
+  if (!ordenId || !Array.isArray(rows) || !rows.length) return;
+  const filas = rows.map((r) => ({
+    moneda: r.moneda || null,
+    monto: r.monto != null ? Number(r.monto) : null,
+    beneficiario: r.beneficiario || null,
+  }));
+  void registrarAuditoriaApp(
+    'orden',
+    'comisiones',
+    'Comisiones del acuerdo (orden nº ' + String(ordenId).slice(0, 8) + '…).',
+    { entidad: 'orden', orden_id: ordenId, filas },
+  );
+}
+
+function registrarAuditoriaCcManualAlta(datos) {
+  const d = datos && typeof datos === 'object' ? datos : {};
+  const orig = d.origen || 'manual';
+  const det =
+    'Alta de movimiento manual de CC' +
+    (d.moneda ? ' ' + String(d.moneda) : '') +
+    (d.monto_abs != null ? ' ' + String(d.monto_abs) : '') +
+    (d.concepto ? ' · ' + String(d.concepto).slice(0, 120) : '') +
+    (orig === 'cola_offline' ? ' (cola offline).' : '.');
+  registrarAuditoriaAlta('cc_manual', det, {
+    entidad: 'cc_manual',
+    moneda: d.moneda || null,
+    monto_abs: d.monto_abs != null ? Number(d.monto_abs) : null,
+    fecha: d.fecha || null,
+    concepto: d.concepto || null,
+    pagador_rol: d.pagador_rol || null,
+    cobrador_rol: d.cobrador_rol || null,
+    modo_pago: d.modo_pago || null,
+    caja: d.caja === true,
+    origen: orig,
+  });
+}
+
+function registrarAuditoriaCajaManualAlta(datos) {
+  const d = datos && typeof datos === 'object' ? datos : {};
+  const orig = d.origen || 'manual';
+  const det =
+    'Alta de movimiento de caja' +
+    (d.caja_tipo ? ' (' + String(d.caja_tipo) + ')' : '') +
+    (d.moneda ? ' ' + String(d.moneda) : '') +
+    (d.monto != null ? ' ' + String(d.monto) : '') +
+    (orig === 'cola_offline' ? ' (cola offline).' : '.');
+  registrarAuditoriaAlta('caja_manual', det, {
+    entidad: 'movimiento_caja',
+    registro_id: d.registro_id || null,
+    movimiento_caja_id: d.registro_id || null,
+    moneda: d.moneda || null,
+    monto: d.monto != null ? Number(d.monto) : null,
+    caja_tipo: d.caja_tipo || null,
+    tipo_movimiento_id: d.tipo_movimiento_id || null,
+    concepto: d.concepto || null,
+    fecha: d.fecha || null,
+    origen: orig,
+  });
+}
+
 /** Valor serializable en metadata JSON (auditoría de cambios). */
 function auditoriaValorJsonable(v) {
   if (v === undefined) return null;
@@ -7996,10 +8126,14 @@ function syncCajasMovFechaInputs() {
   if (cajasMovMostrarTodoHistorial) {
     dEl.value = '';
     hEl.value = '';
+    pandiSincronizarMarcaFiltrosActivos(hEl.closest('.cajas-mov-toolbar-grupo-fechas') || document.getElementById('vista-cajas'));
+    pandiSincronizarBotonesFiltroFechaCajas();
     return;
   }
   dEl.value = cajasMovFechaDesde || '';
   hEl.value = cajasMovFechaHasta || '';
+  pandiSincronizarMarcaFiltrosActivos(hEl.closest('.cajas-mov-toolbar-grupo-fechas') || document.getElementById('vista-cajas'));
+  pandiSincronizarBotonesFiltroFechaCajas();
 }
 
 /** Permisos de ver saldos/filtros por tipo de caja (alineado a cards de Cajas e Inicio). */
@@ -19362,10 +19496,14 @@ function actualizarRangoDetalleDefaults() {
   if (ccMovimientosMostrarTodoHistorial) {
     desdeEl.value = '';
     hastaEl.value = '';
+    pandiSincronizarMarcaFiltrosActivos(document.getElementById('cc-toolbar-movimientos-filtros'));
+    pandiSincronizarBotonesFiltroFechaCc();
     return;
   }
   desdeEl.value = ccDetalleDesde || '';
   hastaEl.value = ccDetalleHasta || '';
+  pandiSincronizarMarcaFiltrosActivos(document.getElementById('cc-toolbar-movimientos-filtros'));
+  pandiSincronizarBotonesFiltroFechaCc();
 }
 
 /** Comparador para ordenar filas de detalle CC por columna (fecha, nroOrden, nroTrans, concepto, usd, ars, eur, estado, nombre). */
@@ -21140,7 +21278,16 @@ async function pandiFlushPendingCcManualOffline() {
       });
       await idbReadSnapshotDelete(db, key);
       anyOk = true;
-      registrarAuditoriaApp('cc_manual', 'sync_cola_offline', 'Movimiento CC manual enviado desde cola offline.', { localId: rec.localId });
+      registrarAuditoriaCcManualAlta({
+        moneda,
+        monto_abs: montoAbs,
+        fecha,
+        concepto: conceptoCc,
+        pagador_rol: pagRol,
+        cobrador_rol: cobRol,
+        caja: !!requiereCaja,
+        origen: 'cola_offline',
+      });
     } catch (e) {
       const msg = e && e.message ? String(e.message) : String(e);
       showToast('No se pudieron enviar todos los movimientos CC offline: ' + msg, 'error');
@@ -21368,7 +21515,15 @@ async function pandiFlushPendingCajaMovOffline() {
       if (r.error) throw new Error(r.error.message || 'insert caja');
       await idbReadSnapshotDelete(db, key);
       anyOk = true;
-      registrarAuditoriaApp('caja_mov', 'sync_cola_offline', 'Movimiento de caja enviado desde cola offline.', { localId: rec.localId });
+      registrarAuditoriaCajaManualAlta({
+        moneda,
+        monto,
+        caja_tipo: cajaTipo,
+        tipo_movimiento_id: rec.tipo_movimiento_id,
+        concepto: rec.concepto,
+        fecha: rec.fecha,
+        origen: 'cola_offline',
+      });
     } catch (e) {
       const msg = e && e.message ? String(e.message) : String(e);
       showToast('No se pudieron enviar todos los movimientos de caja offline: ' + msg, 'error');
@@ -21501,6 +21656,17 @@ function saveCcMovimientoManual() {
   function iniciarGuardadoConNombres(nomCliPorId, nomIntPorId) {
     const ahoraIso = new Date().toISOString();
     const afterOk = (huboCaja) => {
+      registrarAuditoriaCcManualAlta({
+        moneda,
+        monto_abs: montoAbs,
+        fecha,
+        concepto: conceptoCc,
+        pagador_rol: pagRol,
+        cobrador_rol: cobRol,
+        modo_pago: modoPago,
+        caja: !!huboCaja,
+        origen: 'manual',
+      });
       closeModalCcMovimientoManual();
       if (huboCaja) {
         showToast('Movimientos registrados en CC y en caja (efectivo).', 'success');
@@ -22025,6 +22191,11 @@ function loadTiposMovimientoCajaTable() {
                 this.checked = !val;
                 return;
               }
+              void registrarAuditoriaAppCambios('tipo_caja', 'editar', 'Tipo de caja: activo.', {
+                entidad: 'tipo_caja',
+                registro_id: tid,
+                cambios: [{ campo: 'activo', anterior: !val, nuevo: val }],
+              });
               showToast(val ? 'Tipo activo.' : 'Tipo inactivo.', 'success');
               loadTiposMovimientoCaja().then(() => {});
             });
@@ -22049,6 +22220,11 @@ function loadTiposMovimientoCajaTable() {
                 this.checked = !val;
                 return;
               }
+              void registrarAuditoriaAppCambios('tipo_caja', 'editar', 'Tipo de caja: incluye G/P.', {
+                entidad: 'tipo_caja',
+                registro_id: tid,
+                cambios: [{ campo: 'incluye_gp_operativo', anterior: !val, nuevo: val }],
+              });
               showToast(val ? 'G/P activado para este tipo.' : 'G/P desactivado para este tipo.', 'success');
             });
         });
@@ -22118,6 +22294,22 @@ function saveTipoMovimientoCaja() {
     if (res.error) {
       showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
       return;
+    }
+    if (id) {
+      void registrarAuditoriaApp('tipo_caja', 'editar', 'Edición de tipo de caja «' + nombre + '».', {
+        entidad: 'tipo_caja',
+        registro_id: id,
+        nombre,
+        direccion,
+        activo,
+      });
+    } else {
+      registrarAuditoriaAlta('tipo_caja', 'Alta de tipo de caja «' + nombre + '».', {
+        entidad: 'tipo_caja',
+        nombre,
+        direccion,
+        activo,
+      });
     }
     closeModalTipoMovimientoCaja();
     loadTiposMovimientoCajaTable();
@@ -22499,6 +22691,16 @@ function saveMovimientoCaja() {
               showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
               return;
             }
+            registrarAuditoriaCajaManualAlta({
+              registro_id: res.data && (Array.isArray(res.data) ? res.data[0] && res.data[0].id : res.data.id),
+              moneda: payload.moneda,
+              monto: payload.monto,
+              caja_tipo: payload.caja_tipo,
+              tipo_movimiento_id: payload.tipo_movimiento_id,
+              concepto: payload.concepto,
+              fecha: payload.fecha,
+              origen: 'manual',
+            });
             closeModalMovimientoCaja();
             loadCajas();
           });
@@ -22937,6 +23139,7 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess, opts)
               asegurarClasificacionTransaccionEnPayload(rowRestoMc);
               prom = prom.then(() => client.from('transacciones').insert(rowRestoMc).select('id').single()).then((rNew) => {
                 const newId = rNew.data && rNew.data.id;
+                if (newId) registrarAuditoriaTransaccionAlta(newId, rowRestoMc, { origen: 'split' });
                 if (!newId) return;
                 const difUsd = esIngreso ? (monR === 'USD' ? -newRestoMonto : (monE === 'USD' ? -ratioCc(me * newRestoMonto, mr, newRestoMonto) : 0)) : (monR === 'USD' ? -ratioCc(mr * newRestoMonto, me, newRestoMonto) : (monE === 'USD' ? -newRestoMonto : 0));
                 const difArs = esIngreso ? (monR === 'ARS' ? -newRestoMonto : (monE === 'ARS' ? -ratioCc(me * newRestoMonto, mr, newRestoMonto) : 0)) : (monR === 'ARS' ? -ratioCc(mr * newRestoMonto, me, newRestoMonto) : (monE === 'ARS' ? -newRestoMonto : 0));
@@ -22985,7 +23188,16 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess, opts)
               updated_at: ahora,
             };
               asegurarClasificacionTransaccionEnPayload(rowSplitSinMcMonto);
-              prom = prom.then(() => client.from('transacciones').insert(rowSplitSinMcMonto).then(() => {}));
+              prom = prom.then(() =>
+                client
+                  .from('transacciones')
+                  .insert(rowSplitSinMcMonto)
+                  .select('id')
+                  .single()
+                  .then((rSp) => {
+                    if (rSp.data && rSp.data.id) registrarAuditoriaTransaccionAlta(rSp.data.id, rowSplitSinMcMonto, { origen: 'split' });
+                  }),
+              );
             }
           }
           function montosCancelacionItem(montoTrx, pagadorCliente) {
@@ -24071,6 +24283,7 @@ function aplicarFiltrosOrdenesVista() {
   }
   ordenesVistaListadoFiltradoActual = toRender;
   renderOrdenesTabla(toRender);
+  pandiSincronizarMarcaFiltrosActivos(document.getElementById('ordenes-filtros-wrap'));
 }
 
 function pandiEsErrorRedOrdenesMessage(msgRaw) {
@@ -25002,6 +25215,7 @@ function pandiFillOrdenesFiltrosDesdeMaps() {
       '<option value="">Todos</option>' +
       iEntries.map((id) => `<option value="${escapeHtml(String(id))}">${escapeHtml(ordenesVistaIntermediariosMap[id] || '')}</option>`).join('');
   }
+  pandiSincronizarMarcaFiltrosActivos(document.getElementById('ordenes-filtros-wrap'));
 }
 
 /** Mensaje en la grilla cuando falla el SELECT de órdenes (sin mostrar TypeError crudo en pantalla). */
@@ -27042,13 +27256,22 @@ function getProximoNumeroOrden() {
 }
 
 /** Inserta una orden con numero = MAX+1 atómico (función en DB con lock). Si la columna numero no existe o la RPC no está en Supabase, hace INSERT con getProximoNumeroOrden. */
-function insertOrdenConProximoNumero(payload) {
+function insertOrdenConProximoNumero(payload, extraAud) {
   const cidIns = payload && payload.cliente_id != null ? String(payload.cliente_id).trim() : '';
   if (!cidIns) {
     return Promise.resolve({ data: null, error: { message: 'Toda orden debe tener un cliente asignado.' } });
   }
+  const marcarAltaSiOk = (res) => {
+    if (res && !res.error) {
+      const row = res.data && (Array.isArray(res.data) ? res.data[0] : res.data);
+      if (row && row.id) {
+        registrarAuditoriaOrdenAlta(row.id, payload, Object.assign({ numero: row.numero }, extraAud && typeof extraAud === 'object' ? extraAud : {}));
+      }
+    }
+    return res;
+  };
   if (!ordenesTieneNumeroColumn) {
-    return client.from('ordenes').insert(payload).select('id, usuario_id, numero');
+    return client.from('ordenes').insert(payload).select('id, usuario_id, numero').then(marcarAltaSiOk);
   }
   return client.rpc('ordenes_insertar_con_proximo_numero', {
     p_cliente_id: payload.cliente_id,
@@ -27075,7 +27298,7 @@ function insertOrdenConProximoNumero(payload) {
   }).then((res) => {
     if (!res.error) {
       const row = res.data && (Array.isArray(res.data) ? res.data[0] : res.data);
-      return { data: row ? [row] : [], error: null };
+      return marcarAltaSiOk({ data: row ? [row] : [], error: null });
     }
     const msg = (res.error.message || '').toLowerCase();
     const rpcNoDisponible = msg.includes('could not find the function') || msg.includes('schema cache') || (msg.includes('function') && msg.includes('does not exist'));
@@ -27085,7 +27308,7 @@ function insertOrdenConProximoNumero(payload) {
       return client.from('ordenes').insert(p).select('id, usuario_id, numero').then((insertRes) => {
         if (insertRes.error) return insertRes;
         showToast('Orden creada. Para asignación atómica de número, ejecutá sql/ordenes_insertar_con_proximo_numero.sql en Supabase.', 'info');
-        return { data: insertRes.data, error: null };
+        return marcarAltaSiOk({ data: insertRes.data, error: null });
       });
     });
   });
@@ -27892,7 +28115,9 @@ function guardarOrdenDesdeWizard() {
         });
         const rowsComisionOk = rows.filter((r) => Number(r.monto) >= 1e-6);
         if (!rowsComisionOk.length) return Promise.resolve();
-        return client.from('comisiones_orden').insert(rowsComisionOk).then(() => {});
+        return client.from('comisiones_orden').insert(rowsComisionOk).then((rComW) => {
+          if (!rComW || !rComW.error) registrarAuditoriaComisionesOrden(ordenId, rowsComisionOk);
+        });
       });
     }
     if (esChequeArsOrden && intermediarioId) {
@@ -28700,6 +28925,7 @@ function saveOrden() {
           }
           return client.from('comisiones_orden').insert(rowsComisionSaveOk).then((rCom) => {
             if (rCom.error) console.warn('Comisión no guardada:', rCom.error.message);
+            else registrarAuditoriaComisionesOrden(ordenId, rowsComisionSaveOk);
             continuar();
           });
         });
@@ -30791,6 +31017,7 @@ function asegurarGananciaPandy(ordenId, instrumentacionId, orden, clienteId, com
         .then((rNew) => {
           const trId = rNew.data && rNew.data.id;
           const trNumero = rNew.data && rNew.data.numero;
+          if (trId) registrarAuditoriaTransaccionAlta(trId, rowGan, { transaccion_numero: trNumero, origen: 'ganancia_pandy', orden_id: ordenId });
           if (!trId) return Promise.resolve();
           const transaccionIdReducida = trToReduce && trToReduce.id ? trToReduce.id : null;
           const conceptoGanancia = conceptoCajaTransaccionEspecial('Ganancia del acuerdo', monedaCom, comisionPandyMonto, orden.numero, trNumero);
@@ -31199,6 +31426,7 @@ function autoCompletarInstrumentacionChequeConIntermediario(ordenId, instrumenta
       asegurarClasificacionTransaccionEnPayload(rowIns);
       return client.from('transacciones').insert(rowIns).select('id').single().then((rIns) => {
         const id = rIns.data && rIns.data.id;
+        if (id) registrarAuditoriaTransaccionAlta(id, rowIns, { origen: 'plantilla', orden_id: ordenId });
         return id ? ids.concat([id]) : ids;
       });
     }), Promise.resolve([])).then((ids) => {
@@ -31915,7 +32143,10 @@ function autoCompletarInstrumentacionSinIntermediario(ordenId, instrumentacionId
       return rows.reduce((prom, insRow) => prom.then(() => {
         const rowIns = { ...insRow };
         asegurarClasificacionTransaccionEnPayload(rowIns);
-        return client.from('transacciones').insert(rowIns).select('id').single();
+        return client.from('transacciones').insert(rowIns).select('id').single().then((rIns) => {
+          if (rIns.data && rIns.data.id) registrarAuditoriaTransaccionAlta(rIns.data.id, rowIns, { origen: 'plantilla', orden_id: ordenId });
+          return rIns;
+        });
       }), Promise.resolve()).then(() =>
         actualizarEstadoOrden(ordenId).then(() =>
           sincronizarCcYCajaDesdeOrden(ordenId).catch((err) => {
@@ -32248,7 +32479,10 @@ function autoCompletarInstrumentacionUsdUsdConIntermediario(ordenId, instrumenta
       return rows.reduce((prom, row) => prom.then(() => {
         const rowIns = { ...row };
         asegurarClasificacionTransaccionEnPayload(rowIns);
-        return client.from('transacciones').insert(rowIns).select('id').single();
+        return client.from('transacciones').insert(rowIns).select('id').single().then((rIns) => {
+          if (rIns.data && rIns.data.id) registrarAuditoriaTransaccionAlta(rIns.data.id, rowIns, { origen: 'plantilla', orden_id: ordenId });
+          return rIns;
+        });
       }), Promise.resolve()).then(() =>
         actualizarEstadoOrden(ordenId).then(() =>
           sincronizarCcYCajaDesdeOrden(ordenId).catch((err) => {
@@ -33734,8 +33968,9 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
             });
           }
           let promesaSiguiente = Promise.resolve(null);
+          let rowGananciaEstado = null;
           if (debeDividir) {
-            const rowGananciaEstado = {
+            rowGananciaEstado = {
               instrumentacion_id: instrumentacionId,
               tipo: 'ingreso',
               modo_pago_id: t.modo_pago_id,
@@ -33757,6 +33992,13 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
           return promesaSiguiente.then((rNew) => {
             const nuevaTrxId = rNew && rNew.data && rNew.data.id;
             const nuevaTrxNumero = rNew && rNew.data && rNew.data.numero;
+            if (nuevaTrxId) {
+              registrarAuditoriaTransaccionAlta(nuevaTrxId, rowGananciaEstado, {
+                transaccion_numero: nuevaTrxNumero,
+                origen: 'ganancia_pandy',
+                orden_id: ordenId,
+              });
+            }
             const fecha = fechaHoyYYYYMMDDArgentina();
             const ahora = new Date().toISOString();
             const monR = orden.moneda_recibida || 'USD';
@@ -33896,7 +34138,11 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                       updated_at: ahora,
                     };
                     asegurarClasificacionTransaccionEnPayload(rowSplitSinMcEst);
-                    promSplitSinMc = client.from('transacciones').insert(rowSplitSinMcEst).select('id').single().then((r) => r.data && r.data.id);
+                    promSplitSinMc = client.from('transacciones').insert(rowSplitSinMcEst).select('id').single().then((r) => {
+                      const nid = r.data && r.data.id;
+                      if (nid) registrarAuditoriaTransaccionAlta(nid, rowSplitSinMcEst, { origen: 'split', orden_id: ordenId });
+                      return nid;
+                    });
                     }
                   }
                   let promSplit = Promise.resolve(null);
@@ -33919,7 +34165,11 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                         updated_at: ahora,
                       };
                       asegurarClasificacionTransaccionEnPayload(rowSplitIng);
-                      promSplit = client.from('transacciones').insert(rowSplitIng).select('id').single().then((r) => r.data && r.data.id);
+                      promSplit = client.from('transacciones').insert(rowSplitIng).select('id').single().then((r) => {
+                        const nid = r.data && r.data.id;
+                        if (nid) registrarAuditoriaTransaccionAlta(nid, rowSplitIng, { origen: 'split', orden_id: ordenId });
+                        return nid;
+                      });
                     }
                   } else if (split && splitEgreso) {
                     const restoEnFila = Math.abs(Number(amountCompMonE) || 0);
@@ -33940,7 +34190,11 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
                         updated_at: ahora,
                       };
                       asegurarClasificacionTransaccionEnPayload(rowSplitEgr);
-                      promSplit = client.from('transacciones').insert(rowSplitEgr).select('id').single().then((r) => r.data && r.data.id);
+                      promSplit = client.from('transacciones').insert(rowSplitEgr).select('id').single().then((r) => {
+                        const nid = r.data && r.data.id;
+                        if (nid) registrarAuditoriaTransaccionAlta(nid, rowSplitEgr, { origen: 'split', orden_id: ordenId });
+                        return nid;
+                      });
                     }
                   }
                   const insertsCc = [];
@@ -34649,7 +34903,20 @@ function saveTransaccion() {
           return res;
         });
       })
-    : client.from('transacciones').insert(payload).select('id, usuario_id, numero').single();
+    : client.from('transacciones').insert(payload).select('id, usuario_id, numero').single().then((rInsTrx) => {
+        if (!rInsTrx.error && rInsTrx.data && rInsTrx.data.id) {
+          registrarAuditoriaTransaccionAlta(rInsTrx.data.id, payload, {
+            transaccion_numero: rInsTrx.data.numero,
+            origen: 'modal',
+            orden_id:
+              ordenParaCompletarIdsTransaccion && ordenParaCompletarIdsTransaccion.id
+                ? String(ordenParaCompletarIdsTransaccion.id)
+                : transaccionesOrdenIdActual || null,
+            instrumentacion_id: instrumentacionId || null,
+          });
+        }
+        return rInsTrx;
+      });
 
   function insertarCompensatoria() {
     if (!montoCompensatorio || montoCompensatorio <= 0) return Promise.resolve();
@@ -34673,9 +34940,19 @@ function saveTransaccion() {
     };
     completarPayloadIdsContraparteDesdeOrden(payloadComp, ordenParaCompletarIdsTransaccion);
     asegurarClasificacionTransaccionEnPayload(payloadComp);
-    return client.from('transacciones').insert(payloadComp).then((r) => {
+    return client.from('transacciones').insert(payloadComp).select('id, numero').single().then((r) => {
       if (r.error) showToast('Error al crear la transacción compensatoria: ' + (r.error.message || ''), 'error');
-      else showToast('Transacción compensatoria creada por ' + formatImporteDisplay(montoCompensatorio) + ' ' + moneda + '.', 'success');
+      else {
+        if (r.data && r.data.id) {
+          registrarAuditoriaTransaccionAlta(r.data.id, payloadComp, {
+            transaccion_numero: r.data.numero,
+            origen: 'compensatoria',
+            instrumentacion_id: instrumentacionId || null,
+            orden_id: transaccionesOrdenIdActual || null,
+          });
+        }
+        showToast('Transacción compensatoria creada por ' + formatImporteDisplay(montoCompensatorio) + ' ' + moneda + '.', 'success');
+      }
     });
   }
 
@@ -34859,7 +35136,11 @@ function saveTransaccion() {
               updated_at: ahoraIns,
             };
               asegurarClasificacionTransaccionEnPayload(rowSplitSinMcModal);
-              promSplitSinMc = client.from('transacciones').insert(rowSplitSinMcModal).select('id').single().then((r) => r.data && r.data.id);
+              promSplitSinMc = client.from('transacciones').insert(rowSplitSinMcModal).select('id').single().then((r) => {
+                const nid = r.data && r.data.id;
+                if (nid) registrarAuditoriaTransaccionAlta(nid, rowSplitSinMcModal, { origen: 'split', instrumentacion_id: instrumentacionId });
+                return nid;
+              });
             }
           }
 
@@ -34876,7 +35157,11 @@ function saveTransaccion() {
                 cobrador, pagador, owner: cobrador, estado: 'pendiente', concepto: concepto || '', tipo_cambio: tipoCambio, updated_at: new Date().toISOString(),
               };
               asegurarClasificacionTransaccionEnPayload(rowSplitIngModal);
-              promSplit = client.from('transacciones').insert(rowSplitIngModal).select('id').single().then((r) => r.data && r.data.id);
+              promSplit = client.from('transacciones').insert(rowSplitIngModal).select('id').single().then((r) => {
+                const nid = r.data && r.data.id;
+                if (nid) registrarAuditoriaTransaccionAlta(nid, rowSplitIngModal, { origen: 'split', instrumentacion_id: instrumentacionId });
+                return nid;
+              });
             }
           } else if (split && splitEgreso) {
             const restoEnFila = Math.abs(Number(amountCompMonE) || 0);
@@ -34890,7 +35175,11 @@ function saveTransaccion() {
                 cobrador, pagador, owner: cobrador, estado: 'pendiente', concepto: concepto || '', tipo_cambio: tipoCambio, updated_at: new Date().toISOString(),
               };
               asegurarClasificacionTransaccionEnPayload(rowSplitEgrModal);
-              promSplit = client.from('transacciones').insert(rowSplitEgrModal).select('id').single().then((r) => r.data && r.data.id);
+              promSplit = client.from('transacciones').insert(rowSplitEgrModal).select('id').single().then((r) => {
+                const nid = r.data && r.data.id;
+                if (nid) registrarAuditoriaTransaccionAlta(nid, rowSplitEgrModal, { origen: 'split', instrumentacion_id: instrumentacionId });
+                return nid;
+              });
             }
           }
 
@@ -35733,7 +36022,14 @@ function loadClientes() {
           }
           client.from('clientes').update({ activo: newVal, updated_at: new Date().toISOString() }).eq('id', id).then((res) => {
             if (res.error) showToast('Error: ' + (res.error.message || 'No se pudo actualizar.'), 'error');
-            else showToast('Actualizado.');
+            else {
+              void registrarAuditoriaAppCambios('cliente', 'editar', 'Cliente: activo.', {
+                entidad: 'cliente',
+                registro_id: id,
+                cambios: [{ campo: 'activo', anterior: !newVal, nuevo: newVal }],
+              });
+              showToast('Actualizado.');
+            }
           });
         });
       });
@@ -35929,6 +36225,21 @@ async function saveCliente() {
       showToast('Error: no se obtuvo el id del cliente.', 'error');
       return;
     }
+    if (id) {
+      void registrarAuditoriaApp('cliente', 'editar', 'Edición de cliente «' + nombre + '».', {
+        entidad: 'cliente',
+        registro_id: finalId,
+        nombre,
+        vinculo_intermediario_id: intVin || null,
+      });
+    } else {
+      registrarAuditoriaAlta('cliente', 'Alta de cliente «' + nombre + '».', {
+        entidad: 'cliente',
+        registro_id: finalId,
+        nombre,
+        vinculo_intermediario_id: intVin || null,
+      });
+    }
     const vinRes = await pandiPersistirContraparteVinculoDesdeCliente(finalId, intVin);
     if (vinRes && !vinRes.ok && !vinRes.skipped) {
       const msg =
@@ -36039,7 +36350,14 @@ function loadIntermediarios() {
           }
           client.from('intermediarios').update({ activo: newVal, updated_at: new Date().toISOString() }).eq('id', id).then((res) => {
             if (res.error) showToast('Error: ' + (res.error.message || 'No se pudo actualizar.'), 'error');
-            else showToast('Actualizado.');
+            else {
+              void registrarAuditoriaAppCambios('intermediario', 'editar', 'Intermediario: activo.', {
+                entidad: 'intermediario',
+                registro_id: id,
+                cambios: [{ campo: 'activo', anterior: !newVal, nuevo: newVal }],
+              });
+              showToast('Actualizado.');
+            }
           });
         });
       });
@@ -36227,6 +36545,21 @@ async function saveIntermediario() {
     if (!finalId) {
       showToast('Error: no se obtuvo el id del intermediario.', 'error');
       return;
+    }
+    if (id) {
+      void registrarAuditoriaApp('intermediario', 'editar', 'Edición de intermediario «' + nombre + '».', {
+        entidad: 'intermediario',
+        registro_id: finalId,
+        nombre,
+        vinculo_cliente_id: cliVin || null,
+      });
+    } else {
+      registrarAuditoriaAlta('intermediario', 'Alta de intermediario «' + nombre + '».', {
+        entidad: 'intermediario',
+        registro_id: finalId,
+        nombre,
+        vinculo_cliente_id: cliVin || null,
+      });
     }
     const vinRes = await pandiPersistirContraparteVinculoDesdeIntermediario(finalId, cliVin);
     if (vinRes && !vinRes.ok && !vinRes.skipped) {
@@ -36452,6 +36785,15 @@ function intercambiarOrdenVisualTiposOperacion(listOrdenada, indiceActual, delta
       }
       return;
     }
+    void registrarAuditoriaAppCambios('tipo_operacion', 'editar', 'Reorden de tipos de operación.', {
+      entidad: 'tipo_operacion',
+      registro_id: a.id,
+      cambios: [
+        { campo: 'orden_visual', anterior: oa, nuevo: ob },
+        { campo: 'orden_visual_par', anterior: ob, nuevo: oa },
+      ],
+      extra: { par_id: b.id, codigo_a: a.codigo || null, codigo_b: b.codigo || null },
+    });
     showToast('Orden actualizado.', 'success');
     loadTiposOperacion();
   });
@@ -36549,7 +36891,14 @@ function loadTiposOperacion() {
         const aplicar = () => {
           client.from('tipos_operacion').update({ [field]: newVal }).eq('id', id).then((resU) => {
             if (resU.error) showToast('Error: ' + (resU.error.message || 'No se pudo actualizar.'), 'error');
-            else showToast('Actualizado.');
+            else {
+              void registrarAuditoriaAppCambios('tipo_operacion', 'editar', 'Tipo de operación: ' + field + '.', {
+                entidad: 'tipo_operacion',
+                registro_id: id,
+                cambios: [{ campo: field, anterior: !newVal, nuevo: newVal }],
+              });
+              showToast('Actualizado.');
+            }
           });
         };
         if (field !== 'usa_intermediario' || !row || !row.codigo) {
@@ -36723,6 +37072,22 @@ function saveTipoOperacion() {
         if (res.error) {
           showToast('Error: ' + (res.error.message || 'No se pudo guardar.'), 'error');
           return;
+        }
+        if (id) {
+          void registrarAuditoriaApp('tipo_operacion', 'editar', 'Edición de tipo de operación «' + codigo + '».', {
+            entidad: 'tipo_operacion',
+            registro_id: id,
+            codigo,
+            nombre,
+          });
+        } else {
+          registrarAuditoriaAlta('tipo_operacion', 'Alta de tipo de operación «' + codigo + '».', {
+            entidad: 'tipo_operacion',
+            codigo,
+            nombre,
+            moneda_in: monedaIn,
+            moneda_out: monedaOut,
+          });
         }
         closeModalTipoOperacion();
         loadTiposOperacion();
@@ -37448,6 +37813,92 @@ const AUDITORIA_PAGE_SIZE = 80;
 let pandiAuditoriaAcumulado = [];
 let pandiAuditoriaRowIndexPorId = Object.create(null);
 let pandiAuditoriaHayMas = false;
+let pandiAuditoriaLoadGen = 0;
+let pandiAuditoriaFiltroTimer = null;
+
+/** Marca visual de filtros con valor (UX). No altera consultas ni persistencia. */
+function pandiFiltroControlTieneValorActivo(el) {
+  if (!el) return false;
+  if (el.type === 'checkbox' || el.type === 'radio') return !!el.checked;
+  const v = String(el.value == null ? '' : el.value).trim();
+  if (!v) return false;
+  const neutro = el.getAttribute('data-pandi-filtro-neutro');
+  if (neutro != null && String(neutro) !== '' && v === String(neutro)) return false;
+  const low = v.toLowerCase();
+  if (low === 'all' || low === 'todo' || low === '__all__') return false;
+  return true;
+}
+
+function pandiMarcarFiltroControlActivo(el) {
+  if (!el || !el.classList) return;
+  const on = pandiFiltroControlTieneValorActivo(el);
+  el.classList.toggle('filtro-activo', on);
+  const wrap =
+    el.closest('.auditoria-filtro-grupo') ||
+    el.closest('.ordenes-filtro-label') ||
+    el.closest('.cc-fecha-filtro-label') ||
+    el.closest('.cc-toolbar-filtro-nombre-wrap') ||
+    el.closest('.cc-toolbar-mov-col-orden') ||
+    el.closest('.cc-toolbar-mov-col-entidad') ||
+    el.closest('.form-group') ||
+    el.closest('label');
+  if (wrap && wrap !== el) wrap.classList.toggle('filtro-activo', on);
+}
+
+function pandiRangoFechaEsSoloHoy(desde, hasta) {
+  const h = fechaHoyYYYYMMDDArgentina();
+  return String(desde || '') === h && String(hasta || '') === h;
+}
+
+function pandiMarcarBotonesFiltroRangoFecha(btnHoy, btnTodo, esHoy, esHistorial) {
+  if (btnHoy) {
+    btnHoy.classList.toggle('activo', !!esHoy);
+    btnHoy.setAttribute('aria-pressed', esHoy ? 'true' : 'false');
+  }
+  if (btnTodo) {
+    btnTodo.classList.toggle('activo', !!esHistorial);
+    btnTodo.setAttribute('aria-pressed', esHistorial ? 'true' : 'false');
+  }
+}
+
+function pandiSincronizarBotonesFiltroFechaCc() {
+  pandiMarcarBotonesFiltroRangoFecha(
+    document.getElementById('cc-detalle-btn-hoy'),
+    document.getElementById('cc-detalle-btn-todo-historial'),
+    !ccMovimientosMostrarTodoHistorial && pandiRangoFechaEsSoloHoy(ccDetalleDesde, ccDetalleHasta),
+    !!ccMovimientosMostrarTodoHistorial,
+  );
+}
+
+function pandiSincronizarBotonesFiltroFechaCajas() {
+  pandiMarcarBotonesFiltroRangoFecha(
+    document.getElementById('cajas-mov-btn-hoy'),
+    document.getElementById('cajas-mov-btn-todo'),
+    !cajasMovMostrarTodoHistorial && pandiRangoFechaEsSoloHoy(cajasMovFechaDesde, cajasMovFechaHasta),
+    !!cajasMovMostrarTodoHistorial,
+  );
+}
+
+function pandiSincronizarMarcaFiltrosActivos(root) {
+  const scope = root && root.querySelectorAll ? root : document;
+  scope.querySelectorAll('[data-pandi-filtro]').forEach(pandiMarcarFiltroControlActivo);
+}
+
+function setupPandiFiltrosActivosUi() {
+  if (document.body.dataset.pandiFiltrosActivosBound === '1') return;
+  document.body.dataset.pandiFiltrosActivosBound = '1';
+  const onEvt = (ev) => {
+    const t = ev.target;
+    if (!t || !t.closest) return;
+    const el = t.matches && t.matches('[data-pandi-filtro]') ? t : t.closest('[data-pandi-filtro]');
+    if (el) pandiMarcarFiltroControlActivo(el);
+  };
+  document.addEventListener('input', onEvt, true);
+  document.addEventListener('change', onEvt, true);
+  pandiSincronizarMarcaFiltrosActivos();
+  pandiSincronizarBotonesFiltroFechaCc();
+  pandiSincronizarBotonesFiltroFechaCajas();
+}
 
 /** Etiquetas en español para columnas técnicas en el modal de auditoría. */
 const AUDITORIA_CAMPO_ETIQUETA = {
@@ -37505,6 +37956,10 @@ function auditoriaEtiquetaCategoria(cat) {
     cc_manual: 'CC manual',
     caja_manual: 'Caja manual',
     cc_caja_sync: 'Cuenta corriente y caja',
+    cliente: 'Cliente',
+    intermediario: 'Intermediario',
+    tipo_operacion: 'Tipo de operación',
+    tipo_caja: 'Tipo de caja',
     app: 'App',
   };
   return m[k] || (cat ? String(cat) : '—');
@@ -37519,6 +37974,7 @@ function auditoriaEtiquetaAccion(accion) {
     editar_monto: 'Edición de monto',
     editar_modo_pago: 'Edición de medio de pago',
     cambiar_estado: 'Cambio de estado',
+    comisiones: 'Comisiones',
   };
   return m[k] || (accion ? String(accion).replace(/_/g, ' ') : '—');
 }
@@ -38217,6 +38673,8 @@ function aplicarFiltrosQueryAuditoria(qb) {
 function loadAuditoriaVista(opts) {
   opts = opts || {};
   const append = !!opts.append;
+  const suave = !!opts.suave && !append;
+  const gen = append ? pandiAuditoriaLoadGen : ++pandiAuditoriaLoadGen;
   const sinPerm = document.getElementById('auditoria-sin-permiso');
   const ctr = document.getElementById('auditoria-controles');
   const loading = document.getElementById('auditoria-loading');
@@ -38239,8 +38697,9 @@ function loadAuditoriaVista(opts) {
   }
   if (sinPerm) sinPerm.style.display = 'none';
   if (ctr) ctr.style.display = '';
+  pandiSincronizarMarcaFiltrosActivos(document.getElementById('vista-auditoria'));
 
-  if (!append) {
+  if (!append && !suave) {
     pandiAuditoriaAcumulado = [];
     pandiAuditoriaRowIndexPorId = Object.create(null);
     pandiAuditoriaHayMas = false;
@@ -38255,7 +38714,8 @@ function loadAuditoriaVista(opts) {
   }
 
   const offset = append ? pandiAuditoriaAcumulado.length : 0;
-  if (!append) loading.style.display = 'block';
+  if (!append && !suave) loading.style.display = 'block';
+  if (ctr) ctr.setAttribute('aria-busy', suave || !append ? 'true' : 'false');
 
   let qb = client
     .from('auditoria_app')
@@ -38265,11 +38725,18 @@ function loadAuditoriaVista(opts) {
   qb = aplicarFiltrosQueryAuditoria(qb);
 
   return qb.then((r) => {
+    if (gen !== pandiAuditoriaLoadGen) return;
     loading.style.display = 'none';
+    if (ctr) ctr.setAttribute('aria-busy', 'false');
     if (r.error) {
       if (resumen) resumen.textContent = '';
       showToast('Error al cargar auditoría: ' + (r.error.message || ''), 'error');
       return;
+    }
+    if (!append) {
+      pandiAuditoriaAcumulado = [];
+      pandiAuditoriaRowIndexPorId = Object.create(null);
+      tbody.innerHTML = '';
     }
     const rows = r.data || [];
     pandiAuditoriaHayMas = rows.length >= AUDITORIA_PAGE_SIZE;
@@ -38279,6 +38746,7 @@ function loadAuditoriaVista(opts) {
     return auditoriaRellenarNumerosFaltantesEnFilas(filasNumeros)
       .then(() => fetchMapaEtiquetaUsuarioPorIds(ids))
       .then((map) => {
+      if (gen !== pandiAuditoriaLoadGen) return;
       pandiAuditoriaUltimoMapaUsuarios = map || {};
       if (rows.length === 0 && !append) {
         tbody.innerHTML =
@@ -38358,11 +38826,41 @@ function setupAuditoriaVistaUi() {
   const backOrd = document.getElementById('modal-auditoria-orden-snapshot-backdrop');
   const closeOrd = document.getElementById('modal-auditoria-orden-snapshot-close');
 
+  function programarRecargaAuditoriaPorFiltros(inmediato) {
+    if (pandiAuditoriaFiltroTimer) {
+      clearTimeout(pandiAuditoriaFiltroTimer);
+      pandiAuditoriaFiltroTimer = null;
+    }
+    const run = () => {
+      pandiAuditoriaFiltroTimer = null;
+      const vista = document.getElementById('vista-auditoria');
+      if (!vista || vista.style.display === 'none') return;
+      void loadAuditoriaVista({ append: false, suave: !inmediato });
+    };
+    if (inmediato) run();
+    else pandiAuditoriaFiltroTimer = setTimeout(run, 320);
+  }
   if (btnBuscar) {
     btnBuscar.addEventListener('click', () => {
-      void loadAuditoriaVista({ append: false });
+      programarRecargaAuditoriaPorFiltros(true);
     });
   }
+  ['auditoria-filtro-desde', 'auditoria-filtro-hasta', 'auditoria-filtro-categoria'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => programarRecargaAuditoriaPorFiltros(true));
+  });
+  ['auditoria-filtro-accion', 'auditoria-filtro-detalle'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => programarRecargaAuditoriaPorFiltros(false));
+    el.addEventListener('change', () => programarRecargaAuditoriaPorFiltros(true));
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        programarRecargaAuditoriaPorFiltros(true);
+      }
+    });
+  });
   if (btnMas) {
     btnMas.addEventListener('click', () => {
       void loadAuditoriaVista({ append: true });
@@ -38668,6 +39166,7 @@ async function finalizeSessionUiSetup() {
   setupVistasMenu();
   setupControlCalidadVista();
   setupAuditoriaVistaUi();
+  setupPandiFiltrosActivosUi();
   applyVistasMenuVisibility();
   updateCcBotonesMovimientoManual();
   setupPanelControl();

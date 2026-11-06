@@ -373,7 +373,7 @@
       <header class="page-header">
         <div class="page-header-brand">
           <span class="page-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="page-logo" id="page-logo" /></span>
-          <span id="sidebar-version" class="header-app-version" aria-label="Versión de la app" title="Versión desplegada">v3.8.24</span>
+          <span id="sidebar-version" class="header-app-version" aria-label="Versión de la app" title="Versión desplegada">v3.8.25</span>
         </div>
         <h1 id="page-title">Panel de Control</h1>
         <div class="page-header-toolbar">
@@ -574,9 +574,9 @@
           <button type="button" class="btn-excel" id="ordenes-btn-exportar-excel" style="display:none;" title="Exportar a Excel las órdenes visibles (filtros actuales)" aria-label="Exportar órdenes a Excel"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-35"></use></svg></span>Exportar</button>
         </div>
         <div class="vista-toolbar ordenes-filtros-wrap" id="ordenes-filtros-wrap">
-          <label class="ordenes-filtro-label"><span>Cliente:</span><select id="ordenes-filtro-cliente" class="select-filtro select-filtro-ordenes-cat"><option value="">Todos</option></select></label>
-          <label class="ordenes-filtro-label"><span>Intermediario:</span><select id="ordenes-filtro-intermediario" class="select-filtro select-filtro-ordenes-cat"><option value="">Todos</option></select></label>
-          <label class="ordenes-filtro-label"><span>Estado:</span><select id="ordenes-filtro-estado" class="select-filtro select-filtro-ordenes-estado"><option value="__activas__" selected>Activas (no ejecutadas ni anuladas)</option><option value="">Todas las órdenes</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option><option value="orden_ejecutada">Orden Ejecutada</option><option value="anulada">Anulada</option></select></label>
+          <label class="ordenes-filtro-label"><span>Cliente:</span><select id="ordenes-filtro-cliente" class="select-filtro select-filtro-ordenes-cat pandi-filtro" data-pandi-filtro="1"><option value="">Todos</option></select></label>
+          <label class="ordenes-filtro-label"><span>Intermediario:</span><select id="ordenes-filtro-intermediario" class="select-filtro select-filtro-ordenes-cat pandi-filtro" data-pandi-filtro="1"><option value="">Todos</option></select></label>
+          <label class="ordenes-filtro-label"><span>Estado:</span><select id="ordenes-filtro-estado" class="select-filtro select-filtro-ordenes-estado pandi-filtro" data-pandi-filtro="1"><option value="__activas__" selected>Activas (no ejecutadas ni anuladas)</option><option value="">Todas las órdenes</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option><option value="orden_ejecutada">Orden Ejecutada</option><option value="anulada">Anulada</option></select></label>
         </div>
         <div id="ordenes-loading" class="clientes-loading vista-loading-spinner" style="display:none;">Cargando órdenes…</div>
         <div id="ordenes-tabla-wrap" class="tabla-clientes-wrap tabla-wrap-con-scroll ordenes-tabla-outer" style="display:none;">
@@ -676,8 +676,8 @@
             </div>
             <span class="cajas-mov-toolbar-sep" aria-hidden="true"></span>
             <div class="cajas-mov-toolbar-grupo cajas-mov-toolbar-grupo-fechas" role="group" aria-label="Rango de fechas y exportar">
-              <label class="ordenes-filtro-label cc-fecha-filtro-label" style="margin:0;"><span>Desde:</span><input type="date" id="cajas-mov-desde" class="cc-input-fecha" aria-label="Movimientos de caja desde"/></label>
-              <label class="ordenes-filtro-label cc-fecha-filtro-label" style="margin:0;"><span>Hasta:</span><input type="date" id="cajas-mov-hasta" class="cc-input-fecha" aria-label="Movimientos de caja hasta"/></label>
+              <label class="ordenes-filtro-label cc-fecha-filtro-label" style="margin:0;"><span>Desde:</span><input type="date" id="cajas-mov-desde" class="cc-input-fecha pandi-filtro" data-pandi-filtro="1" aria-label="Movimientos de caja desde"/></label>
+              <label class="ordenes-filtro-label cc-fecha-filtro-label" style="margin:0;"><span>Hasta:</span><input type="date" id="cajas-mov-hasta" class="cc-input-fecha pandi-filtro" data-pandi-filtro="1" aria-label="Movimientos de caja hasta"/></label>
               <button type="button" class="btn-secondary" id="cajas-mov-btn-hoy" title="Tabla: solo movimientos de hoy (los saldos de arriba siguen siendo el total)" aria-label="Solo movimientos de hoy en tabla">
                 <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#icon-sprite-33"></use></svg></span>Solo hoy
               </button>
@@ -795,7 +795,7 @@
           <div class="vista-toolbar cc-panel-toolbar">
             <div class="cc-toolbar-filtro-nombre-wrap" id="cc-resumen-filtro-nombre-wrap">
               <label id="cc-resumen-filtro-nombre-label" for="cc-resumen-filtro-nombre" class="ordenes-filtro-label cc-resumen-filtro-nombre-label">Buscar cliente</label>
-              <input type="search" id="cc-resumen-filtro-nombre" class="cc-input-filtro-nombre" placeholder="Nombre…" autocomplete="off" enterkeyhint="search" />
+              <input type="search" id="cc-resumen-filtro-nombre" class="cc-input-filtro-nombre pandi-filtro" data-pandi-filtro="1" placeholder="Nombre…" autocomplete="off" enterkeyhint="search" />
             </div>
             <button type="button" class="btn-secondary" id="cc-btn-refrescar" title="Sincroniza todas las órdenes con instrumentación. Puede tardar; se muestra el avance en un cuadro." aria-label="Refrescar cuenta corriente">
               <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span><span id="cc-btn-refrescar-label">Refrescar</span><span id="cc-btn-refrescar-spinner" class="transaccion-mini-spinner transaccion-mini-spinner--on-secondary cc-refrescar-inline-spinner" hidden aria-hidden="true"></span>
@@ -836,18 +836,18 @@
           <div class="cc-toolbar-mov-filtros-grid" id="cc-toolbar-movimientos-filtros" role="group" aria-label="Filtros de movimientos">
             <div class="cc-toolbar-mov-filtros-grupo">
               <div class="cc-toolbar-mov-col-entidad">
-                <select id="cc-detalle-entidad-select" class="select-filtro" aria-label="Filtrar movimientos por entidad">
+                <select id="cc-detalle-entidad-select" class="select-filtro pandi-filtro" data-pandi-filtro="1" aria-label="Filtrar movimientos por entidad">
                   <option value="">Todos</option>
                 </select>
               </div>
               <div class="cc-toolbar-mov-col-orden">
                 <label for="cc-detalle-filtro-nro-orden" class="sr-only">Número de orden</label>
-                <input type="search" id="cc-detalle-filtro-nro-orden" class="cc-input-nro-orden" inputmode="numeric" autocomplete="off" placeholder="Orden" title="Filtrar por número de orden (coincidencia exacta). Vacío = todas." aria-label="Filtrar movimientos por número de orden"/>
+                <input type="search" id="cc-detalle-filtro-nro-orden" class="cc-input-nro-orden pandi-filtro" data-pandi-filtro="1" inputmode="numeric" autocomplete="off" placeholder="Orden" title="Filtrar por número de orden (coincidencia exacta). Vacío = todas." aria-label="Filtrar movimientos por número de orden"/>
               </div>
               <div class="cc-toolbar-mov-col-fechas">
                 <span id="cc-detalle-rango-wrap">
-                  <label class="ordenes-filtro-label cc-fecha-filtro-label"><span>Desde:</span><input type="date" id="cc-detalle-desde" class="cc-input-fecha" aria-label="Fecha desde"/></label>
-                  <label class="ordenes-filtro-label cc-fecha-filtro-label"><span>Hasta:</span><input type="date" id="cc-detalle-hasta" class="cc-input-fecha" aria-label="Fecha hasta"/></label>
+                  <label class="ordenes-filtro-label cc-fecha-filtro-label"><span>Desde:</span><input type="date" id="cc-detalle-desde" class="cc-input-fecha pandi-filtro" data-pandi-filtro="1" aria-label="Fecha desde"/></label>
+                  <label class="ordenes-filtro-label cc-fecha-filtro-label"><span>Hasta:</span><input type="date" id="cc-detalle-hasta" class="cc-input-fecha pandi-filtro" data-pandi-filtro="1" aria-label="Fecha hasta"/></label>
                 </span>
                 <div class="cc-detalle-rango-acciones">
                   <button type="button" class="btn-secondary btn-icon-only" id="cc-detalle-btn-hoy" title="Hoy: solo movimientos del día (Argentina)" aria-label="Filtrar movimientos al día de hoy">
@@ -948,13 +948,13 @@
         <div class="reglas-negocio-toolbar vista-toolbar">
           <div class="form-group">
             <label for="reglas-negocio-filtro-codigo">Tipo (código)</label>
-            <select id="reglas-negocio-filtro-codigo" class="select-filtro" aria-label="Filtrar por código tipo operación">
+            <select id="reglas-negocio-filtro-codigo" class="select-filtro pandi-filtro" data-pandi-filtro="1" aria-label="Filtrar por código tipo operación">
               <option value="">Todos</option>
             </select>
           </div>
           <div class="form-group">
             <label for="reglas-negocio-filtro-usa-int">Intermediario</label>
-            <select id="reglas-negocio-filtro-usa-int" class="select-filtro" aria-label="Filtrar usa intermediario">
+            <select id="reglas-negocio-filtro-usa-int" class="select-filtro pandi-filtro" data-pandi-filtro="1" aria-label="Filtrar usa intermediario">
               <option value="all">Todos</option>
               <option value="true">Con intermediario</option>
               <option value="false">Sin intermediario</option>
@@ -1145,36 +1145,40 @@
         <h2 style="margin:0 0 0.75rem 0; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span style="width:24px; height:24px; color:#555; flex-shrink:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-23"></use></svg></span>
           Auditoría del sistema
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: auditoría"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Registro de acciones sensibles y ediciones. En el detalle: <strong>cuándo</strong>, <strong>quién</strong> y tabla de cambios con <strong>nombres legibles</strong> (clientes, intermediarios, tipos de operación, modos de pago, etc.); los identificadores internos van en «Referencia técnica (JSON)». Requiere permiso <strong>ver_auditoria</strong>. Filtros y «Buscar»; «Cargar más»; export Excel del lote cargado.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: auditoría"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Registro de acciones sensibles y ediciones. En el detalle: <strong>cuándo</strong>, <strong>quién</strong> y tabla de cambios con <strong>nombres legibles</strong> (clientes, intermediarios, tipos de operación, modos de pago, etc.); los identificadores internos van en «Referencia técnica (JSON)». Requiere permiso <strong>ver_auditoria</strong>. Los filtros actualizan el listado al cambiar; «Buscar» recarga al momento; «Cargar más»; export Excel del lote cargado.</span></span>
         </h2>
         <div id="auditoria-sin-permiso" class="auditoria-aviso" style="display:none; padding:1rem; background:#fef3c7; border:1px solid #f59e0b; border-radius:8px; margin-bottom:1rem;">
           No tenés permiso para ver la auditoría. Un administrador puede otorgarte <strong>ver_auditoria</strong> en Seguridad → permisos por perfil.
         </div>
         <div id="auditoria-controles" class="vista-toolbar auditoria-toolbar" style="margin-bottom:1rem; align-items:flex-end; gap:0.65rem; flex-wrap:wrap;">
           <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Desde
-            <input type="date" id="auditoria-filtro-desde" class="auditoria-input-fecha" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; box-sizing:border-box;" />
+            <input type="date" id="auditoria-filtro-desde" class="auditoria-input-fecha pandi-filtro" data-pandi-filtro="1" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; box-sizing:border-box;" />
           </label>
           <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Hasta
-            <input type="date" id="auditoria-filtro-hasta" class="auditoria-input-fecha" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; box-sizing:border-box;" />
+            <input type="date" id="auditoria-filtro-hasta" class="auditoria-input-fecha pandi-filtro" data-pandi-filtro="1" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; box-sizing:border-box;" />
           </label>
           <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Categoría
-            <select id="auditoria-filtro-categoria" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; min-width:10rem; max-width:100%; box-sizing:border-box;">
+            <select id="auditoria-filtro-categoria" class="select-filtro pandi-filtro" data-pandi-filtro="1" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; min-width:10rem; max-width:100%; box-sizing:border-box;">
               <option value="">(todas)</option>
               <option value="transaccion">Transacción</option>
               <option value="orden">Orden</option>
               <option value="cc_manual">CC manual</option>
               <option value="caja_manual">Caja manual</option>
               <option value="cc_caja_sync">Cuenta corriente y caja</option>
+              <option value="cliente">Cliente</option>
+              <option value="intermediario">Intermediario</option>
+              <option value="tipo_operacion">Tipo de operación</option>
+              <option value="tipo_caja">Tipo de caja</option>
               <option value="app">App</option>
             </select>
           </label>
           <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Acción (contiene)
-            <input type="text" id="auditoria-filtro-accion" placeholder="ej. editar" maxlength="120" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; min-width:8rem; max-width:100%; box-sizing:border-box;" />
+            <input type="text" id="auditoria-filtro-accion" class="pandi-filtro" data-pandi-filtro="1" placeholder="ej. editar" maxlength="120" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; min-width:8rem; max-width:100%; box-sizing:border-box;" />
           </label>
           <label class="auditoria-filtro-grupo auditoria-filtro-texto" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem; flex:1; min-width:min(100%, 14rem);">Texto en detalle
-            <input type="search" id="auditoria-filtro-detalle" placeholder="Buscar en detalle…" maxlength="200" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; width:100%; max-width:28rem; box-sizing:border-box;" />
+            <input type="search" id="auditoria-filtro-detalle" class="pandi-filtro" data-pandi-filtro="1" placeholder="Buscar en detalle…" maxlength="200" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; width:100%; max-width:28rem; box-sizing:border-box;" />
           </label>
-          <button type="button" class="btn-primary" id="auditoria-btn-buscar" title="Aplicar filtros">
+          <button type="button" class="btn-primary" id="auditoria-btn-buscar" title="Recargar ahora con los filtros actuales">
             <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span>Buscar
           </button>
           <button type="button" class="btn-excel" id="auditoria-btn-exportar" title="Exportar a Excel lo cargado en esta búsqueda" aria-label="Exportar auditoría a Excel">
@@ -2299,15 +2303,15 @@
         <div class="vista-toolbar ordenes-filtros-wrap ordenes-filtros-wrap--pendientes" id="ordenes-pendientes-filtros-wrap">
           <label class="ordenes-filtro-label">
             <span>Cliente:</span>
-            <select id="ordenes-pendientes-filtro-cliente" class="select-filtro select-filtro-ordenes-cat"><option value="">Todos</option></select>
+            <select id="ordenes-pendientes-filtro-cliente" class="select-filtro select-filtro-ordenes-cat pandi-filtro" data-pandi-filtro="1"><option value="">Todos</option></select>
           </label>
           <label class="ordenes-filtro-label">
             <span>Intermediario:</span>
-            <select id="ordenes-pendientes-filtro-intermediario" class="select-filtro select-filtro-ordenes-cat"><option value="">Todos</option></select>
+            <select id="ordenes-pendientes-filtro-intermediario" class="select-filtro select-filtro-ordenes-cat pandi-filtro" data-pandi-filtro="1"><option value="">Todos</option></select>
           </label>
           <label class="ordenes-filtro-label">
             <span>Estado:</span>
-            <select id="ordenes-pendientes-filtro-estado" class="select-filtro select-filtro-ordenes-estado"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option></select>
+            <select id="ordenes-pendientes-filtro-estado" class="select-filtro select-filtro-ordenes-estado pandi-filtro" data-pandi-filtro="1"><option value="">Todos</option><option value="pendiente_instrumentar">Pendiente Instrumentar</option><option value="instrumentacion_parcial">Instrumentación Parcial</option><option value="instrumentacion_cerrada_ejecucion">Cerrada en Ejecución</option></select>
           </label>
           <button type="button" class="btn-excel" id="ordenes-pendientes-btn-exportar-excel" title="Exportar a Excel las órdenes pendientes visibles (filtros actuales)" aria-label="Exportar órdenes pendientes a Excel"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-35"></use></svg></span>Exportar</button>
         </div>
@@ -2339,14 +2343,14 @@
         <div class="vista-toolbar" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
           <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
             <span>Cliente:</span>
-            <select id="transacciones-pendientes-filtro-cliente" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select>
+            <select id="transacciones-pendientes-filtro-cliente" class="select-filtro pandi-filtro" data-pandi-filtro="1" style="min-width:140px;"><option value="">Todos</option></select>
           </label>
           <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem;">
             <span>Intermediario:</span>
-            <select id="transacciones-pendientes-filtro-intermediario" class="select-filtro" style="min-width:140px;"><option value="">Todos</option></select>
+            <select id="transacciones-pendientes-filtro-intermediario" class="select-filtro pandi-filtro" data-pandi-filtro="1" style="min-width:140px;"><option value="">Todos</option></select>
           </label>
           <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.9rem; cursor:pointer;">
-            <input type="checkbox" id="transacciones-pendientes-filtro-pandy" />
+            <input type="checkbox" id="transacciones-pendientes-filtro-pandy" class="pandi-filtro" data-pandi-filtro="1" />
             <span>Solo <span class="js-marca-sistema-nombre">Pandi</span> (cobrador o pagador)</span>
           </label>
         </div>

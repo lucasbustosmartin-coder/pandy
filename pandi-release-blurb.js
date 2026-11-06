@@ -6,6 +6,10 @@
  * `lines: []` = despliegue silencioso: no hay cartel de novedades al recargar (el login no espera Entendido).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.24',
-  lines: [],
+  versionLabel: 'v3.8.25',
+  lines: [
+    'Los filtros de listados se marcan cuando están en uso, para ver de un vistazo qué está recortando la pantalla.',
+    'En cuenta corriente y cajas, el botón elegido (tipo, moneda, hoy o historial) queda resaltado.',
+    'En G/P Operativa y Control de calidad, el período seleccionado se ve más claro.',
+  ],
 };
