@@ -13,6 +13,10 @@
 --    clientes: nombre LIKE 'E2E %'
 --    intermediarios: nombre LIKE 'E2E Int %' o 'E2E CC TiposActivos Int'.
 -- El test (o scripts/limpiar-base-e2e.js) puede invocar esta RPC antes de correr E2E.
+--
+-- BARRERA (2026-11-20): la función se niega a correr salvo que la base esté marcada como desarrollo:
+--   INSERT INTO public.app_config (key, value) VALUES ('entorno', 'desarrollo') ON CONFLICT (key) DO NOTHING;
+-- (solo en Pandy-Dev). En Pandy (prod) la función fue ELIMINADA: sql/seguridad_drop_limpiar_base_e2e_prod.sql.
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.limpiar_base_e2e()
@@ -22,6 +26,10 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+  IF COALESCE((SELECT c.value FROM public.app_config c WHERE c.key = 'entorno'), '') <> 'desarrollo' THEN
+    RAISE EXCEPTION 'limpiar_base_e2e: esta base no está marcada como entorno de desarrollo (app_config.entorno). No se borró nada.';
+  END IF;
+
   -- 1) Truncar transaccionalidad: misma secuencia que truncar_ordenes_transacciones.sql
   --    (sin auditoria_app: el script manual tampoco la toca; paridad = mismo efecto que pegar ese archivo + DELETE E2E).
   TRUNCATE TABLE public.movimientos_cuenta_corriente CASCADE;

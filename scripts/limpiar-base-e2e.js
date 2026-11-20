@@ -12,25 +12,15 @@
  * Invocación: Playwright globalSetup/globalTeardown, cada combinación en 01/02/03, cada test en 91-orden-cc (tests/e2e/e2e-limpiar-base.js).
  */
 const path = require('path');
-const fs = require('fs');
 const root = path.resolve(__dirname, '..');
+// Solo .env.test (credenciales E2E de desarrollo). No se leen .env ni config.js como respaldo (2026-11-20).
 require('dotenv').config({ path: path.join(root, '.env.test') });
-require('dotenv').config({ path: path.join(root, '.env') });
 
-let url = process.env.SUPABASE_URL || '';
-let serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const PANDI_REF_PRODUCCION = 'bxwxuzbahewvptarlnxm';
+const E2E_REF_PERMITIDO = process.env.E2E_ALLOWED_SUPABASE_REF || 'ozsofsmnuzliczfphqze'; // Pandy-Dev
 
-// Si faltan, intentar leer de config.js (mismo proyecto, no subido al repo)
-if (!url || !serviceKey) {
-  const configPath = path.join(root, 'config.js');
-  if (fs.existsSync(configPath)) {
-    const configContent = fs.readFileSync(configPath, 'utf8');
-    const mUrl = configContent.match(/SUPABASE_URL\s*=\s*['"]([^'"]+)['"]/);
-    const mKey = configContent.match(/SUPABASE_SERVICE_ROLE_KEY\s*=\s*['"]([^'"]+)['"]/);
-    if (mUrl) url = url || mUrl[1];
-    if (mKey) serviceKey = serviceKey || mKey[1];
-  }
-}
+const url = process.env.SUPABASE_URL || '';
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 if (!url || !serviceKey) {
   if (process.env.E2E_SKIP_LIMPIAR_BASE === '1') {
@@ -38,8 +28,22 @@ if (!url || !serviceKey) {
     process.exit(0);
   }
   console.error(
-    'limpiar-base-e2e: faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en .env.test o .env. ' +
+    'limpiar-base-e2e: faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en .env.test. ' +
       'Sin la RPC la base no se limpia entre tests. Completá las variables o usá E2E_SKIP_LIMPIAR_BASE=1 para omitir.'
+  );
+  process.exit(1);
+}
+
+let ref = '';
+try {
+  ref = new URL(url).hostname.split('.')[0];
+} catch (_e) {
+  ref = '';
+}
+if (!ref || ref === PANDI_REF_PRODUCCION || ref !== E2E_REF_PERMITIDO) {
+  console.error(
+    'limpiar-base-e2e: BLOQUEADO. SUPABASE_URL apunta a "' + (ref || '?') + '" y solo se permite el proyecto de desarrollo "' +
+      E2E_REF_PERMITIDO + '" (nunca producción). Revisá .env.test.'
   );
   process.exit(1);
 }
