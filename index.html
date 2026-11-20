@@ -352,7 +352,7 @@
       <header class="page-header">
         <div class="page-header-brand">
           <span class="page-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="page-logo" id="page-logo" /></span>
-          <span id="sidebar-version" class="header-app-version" aria-label="Versión de la app" title="Versión desplegada">v3.8.27</span>
+          <span id="sidebar-version" class="header-app-version" aria-label="Versión de la app" title="Versión desplegada">v3.8.28</span>
         </div>
         <h1 id="page-title">Panel de Control</h1>
         <div class="page-header-toolbar">
@@ -403,6 +403,7 @@
       <div id="pandi-datos-no-vivos-strip" class="pandi-datos-no-vivos-strip" role="status" style="display:none;" aria-hidden="true" aria-live="polite"></div>
 
       <div id="vista-inicio" class="card">
+        <div id="inicio-alerta-cierres" class="inicio-alerta-cierres" role="status" aria-live="polite" hidden></div>
         <div style="display:flex;align-items:center;gap:0.35rem;margin-bottom:1rem;flex-wrap:wrap;">
           <span style="font-size:1.05rem;font-weight:600;">Inicio</span>
           <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: panel de inicio"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><strong>Resumen de cajas</strong> (Efectivo, Banco, Cheque): saldos iniciales, actuales y variación.<br/><br/><strong>Tarjetas pendientes:</strong> órdenes y transacciones que aún no están cerradas; el ojo abre el listado.<br/><br/><strong>Accesos rápidos:</strong> atajos a Órdenes, Cajas, Clientes y Cuenta corriente.</span></span>
@@ -1129,6 +1130,17 @@
         <div id="auditoria-sin-permiso" class="auditoria-aviso" style="display:none; padding:1rem; background:#fef3c7; border:1px solid #f59e0b; border-radius:8px; margin-bottom:1rem;">
           No tenés permiso para ver la auditoría. Un administrador puede otorgarte <strong>ver_auditoria</strong> en Seguridad → permisos por perfil.
         </div>
+        <div class="cc-solapas auditoria-solapas" id="auditoria-vista-tabs" role="tablist" aria-label="Secciones de auditoría">
+          <button type="button" class="cc-solapa activo" role="tab" id="auditoria-tab-acciones" aria-selected="true" aria-controls="auditoria-panel-acciones" data-auditoria-solapa="acciones">
+            <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-23"></use></svg></span>
+            Acciones
+          </button>
+          <button type="button" class="cc-solapa" role="tab" id="auditoria-tab-historial" aria-selected="false" aria-controls="auditoria-panel-historial" data-auditoria-solapa="historial">
+            <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/><path d="M12 7v5l3 2"/></svg></span>
+            Historial de caja y cuenta corriente
+          </button>
+        </div>
+        <div id="auditoria-panel-acciones" class="auditoria-panel" role="tabpanel" aria-labelledby="auditoria-tab-acciones">
         <div id="auditoria-controles" class="vista-toolbar auditoria-toolbar" style="margin-bottom:1rem; align-items:flex-end; gap:0.65rem; flex-wrap:wrap;">
           <label class="auditoria-filtro-grupo" style="display:flex; flex-direction:column; gap:0.25rem; font-size:0.88rem;">Desde
             <input type="date" id="auditoria-filtro-desde" class="auditoria-input-fecha pandi-filtro" data-pandi-filtro="1" style="padding:0.4rem 0.5rem; border-radius:8px; border:1px solid #ccc; font-size:16px; min-height:44px; box-sizing:border-box;" />
@@ -1189,6 +1201,102 @@
           <button type="button" class="btn-secondary" id="auditoria-btn-mas" style="display:none;">
             <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-1"></use></svg></span>Cargar más
           </button>
+        </div>
+        </div>
+        <div id="auditoria-panel-historial" class="auditoria-panel" role="tabpanel" aria-labelledby="auditoria-tab-historial" hidden>
+          <div class="hist-mov-intro">
+            <span>Cada alta, cambio o baja en caja y cuenta corriente, con quién, cuándo y desde dónde.</span>
+            <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: historial de caja y cuenta corriente"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover"><strong>Historial de caja y cuenta corriente:</strong> la base registra automáticamente <strong>cada alta, cambio y baja</strong> de movimientos de caja y de cuenta corriente (clientes e intermediarios), con valores <strong>antes y después</strong>, usuario, hora y origen. No se puede editar ni borrar, y no depende de la pantalla desde donde se hizo.<br/><br/><strong>Origen:</strong> «Sincronización automática» es el recálculo que la app hace sola al abrir pantallas; «Refrescar» y «Refrescar – toda la historia» son los botones de recálculo; «Acción en la app» es una carga o edición hecha por un usuario (se indica la pantalla); «Ajuste manual en base» es una corrección hecha por soporte directamente en la base.<br/><br/><strong>Afecta día cerrado:</strong> el cambio toca un movimiento con fecha contable <strong>anterior a hoy</strong> y modifica el saldo (o la fecha, moneda, caja o titular). Eso cambia saldos de días que ya se habían cerrado, por eso se marca.<br/><br/><strong>Impacto en saldo:</strong> cuánto subió (verde) o bajó (rojo) el saldo por ese cambio. Tocá una fila para ver el detalle antes → después. El Excel exporta lo cargado, con importes numéricos.</span></span>
+          </div>
+          <div id="hist-mov-controles" class="hist-mov-toolbar" role="search" aria-label="Filtros del historial">
+            <label class="auditoria-filtro-grupo">Libro
+              <select id="hist-mov-filtro-libro" class="hist-mov-input select-filtro pandi-filtro" data-pandi-filtro="1">
+                <option value="">Todos</option>
+                <option value="caja">Caja</option>
+                <option value="cc_cliente">CC clientes</option>
+                <option value="cc_intermediario">CC intermediarios</option>
+              </select>
+            </label>
+            <label class="auditoria-filtro-grupo">Caja
+              <select id="hist-mov-filtro-caja" class="hist-mov-input select-filtro pandi-filtro" data-pandi-filtro="1">
+                <option value="">Todas</option>
+                <option value="efectivo">Efectivo</option>
+                <option value="banco">Banco</option>
+                <option value="cheque">Cheque</option>
+              </select>
+            </label>
+            <label class="auditoria-filtro-grupo">Moneda
+              <select id="hist-mov-filtro-moneda" class="hist-mov-input select-filtro pandi-filtro" data-pandi-filtro="1">
+                <option value="">Todas</option>
+                <option value="ARS">ARS</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </label>
+            <label class="auditoria-filtro-grupo">Fecha contable desde
+              <input type="date" id="hist-mov-filtro-fc-desde" class="hist-mov-input auditoria-input-fecha pandi-filtro" data-pandi-filtro="1" />
+            </label>
+            <label class="auditoria-filtro-grupo">Fecha contable hasta
+              <input type="date" id="hist-mov-filtro-fc-hasta" class="hist-mov-input auditoria-input-fecha pandi-filtro" data-pandi-filtro="1" />
+            </label>
+            <label class="auditoria-filtro-grupo">Fecha del cambio desde
+              <input type="date" id="hist-mov-filtro-desde" class="hist-mov-input auditoria-input-fecha pandi-filtro" data-pandi-filtro="1" />
+            </label>
+            <label class="auditoria-filtro-grupo">Fecha del cambio hasta
+              <input type="date" id="hist-mov-filtro-hasta" class="hist-mov-input auditoria-input-fecha pandi-filtro" data-pandi-filtro="1" />
+            </label>
+            <label class="auditoria-filtro-grupo">Nº orden
+              <input type="text" inputmode="numeric" pattern="[0-9]*" id="hist-mov-filtro-orden" class="hist-mov-input hist-mov-input-orden pandi-filtro" data-pandi-filtro="1" maxlength="10" placeholder="ej. 152" />
+            </label>
+            <label class="auditoria-filtro-grupo">Origen
+              <select id="hist-mov-filtro-origen" class="hist-mov-input select-filtro pandi-filtro" data-pandi-filtro="1">
+                <option value="">Todos</option>
+                <option value="sync_automatico">Sincronización automática</option>
+                <option value="refrescar">Refrescar</option>
+                <option value="refrescar_toda_la_historia">Refrescar toda la historia</option>
+                <option value="app">Acción en la app</option>
+                <option value="sql_manual">SQL manual</option>
+              </select>
+            </label>
+            <label class="auditoria-filtro-grupo hist-mov-check">
+              <input type="checkbox" id="hist-mov-filtro-cerrados" class="pandi-filtro" data-pandi-filtro="1" />
+              <span>Solo cambios que afectan días cerrados</span>
+            </label>
+            <div class="hist-mov-acciones">
+              <button type="button" class="btn-primary" id="hist-mov-btn-buscar" title="Recargar ahora con los filtros actuales">
+                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-14"></use></svg></span>Buscar
+              </button>
+              <button type="button" class="btn-excel" id="hist-mov-btn-exportar" title="Exportar a Excel lo cargado" aria-label="Exportar historial de caja y cuenta corriente a Excel">
+                <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-sprite-35"></use></svg></span>Excel
+              </button>
+            </div>
+          </div>
+          <p id="hist-mov-resumen" class="hist-mov-resumen" aria-live="polite"></p>
+          <div id="hist-mov-loading" class="vista-loading-spinner" hidden>Cargando historial…</div>
+          <div id="hist-mov-tabla-outer" class="tabla-clientes-wrap tabla-wrap-con-scroll hist-mov-tabla-outer" hidden>
+            <table class="auditoria-tabla hist-mov-tabla">
+              <thead>
+                <tr>
+                  <th>Cuándo</th>
+                  <th>Usuario</th>
+                  <th>Origen</th>
+                  <th>Libro / Caja / Moneda</th>
+                  <th>Cliente o intermediario</th>
+                  <th>Orden / Trx</th>
+                  <th>Fecha contable</th>
+                  <th>Qué pasó</th>
+                  <th class="hist-mov-col-num">Impacto en saldo</th>
+                  <th>Día cerrado</th>
+                </tr>
+              </thead>
+              <tbody id="hist-mov-tbody"></tbody>
+            </table>
+          </div>
+          <div class="hist-mov-pie">
+            <button type="button" class="btn-secondary" id="hist-mov-btn-mas" hidden>
+              <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-1"></use></svg></span>Cargar más
+            </button>
+          </div>
         </div>
       </div>
     </div>

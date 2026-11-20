@@ -6,9 +6,10 @@
  * `lines: []` = despliegue silencioso: no hay cartel de novedades al recargar (el login no espera Entendido).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.27',
+  versionLabel: 'v3.8.28',
   lines: [
-    'Más seguridad al actualizar cuenta corriente y cajas: si la conexión falla a mitad de camino, la app avisa y no aplica cambios incompletos.',
-    'Si Refrescar no puede completarse, ahora lo indica en lugar de mostrar «actualizada».',
+    'Nuevo historial de caja y cuenta corriente: cada alta, cambio o anulación con quién, cuándo y desde qué pantalla.',
+    'Inicio avisa si cambió el saldo de cierre de un día anterior y muestra qué lo cambió.',
+    'Podés filtrar el historial por caja, moneda, fecha y orden, y exportarlo a Excel.',
   ],
 };

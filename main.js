@@ -23,7 +23,51 @@ if (!SUPABASE_ANON_KEY || !SUPABASE_URL) {
   throw new Error('Missing Supabase config');
 }
 
-const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+/**
+ * Origen de cada pedido a Supabase (Fase C2, auditoría de caja/CC): pantalla actual, proceso en curso y versión.
+ * Los triggers de `movimientos_historial` leen estos headers (`x-pandi-pantalla`, `x-pandi-proceso`, `x-pandi-version`).
+ * Es contexto "best effort": si dos procesos corren a la vez puede quedar el del último que se marcó; la ruta del pedido
+ * (`/rpc/...` o tabla) la registra el servidor de forma exacta.
+ */
+let pandiOrigenProceso = '';
+function pandiOrigenHeaders() {
+  let pantalla = '';
+  try {
+    pantalla = typeof currentVistaId !== 'undefined' && currentVistaId ? String(currentVistaId) : '';
+  } catch (_e) {
+    pantalla = '';
+  }
+  const h = {};
+  if (pantalla) h['x-pandi-pantalla'] = pantalla.slice(0, 80);
+  if (pandiOrigenProceso) h['x-pandi-proceso'] = String(pandiOrigenProceso).slice(0, 80);
+  try {
+    if (PANDI_RELEASE_BLURB && PANDI_RELEASE_BLURB.versionLabel) h['x-pandi-version'] = String(PANDI_RELEASE_BLURB.versionLabel);
+  } catch (_e) {
+    /* sin versión */
+  }
+  return h;
+}
+function pandiFetchConOrigen(input, init) {
+  // Solo pedidos de datos (PostgREST): Auth y Storage tienen su propia lista de headers permitidos (CORS).
+  const url = typeof input === 'string' ? input : (input && (input.url || input.href)) || '';
+  if (!/\/rest\/v1\//.test(String(url))) return fetch(input, init);
+  const opts = Object.assign({}, init || {});
+  const headers = new Headers(opts.headers || (input && typeof input === 'object' && input.headers) || undefined);
+  const extra = pandiOrigenHeaders();
+  Object.keys(extra).forEach((k) => headers.set(k, extra[k]));
+  opts.headers = headers;
+  return fetch(input, opts);
+}
+/** Marca el proceso en curso para la auditoría; devuelve una función que lo limpia (si sigue siendo el mismo). */
+function pandiMarcarProcesoOrigen(nombre) {
+  const anterior = pandiOrigenProceso;
+  pandiOrigenProceso = String(nombre || '');
+  return () => {
+    if (pandiOrigenProceso === String(nombre || '')) pandiOrigenProceso = anterior;
+  };
+}
+
+const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { fetch: pandiFetchConOrigen } });
 
 /** Icono custom de tipo op (URL de otro proyecto o bucket inexistente en dev): fallback a IN→OUT automático. */
 function pandiOnTipoOpCustomImgError(img) {
@@ -3276,6 +3320,7 @@ function showView(vistaId, pageTitle) {
   if (vistaId === 'vista-reglas-negocio') loadReglasNegocioVista();
   if (vistaId === 'vista-configuracion-empresa') loadConfiguracionEmpresa();
   if (vistaId === 'vista-auditoria') void loadAuditoriaVista({ append: false });
+  if (vistaId === 'vista-auditoria') pandiAuditoriaAlMostrarVista();
   if (vistaId === 'vista-control-calidad') void loadControlCalidadVista();
   pandiCollapseMobileSidebarAfterNav();
   if (pandiIsMobileNavLayout()) {
@@ -10611,6 +10656,8 @@ function loadInicio() {
   const canIngresarOrden = userPermissions.includes('ingresar_orden');
   const btnChatInicio = document.getElementById('btn-orden-por-chat-inicio');
   if (btnChatInicio) btnChatInicio.style.display = canIngresarOrden ? '' : 'none';
+  // Cierres diarios de caja: foto de saldo (1 vez/día/sesión) + alerta si cambió un día cerrado. No bloquea ni avisa por toast.
+  pandiInicioCierresCajaTick();
 
   const elCheque = document.getElementById('inicio-card-cheque');
   const hasEfectivoPerm = userPermissions.includes('ver_cajas_efectivo');
@@ -17916,6 +17963,9 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal)
       : PANDI_CC_SYNC_ORDENES_CONCURRENCY;
   const usarBatchRpc = optsSyncGlobal && optsSyncGlobal.usarBatchRpc === true;
   const recorrerHistoria = optsSyncGlobal && optsSyncGlobal.recorrerHistoria === true;
+  const limpiarProcesoOrigen = pandiMarcarProcesoOrigen(
+    recorrerHistoria ? 'refrescar_toda_la_historia' : usarBatchRpc ? 'refrescar' : 'sync_automatico',
+  );
   const p = (async () => {
     pandiCcSyncEmitirProgreso(0, 0, 'preparando', 'Leyendo instrumentación…');
     const r = await client.from('instrumentacion').select('orden_id');
@@ -18166,6 +18216,7 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal)
   })();
   pandiCcSyncTodasEnVuelo = p;
   p.finally(() => {
+    limpiarProcesoOrigen();
     if (pandiCcSyncTodasEnVuelo === p) pandiCcSyncTodasEnVuelo = null;
     pandiCcSyncOnProgreso = null;
     pandiCcSyncProgresoActual = null;
@@ -38904,6 +38955,877 @@ function setupAuditoriaVistaUi() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Historial de caja y CC (movimientos_historial) + cierres diarios de caja (incidente 19/11/2026, fase C1/C2).
+// Solo lectura: no toca sync CC/caja ni escribe movimientos.
+// ---------------------------------------------------------------------------
+const PANDI_CAJA_CIERRES_SS_KEY = 'pandi_caja_cierres_registrados_ar';
+const PANDI_CAJA_CIERRES_ALERTA_THROTTLE_MS = 5 * 60 * 1000;
+const PANDI_HIST_MOV_SELECT =
+  'id, ocurrido_en, libro, operacion, usuario_id, origen, origen_ruta, origen_pantalla, origen_detalle, version_app, ' +
+  'caja_tipo, moneda, entidad_id, orden_numero, transaccion_numero, es_manual, fecha_antes, fecha_despues, ' +
+  'monto_antes, monto_despues, estado_antes, estado_despues, impacto_saldo, afecta_dia_cerrado, campos_cambiados, ' +
+  'datos_antes, datos_despues';
+const PANDI_SVG_HISTORIAL =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/><path d="M12 7v5l3 2"/></svg>';
+const PANDI_SVG_ADVERTENCIA =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+
+let pandiCajaCierresRegistrandoEnCurso = false;
+let pandiCajaCierresAlertaUltimaMs = 0;
+let pandiCajaCierresAlertaGen = 0;
+
+let pandiHistMovAcumulado = [];
+let pandiHistMovHayMas = false;
+let pandiHistMovLoadGen = 0;
+let pandiHistMovCargadoAlgunaVez = false;
+let pandiHistMovRecargaPendiente = false;
+let pandiHistMovMapaUsuarios = {};
+let pandiHistMovMapaEntidades = {};
+let pandiHistMovFiltroTimer = null;
+
+/** escapeHtml no escapa comillas: para valores en atributos. */
+function pandiHistMovAttr(v) {
+  return escapeHtml(v).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function pandiHistMovFmtImporte(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '–';
+  const s = formatImporteDisplay(Math.abs(v));
+  return s.endsWith(',00') ? s.slice(0, -3) : s;
+}
+
+function pandiHistMovFmtConSigno(n) {
+  const v = Number(n) || 0;
+  const signo = v > 0.004 ? '+' : v < -0.004 ? '-' : '';
+  return signo + pandiHistMovFmtImporte(v);
+}
+
+function pandiHistMovClaseImpacto(n) {
+  const v = Number(n) || 0;
+  if (v > 0.004) return 'hist-mov-imp-pos';
+  if (v < -0.004) return 'hist-mov-imp-neg';
+  return 'hist-mov-imp-cero';
+}
+
+/** YYYY-MM-DD → dd/mm (corto) o dd/mm/aaaa. Sin conversión de zona: ya es fecha contable. */
+function pandiHistMovFmtFechaYmd(ymd, corto) {
+  const s = String(ymd || '').slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return s || '–';
+  return corto ? `${m[3]}/${m[2]}` : `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/** Instante → «dd/mm/aaaa HH:mm» (o «dd/mm HH:mm» si corto) en hora Argentina. */
+function pandiHistMovFmtInstanteAr(iso, corto) {
+  if (!iso) return '–';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    const parts = {};
+    new Intl.DateTimeFormat('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+      .formatToParts(d)
+      .forEach((p) => {
+        parts[p.type] = p.value;
+      });
+    const hh = parts.hour === '24' ? '00' : parts.hour;
+    return corto
+      ? `${parts.day}/${parts.month} ${hh}:${parts.minute}`
+      : `${parts.day}/${parts.month}/${parts.year} ${hh}:${parts.minute}`;
+  } catch (_) {
+    return String(iso);
+  }
+}
+
+function pandiHistMovEtiquetaCaja(ct) {
+  const k = String(ct || '').toLowerCase();
+  return { efectivo: 'Efectivo', banco: 'Banco', cheque: 'Cheque' }[k] || (ct ? String(ct) : '');
+}
+
+function pandiHistMovEtiquetaLibro(lib) {
+  return { caja: 'Caja', cc_cliente: 'CC cliente', cc_intermediario: 'CC intermediario' }[String(lib || '')] || String(lib || '–');
+}
+
+function pandiHistMovEtiquetaPantalla(vistaId) {
+  const v = String(vistaId || '').trim();
+  if (!v) return '';
+  if (v === 'vista-inicio') return 'Inicio';
+  const row = VIEWS_CONFIG.find((r) => r[1] === v);
+  if (row) return row[2];
+  return v.replace(/^vista-/, '').replace(/[-_]/g, ' ');
+}
+
+/** Texto legible del origen: { texto, sub }. */
+function pandiHistMovEtiquetaOrigen(origen, proceso, pantalla) {
+  const o = String(origen || '').trim();
+  const p = String(proceso || '').trim();
+  const pant = pandiHistMovEtiquetaPantalla(pantalla);
+  if (p === 'refrescar') return { texto: 'Refrescar', sub: pant ? 'en ' + pant : '' };
+  if (p === 'refrescar_toda_la_historia') return { texto: 'Refrescar – toda la historia', sub: pant ? 'en ' + pant : '' };
+  if (o === 'sync') return { texto: 'Sincronización automática', sub: pant ? 'en ' + pant : '' };
+  if (o === 'escritura_app' || o === 'rpc') return { texto: 'Acción en la app', sub: pant ? 'en ' + pant : '' };
+  if (o === 'sql_manual') return { texto: 'Ajuste manual en base (soporte)', sub: '' };
+  return { texto: o || '–', sub: pant ? 'en ' + pant : '' };
+}
+
+function pandiHistMovEsAnulado(estado) {
+  const e = String(estado || '').trim().toLowerCase();
+  return e === 'anulado' || e === 'anulada';
+}
+
+function pandiHistMovConcepto(r) {
+  const d = (r && r.datos_despues) || {};
+  const a = (r && r.datos_antes) || {};
+  const c = d.concepto != null && String(d.concepto).trim() !== '' ? d.concepto : a.concepto;
+  return c != null ? String(c).trim() : '';
+}
+
+/** Frase de negocio de lo que pasó en una fila del historial. opts.conFecha agrega «del dd/mm». */
+function pandiHistMovDescribir(r, opts) {
+  opts = opts || {};
+  const libro = String(r.libro || '');
+  const montoRef = r.monto_despues != null ? Number(r.monto_despues) : Number(r.monto_antes);
+  const tipo = libro === 'caja' ? (montoRef < 0 ? 'egreso' : 'ingreso') : 'movimiento';
+  const caja = libro === 'caja' && r.caja_tipo ? ' ' + pandiHistMovEtiquetaCaja(r.caja_tipo).toLowerCase() : '';
+  const mon = r.moneda ? ' ' + String(r.moneda) : '';
+  const base = `${tipo}${caja}${mon} ${pandiHistMovFmtImporte(montoRef)}`;
+  const fRef = r.fecha_despues || r.fecha_antes;
+  const delF = opts.conFecha && fRef ? ' del ' + pandiHistMovFmtFechaYmd(fRef, true) : '';
+  const op = String(r.operacion || '');
+  if (op === 'alta') return `Alta de ${base}${delF}`;
+  if (op === 'baja_fisica') return `Baja física de ${base}${delF}`;
+  const campos = Array.isArray(r.campos_cambiados) ? r.campos_cambiados : [];
+  const partes = [];
+  const anA = pandiHistMovEsAnulado(r.estado_antes);
+  const anD = pandiHistMovEsAnulado(r.estado_despues);
+  if (!anA && anD) partes.push(`Anuló ${base}${delF}`);
+  else if (anA && !anD) partes.push(`Reactivó ${base}${delF}`);
+  if (campos.includes('monto')) {
+    partes.push(
+      `Cambio de monto${caja}${mon} ${pandiHistMovFmtConSigno(r.monto_antes)} → ${pandiHistMovFmtConSigno(r.monto_despues)}` +
+        (partes.length ? '' : delF),
+    );
+  }
+  if (campos.includes('fecha')) {
+    partes.push(`Cambio de fecha ${pandiHistMovFmtFechaYmd(r.fecha_antes, true)} → ${pandiHistMovFmtFechaYmd(r.fecha_despues, true)}`);
+  }
+  const da = r.datos_antes || {};
+  const dd = r.datos_despues || {};
+  if (campos.includes('moneda')) partes.push(`Cambio de moneda ${da.moneda || '–'} → ${dd.moneda || '–'}`);
+  if (campos.includes('caja_tipo')) {
+    partes.push(`Cambio de caja ${pandiHistMovEtiquetaCaja(da.caja_tipo) || '–'} → ${pandiHistMovEtiquetaCaja(dd.caja_tipo) || '–'}`);
+  }
+  const yaCubiertos = ['monto', 'fecha', 'moneda', 'caja_tipo', 'estado'];
+  const otros = campos.filter((c) => !yaCubiertos.includes(c));
+  if (campos.includes('estado') && !partes.length) {
+    otros.unshift('estado');
+  }
+  if (otros.length) partes.push('Cambio de ' + otros.map((c) => auditoriaEtiquetaCampo(c).toLowerCase()).join(', '));
+  return partes.length ? partes.join('; ') : `Cambio en ${base}${delF}`;
+}
+
+function pandiHistMovValorLegible(campo, val) {
+  if (val === null || val === undefined || val === '') return '–';
+  const c = String(campo || '');
+  if (c === 'monto' || c.startsWith('monto_')) return pandiHistMovFmtConSigno(val);
+  if (c === 'fecha') return pandiHistMovFmtFechaYmd(val, false);
+  if (c === 'caja_tipo') return pandiHistMovEtiquetaCaja(val);
+  if ((c === 'cliente_id' || c === 'intermediario_id') && pandiHistMovMapaEntidades[String(val)]) {
+    return pandiHistMovMapaEntidades[String(val)];
+  }
+  if (typeof val === 'object') {
+    try {
+      return JSON.stringify(val);
+    } catch (_) {
+      return String(val);
+    }
+  }
+  return String(val);
+}
+
+// --- 1) Registro de cierres (una vez por día y sesión) ---------------------------------
+function pandiCajaRegistrarCierresSiCorresponde() {
+  const hoy = fechaHoyYYYYMMDDArgentina();
+  let ya = '';
+  try {
+    ya = sessionStorage.getItem(PANDI_CAJA_CIERRES_SS_KEY) || '';
+  } catch (_) {}
+  if (ya === hoy || pandiCajaCierresRegistrandoEnCurso) return Promise.resolve();
+  if (pandiSinConexionServidorViva()) return Promise.resolve();
+  pandiCajaCierresRegistrandoEnCurso = true;
+  try {
+    return Promise.resolve(client.rpc('caja_registrar_cierres'))
+      .then((r) => {
+        if (r && !r.error) {
+          try {
+            sessionStorage.setItem(PANDI_CAJA_CIERRES_SS_KEY, hoy);
+          } catch (_) {}
+        } else if (r && r.error) {
+          console.warn('caja_registrar_cierres', r.error.message || r.error);
+        }
+      })
+      .catch((e) => console.warn('caja_registrar_cierres', e))
+      .finally(() => {
+        pandiCajaCierresRegistrandoEnCurso = false;
+      });
+  } catch (e) {
+    pandiCajaCierresRegistrandoEnCurso = false;
+    console.warn('caja_registrar_cierres', e);
+    return Promise.resolve();
+  }
+}
+
+/** Llamado desde loadInicio: registra cierres (fire-and-forget) y refresca la alerta de diferencias. */
+function pandiInicioCierresCajaTick() {
+  try {
+    const p = pandiCajaRegistrarCierresSiCorresponde();
+    const bg = isPandiBackgroundRefresh();
+    if (bg && Date.now() - pandiCajaCierresAlertaUltimaMs < PANDI_CAJA_CIERRES_ALERTA_THROTTLE_MS) return;
+    void p.then(() => pandiInicioCargarAlertaCierres()).catch(() => {});
+  } catch (e) {
+    console.warn('pandiInicioCierresCajaTick', e);
+  }
+}
+
+// --- 2) Alerta en Inicio ------------------------------------------------------------------
+function pandiInicioOcultarAlertaCierres() {
+  const box = document.getElementById('inicio-alerta-cierres');
+  if (!box) return;
+  box.hidden = true;
+  box.innerHTML = '';
+}
+
+function pandiHistMovClaveCambio(c) {
+  const t = c && c.ocurrido_en ? new Date(c.ocurrido_en).getTime() : 0;
+  const imp = Math.round((Number(c && (c.impacto != null ? c.impacto : c.impacto_saldo)) || 0) * 100);
+  return [t, c.orden_numero == null ? '' : c.orden_numero, c.transaccion_numero == null ? '' : c.transaccion_numero, imp].join('|');
+}
+
+async function pandiInicioCargarAlertaCierres() {
+  const box = document.getElementById('inicio-alerta-cierres');
+  if (!box) return;
+  if (!userPermissions.includes('ver_auditoria')) {
+    pandiInicioOcultarAlertaCierres();
+    return;
+  }
+  if (pandiSinConexionServidorViva()) return;
+  const gen = ++pandiCajaCierresAlertaGen;
+  pandiCajaCierresAlertaUltimaMs = Date.now();
+  let filas = [];
+  try {
+    const r = await client.rpc('caja_cierres_con_diferencia');
+    if (r.error) {
+      console.warn('caja_cierres_con_diferencia', r.error.message || r.error);
+      return;
+    }
+    filas = Array.isArray(r.data) ? r.data : [];
+  } catch (e) {
+    console.warn('caja_cierres_con_diferencia', e);
+    return;
+  }
+  if (gen !== pandiCajaCierresAlertaGen) return;
+  if (!filas.length) {
+    pandiInicioOcultarAlertaCierres();
+    return;
+  }
+
+  // Agrupar por caja + moneda.
+  const grupos = new Map();
+  filas.forEach((f) => {
+    const k = `${f.caja_tipo || 'efectivo'}|${f.moneda || ''}`;
+    if (!grupos.has(k)) grupos.set(k, { caja_tipo: f.caja_tipo || 'efectivo', moneda: f.moneda || '', filas: [], cambios: new Map() });
+    const g = grupos.get(k);
+    g.filas.push(f);
+    (Array.isArray(f.cambios) ? f.cambios : []).forEach((c) => {
+      const ck = pandiHistMovClaveCambio(c);
+      if (!g.cambios.has(ck)) g.cambios.set(ck, c);
+    });
+  });
+
+  // Enriquecer con el historial (estado/monto/concepto) para poder decir «Anuló egreso…».
+  const todosCambios = [];
+  grupos.forEach((g) => g.cambios.forEach((c) => todosCambios.push(c)));
+  const tiempos = todosCambios.map((c) => new Date(c.ocurrido_en).getTime()).filter((t) => Number.isFinite(t));
+  const detallePorClave = new Map();
+  if (tiempos.length) {
+    try {
+      const desdeIso = new Date(Math.min(...tiempos) - 1000).toISOString();
+      const hastaIso = new Date(Math.max(...tiempos) + 1000).toISOString();
+      const rh = await client
+        .from('movimientos_historial')
+        .select(PANDI_HIST_MOV_SELECT)
+        .eq('libro', 'caja')
+        .eq('afecta_dia_cerrado', true)
+        .gte('ocurrido_en', desdeIso)
+        .lte('ocurrido_en', hastaIso)
+        .order('ocurrido_en', { ascending: false })
+        .limit(pandiSupabaseSelectPageSizeClamped());
+      (rh.data || []).forEach((h) => {
+        const k = `${h.caja_tipo || 'efectivo'}|${h.moneda || ''}|` + pandiHistMovClaveCambio(h);
+        if (!detallePorClave.has(k)) detallePorClave.set(k, h);
+      });
+    } catch (_) {}
+  }
+  const usuarioIds = todosCambios.map((c) => c.usuario_id).filter(Boolean);
+  let mapaUsu = {};
+  try {
+    mapaUsu = await fetchMapaEtiquetaUsuarioPorIds(usuarioIds);
+  } catch (_) {}
+  if (gen !== pandiCajaCierresAlertaGen) return;
+
+  const htmlGrupos = [];
+  grupos.forEach((g) => {
+    const fechas = g.filas.map((f) => String(f.fecha || '')).filter(Boolean).sort();
+    const desde = fechas[0] || '';
+    const ultima = g.filas.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))[0];
+    const dif = Number(ultima && ultima.diferencia) || 0;
+    const regs = g.filas.map((f) => f.registrado_en).filter(Boolean).sort();
+    const cambioDesde = regs.length ? fechaYYYYMMDDEnZonaArgentina(new Date(regs[0])) : '';
+
+    const frases = new Map();
+    Array.from(g.cambios.values())
+      .sort((a, b) => String(b.ocurrido_en).localeCompare(String(a.ocurrido_en)))
+      .forEach((c) => {
+        const det = detallePorClave.get(`${g.caja_tipo}|${g.moneda}|` + pandiHistMovClaveCambio(c));
+        const ori = pandiHistMovEtiquetaOrigen(c.origen, c.proceso, c.pantalla);
+        const usu = c.usuario_id ? mapaUsu[String(c.usuario_id)] || '' : '';
+        const esAuto = ori.texto.startsWith('Sincronización') || ori.texto.startsWith('Refrescar');
+        let que;
+        if (det) {
+          que = pandiHistMovDescribir(det, { conFecha: true });
+        } else {
+          const opTxt = c.operacion === 'alta' ? 'Alta de movimiento' : c.operacion === 'baja_fisica' ? 'Baja física de movimiento' : 'Cambio en movimiento';
+          que = `${opTxt}${c.fecha_contable ? ' del ' + pandiHistMovFmtFechaYmd(c.fecha_contable, true) : ''} (impacto ${pandiHistMovFmtConSigno(c.impacto)})`;
+        }
+        const partes = [pandiHistMovFmtInstanteAr(c.ocurrido_en, true), ori.texto];
+        if (usu) partes.push((esAuto ? 'sesión de ' : 'por ') + usu);
+        partes.push(que);
+        if (c.orden_numero != null) partes.push('Orden ' + c.orden_numero);
+        else if (c.transaccion_numero != null) partes.push('Trx ' + c.transaccion_numero);
+        const txt = partes.join(' · ');
+        frases.set(txt, (frases.get(txt) || 0) + 1);
+      });
+    const lista = Array.from(frases.entries());
+    const MAX = 6;
+    const items = lista
+      .slice(0, MAX)
+      .map(([t, n]) => `<li>${escapeHtml(t)}${n > 1 ? ` <span class="inicio-alerta-cierres-veces">(×${n})</span>` : ''}</li>`)
+      .join('');
+    const mas = lista.length > MAX ? `<li class="inicio-alerta-cierres-mas">y ${lista.length - MAX} causa(s) más en el historial</li>` : '';
+    const sinCausa = !lista.length ? '<li>No hay cambios registrados en el historial que expliquen la diferencia (pueden ser previos al historial).</li>' : '';
+    htmlGrupos.push(`<div class="inicio-alerta-cierres-grupo">
+      <div class="inicio-alerta-cierres-titulo">
+        <strong>${escapeHtml('Caja ' + pandiHistMovEtiquetaCaja(g.caja_tipo) + ' ' + g.moneda)}</strong>
+        <span>desde el ${escapeHtml(pandiHistMovFmtFechaYmd(desde, false))}</span>
+        <span>diferencia actual <span class="${pandiHistMovClaseImpacto(dif)}">${escapeHtml(g.moneda + ' ' + pandiHistMovFmtConSigno(dif))}</span></span>
+      </div>
+      <ul class="inicio-alerta-cierres-lista">${items}${mas}${sinCausa}</ul>
+      <button type="button" class="btn-secondary inicio-alerta-cierres-btn" data-hist-caja="${pandiHistMovAttr(g.caja_tipo)}" data-hist-moneda="${pandiHistMovAttr(g.moneda)}" data-hist-desde="${pandiHistMovAttr(cambioDesde)}" title="Abrir el historial de caja filtrado por esta caja y moneda">
+        <span class="btn-icon">${PANDI_SVG_HISTORIAL}</span>Ver historial
+      </button>
+    </div>`);
+  });
+
+  box.innerHTML = `<div class="inicio-alerta-cierres-head">${PANDI_SVG_ADVERTENCIA}<span>Cambió el saldo de cierre de días anteriores</span>
+      <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: cambio de saldo de cierre"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Cada día la app guarda una <strong>foto del saldo de cierre</strong> de cada caja y moneda. Este aviso aparece cuando el saldo actual de un día ya cerrado <strong>no coincide</strong> con esa foto: alguien (o un proceso automático) agregó, anuló o modificó un movimiento con fecha anterior.<br/><br/>Se muestra <strong>desde qué día</strong> cambió, la <strong>diferencia actual</strong> y las causas registradas. «Ver historial» abre Auditoría con el detalle.</span></span>
+    </div>${htmlGrupos.join('')}`;
+  box.hidden = false;
+  if (box.dataset.pandiBound !== '1') {
+    box.dataset.pandiBound = '1';
+    box.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest && e.target.closest('.inicio-alerta-cierres-btn');
+      if (!btn) return;
+      pandiAbrirHistorialMovimientosConFiltros({
+        libro: 'caja',
+        caja: btn.getAttribute('data-hist-caja') || '',
+        moneda: btn.getAttribute('data-hist-moneda') || '',
+        desde: btn.getAttribute('data-hist-desde') || '',
+        hasta: fechaHoyYYYYMMDDArgentina(),
+        soloCerrados: true,
+      });
+    });
+  }
+}
+
+// --- 3) Auditoría: solapas + historial -----------------------------------------------------
+function pandiAuditoriaSolapaActiva() {
+  const t = document.getElementById('auditoria-tab-historial');
+  return t && t.classList.contains('activo') ? 'historial' : 'acciones';
+}
+
+function pandiAuditoriaActivarSolapa(cual) {
+  const esHist = cual === 'historial';
+  const tA = document.getElementById('auditoria-tab-acciones');
+  const tH = document.getElementById('auditoria-tab-historial');
+  const pA = document.getElementById('auditoria-panel-acciones');
+  const pH = document.getElementById('auditoria-panel-historial');
+  if (tA) {
+    tA.classList.toggle('activo', !esHist);
+    tA.setAttribute('aria-selected', esHist ? 'false' : 'true');
+  }
+  if (tH) {
+    tH.classList.toggle('activo', esHist);
+    tH.setAttribute('aria-selected', esHist ? 'true' : 'false');
+  }
+  if (pA) pA.hidden = esHist;
+  if (pH) pH.hidden = !esHist;
+}
+
+/** Llamado al mostrar la vista Auditoría (showView). */
+function pandiAuditoriaAlMostrarVista() {
+  const tabs = document.getElementById('auditoria-vista-tabs');
+  const perm = userPermissions.includes('ver_auditoria');
+  if (tabs) tabs.hidden = !perm;
+  if (!perm) {
+    const pH = document.getElementById('auditoria-panel-historial');
+    if (pH) pH.hidden = true;
+    return;
+  }
+  if (pandiAuditoriaSolapaActiva() === 'historial') {
+    const pH = document.getElementById('auditoria-panel-historial');
+    if (pH) pH.hidden = false;
+    if (!pandiHistMovCargadoAlgunaVez || pandiHistMovRecargaPendiente) {
+      pandiHistMovRecargaPendiente = false;
+      void loadHistorialMovimientos({ append: false });
+    }
+  }
+}
+
+function pandiAbrirHistorialMovimientosConFiltros(f) {
+  f = f || {};
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = !!v;
+    else el.value = v == null ? '' : String(v);
+  };
+  set('hist-mov-filtro-libro', f.libro || '');
+  set('hist-mov-filtro-caja', f.caja || '');
+  set('hist-mov-filtro-moneda', f.moneda || '');
+  set('hist-mov-filtro-fc-desde', f.fcDesde || '');
+  set('hist-mov-filtro-fc-hasta', f.fcHasta || '');
+  set('hist-mov-filtro-desde', f.desde || '');
+  set('hist-mov-filtro-hasta', f.hasta || '');
+  set('hist-mov-filtro-orden', f.orden || '');
+  set('hist-mov-filtro-origen', f.origen || '');
+  set('hist-mov-filtro-cerrados', !!f.soloCerrados);
+  pandiAuditoriaActivarSolapa('historial');
+  pandiHistMovRecargaPendiente = true;
+  pandiSincronizarMarcaFiltrosActivos(document.getElementById('auditoria-panel-historial'));
+  showView('vista-auditoria', 'Auditoría');
+}
+
+function pandiHistMovLeerFiltros() {
+  const v = (id) => String(document.getElementById(id)?.value || '').trim();
+  return {
+    libro: v('hist-mov-filtro-libro'),
+    caja: v('hist-mov-filtro-caja'),
+    moneda: v('hist-mov-filtro-moneda'),
+    fcDesde: v('hist-mov-filtro-fc-desde'),
+    fcHasta: v('hist-mov-filtro-fc-hasta'),
+    desde: v('hist-mov-filtro-desde'),
+    hasta: v('hist-mov-filtro-hasta'),
+    orden: v('hist-mov-filtro-orden').replace(/\D/g, ''),
+    origen: v('hist-mov-filtro-origen'),
+    soloCerrados: !!document.getElementById('hist-mov-filtro-cerrados')?.checked,
+  };
+}
+
+function pandiHistMovAplicarFiltros(qb, f) {
+  const ymd = (s) => (/^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '');
+  const art = '-03:00';
+  if (f.libro) qb = qb.eq('libro', f.libro);
+  if (f.caja) qb = qb.eq('caja_tipo', f.caja);
+  if (f.moneda) qb = qb.eq('moneda', f.moneda);
+  const desde = ymd(f.desde);
+  const hasta = ymd(f.hasta);
+  if (desde) qb = qb.gte('ocurrido_en', `${desde}T00:00:00${art}`);
+  if (hasta) qb = qb.lte('ocurrido_en', `${hasta}T23:59:59.999${art}`);
+  if (f.orden) {
+    const n = parseInt(f.orden, 10);
+    if (Number.isFinite(n)) qb = qb.eq('orden_numero', n);
+  }
+  if (f.soloCerrados) qb = qb.eq('afecta_dia_cerrado', true);
+  const gruposOr = [];
+  const fcD = ymd(f.fcDesde);
+  const fcH = ymd(f.fcHasta);
+  if (fcD && fcH) {
+    gruposOr.push(`and(fecha_despues.gte.${fcD},fecha_despues.lte.${fcH}),and(fecha_antes.gte.${fcD},fecha_antes.lte.${fcH})`);
+  } else if (fcD) {
+    gruposOr.push(`fecha_despues.gte.${fcD},fecha_antes.gte.${fcD}`);
+  } else if (fcH) {
+    gruposOr.push(`fecha_despues.lte.${fcH},fecha_antes.lte.${fcH}`);
+  }
+  switch (f.origen) {
+    case 'sync_automatico':
+      qb = qb.eq('origen', 'sync');
+      gruposOr.push('origen_detalle.is.null,origen_detalle.eq.sync_automatico');
+      break;
+    case 'refrescar':
+    case 'refrescar_toda_la_historia':
+      qb = qb.eq('origen_detalle', f.origen);
+      break;
+    case 'app':
+      qb = qb.in('origen', ['escritura_app', 'rpc']);
+      break;
+    case 'sql_manual':
+      qb = qb.eq('origen', 'sql_manual');
+      break;
+    default:
+      break;
+  }
+  if (gruposOr.length === 1) qb = qb.or(gruposOr[0]);
+  else if (gruposOr.length > 1) qb = qb.or(`and(${gruposOr.map((g) => `or(${g})`).join(',')})`);
+  return qb;
+}
+
+async function pandiHistMovResolverEntidades(rows) {
+  const faltan = (rows || [])
+    .map((r) => r.entidad_id)
+    .filter((id) => id && pandiHistMovMapaEntidades[String(id)] === undefined)
+    .map(String);
+  const ids = [...new Set(faltan)];
+  if (!ids.length) return;
+  const libroPorId = {};
+  (rows || []).forEach((r) => {
+    if (r.entidad_id) libroPorId[String(r.entidad_id)] = r.libro;
+  });
+  const idsCli = ids.filter((id) => libroPorId[id] !== 'cc_intermediario');
+  const idsInt = ids.filter((id) => libroPorId[id] !== 'cc_cliente');
+  const [rc, ri] = await Promise.all([
+    idsCli.length
+      ? pandiSupabaseFetchByIdsInChunks(idsCli, (slice) => client.from('clientes').select('id, nombre').in('id', slice))
+      : Promise.resolve({ data: [] }),
+    idsInt.length
+      ? pandiSupabaseFetchByIdsInChunks(idsInt, (slice) => client.from('intermediarios').select('id, nombre').in('id', slice))
+      : Promise.resolve({ data: [] }),
+  ]);
+  (rc.data || []).forEach((x) => {
+    if (x && x.id) pandiHistMovMapaEntidades[String(x.id)] = x.nombre || '–';
+  });
+  (ri.data || []).forEach((x) => {
+    if (x && x.id && pandiHistMovMapaEntidades[String(x.id)] === undefined) pandiHistMovMapaEntidades[String(x.id)] = x.nombre || '–';
+  });
+  ids.forEach((id) => {
+    if (pandiHistMovMapaEntidades[id] === undefined) pandiHistMovMapaEntidades[id] = '';
+  });
+}
+
+function pandiHistMovFilaHtml(r, idx) {
+  const uid = r.usuario_id ? String(r.usuario_id) : '';
+  const usu = uid ? pandiHistMovMapaUsuarios[uid] || '–' : r.origen === 'sql_manual' ? 'Soporte' : '–';
+  const ori = pandiHistMovEtiquetaOrigen(r.origen, r.origen_detalle, r.origen_pantalla);
+  const libroTxt = pandiHistMovEtiquetaLibro(r.libro);
+  const cajaTxt = r.libro === 'caja' ? pandiHistMovEtiquetaCaja(r.caja_tipo) : '';
+  const ent = r.entidad_id ? pandiHistMovMapaEntidades[String(r.entidad_id)] || '' : '';
+  const ordTrx = [r.orden_numero != null ? 'Orden ' + r.orden_numero : '', r.transaccion_numero != null ? 'Trx ' + r.transaccion_numero : '']
+    .filter(Boolean)
+    .join(' · ');
+  const fA = r.fecha_antes;
+  const fD = r.fecha_despues;
+  let fechaTxt;
+  if (fA && fD && String(fA) !== String(fD)) fechaTxt = `${pandiHistMovFmtFechaYmd(fA)} → ${pandiHistMovFmtFechaYmd(fD)}`;
+  else fechaTxt = pandiHistMovFmtFechaYmd(fD || fA);
+  const que = pandiHistMovDescribir(r);
+  const concepto = pandiHistMovConcepto(r);
+  const imp = Number(r.impacto_saldo) || 0;
+  const manual = r.es_manual ? '<span class="hist-mov-sub">Movimiento manual</span>' : '';
+  return `<tr class="hist-mov-fila" data-hist-idx="${idx}" tabindex="0" aria-expanded="false" title="Ver antes / después">
+      <td class="hist-mov-nowrap">${escapeHtml(pandiHistMovFmtInstanteAr(r.ocurrido_en))}</td>
+      <td>${escapeHtml(usu)}</td>
+      <td>${escapeHtml(ori.texto)}${ori.sub ? `<span class="hist-mov-sub">${escapeHtml(ori.sub)}</span>` : ''}</td>
+      <td>${escapeHtml(libroTxt)}${cajaTxt || r.moneda ? `<span class="hist-mov-sub">${escapeHtml([cajaTxt, r.moneda || ''].filter(Boolean).join(' · '))}</span>` : ''}</td>
+      <td>${escapeHtml(ent || '–')}</td>
+      <td class="hist-mov-nowrap">${escapeHtml(ordTrx || '–')}</td>
+      <td class="hist-mov-nowrap">${escapeHtml(fechaTxt)}</td>
+      <td class="hist-mov-que">${escapeHtml(que)}${concepto ? `<span class="hist-mov-sub">«${escapeHtml(concepto)}»</span>` : ''}${manual}</td>
+      <td class="hist-mov-col-num"><span class="${pandiHistMovClaseImpacto(imp)}">${escapeHtml(pandiHistMovFmtConSigno(imp))}</span></td>
+      <td>${r.afecta_dia_cerrado ? '<span class="hist-mov-badge-cerrado">Día cerrado</span>' : ''}</td>
+    </tr>`;
+}
+
+function pandiHistMovDetalleHtml(r) {
+  const da = r.datos_antes || {};
+  const dd = r.datos_despues || {};
+  let campos = Array.isArray(r.campos_cambiados) && r.campos_cambiados.length ? r.campos_cambiados.slice() : null;
+  if (!campos) campos = ['monto', 'fecha', 'estado', 'moneda', 'caja_tipo', 'concepto'].filter((c) => da[c] !== undefined || dd[c] !== undefined);
+  const filas = campos
+    .map(
+      (c) =>
+        `<tr><th scope="row">${escapeHtml(auditoriaEtiquetaCampo(c))}</th><td>${escapeHtml(
+          r.operacion === 'alta' ? '–' : pandiHistMovValorLegible(c, da[c]),
+        )}</td><td>${escapeHtml(r.operacion === 'baja_fisica' ? '–' : pandiHistMovValorLegible(c, dd[c]))}</td></tr>`,
+    )
+    .join('');
+  const extra = [
+    r.origen_ruta ? 'Ruta: ' + r.origen_ruta : '',
+    r.version_app ? 'Versión app: ' + r.version_app : '',
+    r.origen_detalle ? 'Proceso: ' + r.origen_detalle : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return `<tr class="hist-mov-detalle"><td colspan="10">
+      <div class="hist-mov-detalle-wrap">
+        <table class="hist-mov-detalle-tabla"><thead><tr><th>Campo</th><th>Antes</th><th>Después</th></tr></thead><tbody>${
+          filas || '<tr><td colspan="3">Sin campos para mostrar.</td></tr>'
+        }</tbody></table>
+        ${extra ? `<p class="hist-mov-detalle-meta">${escapeHtml(extra)}</p>` : ''}
+      </div>
+    </td></tr>`;
+}
+
+function loadHistorialMovimientos(opts) {
+  opts = opts || {};
+  const append = !!opts.append;
+  const gen = append ? pandiHistMovLoadGen : ++pandiHistMovLoadGen;
+  const loading = document.getElementById('hist-mov-loading');
+  const outer = document.getElementById('hist-mov-tabla-outer');
+  const tbody = document.getElementById('hist-mov-tbody');
+  const resumen = document.getElementById('hist-mov-resumen');
+  const btnMas = document.getElementById('hist-mov-btn-mas');
+  const ctr = document.getElementById('hist-mov-controles');
+  if (!tbody) return Promise.resolve();
+  if (!userPermissions.includes('ver_auditoria')) return Promise.resolve();
+  pandiSincronizarMarcaFiltrosActivos(document.getElementById('auditoria-panel-historial'));
+  if (pandiSinConexionServidorViva()) {
+    if (resumen) resumen.textContent = 'Sin conexión: el historial se consulta en el servidor.';
+    return Promise.resolve();
+  }
+  pandiHistMovCargadoAlgunaVez = true;
+  if (!append) {
+    pandiHistMovAcumulado = [];
+    pandiHistMovHayMas = false;
+    tbody.innerHTML = '';
+    if (outer) outer.hidden = true;
+    if (btnMas) btnMas.hidden = true;
+  }
+  if (loading) loading.hidden = false;
+  if (ctr) ctr.setAttribute('aria-busy', 'true');
+  const pageSize = pandiSupabaseSelectPageSizeClamped();
+  const offset = append ? pandiHistMovAcumulado.length : 0;
+  const f = pandiHistMovLeerFiltros();
+  let qb = client
+    .from('movimientos_historial')
+    .select(PANDI_HIST_MOV_SELECT)
+    .order('ocurrido_en', { ascending: false })
+    .order('id', { ascending: false })
+    .range(offset, offset + pageSize - 1);
+  qb = pandiHistMovAplicarFiltros(qb, f);
+  return Promise.resolve(qb)
+    .then(async (r) => {
+      if (gen !== pandiHistMovLoadGen) return;
+      if (r.error) {
+        if (loading) loading.hidden = true;
+        if (ctr) ctr.setAttribute('aria-busy', 'false');
+        if (resumen) resumen.textContent = '';
+        showToast('Error al cargar el historial: ' + (r.error.message || ''), 'error');
+        return;
+      }
+      const rows = r.data || [];
+      const ids = rows.map((x) => x.usuario_id).filter((id) => id && pandiHistMovMapaUsuarios[String(id)] === undefined);
+      const [mapU] = await Promise.all([
+        ids.length ? fetchMapaEtiquetaUsuarioPorIds(ids).catch(() => ({})) : Promise.resolve({}),
+        pandiHistMovResolverEntidades(rows).catch(() => {}),
+      ]);
+      if (gen !== pandiHistMovLoadGen) return;
+      Object.assign(pandiHistMovMapaUsuarios, mapU || {});
+      if (loading) loading.hidden = true;
+      if (ctr) ctr.setAttribute('aria-busy', 'false');
+      const base = pandiHistMovAcumulado.length;
+      pandiHistMovAcumulado = append ? pandiHistMovAcumulado.concat(rows) : rows;
+      pandiHistMovHayMas = rows.length >= pageSize;
+      if (!pandiHistMovAcumulado.length) {
+        tbody.innerHTML = '<tr><td colspan="10" class="hist-mov-vacio">Sin cambios con los filtros actuales.</td></tr>';
+      } else {
+        tbody.insertAdjacentHTML('beforeend', rows.map((x, i) => pandiHistMovFilaHtml(x, (append ? base : 0) + i)).join(''));
+      }
+      if (outer) outer.hidden = false;
+      if (btnMas) btnMas.hidden = !pandiHistMovHayMas;
+      if (resumen) {
+        resumen.textContent = `Mostrando ${pandiHistMovAcumulado.length} cambio(s)${pandiHistMovHayMas ? ' · podés cargar más' : ''}.`;
+      }
+    })
+    .catch((e) => {
+      if (gen !== pandiHistMovLoadGen) return;
+      if (loading) loading.hidden = true;
+      if (ctr) ctr.setAttribute('aria-busy', 'false');
+      showToast('Error al cargar el historial: ' + (e && e.message ? e.message : ''), 'error');
+    });
+}
+
+function exportarHistorialMovimientosExcel() {
+  if (!pandiHistMovAcumulado.length) {
+    showToast('No hay filas cargadas. Buscá primero o cargá más resultados.', 'info');
+    return;
+  }
+  const num = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? '' : Number(v));
+  const header = [
+    'Cuándo (ART)',
+    'Usuario',
+    'Origen',
+    'Pantalla',
+    'Libro',
+    'Caja',
+    'Moneda',
+    'Cliente o intermediario',
+    'Nº orden',
+    'Nº trans.',
+    'Fecha contable antes',
+    'Fecha contable después',
+    'Operación',
+    'Qué pasó',
+    'Concepto',
+    'Monto antes',
+    'Monto después',
+    'Impacto en saldo',
+    'Afecta día cerrado',
+    'Campos cambiados',
+  ];
+  const rows = pandiHistMovAcumulado.map((r) => {
+    const uid = r.usuario_id ? String(r.usuario_id) : '';
+    const ori = pandiHistMovEtiquetaOrigen(r.origen, r.origen_detalle, r.origen_pantalla);
+    return [
+      pandiHistMovFmtInstanteAr(r.ocurrido_en),
+      uid ? pandiHistMovMapaUsuarios[uid] || uid : r.origen === 'sql_manual' ? 'Soporte' : '',
+      ori.texto,
+      pandiHistMovEtiquetaPantalla(r.origen_pantalla),
+      pandiHistMovEtiquetaLibro(r.libro),
+      r.libro === 'caja' ? pandiHistMovEtiquetaCaja(r.caja_tipo) : '',
+      r.moneda || '',
+      r.entidad_id ? pandiHistMovMapaEntidades[String(r.entidad_id)] || '' : '',
+      r.orden_numero != null ? Number(r.orden_numero) : '',
+      r.transaccion_numero != null ? Number(r.transaccion_numero) : '',
+      r.fecha_antes ? pandiHistMovFmtFechaYmd(r.fecha_antes) : '',
+      r.fecha_despues ? pandiHistMovFmtFechaYmd(r.fecha_despues) : '',
+      { alta: 'Alta', cambio: 'Cambio', baja_fisica: 'Baja física' }[r.operacion] || r.operacion || '',
+      pandiHistMovDescribir(r),
+      pandiHistMovConcepto(r),
+      num(r.monto_antes),
+      num(r.monto_despues),
+      num(r.impacto_saldo),
+      r.afecta_dia_cerrado ? 'Sí' : 'No',
+      Array.isArray(r.campos_cambiados) ? r.campos_cambiados.map((c) => auditoriaEtiquetaCampo(c)).join(', ') : '',
+    ];
+  });
+  const aoa = aoaExcelConMetaExportacion(header, rows);
+  const nombreArchivo = `historial_caja_cc_${fechaHoyYYYYMMDDArgentina()}.xlsx`;
+  import('./excel-export.js')
+    .then((mExport) => {
+      mExport.generarArchivoExcel(nombreArchivo, { 'Historial caja y CC': aoa });
+      showToast('Exportado: ' + nombreArchivo, 'success');
+    })
+    .catch((e) => {
+      console.error('excel historial caja/cc', e);
+      showToast('Error al preparar exportación.', 'error');
+    });
+}
+
+function setupHistorialMovimientosUi() {
+  const root = document.getElementById('auditoria-panel-historial');
+  if (!root || root.dataset.pandiHistBound === '1') return;
+  root.dataset.pandiHistBound = '1';
+
+  const hoy = fechaHoyYYYYMMDDArgentina();
+  const elD = document.getElementById('hist-mov-filtro-desde');
+  const elH = document.getElementById('hist-mov-filtro-hasta');
+  if (elD && !elD.value) elD.value = fechaAddDaysYYYYMMDDArgentina(hoy, -6);
+  if (elH && !elH.value) elH.value = hoy;
+
+  const tabs = document.getElementById('auditoria-vista-tabs');
+  if (tabs) {
+    tabs.addEventListener('click', (e) => {
+      const b = e.target && e.target.closest && e.target.closest('[data-auditoria-solapa]');
+      if (!b) return;
+      const cual = b.getAttribute('data-auditoria-solapa');
+      pandiAuditoriaActivarSolapa(cual);
+      if (cual === 'historial' && !pandiHistMovCargadoAlgunaVez) void loadHistorialMovimientos({ append: false });
+    });
+  }
+
+  const recargar = (inmediato) => {
+    if (pandiHistMovFiltroTimer) {
+      clearTimeout(pandiHistMovFiltroTimer);
+      pandiHistMovFiltroTimer = null;
+    }
+    const run = () => {
+      pandiHistMovFiltroTimer = null;
+      void loadHistorialMovimientos({ append: false });
+    };
+    if (inmediato) run();
+    else pandiHistMovFiltroTimer = setTimeout(run, 400);
+  };
+  [
+    'hist-mov-filtro-libro',
+    'hist-mov-filtro-caja',
+    'hist-mov-filtro-moneda',
+    'hist-mov-filtro-fc-desde',
+    'hist-mov-filtro-fc-hasta',
+    'hist-mov-filtro-desde',
+    'hist-mov-filtro-hasta',
+    'hist-mov-filtro-origen',
+    'hist-mov-filtro-cerrados',
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => recargar(true));
+  });
+  const elOrd = document.getElementById('hist-mov-filtro-orden');
+  if (elOrd) {
+    elOrd.addEventListener('input', () => recargar(false));
+    elOrd.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        recargar(true);
+      }
+    });
+  }
+  const btnBuscar = document.getElementById('hist-mov-btn-buscar');
+  if (btnBuscar) btnBuscar.addEventListener('click', () => recargar(true));
+  const btnMas = document.getElementById('hist-mov-btn-mas');
+  if (btnMas) btnMas.addEventListener('click', () => void loadHistorialMovimientos({ append: true }));
+  const btnExp = document.getElementById('hist-mov-btn-exportar');
+  if (btnExp) btnExp.addEventListener('click', () => exportarHistorialMovimientosExcel());
+
+  const tbody = document.getElementById('hist-mov-tbody');
+  const toggleFila = (tr) => {
+    if (!tr) return;
+    const sig = tr.nextElementSibling;
+    if (sig && sig.classList.contains('hist-mov-detalle')) {
+      sig.remove();
+      tr.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const idx = parseInt(tr.getAttribute('data-hist-idx'), 10);
+    const r = pandiHistMovAcumulado[idx];
+    if (!r) return;
+    tr.insertAdjacentHTML('afterend', pandiHistMovDetalleHtml(r));
+    tr.setAttribute('aria-expanded', 'true');
+  };
+  if (tbody) {
+    tbody.addEventListener('click', (e) => {
+      const tr = e.target && e.target.closest && e.target.closest('tr.hist-mov-fila');
+      if (tr) toggleFila(tr);
+    });
+    tbody.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const tr = e.target && e.target.closest && e.target.closest('tr.hist-mov-fila');
+      if (!tr || e.target !== tr) return;
+      e.preventDefault();
+      toggleFila(tr);
+    });
+  }
+  pandiSincronizarMarcaFiltrosActivos(root);
+}
+
+
 /** Configuración de vistas: [menuId, vistaId, título, permiso de vista]. Orden del menú. */
 const VIEWS_CONFIG = [
   ['menu-inicio', 'vista-inicio', 'Panel de Control', 'ver_inicio'],
@@ -39163,6 +40085,7 @@ async function finalizeSessionUiSetup() {
   setupVistasMenu();
   setupControlCalidadVista();
   setupAuditoriaVistaUi();
+  setupHistorialMovimientosUi();
   setupPandiFiltrosActivosUi();
   applyVistasMenuVisibility();
   updateCcBotonesMovimientoManual();

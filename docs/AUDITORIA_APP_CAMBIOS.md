@@ -1,5 +1,12 @@
 # Auditoría de acciones de usuario (`auditoria_app`)
 
+> **Desde v3.8.28 (2026-11-20) hay dos capas de auditoría.** Ver también `docs/INCIDENTE_CAJA_ARS_SYNC_2026-11-19.md`.
+>
+> 1. **`movimientos_historial` (capa contable, por trigger en la base):** toda alta, cambio material o baja física en `movimientos_caja`, `movimientos_cuenta_corriente` y `movimientos_cuenta_corriente_intermediario` queda registrada automáticamente —no depende del front ni se puede saltear—: valores antes/después, usuario (`auth.uid()`), rol, **fecha contable** antes/después, **impacto en saldo**, **`afecta_dia_cerrado`** y **origen**: `sync` (RPC `sync_cc_caja_*`), `rpc`, `escritura_app` (escritura directa de la app) o `sql_manual`; ruta del pedido (`origen_ruta`), pantalla (`origen_pantalla`, header `x-pandi-pantalla`), proceso (`origen_detalle`, header `x-pandi-proceso`: `sync_automatico`, `refrescar`, `refrescar_toda_la_historia`) y versión (`x-pandi-version`). Pantalla y proceso son contexto "best effort" (los manda el front solo en pedidos `/rest/v1/`); usuario, ruta y valores son exactos. Lectura: permiso `ver_auditoria`. SQL: `sql/migracion_historial_movimientos_caja_cc.sql`.
+> 2. **`caja_cierre_diario` (foto de cierre):** saldo por día contable AR, caja y moneda, registrado la primera vez que se abre Inicio después de cerrado el día (`caja_registrar_cierres()`, sin pg_cron). `caja_cierres_con_diferencia()` devuelve los días cuyo saldo actual difiere de la foto, con los cambios del historial que lo explican. SQL: `sql/migracion_caja_cierre_diario.sql`.
+>
+> **Inmutabilidad:** `movimientos_historial`, `auditoria_app` y `caja_cierre_diario` rechazan UPDATE, DELETE y TRUNCATE por trigger (única excepción: `usuario_id → NULL` por la FK al borrar un usuario). Scripts de limpieza de auditoría (p. ej. `sql/limpiar_auditoria_cc_caja_sync_error_20261103.sql`) ya no pueden ejecutarse.
+
 La tabla **`auditoria_app`** (ver `sql/migracion_cc_manual_editar_eliminar_auditoria.sql`) registra acciones sensibles de **usuarios individuales**. El INSERT es **best-effort** (`void` + fallo silencioso): si la tabla no existe o RLS rechaza, **no se bloquea** el guardado de negocio.
 
 Las **ediciones** que modifican datos persistidos incluyen, en **`metadata` (JSON)**, un arreglo **`cambios`** para consultas y revisiones sin depender solo del texto de `detalle`. Las **altas** (crear) usan acción **`alta`** y metadata de contexto (ids, importes, origen); no reescriben el libro de CC/caja.
