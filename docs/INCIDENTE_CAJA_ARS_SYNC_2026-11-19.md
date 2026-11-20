@@ -1,6 +1,6 @@
 # Incidente: saldo inicial de caja ARS y cuentas corrientes — sync del 19/11/2026
 
-Investigación 2026-11-20 (solo lectura en Pandy). **Estado:** protección (B1 servidor G1 bloqueante + G2/G3 alerta; B2 front fail-closed) lista y probada en Pandy-Dev (`sql/migracion_sync_cc_caja_guarda_anti_vaciado.sql`, v3.8.27); corrección A lista (`sql/correccion_incidente_sync_20261119_ordenes_150_152.sql`). Pendiente aplicar en prod (regla: sin sesiones de otros usuarios).
+Investigación 2026-11-20 (solo lectura en Pandy). **Estado (20/11/2026 18:15):** RESUELTO. Protección v3.8.27 en prod (G1 bloqueante, G2/G3 en observación con alertas `alerta_guarda`; front fail-closed). Corrección A aplicada en Pandy: 8 movimientos restaurados, saldo inicial efectivo ARS 20/11 = 6.858.170, saldos de cuenta corriente afectados restituidos. Despliegue forzado por el titular con una sesión de empleado inactiva hace 31 min. Pendiente: Fase C (historial de auditoría de caja).
 
 ## Resumen
 
