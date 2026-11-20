@@ -6,10 +6,9 @@
  * `lines: []` = despliegue silencioso: no hay cartel de novedades al recargar (el login no espera Entendido).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.26',
+  versionLabel: 'v3.8.27',
   lines: [
-    'El acceso a la app ahora es solo por invitación: la pantalla de inicio ya no ofrece crear una cuenta.',
-    'En Seguridad, las personas invitadas aparecen como «Sin acceso» hasta que les asignes un perfil.',
-    'Si alguien entra sin perfil asignado, la app le indica que pida acceso al administrador.',
+    'Más seguridad al actualizar cuenta corriente y cajas: si la conexión falla a mitad de camino, la app avisa y no aplica cambios incompletos.',
+    'Si Refrescar no puede completarse, ahora lo indica en lugar de mostrar «actualizada».',
   ],
 };

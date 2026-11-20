@@ -8,6 +8,7 @@
 -- Capa 2: identidad = transacción + moneda + `sync_clave` (familia de leyenda + signo). El monto se edita in-place.
 -- No toca filas CC con `es_movimiento_manual = true`. Caja: solo `tipo_movimiento_id IS NULL` (derivados).
 -- Lock por orden (pg_advisory_xact_lock) para no insertar gemelos con dos syncs concurrentes.
+-- Guarda anti-vaciado (2026-11-20): requiere sql/migracion_sync_cc_caja_guarda_anti_vaciado.sql aplicado antes.
 -- Auditoría estructurada en auditoria_app (categoría cc_caja_sync) ante alta, edición material y anulación.
 -- Ejecutar en Supabase SQL Editor (reemplaza la función anterior).
 -- Nota: transaccion_numero / orden_numero vía ->> y cast para JSON null (igual que antes).
@@ -178,6 +179,10 @@ BEGIN
   FROM public.transacciones t
   JOIN public.instrumentacion i ON i.id = t.instrumentacion_id
   WHERE i.orden_id = p_orden_id;
+
+  -- Guarda anti-vaciado (incidente 19/11/2026): no anular CC/caja de transacciones ejecutadas por payload incompleto.
+  -- Definición: sql/migracion_sync_cc_caja_guarda_anti_vaciado.sql
+  PERFORM public.sync_cc_caja_guarda_payload(p_orden_id, p_rows_cc_cliente, p_rows_cc_int, p_rows_caja);
 
   -- ========== CC cliente: upsert por clave lógica; huérfanos se ANULAN ==========
   FOR r IN SELECT * FROM jsonb_array_elements(COALESCE(p_rows_cc_cliente, '[]'::jsonb))

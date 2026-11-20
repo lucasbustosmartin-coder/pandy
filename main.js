@@ -13515,13 +13515,16 @@ function getReglasDeNegocio(codigoTipoOperacion, usaIntermediario) {
     .eq('tipo_operacion_codigo', c)
     .eq('usa_intermediario', !!usaIntermediario)
     .then((r) => {
+      if (r.error) {
+        // Fail-closed (incidente 19/11/2026): sin reglas no se calcula CC (evita caer al motor legacy / borrar filas).
+        const eReglas = new Error('No se pudieron leer las reglas de negocio. Reintentá en unos segundos.');
+        eReglas.code = 'SYNC_CC_CAJA_LECTURA_INCOMPLETA';
+        eReglas.cause = r.error;
+        throw eReglas;
+      }
       const rows = r.data && Array.isArray(r.data) ? r.data : [];
       reglasDeNegocioFetchCache.set(key, { rows, expires: now + REGLAS_DE_NEGOCIO_FETCH_CACHE_TTL_MS });
       return rows.slice();
-    })
-    .catch(() => {
-      reglasDeNegocioFetchCache.set(key, { rows: [], expires: now + REGLAS_DE_NEGOCIO_FETCH_CACHE_TTL_MS });
-      return [];
     });
 }
 
@@ -17667,10 +17670,12 @@ async function pandiCcSyncPrefetchDatosOrdenes(ordenIds, catalogos) {
   const rOrd = await pandiSupabaseFetchByIdsInChunks(ordenIds, (slice) =>
     client.from('ordenes').select(PANDI_CC_SYNC_ORDEN_SELECT).in('id', slice),
   );
-  if (rOrd.error && !(rOrd.data && rOrd.data.length)) return map;
+  // Fail-closed (incidente 19/11/2026): una lectura parcial arma payloads incompletos y la RPC anula filas válidas.
+  if (rOrd.error) throw rOrd.error;
   const rInst = await pandiSupabaseFetchByIdsInChunks(ordenIds, (slice) =>
     client.from('instrumentacion').select(PANDI_CC_SYNC_INST_SELECT).in('orden_id', slice),
   );
+  if (rInst.error) throw rInst.error;
   const instByOrden = new Map();
   (rInst.data || []).forEach((row) => {
     if (row && row.orden_id) instByOrden.set(String(row.orden_id), row);
@@ -17682,7 +17687,7 @@ async function pandiCcSyncPrefetchDatosOrdenes(ordenIds, catalogos) {
     const rTr = await pandiSupabaseFetchAll(() =>
       client.from('transacciones').select(PANDI_CC_SYNC_TRX_SELECT_PREFETCH).in('instrumentacion_id', slice),
     );
-    if (rTr.error && !(rTr.data && rTr.data.length)) continue;
+    if (rTr.error) throw rTr.error;
     if (rTr.data && rTr.data.length) trxAll.push.apply(trxAll, rTr.data);
   }
   const trxByInst = new Map();
@@ -17695,6 +17700,7 @@ async function pandiCcSyncPrefetchDatosOrdenes(ordenIds, catalogos) {
   const rCom = await pandiSupabaseFetchByIdsInChunks(ordenIds, (slice) =>
     client.from('comisiones_orden').select('orden_id, moneda, monto, beneficiario').in('orden_id', slice),
   );
+  if (rCom.error) throw rCom.error;
   const comByOrden = new Map();
   (rCom.data || []).forEach((c) => {
     if (!c || c.orden_id == null) return;
@@ -17913,7 +17919,7 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal)
   const p = (async () => {
     pandiCcSyncEmitirProgreso(0, 0, 'preparando', 'Leyendo instrumentación…');
     const r = await client.from('instrumentacion').select('orden_id');
-    if (r.error) return;
+    if (r.error) throw new Error('No se pudo leer la instrumentación de las órdenes; no se sincronizó. Reintentá.');
     let ordenIds = [...new Set((r.data || []).map((x) => x.orden_id).filter(Boolean))];
     if (ordenIds.length === 0) {
       marcarCcGlobalSyncExitosoEnSesion();
@@ -17927,7 +17933,13 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal)
     const chunkEst = 150;
     for (let j = 0; j < ordenIds.length; j += chunkEst) {
       const rEst = await client.from('ordenes').select('id, estado, numero, fecha').in('id', ordenIds.slice(j, j + chunkEst));
-      if (rEst.error) break;
+      if (rEst.error) {
+        // Fail-closed (incidente 19/11/2026): sin estado de todas las órdenes no se puede aplicar plazo ni excluir anuladas.
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn('[Pandi CC] sync global cancelado: no se pudo leer el estado de las órdenes', rEst.error);
+        }
+        throw new Error('No se pudo leer el estado de las órdenes; no se sincronizó. Reintentá Refrescar.');
+      }
       (rEst.data || []).forEach((o) => {
         ordenesMetaSync.push(o);
         if (String(o.estado || '').toLowerCase() === 'anulada') anulada.add(String(o.id));
@@ -17958,6 +17970,10 @@ function sincronizarCcYCajaParaTodasLasOrdenesConInstrumentacion(optsSyncGlobal)
           if (ymd && pandiPlazoEstaVencido(ymd)) omitirFueraPlazo.add(String(o.id));
         });
       }
+    }
+    {
+      const leidas = new Set(ordenesMetaSync.map((o) => String(o.id)));
+      ordenIds = ordenIds.filter((id) => id != null && leidas.has(String(id)));
     }
     if (anulada.size > 0 || omitirSyncNumero.size > 0 || omitirFueraPlazo.size > 0) {
       ordenIds = ordenIds.filter(
@@ -30001,6 +30017,18 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
             ]);
         return pTrxYCatalogos
           .then(([rTr, rCom, rModos, rIntNom, rVinInt]) => {
+            const errLecturaSync =
+              (rTr && rTr.error) ||
+              (rCom && rCom.error) ||
+              (rModos && rModos.error) ||
+              (orden.intermediario_id && rVinInt && rVinInt.error);
+            if (errLecturaSync) {
+              // Fail-closed (incidente 19/11/2026): no enviar a la RPC un payload armado con lecturas fallidas.
+              const eSync = new Error('Sync CC/caja cancelado para la orden: no se pudieron leer transacciones, comisiones o modos de pago.');
+              eSync.code = 'SYNC_CC_CAJA_LECTURA_INCOMPLETA';
+              eSync.cause = errLecturaSync;
+              return Promise.reject(eSync);
+            }
             const cidVinInt =
               rVinInt && !rVinInt.error && rVinInt.data && rVinInt.data.cliente_id != null && String(rVinInt.data.cliente_id).trim() !== ''
                 ? String(rVinInt.data.cliente_id).trim()
@@ -30034,7 +30062,15 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
                     .from('transacciones')
                     .select(selectColsTrxInstrumentacionSync)
                     .eq('instrumentacion_id', instId)
-                    .then((r2) => (r2.data || []).map((x) => transaccionNormalizarPagCobVacios(x)));
+                    .then((r2) => {
+                      if (r2.error) {
+                        const eR2 = new Error('Sync CC/caja cancelado: no se pudieron releer las transacciones de la orden anulada.');
+                        eR2.code = 'SYNC_CC_CAJA_LECTURA_INCOMPLETA';
+                        eR2.cause = r2.error;
+                        return Promise.reject(eR2);
+                      }
+                      return (r2.data || []).map((x) => transaccionNormalizarPagCobVacios(x));
+                    });
                 });
             };
             return alinearTransaccionesSiOrdenAnuladaSync().then((trxFinal) =>
@@ -30894,6 +30930,9 @@ function sincronizarCcYCajaDesdeOrden(ordenId, optsSyncCc) {
     .catch((err) => {
       console.warn('sincronizarCcYCajaDesdeOrden:', err && (err.message || err.code));
       if (optsSyncCc.propagarError === true) {
+        return Promise.reject(err);
+      }
+      if (err && err.code === 'SYNC_CC_CAJA_LECTURA_INCOMPLETA' && optsSyncCc.silenciarAvisosInvarianteCc) {
         return Promise.reject(err);
       }
       if (err && err.code === PANDI_CC_NETEO_INVARIANT_CODE) {
