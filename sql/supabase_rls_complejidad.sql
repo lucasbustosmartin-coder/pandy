@@ -1,3 +1,6 @@
+-- AVISO SEGURIDAD 2026-11-20: este script crea políticas SELECT USING (true) y/o el rol visor con auto-asignación.
+-- Re-ejecutarlo REABRE la lectura a cualquier usuario autenticado. Después de correrlo, volver a aplicar
+-- sql/seguridad_fase1_rls_usuario_habilitado_sin_visor.sql (idempotente).
 -- Pandi – RLS para tablas de complejidad (tipos operación, modos pago, intermediarios, instrumentación, transacciones, etc.)
 -- Ejecutar después de supabase_complejidad_ordenes.sql y supabase_seguridad_complejidad.sql (y supabase_rls_negocio.sql).
 

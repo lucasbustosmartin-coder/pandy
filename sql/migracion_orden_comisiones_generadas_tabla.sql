@@ -1,3 +1,6 @@
+-- AVISO SEGURIDAD 2026-11-20: este script crea políticas SELECT USING (true) y/o el rol visor con auto-asignación.
+-- Re-ejecutarlo REABRE la lectura a cualquier usuario autenticado. Después de correrlo, volver a aplicar
+-- sql/seguridad_fase1_rls_usuario_habilitado_sin_visor.sql (idempotente).
 -- Tabla orden_comisiones_generadas: una fila por (orden_id, tipo) — ganancia Pandy y comisión intermediario.
 -- La app (main.js) inserta/lee/borra estas filas al cerrar órdenes con comisión.
 -- Ejecutar después de ordenes, transacciones y movimientos_caja (p. ej. tras migracion_movimientos_caja_orden_transaccion_numero.sql).

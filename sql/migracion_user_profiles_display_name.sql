@@ -1,3 +1,5 @@
+-- NOTA 2026-11-20: get_users_for_admin quedó reemplazada por sql/seguridad_fase1_rls_usuario_habilitado_sin_visor.sql
+-- (sin fallback a 'visor'). No re-ejecutar este bloque sin ajustar el COALESCE.
 -- Pandi: nombre visible del usuario (listados, exportaciones).
 -- Idempotente: ejecutar en Supabase SQL Editor en bases ya desplegadas.
 

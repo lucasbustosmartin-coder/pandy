@@ -1,3 +1,6 @@
+-- AVISO SEGURIDAD 2026-11-20: este script crea políticas SELECT USING (true) y/o el rol visor con auto-asignación.
+-- Re-ejecutarlo REABRE la lectura a cualquier usuario autenticado. Después de correrlo, volver a aplicar
+-- sql/seguridad_fase1_rls_usuario_habilitado_sin_visor.sql (idempotente).
 -- Pandi — Security Advisor lint 0029: authenticated + SECURITY DEFINER en RPC public
 --
 -- El linter avisa cuando `authenticated` puede ejecutar funciones SECURITY DEFINER vía PostgREST.

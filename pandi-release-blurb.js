@@ -6,10 +6,10 @@
  * `lines: []` = despliegue silencioso: no hay cartel de novedades al recargar (el login no espera Entendido).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.25',
+  versionLabel: 'v3.8.26',
   lines: [
-    'Los filtros de listados se marcan cuando están en uso, para ver de un vistazo qué está recortando la pantalla.',
-    'En cuenta corriente y cajas, el botón elegido (tipo, moneda, hoy o historial) queda resaltado.',
-    'En G/P Operativa y Control de calidad, el período seleccionado se ve más claro.',
+    'El acceso a la app ahora es solo por invitación: la pantalla de inicio ya no ofrece crear una cuenta.',
+    'En Seguridad, las personas invitadas aparecen como «Sin acceso» hasta que les asignes un perfil.',
+    'Si alguien entra sin perfil asignado, la app le indica que pida acceso al administrador.',
   ],
 };

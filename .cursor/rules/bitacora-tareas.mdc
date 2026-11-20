@@ -105,6 +105,10 @@ El **paso 4 (commit)** debe incluir **`pandi-release-blurb.js`** (y **`index.htm
 
 Cuando el usuario diga que desplegar (ej. "desplegar", "listo desplegar", "OK desplegar"), aplicar **siempre** los siguientes pasos en este orden:
 
+0. **Sin otros usuarios conectados (obligatorio, desde 2026-11-20)**  
+   Antes de cualquier paso, correr `sql/consulta_sesiones_activas_pre_despliegue.sql` en **Pandy (prod)** — solo lectura (MCP / SQL Editor). Si hay una sesión activa en los últimos 60 min de un usuario **distinto de quien despliega**, o consultas de la app en curso: **no** desplegar ni aplicar SQL en prod; avisar (rol + hora de última actividad) y reintentar más tarde. Informar el resultado en la respuesta. Todo SQL de DDL/políticas en prod lleva `SET LOCAL lock_timeout = '5s'` dentro de la transacción.
+
+
 1. **Versión en la app y novedades para el modal PWA**  
    En `index.html`, actualizar `#sidebar-version` al **siguiente número de versión** (ej. v3.5.1 → v3.6.0).  
    En **`pandi-release-blurb.js`**, actualizar **`PANDI_RELEASE_BLURB`** cumpliendo la subsección **«Novedades al recargar»** arriba: **solo el agente** redacta `lines` y alinea **`versionLabel`** al texto de **`#sidebar-version`** (cabecera); **quien pide el despliegue no tiene que tocar este archivo** salvo excepción acordada. Tras `vite build`, **`pandi-release.json`** en `dist/` refleja ese objeto (el modal lo pide por red para no depender del bundle viejo del service worker).

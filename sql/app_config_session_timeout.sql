@@ -1,3 +1,6 @@
+-- AVISO SEGURIDAD 2026-11-20: este script crea políticas SELECT USING (true) y/o el rol visor con auto-asignación.
+-- Re-ejecutarlo REABRE la lectura a cualquier usuario autenticado. Después de correrlo, volver a aplicar
+-- sql/seguridad_fase1_rls_usuario_habilitado_sin_visor.sql (idempotente).
 -- Parámetro de tiempo de inactividad (minutos). Tras X minutos sin usar la app se cierra la sesión. Solo Admin puede modificarlo.
 -- Ejecutar en Supabase SQL Editor después de supabase_seguridad.sql.
 

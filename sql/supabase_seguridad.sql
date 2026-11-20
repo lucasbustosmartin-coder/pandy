@@ -1,3 +1,6 @@
+-- AVISO SEGURIDAD 2026-11-20: este script crea políticas SELECT USING (true) y/o el rol visor con auto-asignación.
+-- Re-ejecutarlo REABRE la lectura a cualquier usuario autenticado. Después de correrlo, volver a aplicar
+-- sql/seguridad_fase1_rls_usuario_habilitado_sin_visor.sql (idempotente).
 -- Pandi – Módulo de seguridad
 -- Roles (Admin, Encargado, Visor), permisos por rol, perfiles de usuario.
 -- Ejecutar en Supabase SQL Editor después de supabase_tablas_negocio.sql.

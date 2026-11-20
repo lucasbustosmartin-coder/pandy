@@ -2876,7 +2876,6 @@ function pandiMostrarPantallaRecuperarPasswordDom() {
   document.getElementById('sidebar').style.display = 'none';
   document.getElementById('app-content').style.display = 'none';
   document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('register-screen').style.display = 'none';
   pandiOcultarPantallasAuthAuxiliares();
   const recovery = document.getElementById('recovery-password-screen');
   if (recovery) recovery.style.display = 'block';
@@ -2898,7 +2897,6 @@ function showLoginScreenDom() {
   document.getElementById('sidebar').style.display = 'none';
   pandiOcultarPantallasAuthAuxiliares();
   document.getElementById('login-screen').style.display = 'block';
-  document.getElementById('register-screen').style.display = 'none';
   document.getElementById('app-content').style.display = 'none';
   pandiSyncSidebarBackdrop();
 }
@@ -2918,7 +2916,6 @@ function showAppContent() {
   document.getElementById('sidebar').style.display = 'flex';
   pandiOcultarPantallasAuthAuxiliares();
   document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('register-screen').style.display = 'none';
   document.getElementById('app-content').style.display = 'block';
   pandiSyncSidebarBackdrop();
 }
@@ -2929,11 +2926,8 @@ function ensureProfile(session) {
     .upsert({ id: session.user.id, email: session.user.email || '' }, { onConflict: 'id' })
     .then(() => client.from('app_user_profile').select('role').eq('user_id', session.user.id).maybeSingle())
     .then((res) => {
-      if (res.data && res.data.role) currentUserRole = String(res.data.role);
-      if (res.data === null) {
-        currentUserRole = 'visor';
-        return client.from('app_user_profile').insert({ user_id: session.user.id, role: 'visor' });
-      }
+      // Sin fila en app_user_profile = usuario sin acceso (rol lo asigna un admin en Seguridad).
+      currentUserRole = res.data && res.data.role ? String(res.data.role) : '';
       return Promise.resolve();
     });
 }
@@ -2942,30 +2936,12 @@ function setupLoginAndRegister() {
   if (pandiAuthLoginRegisterBound) return;
   pandiAuthLoginRegisterBound = true;
   const loginForm = document.getElementById('login-form');
-  const registerForm = document.getElementById('register-form');
   const loginError = document.getElementById('login-error');
-  const registerError = document.getElementById('register-error');
   const forgotForm = document.getElementById('forgot-password-form');
   const forgotErr = document.getElementById('forgot-password-error');
   const forgotOk = document.getElementById('forgot-password-ok');
   const recoveryForm = document.getElementById('recovery-password-form');
   const recoveryErr = document.getElementById('recovery-password-error');
-
-  document.getElementById('link-registro').addEventListener('click', (e) => {
-    e.preventDefault();
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('register-screen').style.display = 'block';
-    loginError.textContent = '';
-    registerError.textContent = '';
-  });
-
-  document.getElementById('link-login').addEventListener('click', (e) => {
-    e.preventDefault();
-    document.getElementById('register-screen').style.display = 'none';
-    showLoginScreenDom();
-    loginError.textContent = '';
-    registerError.textContent = '';
-  });
 
   const linkOlvido = document.getElementById('link-olvido-password');
   if (linkOlvido) {
@@ -2973,8 +2949,7 @@ function setupLoginAndRegister() {
       e.preventDefault();
       loginError.textContent = '';
       document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('register-screen').style.display = 'none';
-      pandiOcultarPantallasAuthAuxiliares();
+          pandiOcultarPantallasAuthAuxiliares();
       const forgot = document.getElementById('forgot-password-screen');
       if (forgot) {
         forgot.style.display = 'block';
@@ -3092,28 +3067,6 @@ function setupLoginAndRegister() {
       });
   });
 
-  registerForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    registerError.textContent = '';
-    client.auth
-      .signUp({
-        email: document.getElementById('register-email').value.trim(),
-        password: document.getElementById('register-password').value,
-      })
-      .then((res) => {
-        if (res.error) {
-          registerError.textContent = res.error.message || 'Error al registrarse';
-          return;
-        }
-        if (res.data.session) {
-          authBootstrapFromGetSessionDone = true;
-          const nmReg = (document.getElementById('register-display-name')?.value || '').trim().slice(0, 120);
-          onSessionReady(res.data.session, nmReg ? { pendingDisplayNameFromRegister: nmReg } : undefined);
-        } else {
-          registerError.textContent = 'Revisá tu email para confirmar la cuenta y luego iniciá sesión.';
-        }
-      });
-  });
 }
 
 function pandiCerrarModalCambiarPassword() {
@@ -3489,7 +3442,7 @@ function loadConfiguracionEmpresa() {
     });
 }
 
-const ROLES_PERFIL_NO_ELIMINABLES = new Set(['admin', 'encargado', 'visor']);
+const ROLES_PERFIL_NO_ELIMINABLES = new Set(['admin', 'encargado']);
 
 function slugifyCodigoPerfilSeguridad(raw) {
   let s = String(raw || '')
@@ -3728,8 +3681,9 @@ function loadSeguridad() {
           const email = esc(u.email || '');
           const dnRaw = u.display_name != null ? String(u.display_name) : '';
           const dnEsc = esc(dnRaw);
-          const role = u.role || 'visor';
-          const optionsWithSelected = roles.map((r) => `<option value="${escapeHtml(r.role)}" ${role === r.role ? ' selected' : ''}>${escapeHtml(r.label || r.role)}</option>`).join('');
+          const role = u.role || '';
+          const optSinAcceso = role ? '' : '<option value="" selected disabled>Sin acceso — elegí un perfil</option>';
+          const optionsWithSelected = optSinAcceso + roles.map((r) => `<option value="${escapeHtml(r.role)}" ${role === r.role ? ' selected' : ''}>${escapeHtml(r.label || r.role)}</option>`).join('');
           return `<tr data-user-id="${uid}">
             <td>${email}</td>
             <td style="min-width:10rem;max-width:14rem;"><input type="text" class="seguridad-display-name" data-user-id="${uid}" value="${dnEsc}" maxlength="120" placeholder="Nombre en listados" aria-label="Nombre visible para listados" style="width:100%;box-sizing:border-box;padding:0.35rem 0.5rem;border-radius:6px;border:1px solid #cbd5e1;font-size:0.9rem;" /></td>
@@ -3757,6 +3711,10 @@ function loadSeguridad() {
           const row = btn.closest('tr');
           const sel = row.querySelector('.seguridad-rol');
           const newRole = sel.value;
+          if (!newRole) {
+            showToast('Elegí un perfil para el usuario.', 'info');
+            return;
+          }
           client
             .rpc('set_user_role', { p_user_id: uid, p_role: newRole })
             .then((r) => {
@@ -39243,6 +39201,22 @@ function onSessionReady(session, sessionOpts) {
         dn = String(profRes.data.display_name).trim();
       }
       currentUserDisplayName = dn;
+      const sinPerfil = roleRes && (roleRes.error ? !pandiEsFalloConectividadBootstrap(roleRes.error) : roleRes.data == null);
+      if (sinPerfil) {
+        // Usuario autenticado sin perfil asignado (o rol ilegible): no entra a la app (sin rol, RLS no le devuelve datos).
+        // Se limpian cachés locales para no heredar permisos/catálogos de otro usuario del mismo navegador.
+        try {
+          localStorage.removeItem(PANDI_CACHED_PERMISSIONS_KEY);
+          localStorage.removeItem(PANDI_OFFLINE_CACHE_KEY);
+        } catch (_e) {
+          /* storage no disponible */
+        }
+        const errSinAcceso = new Error('Tu usuario todavía no tiene acceso. Pedile al administrador que te asigne un perfil.');
+        return client.auth
+          .signOut()
+          .catch(() => {})
+          .then(() => Promise.reject(errSinAcceso));
+      }
       if (roleRes && !roleRes.error && roleRes.data != null) currentUserRole = String(roleRes.data);
       userPermissions = res.data || [];
       pandiCachePermissionsLocal(userPermissions);

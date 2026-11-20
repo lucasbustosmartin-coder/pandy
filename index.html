@@ -313,7 +313,7 @@
         <button type="submit" class="btn-login" id="btn-login"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-17"></use></svg></span>Entrar</button>
       </form>
       <p class="login-footer"><a href="#" id="link-olvido-password">¿Olvidaste tu contraseña?</a></p>
-      <p class="login-footer">¿No tenés cuenta? <a href="#" id="link-registro">Registrarse</a></p>
+      <p class="login-footer">¿No tenés acceso? Pedile al administrador que te invite.</p>
     </div>
     <div id="forgot-password-screen" class="login-screen card" style="display:none;">
       <span class="login-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="login-logo" /></span>
@@ -347,33 +347,12 @@
         <button type="submit" class="btn-login" id="btn-recovery-password-guardar"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-19"></use></svg></span>Guardar e ingresar</button>
       </form>
     </div>
-    <div id="register-screen" class="login-screen card" style="display:none;">
-      <span class="login-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="login-logo" /></span>
-      <h2>Registrarse</h2>
-      <form id="register-form">
-        <div class="form-group">
-          <label for="register-email">Email</label>
-          <input type="email" id="register-email" required placeholder="tu@email.com" autocomplete="email" />
-        </div>
-        <div class="form-group">
-          <label for="register-password">Contraseña</label>
-          <input type="password" id="register-password" required placeholder="Mín. 6 caracteres" autocomplete="new-password" minlength="6" />
-        </div>
-        <div class="form-group">
-          <label for="register-display-name">Nombre en la app (opcional)</label>
-          <input type="text" id="register-display-name" maxlength="120" placeholder="Cómo querés aparecer en listados" autocomplete="nickname" />
-        </div>
-        <div id="register-error" class="login-error"></div>
-        <button type="submit" class="btn-login" id="btn-register"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-18"></use></svg></span>Crear cuenta</button>
-      </form>
-      <p class="login-footer">¿Ya tenés cuenta? <a href="#" id="link-login">Iniciar sesión</a></p>
-    </div>
 
     <div class="app" id="app-content" style="display:none;">
       <header class="page-header">
         <div class="page-header-brand">
           <span class="page-logo-wrap"><img src="/assets/favicon-192x192.png" alt="Pandi" class="page-logo" id="page-logo" /></span>
-          <span id="sidebar-version" class="header-app-version" aria-label="Versión de la app" title="Versión desplegada">v3.8.25</span>
+          <span id="sidebar-version" class="header-app-version" aria-label="Versión de la app" title="Versión desplegada">v3.8.26</span>
         </div>
         <h1 id="page-title">Panel de Control</h1>
         <div class="page-header-toolbar">
@@ -1056,7 +1035,7 @@
         <h2 style="margin:0 0 0.75rem 0; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
           <span style="width:24px; height:24px; color:#555; flex-shrink:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-sprite-12"></use></svg></span>
           Seguridad – Usuarios y roles
-          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: seguridad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Asigná el <strong>perfil</strong> (rol) a cada usuario: los base son Admin, Encargado y Visor; podés <strong>crear perfiles nuevos</strong> (ej. comercial o administrativo) y luego darles permisos. Más abajo configurás <strong>permisos por perfil</strong> (qué menús ve y en cuáles puede operar) y, si sos Admin, el <strong>tiempo de inactividad</strong> antes del cierre de sesión automático, el <strong>plazo para editar o anular</strong> órdenes ejecutadas y movimientos manuales, el <strong>tamaño de página</strong> de consultas a Supabase y la comisión fija USD–USD cuando aplica.</span></span>
+          <span class="help-inline"><button type="button" class="help-icon-btn" aria-label="Ayuda: seguridad"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#icon-sprite-21"></use></svg></button><span class="help-popover">Asigná el <strong>perfil</strong> (rol) a cada usuario: los base son Admin y Encargado (un usuario invitado figura como «Sin acceso» hasta que le asignes uno); podés <strong>crear perfiles nuevos</strong> (ej. comercial o administrativo) y luego darles permisos. Más abajo configurás <strong>permisos por perfil</strong> (qué menús ve y en cuáles puede operar) y, si sos Admin, el <strong>tiempo de inactividad</strong> antes del cierre de sesión automático, el <strong>plazo para editar o anular</strong> órdenes ejecutadas y movimientos manuales, el <strong>tamaño de página</strong> de consultas a Supabase y la comisión fija USD–USD cuando aplica.</span></span>
         </h2>
         <div id="seguridad-tiempo-sesion-wrap" class="seguridad-tiempo-sesion" style="display:none; margin-bottom:1.25rem; padding:1rem; background:#f9fafb; border-radius:10px; border:1px solid #e5e7eb;">
           <h3 style="margin:0 0 0.5rem 0; font-size:1rem; display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">Tiempo de inactividad
