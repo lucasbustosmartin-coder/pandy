@@ -308,7 +308,17 @@ BEGIN
           )
         );
       END IF;
-    ELSE
+    ELSIF NOT (
+      -- No re-insertar una fila ANULADA si ya existe anulada con la misma identidad (antes se duplicaba en cada sync).
+      lower(COALESCE(v_estado, '')) IN ('anulado', 'anulada')
+      AND EXISTS (
+        SELECT 1 FROM public.movimientos_cuenta_corriente x
+        WHERE x.orden_id = p_orden_id AND COALESCE(x.es_movimiento_manual, false) = false
+          AND lower(COALESCE(x.estado, '')) IN ('anulado', 'anulada')
+          AND x.cliente_id = v_cli AND x.transaccion_id IS NOT DISTINCT FROM v_trx
+          AND upper(trim(x.moneda)) = v_mon AND x.sync_clave IS NOT DISTINCT FROM v_clave
+      )
+    ) THEN
       INSERT INTO public.movimientos_cuenta_corriente (
         cliente_id, orden_id, transaccion_id, transaccion_numero, concepto, clasificacion_movimiento, sync_clave, fecha, usuario_id,
         moneda, monto, monto_usd, monto_ars, monto_eur, estado, estado_fecha, incluir_en_detalle
@@ -547,7 +557,16 @@ BEGIN
           )
         );
       END IF;
-    ELSE
+    ELSIF NOT (
+      lower(COALESCE(v_estado, '')) IN ('anulado', 'anulada')
+      AND EXISTS (
+        SELECT 1 FROM public.movimientos_cuenta_corriente_intermediario x
+        WHERE x.orden_id = p_orden_id AND COALESCE(x.es_movimiento_manual, false) = false
+          AND lower(COALESCE(x.estado, '')) IN ('anulado', 'anulada')
+          AND x.intermediario_id = v_int AND x.transaccion_id IS NOT DISTINCT FROM v_trx
+          AND upper(trim(x.moneda)) = v_mon AND x.sync_clave IS NOT DISTINCT FROM v_clave
+      )
+    ) THEN
       INSERT INTO public.movimientos_cuenta_corriente_intermediario (
         intermediario_id, orden_id, transaccion_id, transaccion_numero, concepto, clasificacion_movimiento, sync_clave, fecha, usuario_id,
         moneda, monto, monto_usd, monto_ars, monto_eur, estado, estado_fecha, incluir_en_detalle
@@ -792,7 +811,17 @@ BEGIN
           )
         );
       END IF;
-    ELSE
+    ELSIF NOT (
+      lower(COALESCE(v_estado, '')) IN ('anulado', 'anulada')
+      AND EXISTS (
+        SELECT 1 FROM public.movimientos_caja x
+        WHERE x.tipo_movimiento_id IS NULL
+          AND lower(COALESCE(x.estado, '')) IN ('anulado', 'anulada')
+          AND x.transaccion_id IS NOT DISTINCT FROM v_trx AND x.orden_numero IS NOT DISTINCT FROM v_ord_num
+          AND upper(trim(x.moneda)) = v_mon AND COALESCE(x.caja_tipo, 'efectivo') = COALESCE(v_caja_tipo, 'efectivo')
+          AND x.sync_clave IS NOT DISTINCT FROM v_clave
+      )
+    ) THEN
       INSERT INTO public.movimientos_caja (
         moneda, monto, caja_tipo, transaccion_id, orden_id, orden_numero, transaccion_numero,
         concepto, clasificacion_movimiento, sync_clave, fecha, usuario_id, estado, estado_fecha

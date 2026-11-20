@@ -81,7 +81,7 @@ Re-crear como **filas nuevas vivas** (sin reabrir anulados, libro sin DELETE) lo
 1. **RPC:** rechazar anular filas de una transacción **ejecutada** de una orden **no anulada** salvo que el mismo payload traiga el reemplazo; rechazar payload vacío para orden ejecutada con transacciones ejecutadas.
 2. **Front:** abortar el sync de una orden ante cualquier error de lectura (prefetch, transacciones, modos de pago, estados); paginar con `.order('id')`.
 3. **Cierre de día en servidor:** trigger en `movimientos_caja` que impida alterar filas con `fecha` anterior a un día cerrado salvo vía corrección explícita y auditada.
-4. Eliminar DELETE físicos de caja (pasar a anular).
+4. Eliminar DELETE físicos de caja (pasar a anular). **Hecho 2026-11-20 (pendiente deploy):** el front ya no escribe CC/caja en flujos de órdenes; el sync (RPC) es el único escritor del libro derivado. "Dar de baja" borra la transacción y el sync anula sus movimientos. Manuales: anulan en vez de borrar.
 
 ### C. Nueva auditoría de caja (y CC)
 1. **Historial a nivel base:** tabla inmutable `movimientos_caja_historial` (y equivalentes CC) llenada por **trigger** en INSERT/UPDATE/DELETE: valores antes/después, usuario, hora, **fecha contable afectada**, **origen** (`pandi.origen` seteado por RPC/front: `login_sync`, `refrescar`, `ejecutar_transaccion`, `caja_manual`, `anular_orden`, `cola_offline`, `correccion`…). No depende del front, no se puede saltear, no traga errores.
