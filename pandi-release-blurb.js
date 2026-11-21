@@ -6,8 +6,9 @@
  * `lines: []` = despliegue silencioso: no hay cartel de novedades al recargar (el login no espera Entendido).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.30',
+  versionLabel: 'v3.8.31',
   lines: [
-    'Los movimientos de caja cargados sin conexión ya no se duplican al reconectar, aunque la señal se corte a mitad del envío.',
+    'Al editar el monto de una transacción en la tabla, la app avisa si supera lo acordado en la orden y no lo guarda.',
+    'Si un monto no se acepta, el campo vuelve al valor guardado para que no quede un importe que no se aplicó.',
   ],
 };
