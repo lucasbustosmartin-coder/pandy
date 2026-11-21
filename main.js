@@ -2558,10 +2558,22 @@ async function pandiGuardarModalInstrumentacionOnline() {
     return;
   }
   try {
+    // Acuerdo: validar el estado FINAL de todo el lote antes de aplicar (evita excesos transitorios fila por fila).
+    const montosLote = new Map();
+    cambios.forEach((c) => {
+      if (Math.abs(c.monto - (Number(c.orig.monto) || 0)) > 1e-6) montosLote.set(String(c.id), c.monto);
+    });
+    if (montosLote.size > 0) {
+      const vLote = await pandiValidarAcuerdoTrasCambiosMonto(instrumentacionId, montosLote);
+      if (!vLote.ok) {
+        showToast(vLote.mensaje, 'error', 9000);
+        return;
+      }
+    }
     for (const c of cambios) {
       const om = Number(c.orig.monto) || 0;
       if (Math.abs(c.monto - om) > 1e-6) {
-        await guardarSoloMontoTransaccion(c.id, formatImporteParaInput(c.monto), () => {}, { omitSincronizarCc: true });
+        await guardarSoloMontoTransaccion(c.id, formatImporteParaInput(c.monto), () => {}, { omitSincronizarCc: true, omitValidacionAcuerdo: true });
       }
     }
     for (const c of cambios) {
@@ -23049,6 +23061,23 @@ function guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess, opts)
     if (!t) return Promise.resolve();
     const oldMonto = Number(t.monto) || 0;
     const esEjecutada = transaccionEstadoTextoNormalizado(t) === 'ejecutada';
+    if (!(opts && opts.omitValidacionAcuerdo) && Math.abs(newMonto - oldMonto) > 1e-9) {
+      return pandiValidarAcuerdoTrasCambiosMonto(t.instrumentacion_id, new Map([[String(transaccionId), newMonto]])).then((vAc) => {
+        if (!vAc.ok) {
+          showToast(vAc.mensaje, 'error', 9000);
+          // El input (si se pasó el elemento) vuelve al valor guardado para no reintentar ni mostrar un monto no aplicado.
+          if (valorInput && typeof valorInput === 'object' && 'value' in valorInput) {
+            try {
+              valorInput.value = formatMontoTransaccionTablaParaInput(oldMonto, t.moneda);
+            } catch (_e) {
+              /* sin formato */
+            }
+          }
+          return Promise.resolve({ ok: false, mensaje: vAc.mensaje });
+        }
+        return guardarSoloMontoTransaccion(transaccionId, valorInput, onSuccess, Object.assign({}, opts || {}, { omitValidacionAcuerdo: true }));
+      });
+    }
     if (!esEjecutada) {
       return client.from('transacciones').update({ monto: newMonto, updated_at: new Date().toISOString() }).eq('id', transaccionId).then((r) => {
         if (r.error) {
@@ -24708,9 +24737,8 @@ async function pandiApplyOneTrxInstrumentacionPatchToServer(trxId, instId, patch
   if (r.error || !r.data) throw new Error(r.error?.message || 'transacción');
   let cur = r.data;
   if (p.monto != null && Math.abs(Number(p.monto) - Number(cur.monto)) > 1e-9) {
-    await new Promise((resolve) => {
-      guardarSoloMontoTransaccion(tid, formatImporteParaInput(p.monto), resolve);
-    });
+    const resMontoCola = await guardarSoloMontoTransaccion(tid, formatImporteParaInput(p.monto), () => {});
+    if (resMontoCola && resMontoCola.ok === false) throw new Error(resMontoCola.mensaje || 'Monto rechazado (excede el acuerdo).');
   }
   r = await client.from('transacciones').select('id, usuario_id, estado, monto, modo_pago_id').eq('id', tid).single();
   if (r.error || !r.data) throw new Error(r.error?.message || 'transacción');
@@ -27109,9 +27137,23 @@ function ejecutarCierreModalOrden() {
     });
     doClose();
     if (pendientes.length > 0) {
-      let prom = Promise.resolve();
-      pendientes.forEach((p) => { prom = prom.then(() => guardarSoloMontoTransaccion(p.id, p.value)); });
-      prom.catch(() => {});
+      (async () => {
+        // Acuerdo: validar el estado final de todas las filas antes de guardar (evita excesos transitorios fila por fila).
+        const mapaLote = new Map();
+        pendientes.forEach((p) => {
+          const v = parseImporteInput(p.value);
+          if (!isNaN(v) && v > 0) mapaLote.set(String(p.id), v);
+        });
+        const rInstLote = await client.from('transacciones').select('instrumentacion_id').eq('id', pendientes[0].id).maybeSingle();
+        const vLoteCierre = await pandiValidarAcuerdoTrasCambiosMonto(rInstLote.data && rInstLote.data.instrumentacion_id, mapaLote);
+        if (!vLoteCierre.ok) {
+          showToast(vLoteCierre.mensaje, 'error', 9000);
+          return;
+        }
+        for (const p of pendientes) {
+          await guardarSoloMontoTransaccion(p.id, p.value, null, { omitValidacionAcuerdo: true });
+        }
+      })().catch(() => {});
     }
   } else {
     doClose();
@@ -28391,7 +28433,7 @@ function renderOrdenWizardInstrumentacion(instId) {
                 const prev = lista.find((r) => r.id === id);
                 const nv = parseImporteInput(this.value);
                 if (!prev || montosTrxCasiIguales(prev.monto, nv, prev.moneda)) return;
-                guardarSoloMontoTransaccion(id, this.value, () => {
+                guardarSoloMontoTransaccion(id, this, () => {
                   client.from('transacciones').select(selTrxWizardCols).eq('instrumentacion_id', instId).order('created_at', { ascending: true }).then((r2) => {
                     list = r2.data || [];
                     renderWizardList(list);
@@ -29480,6 +29522,67 @@ function sincronizarDecimalesInputTransaccionModal() {
 }
 
 /** Valida que los totales no superen el acuerdo. Devuelve { ok, mensaje }. Si ya se completó el acuerdo, mensaje específico; si no, indica en cuánto se excede. */
+/**
+ * Valida que, aplicando `montosNuevos` (Map transaccionId → monto) sobre las transacciones actuales de la instrumentación,
+ * los totales no superen el acuerdo de la orden. Mismo criterio que el modal (`totalesInstrumentacion` por tipo, con
+ * multicontraparte manual y tolerancias). Solo bloquea si el exceso CRECE respecto del estado actual (no impide corregir).
+ * Fail-closed: si no puede leer, no deja guardar. Relevamiento: docs/RELEVAMIENTO_MONTO_MAYOR_ACORDADO_2026-11-20.md.
+ * @returns {Promise<{ ok: boolean, mensaje?: string }>}
+ */
+async function pandiValidarAcuerdoTrasCambiosMonto(instrumentacionId, montosNuevos) {
+  if (!instrumentacionId || !montosNuevos || montosNuevos.size === 0) return { ok: true };
+  const noValida = { ok: false, mensaje: 'No se pudo validar el monto contra el acuerdo de la orden (conexión). Reintentá.' };
+  try {
+    return await pandiValidarAcuerdoTrasCambiosMontoInterno(instrumentacionId, montosNuevos, noValida);
+  } catch (_e) {
+    return noValida;
+  }
+}
+
+async function pandiValidarAcuerdoTrasCambiosMontoInterno(instrumentacionId, montosNuevos, noValida) {
+  const rInst = await client.from('instrumentacion').select('orden_id, multicontraparte_manual').eq('id', instrumentacionId).maybeSingle();
+  if (rInst.error || !rInst.data || !rInst.data.orden_id) return noValida;
+  const [rOrd, rTr] = await Promise.all([
+    client
+      .from('ordenes')
+      .select('id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)')
+      .eq('id', rInst.data.orden_id)
+      .single(),
+    client
+      .from('transacciones')
+      .select('id, tipo, modo_pago_id, moneda, monto, cobrador, pagador, owner, estado, concepto, tipo_cambio, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id')
+      .eq('instrumentacion_id', instrumentacionId),
+  ]);
+  if (rOrd.error || !rOrd.data || rTr.error) return noValida;
+  const orden = rOrd.data;
+  const toJoin = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+  const opts = rInst.data.multicontraparte_manual ? instrumentacionTotalesOptsMulticontraparteSiCorresponde(orden, toJoin) : undefined;
+  const actual = rTr.data || [];
+  const proyectada = actual.map((t) => (montosNuevos.has(String(t.id)) ? { ...t, monto: Number(montosNuevos.get(String(t.id))) } : t));
+  const antes = totalesInstrumentacion(actual, orden, opts);
+  const despues = totalesInstrumentacion(proyectada, orden, opts);
+  const mr = Number(orden.monto_recibido) || 0;
+  const me = Number(orden.monto_entregado) || 0;
+  const monR = (orden.moneda_recibida || 'USD').trim().toUpperCase();
+  const monE = (orden.moneda_entregada || 'USD').trim().toUpperCase();
+  const tolR = toleranciaConciliacionInstrumentacionMonto(orden, 'recibido');
+  const tolE = toleranciaConciliacionInstrumentacionMonto(orden, 'entregado');
+  const sugerencia = ' Si el cliente realmente pagó o cobró de más, editá el acuerdo de la orden.';
+  if (despues.totalRecibido > mr + tolR && despues.totalRecibido > antes.totalRecibido + tolR) {
+    return {
+      ok: false,
+      mensaje: `El monto excede el acuerdo en ingresos en ${formatImporteDisplay(despues.totalRecibido - mr)} ${monR} (acordado: ${formatImporteDisplay(mr)} ${monR}).` + sugerencia,
+    };
+  }
+  if (despues.totalEntregado > me + tolE && despues.totalEntregado > antes.totalEntregado + tolE) {
+    return {
+      ok: false,
+      mensaje: `El monto excede el acuerdo en egresos en ${formatImporteDisplay(despues.totalEntregado - me)} ${monE} (acordado: ${formatImporteDisplay(me)} ${monE}).` + sugerencia,
+    };
+  }
+  return { ok: true };
+}
+
 function validarTotalesVsAcuerdo(transacciones, orden, transaccionExcluirId, transaccionAgregar, totalesOpts) {
   const list = (transacciones || []).filter((t) => t.id !== transaccionExcluirId);
   const listConNueva = transaccionAgregar ? [...list, transaccionAgregar] : list;
@@ -32094,7 +32197,7 @@ function expandOrdenTransacciones(ordenId, orden) {
                     const prev = lista.find((r) => r.id === id);
                     const nv = parseImporteInput(this.value);
                     if (!prev || montosTrxCasiIguales(prev.monto, nv, prev.moneda)) return;
-                    guardarSoloMontoTransaccion(id, this.value, () => refreshTransaccionesPanel(ordenId));
+                    guardarSoloMontoTransaccion(id, this, () => refreshTransaccionesPanel(ordenId));
                   });
                 });
                 configurarInputsMontoTransaccionTablaEn(tbody);
@@ -32326,7 +32429,7 @@ function refreshTransaccionesPanel(ordenId) {
             const prev = list.find((r) => r.id === id);
             const nv = parseImporteInput(this.value);
             if (!prev || montosTrxCasiIguales(prev.monto, nv, prev.moneda)) return;
-            guardarSoloMontoTransaccion(id, this.value, () => refreshTransaccionesPanel(ordenId));
+            guardarSoloMontoTransaccion(id, this, () => refreshTransaccionesPanel(ordenId));
           });
         });
         configurarInputsMontoTransaccionTablaEn(tbody);
@@ -33277,9 +33380,14 @@ function cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId,
         if (inputMonto) {
           const val = parseImporteInput(inputMonto.value);
           if (!isNaN(val) && val > 0 && Math.abs(val - montoActual) > 1e-6) {
-            return guardarSoloMontoTransaccion(transaccionId, inputMonto.value).then(() =>
-              cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId, selectEl, opts),
-            );
+            return guardarSoloMontoTransaccion(transaccionId, inputMonto).then((resMonto) => {
+              if (resMonto && resMonto.ok === false) {
+                // Monto rechazado por el acuerdo: no ejecutar; el combo vuelve al estado anterior.
+                if (selectEl) selectEl.value = transaccionEstadoTextoNormalizado(t) === 'ejecutada' ? 'ejecutada' : 'pendiente';
+                return undefined;
+              }
+              return cambiarEstadoTransaccion(transaccionId, nuevoEstado, instrumentacionId, selectEl, opts);
+            });
           }
         }
       }
@@ -33551,7 +33659,7 @@ function saveTransaccion() {
       showToast('No se encontró la orden de esta instrumentación.', 'error');
       return;
     }
-    client.from('ordenes').select('id, usuario_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario)').eq('id', ordenId).single().then((rOrd) => {
+    client.from('ordenes').select('id, usuario_id, tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, tipos_operacion(codigo, usa_intermediario, moneda_in, moneda_out)').eq('id', ordenId).single().then((rOrd) => {
       const orden = rOrd.data;
       if (!orden) {
         finTrxSaveUi();
@@ -34003,7 +34111,7 @@ function saveTransaccion() {
         hacerCierre();
         return;
       }
-      client.from('ordenes').select('cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, numero, tasa_descuento_intermediario, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single().then((rO) => {
+      client.from('ordenes').select('tipo_operacion_id, cliente_id, intermediario_id, moneda_recibida, monto_recibido, moneda_entregada, monto_entregado, cotizacion, numero, tasa_descuento_intermediario, tipos_operacion(codigo, moneda_in, moneda_out, usa_intermediario)').eq('id', ordenId).single().then((rO) => {
         const orden = rO.data || {};
         const clienteId = orden.cliente_id || null;
         const intermediarioId = orden.intermediario_id || null;
@@ -34023,7 +34131,7 @@ function saveTransaccion() {
         const promRevert = Promise.resolve();
         promRevert.then(() => Promise.all([
           client.from('movimientos_cuenta_corriente').select('id, transaccion_id, concepto, monto_usd, monto_ars, monto_eur').eq('orden_id', ordenId).eq('cliente_id', clienteId).not('estado', 'in', '(anulado,anulada)'),
-          client.from('transacciones').select('id, tipo, monto, estado, cobrador, pagador').eq('instrumentacion_id', instrumentacionId),
+          client.from('transacciones').select('id, tipo, monto, moneda, tipo_cambio, estado, cobrador, pagador, pagador_cliente_id, cobrador_cliente_id, pagador_intermediario_id, cobrador_intermediario_id').eq('instrumentacion_id', instrumentacionId),
         ])).then(([rMov, rTrxList]) => {
           const filasCc = rMov.data || [];
           const listTrx = rTrxList.data || [];
@@ -34040,16 +34148,36 @@ function saveTransaccion() {
           const amountCompMonE = rowComp && (monE === 'USD' ? rowComp.monto_usd : (monE === 'ARS' ? rowComp.monto_ars : rowComp.monto_eur));
           const splitIngreso = tieneMomentoCero && estado === 'ejecutada' && id && tipo === 'ingreso' && mr > 1e-6 && monto > 1e-6 && (mr - monto) > 1e-6 && (Math.abs(Number(amountDebeMonR) || 0) - monto) > 1e-6;
           const splitEgreso = tieneMomentoCero && estado === 'ejecutada' && id && tipo === 'egreso' && me > 1e-6 && monto > 1e-6 && (me - monto) > 1e-6 && (Math.abs(Number(amountCompMonE) || 0) - monto) > 1e-6;
+          // Rama legacy "momento cero" (comportamiento vigente en prod). Desactivarla para crear siempre el resto por totales
+          // quedó EN ESPERA (2026-11-21): con dos ingresos sin multicontraparte el motor CC prorratea mal la CC en ARS
+          // (tester en dev: +600.000 ARS). Ver docs/RELEVAMIENTO_MONTO_MAYOR_ACORDADO_2026-11-20.md §9.
           const split = (splitIngreso || splitEgreso) && rowDebe && rowComp && clienteId;
-          const faltaIngreso = mr - sumIngresosClienteEjecutados > 1e-6;
-          const faltaEgreso = me - sumEgresosClienteEjecutados > 1e-6;
-          const splitSinMomentoCero = !tieneMomentoCero && estado === 'ejecutada' && clienteId && (
-            (tipo === 'ingreso' && pagador === 'cliente' && mr > 1e-6 && monto > 1e-6 && faltaIngreso) ||
-            (tipo === 'egreso' && cobrador === 'cliente' && me > 1e-6 && monto > 1e-6 && faltaEgreso)
+          void sumIngresosClienteEjecutados; void sumEgresosClienteEjecutados;
+          // Resto por ejecución parcial (2026-11-21): mismo criterio que la conciliación (`totalesInstrumentacion`: por tipo,
+          // pendientes incluidas, multicontraparte por volumen, sin patas Pandy↔Intermediario). Antes sumaba solo ejecutadas
+          // con pagador/cobrador = cliente y podía crear restos de más (p. ej. dos ingresos planificados) o mal en USD-USD.
+          const toJoinSplit = orden.tipos_operacion && (Array.isArray(orden.tipos_operacion) ? orden.tipos_operacion[0] : orden.tipos_operacion);
+          const optsTotSplit = multicontraparteManualInst ? instrumentacionTotalesOptsMulticontraparteSiCorresponde(orden, toJoinSplit) : undefined;
+          const totSplit = totalesInstrumentacion(listTrx, orden, optsTotSplit);
+          const trxActualSplit = listTrx.find((tr) => String(tr.id) === String(transaccionId)) || { tipo, pagador, cobrador, monto, moneda, estado };
+          const participaSplit = (optsTotSplit && optsTotSplit.totalesMulticontraparte === true) || !orden.cliente_id || transaccionParticipaTotalesAcuerdo(trxActualSplit, orden);
+          const restoIngreso = mr - totSplit.totalRecibido;
+          const restoEgreso = me - totSplit.totalEntregado;
+          const tolSplitR = toleranciaConciliacionInstrumentacionMonto(orden, 'recibido');
+          const tolSplitE = toleranciaConciliacionInstrumentacionMonto(orden, 'entregado');
+          const splitSinMomentoCero = !tieneMomentoCero && estado === 'ejecutada' && clienteId && participaSplit && monto > 1e-6 && (
+            (tipo === 'ingreso' && mr > 1e-6 && restoIngreso > tolSplitR) ||
+            (tipo === 'egreso' && me > 1e-6 && restoEgreso > tolSplitE)
           );
           let promSplitSinMc = Promise.resolve(null);
           if (splitSinMomentoCero) {
-            const diferencia = tipo === 'ingreso' ? (mr - sumIngresosClienteEjecutados) : (me - sumEgresosClienteEjecutados);
+            // El resto está en la moneda del acuerdo (monR/monE); convertir a la moneda de la transacción si difiere.
+            const restoMonAcuerdo = tipo === 'ingreso' ? restoIngreso : restoEgreso;
+            const monAcuerdoSplit = String(tipo === 'ingreso' ? monR : monE).toUpperCase();
+            const monTrxSplit = String(moneda || monAcuerdoSplit).toUpperCase();
+            const tcSplit = Number(tipoCambio) > 0 ? Number(tipoCambio) : (Number(orden.cotizacion) > 0 ? Number(orden.cotizacion) : null);
+            let diferencia = monTrxSplit === monAcuerdoSplit ? restoMonAcuerdo : convertirAMonedaOrden(restoMonAcuerdo, monAcuerdoSplit, monTrxSplit, tcSplit);
+            diferencia = monTrxSplit === 'ARS' ? Math.round(diferencia * 100) / 100 : Math.round(diferencia * 1e8) / 1e8;
             if (diferencia >= 1e-6) {
               const ahoraIns = new Date().toISOString();
               const rowSplitSinMcModal = {
@@ -34065,7 +34193,13 @@ function saveTransaccion() {
               concepto: concepto || '',
               tipo_cambio: tipoCambio || null,
               updated_at: ahoraIns,
+              // Mismos terceros que la transacción ejecutada (multicontraparte: Cliente N / Intermediario N).
+              pagador_cliente_id: trxActualSplit.pagador_cliente_id || null,
+              cobrador_cliente_id: trxActualSplit.cobrador_cliente_id || null,
+              pagador_intermediario_id: trxActualSplit.pagador_intermediario_id || null,
+              cobrador_intermediario_id: trxActualSplit.cobrador_intermediario_id || null,
             };
+              completarPayloadIdsContraparteDesdeOrden(rowSplitSinMcModal, orden);
               asegurarClasificacionTransaccionEnPayload(rowSplitSinMcModal);
               promSplitSinMc = client.from('transacciones').insert(rowSplitSinMcModal).select('id').single().then((r) => {
                 const nid = r.data && r.data.id;
