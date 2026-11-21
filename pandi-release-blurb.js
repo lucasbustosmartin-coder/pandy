@@ -6,10 +6,8 @@
  * `lines: []` = despliegue silencioso: no hay cartel de novedades al recargar (el login no espera Entendido).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.29',
+  versionLabel: 'v3.8.30',
   lines: [
-    'Al cambiar el modo de pago de una transacción ejecutada, la caja respeta la fecha original del movimiento.',
-    'Las bajas y reversiones ya no borran movimientos de caja ni de cuenta corriente: quedan anulados y visibles en el historial.',
-    'Mayor consistencia de cuenta corriente y caja al guardar o editar transacciones.',
+    'Los movimientos de caja cargados sin conexión ya no se duplican al reconectar, aunque la señal se corte a mitad del envío.',
   ],
 };
