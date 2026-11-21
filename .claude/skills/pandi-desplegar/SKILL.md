@@ -13,6 +13,7 @@ Fuente de detalle: `.cursor/rules/bitacora-tareas.mdc` (sección "Flujo cuando e
 - SQL en prod que cambie políticas/DDL: incluir `SET LOCAL lock_timeout = '5s'` dentro de la transacción (si la tabla está ocupada aborta entero en vez de trabar la app).
 - `git status` limpio salvo los cambios de la sesión; estar en `main`.
 - `node --check main.js` y `npx vite build` (ojo: el plugin `copy-assets-and-config` de `vite.config.js` escribe siempre en `dist/` aunque se pase `--outDir`; no correr `scripts/build-config.js` salvo para build real: reescribe `config.js`) sin errores (no ensuciar `dist/` del repo si no hace falta).
+- Prueba funcional del cambio con el subagente `pandi-tester` en Pandy-Dev (E2E apagados).
 - Tests unitarios verdes: `npm run test:unit-clasificacion`, `npm run test:unit-cc-flip`, `npm run test:unit-cc-patron-nueva-regla`, `npm run test:unit-cc-invariante-nueva-regla`.
 
 ## Pasos (en orden, ninguno se omite)

@@ -13,7 +13,7 @@ Aplicar en orden. No omitir pasos salvo indicación explícita del usuario.
 2. **Tests**
    - Unit: `npm run test:unit-clasificacion`, `npm run test:unit-cc-flip`, `npm run test:unit-cc-patron-nueva-regla`, `npm run test:unit-cc-invariante-nueva-regla`.
    - Si cambiaron selectores, textos, columnas o flujos cubiertos por `tests/e2e/`: actualizar los specs. **No** cambiar valores esperados (`*-esperado.js`) sin acuerdo explícito.
-   - Los E2E escriben en Supabase dev: correrlos solo si el usuario lo pide.
+   - **E2E apagados** (desactualizados y vacían dev). Prueba funcional: subagente `pandi-tester` en Pandy-Dev, sin borrar datos.
 3. **RPC / SQL**: si cambió una regla de negocio o un dato persistido, verificar si la RPC en `sql/` lo construye y actualizarla. Fechas → `public.fecha_hoy_argentina()`.
 4. **Matriz CC**: si cambió cómo se graban movimientos CC → `npm run excel:matriz-cc-reglas` (o avisar que quedó pendiente).
 5. **Docs y artefactos** (sin preguntar):

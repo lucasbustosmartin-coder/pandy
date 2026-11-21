@@ -64,7 +64,7 @@ Toda fecha de negocio en **`America/Argentina/Buenos_Aires`** (`docs/FECHAS_ARGE
 ## Antes de cerrar una tarea con cambios
 
 1. `node --check main.js` (y `npx vite build` si cambió el front).
-2. Tests: adaptar `tests/e2e` / `tests/unit` si cambian flujos, selectores o textos. Unit: `npm run test:unit-clasificacion` etc. Los E2E escriben en Supabase **dev**.
+2. Tests: unit (`npm run test:unit-clasificacion` etc.). **E2E apagados** (desactualizados y vacían dev; `tests/e2e/global-setup.js` los bloquea salvo `E2E_HABILITADO=1`): las pruebas funcionales las hace el subagente **`pandi-tester`** en Pandy-Dev, sin borrar datos.
 3. RPC: si cambió lógica de backend, revisar/actualizar `sql/`.
 4. Docs en `docs/` y artefactos derivados regenerados en la misma sesión, sin preguntar (`.cursor/rules/documentacion-siempre-actualizada.mdc`).
 5. Bitácora: fila en `datosLog` de `scripts/crear-bitacora-excel.js` (fecha/hora Argentina) y `node scripts/crear-bitacora-excel.js` (`.cursor/rules/bitacora-tareas.mdc`).

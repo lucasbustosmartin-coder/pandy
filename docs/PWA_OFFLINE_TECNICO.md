@@ -139,3 +139,8 @@ El contenido orientado a operadores está en **`docs/MANUAL_USUARIO_OFFLINE.md`*
 ---
 
 *Mantener alineado con cambios en `main.js` (buscar `PANDI_SNAPSHOT_`, `pandiOffline`, `pandiFlush`, `pandiAvisoSiSinServidorParaEscritura`).*
+
+
+## Idempotencia de la cola offline de caja (2026-11-20)
+
+Cada movimiento manual de caja encolado sin red se envía con `client_op_id = 'caja-offline:<localId>'` (columna en `movimientos_caja` con índice único parcial, `sql/migracion_movimientos_caja_client_op_id.sql`). Si el envío se corta después del INSERT y la app reintenta, el servidor responde `23505` y el front lo da por enviado (borra la entrada local sin duplicar). `pandiFlushPendingCajaMovOffline` corre una sola vez a la vez (flag + `navigator.locks` entre pestañas). La cola offline de **CC manual** (varias patas) sigue sin clave de idempotencia: pendiente.

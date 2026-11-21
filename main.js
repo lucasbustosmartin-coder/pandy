@@ -21485,9 +21485,32 @@ async function pandiCajaMovEnqueueOffline(payload) {
   if (cajasMovimientosFullCache) void pandiPersistCajasVistaSnapshot(cajasMovimientosFullCache);
 }
 
+let pandiFlushCajaMovOfflineEnCurso = false;
 async function pandiFlushPendingCajaMovOffline() {
   if (!currentUserId || !pandiCajaMovimientoGuardadoEnServidorOk()) return;
   if (!tienePermisoAltaMovimientoCaja()) return;
+  // Una sola corrida a la vez (evento online + chequeo periódico, o dos pestañas con Web Locks).
+  if (pandiFlushCajaMovOfflineEnCurso) return;
+  if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
+    return navigator.locks.request('pandi-flush-caja-offline', { ifAvailable: true }, (lock) => {
+      if (!lock) return undefined;
+      return pandiFlushPendingCajaMovOfflineCorrida();
+    });
+  }
+  return pandiFlushPendingCajaMovOfflineCorrida();
+}
+
+async function pandiFlushPendingCajaMovOfflineCorrida() {
+  if (pandiFlushCajaMovOfflineEnCurso) return;
+  pandiFlushCajaMovOfflineEnCurso = true;
+  try {
+    await pandiFlushPendingCajaMovOfflineInterno();
+  } finally {
+    pandiFlushCajaMovOfflineEnCurso = false;
+  }
+}
+
+async function pandiFlushPendingCajaMovOfflineInterno() {
   let db;
   try {
     db = await openPandiOfflineDb();
@@ -21537,10 +21560,17 @@ async function pandiFlushPendingCajaMovOffline() {
         usuario_id: currentUserId,
         estado: 'cerrado',
         estado_fecha: ahoraIso,
+        // Idempotencia (2026-11-20): identificador local único; si ya se envió, el índice único lo rechaza.
+        client_op_id: 'caja-offline:' + String(rec.localId),
       };
       const r = await client.from('movimientos_caja').insert(ins);
-      if (r.error) throw new Error(r.error.message || 'insert caja');
+      const yaEnviado = r.error && String(r.error.code || '') === '23505';
+      if (r.error && !yaEnviado) throw new Error(r.error.message || 'insert caja');
       await idbReadSnapshotDelete(db, key);
+      if (yaEnviado) {
+        anyOk = true;
+        continue;
+      }
       anyOk = true;
       registrarAuditoriaCajaManualAlta({
         moneda,
