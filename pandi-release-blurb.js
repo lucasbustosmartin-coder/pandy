@@ -6,9 +6,8 @@
  * `lines: []` = despliegue silencioso: no hay cartel de novedades al recargar (el login no espera Entendido).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.31',
+  versionLabel: 'v3.8.32',
   lines: [
-    'Al editar el monto de una transacción en la tabla, la app avisa si supera lo acordado en la orden y no lo guarda.',
-    'Si un monto no se acepta, el campo vuelve al valor guardado para que no quede un importe que no se aplicó.',
+    'Cuenta corriente correcta cuando un acuerdo se cobra o se paga en varias partes (por ejemplo, el cliente entrega en dos transferencias).',
   ],
 };
