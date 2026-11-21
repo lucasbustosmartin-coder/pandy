@@ -6,10 +6,10 @@
  * `lines: []` = despliegue silencioso: no hay cartel de novedades al recargar (el login no espera Entendido).
  */
 export const PANDI_RELEASE_BLURB = {
-  versionLabel: 'v3.8.28',
+  versionLabel: 'v3.8.29',
   lines: [
-    'Nuevo historial de caja y cuenta corriente: cada alta, cambio o anulación con quién, cuándo y desde qué pantalla.',
-    'Inicio avisa si cambió el saldo de cierre de un día anterior y muestra qué lo cambió.',
-    'Podés filtrar el historial por caja, moneda, fecha y orden, y exportarlo a Excel.',
+    'Al cambiar el modo de pago de una transacción ejecutada, la caja respeta la fecha original del movimiento.',
+    'Las bajas y reversiones ya no borran movimientos de caja ni de cuenta corriente: quedan anulados y visibles en el historial.',
+    'Mayor consistencia de cuenta corriente y caja al guardar o editar transacciones.',
   ],
 };
