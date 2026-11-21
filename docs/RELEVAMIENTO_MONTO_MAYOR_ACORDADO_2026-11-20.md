@@ -113,3 +113,18 @@ Docs: `docs/INSTRUMENTACION_MANUAL_MULTICONTRAPARTE.md` §3 y §6 · `docs/CORAZ
 **Punto 2 (resto por ejecución parcial) — EN ESPERA.** El cálculo por totales funciona (tester: ejecutar 600 de 1.000 crea un pendiente exacto de 400; con dos ingresos planificados no crea de más), pero **el motor de CC prorratea mal la CC en ARS cuando una orden USD-ARS sin multicontraparte tiene dos ingresos**: al ejecutar el egreso genera `cobro_realizado` −400.000 (solo el último ingreso × TC) y `compromiso_pago` +1.000.000 → **CC ARS +600.000** en vez de 0 (caja correcta). Ocurre también con dos ingresos cargados a mano, así que es preexistente. En prod hoy **no hay** órdenes sin multicontraparte con más de un ingreso, por eso no hay daño; pero activar el resto automático lo dispararía en cada pago parcial. Se mantiene el comportamiento vigente (la rama "momento cero" no crea el resto) hasta corregir el motor.
 
 **Próxima tarea sugerida:** auditor CC + analista: revisar `monto_origen = mr_prorrateado` / armado de `cobro_realizado` del egreso con varios ingresos (`aplicarMotorCcDesdeReglasDeNegocio`, ~main.js:16840-16900) y las filas de `reglas_de_negocio` USD-ARS; corregir en reglas (Regla de ORO) y recién ahí activar el resto automático.
+
+
+## 10. Corrección del motor CC — "dos ingresos" (21/11/2026)
+
+**Causa raíz (auditor CC):** el monto se calculaba bien (`me_prorrateado` por transacción: −600.000 y −400.000), pero `ccTransaccionRefParaMovimientoMoneda` reasigna las filas cuya moneda no coincide con la de la transacción a la única transacción en esa moneda (el egreso). Las dos filas quedaban con la misma identidad de libro (transacción + moneda + familia + signo, sin monto) y en la RPC **la segunda pisaba a la primera** (en el historial de dev la fila oscilaba −400.000 ↔ −600.000 en cada sync). Con montos iguales (500+500) el dedupe del front descartaba una.
+
+**Corrección (genérica, sin ramas por tipo):** `pandiCcSumarFilasReasignadas` en `aplicarMotorCcDesdeReglasDeNegocio` — las filas **reasignadas** a otra transacción que provienen de **transacciones de origen distintas** y comparten identidad se suman en una sola. Con una transacción por rol no cambia nada. Reglas de negocio sin cambios.
+
+**Alcance:** cruces sin intermediario (USD-ARS, ARS-USD, EUR-*) con 2+ ingresos o 2+ egresos. No afecta USD-USD ni CHEQUE-ARS (una sola moneda, sin reasignación) ni multicontraparte (graba en la propia transacción).
+
+**Impacto en prod:** 0 órdenes vivas con 2+ transacciones del mismo tipo/pagador/cobrador y 0 oscilaciones en el historial → **no cambia ninguna CC existente**.
+
+**Pruebas (tester, Pandy-Dev):** 600+400, 500+500, dos egresos, control de una transacción, Refrescar ×2 sin cambios en historial, USD-USD con intermediario sin variación de saldos, 0 duplicados.
+
+**Sigue pendiente (paso 2, requiere simulación y decisión):** reglas con `monto_origen` fijo `mr`/`me` por transacción (CHEQUE-ARS ingreso C→P, USD-USD pendiente, cruces con intermediario C→I) sumarían N×acuerdo si hay N transacciones del mismo rol. Hasta resolverlo, el **resto automático por ejecución parcial sigue desactivado** (comportamiento vigente). Además: las reglas **con intermediario** difieren entre Pandy y Pandy-Dev (hash distinto) — revisar paridad.

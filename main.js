@@ -16395,6 +16395,49 @@ function montoBaseReglaNegocio(montoOrigen, ctx) {
 }
 
 /**
+ * Suma las filas CC que el motor REASIGNÓ a otra transacción (marcadas con `_pandiOrigenTrxId`) cuando provienen de
+ * transacciones de origen DISTINTAS y comparten identidad de libro (entidad + transacción de referencia + moneda +
+ * concepto + estado). Sin esto, la RPC (identidad transacción+moneda+familia+signo, sin monto) hace que la segunda pise
+ * a la primera, y el dedupe del front descarta montos iguales. Filas de un mismo origen no se suman (dedupe normal).
+ * Genérico: no depende del tipo de operación. Con una sola transacción por rol no cambia nada.
+ */
+function pandiCcSumarFilasReasignadas(rows, campoEntidad) {
+  if (!Array.isArray(rows) || rows.length < 2) {
+    (rows || []).forEach((r) => { if (r) delete r._pandiOrigenTrxId; });
+    return;
+  }
+  const grupos = new Map();
+  const resultado = [];
+  rows.forEach((r) => {
+    if (!r || !r._pandiOrigenTrxId) {
+      resultado.push(r);
+      return;
+    }
+    const k = [r[campoEntidad], r.transaccion_id, String(r.moneda || '').toUpperCase(), r.concepto || '', r.estado || ''].join('|');
+    const g = grupos.get(k);
+    if (!g) {
+      const copia = { ...r };
+      copia._origenes = new Set([r._pandiOrigenTrxId]);
+      grupos.set(k, copia);
+      resultado.push(copia);
+      return;
+    }
+    if (g._origenes.has(r._pandiOrigenTrxId)) return; // mismo origen: duplicado, se descarta como hacía el dedupe
+    g._origenes.add(r._pandiOrigenTrxId);
+    g.monto = Number(g.monto || 0) + Number(r.monto || 0);
+    Object.assign(g, montosCcPorMoneda(String(g.moneda || 'USD').toUpperCase(), g.monto));
+  });
+  resultado.forEach((r) => {
+    if (r) {
+      delete r._pandiOrigenTrxId;
+      delete r._origenes;
+    }
+  });
+  rows.length = 0;
+  resultado.forEach((r) => rows.push(r));
+}
+
+/**
  * Motor CC desde `reglas_de_negocio` (una fila = un movimiento; `entidad_cc` → cliente o intermediario).
  */
 function aplicarMotorCcDesdeReglasDeNegocio(opts) {
@@ -17079,6 +17122,11 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
         incluir_en_detalle: incluirEnDetalleCcDesdeCampoRegla(regla.incluir_en_detalle),
         ...montosCcPorMoneda(moneda, montoCcUsar),
       };
+      // Fila reasignada a otra transacción (moneda de la regla ≠ moneda de t): se marca el origen para sumar, al final,
+      // las de distintas transacciones con la misma identidad (si no, el sync pisa una con otra: bug "dos ingresos").
+      if (tRef && t && tRef.id != null && t.id != null && String(tRef.id) !== String(t.id)) {
+        rowBase._pandiOrigenTrxId = String(t.id); // se elimina en pandiCcSumarFilasReasignadas (no llega a la RPC)
+      }
       if (entidad === 'intermediario') {
         if (
           patronUsdIntMotor === 'ci_pc' &&
@@ -17100,6 +17148,10 @@ function aplicarMotorCcDesdeReglasDeNegocio(opts) {
       }
     }
   });
+  // Varias transacciones del mismo rol cuyas filas se reasignan a la misma transacción de referencia (p. ej. dos ingresos
+  // USD cuyo cobro en ARS se cuelga del egreso): sumar en una sola fila por identidad (2026-11-21).
+  pandiCcSumarFilasReasignadas(rowsCcCliente, 'cliente_id');
+  pandiCcSumarFilasReasignadas(rowsCcInt, 'intermediario_id');
   if (esUsdUsd && intermediarioId && patronUsdIntMotor === 'cp_ic') {
     motorUsdUsdIntCpIcInyectarLineaCompromisoPositivaIntermediarioEgresoPendiente({
       rowsCcInt,
